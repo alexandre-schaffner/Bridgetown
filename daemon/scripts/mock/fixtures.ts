@@ -1,0 +1,385 @@
+import { RETRY } from "../../src/actions/queue.ts"
+import { DEFAULT_CHANNELS, DEFAULT_SETTINGS } from "../../src/config.ts"
+import { type Action, type Alert, type AlertFields, type AlertSource, type Channel, type Disposition, NO_MILESTONES, type Session, type Settings, type TranscriptEntry, type Triage, triageEvent } from "../../src/domain/model.ts"
+import { newSession } from "../../src/sessions/new-session.ts"
+import { sessionEndEvent } from "../../src/sessions/repo.ts"
+import type { FakePr } from "./fakes.ts"
+
+/**
+ * The world the mock starts in, typed by the daemon's own model. Every session
+ * is a state the real daemon reaches (its stepper and headline come from
+ * `progressOf`), and every alert's outcome is computed by `alertOutcome`.
+ * Sessions marked live start for real: the runner prepares a worktree and runs
+ * the scripted agent.
+ */
+
+const NOW = Date.now()
+const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString()
+const tsAgo = (minutes: number) => ((NOW - minutes * 60_000) / 1000).toFixed(6)
+const slack = (channelId: string, ts: string) => `https://merkl.slack.com/archives/${channelId}/p${ts.replace(".", "")}`
+export const pr = (n: number) => `https://nocturlab.ghe.com/Merkl/monorepo/pull/${n}`
+
+const channel = (name: string): Channel => DEFAULT_CHANNELS.find((c) => c.name === name) ?? { id: `C${name.toUpperCase()}`, name, enabled: true }
+const RELEASES = channel("alert-releases")
+const UPTIME = channel("alert-uptime")
+const ENGINE = channel("alert-engine")
+const INFRA = channel("alert-infra")
+const DEV = channel("alert-dev")
+const ENG_API: Channel = { id: "C03ENGAPI01", name: "eng-api", enabled: true }
+const DM_HUGO: Channel = { id: "D05HUGO0001", name: "DM", enabled: true }
+const PRODUCT: Channel = { id: "C04PRODUCT1", name: "product", enabled: true }
+
+const jev = (kind: NonNullable<Triage["jev"]>["kind"], actionable: number, agentResolvable: number, humanOnIt: number, depth: "quick" | "standard" | "deep", urgency: number) => ({
+  actionable, agentResolvable, humanOnIt, kind, kindConfidence: 0.9, depth, urgency,
+})
+
+interface AlertSpec {
+  readonly channel: Channel
+  readonly minutesAgo: number
+  readonly title: string
+  readonly summary: string
+  readonly raw?: string
+  readonly source: AlertSource
+  readonly fields?: AlertFields
+  readonly triage: Triage
+  readonly sessionId?: string
+  readonly feedback?: Alert["feedback"]
+  /** History after the triage line (dismissals, feedback…). */
+  readonly events?: ReadonlyArray<{ readonly minutesAgo: number; readonly text: string }>
+  readonly disposition?: { readonly kind: Disposition["kind"]; readonly minutesAgo: number }
+}
+
+const alert = (spec: AlertSpec): Alert => {
+  const ts = tsAgo(spec.minutesAgo)
+  return {
+    id: `${spec.channel.id}:${ts}`,
+    channelId: spec.channel.id,
+    channelName: spec.channel.name,
+    ts,
+    permalink: slack(spec.channel.id, ts),
+    title: spec.title,
+    summary: spec.summary,
+    raw: spec.raw ?? `*${spec.title}*\n${spec.summary}`,
+    source: spec.source,
+    fingerprint: `${spec.source}:${spec.channel.name}:${spec.title}`,
+    fields: spec.fields ?? { _tag: "generic" },
+    mentionsMe: spec.source === "inbox",
+    receivedAt: ago(spec.minutesAgo),
+    triage: spec.triage,
+    sessionId: spec.sessionId ?? null,
+    feedback: spec.feedback ?? null,
+    events: [
+      { at: ago(spec.minutesAgo - 0.05), text: triageEvent(spec.triage) },
+      ...(spec.events ?? []).map((e) => ({ at: ago(e.minutesAgo), text: e.text })),
+    ],
+    disposition: spec.disposition === undefined ? null : { kind: spec.disposition.kind, at: ago(spec.disposition.minutesAgo) },
+  }
+}
+
+const release = (image: string, version: string, tag: string, failed: string): AlertFields => ({
+  _tag: "release", image, version, actor: "alex", runId: "291250187", runUrl: "https://nocturlab.ghe.com/Merkl/monorepo/actions/runs/291250187", tag,
+  stages: [
+    { name: "Approval", status: "success", detail: "Approved by hugo" },
+    { name: failed, status: "failure", detail: `${failed} failed · 1 attempt failed` },
+  ],
+})
+
+const inbox = (from: string, fromName: string, via: "mention" | "dm", prUrl: string | null = null): AlertFields => ({
+  _tag: "inbox", from, fromName, channelKind: via === "dm" ? "dm" : "channel", via, threadTs: null, prUrl,
+})
+
+const auto = (reason: string, verdict: Triage["jev"]): Triage => ({ decision: "auto", reason, jev: verdict })
+
+export const SESSION = {
+  running: "s_mock_running",
+  ask: "s_mock_ask",
+  ci: "s_mock_ci",
+  merge: "s_mock_merge",
+  release: "s_mock_release",
+  inFlight: "s_mock_inflight",
+  deploying: "s_mock_deploying",
+  resolved: "s_mock_resolved",
+  closed: "s_mock_closed",
+  failedCi: "s_mock_failed_ci",
+  failedSetup: "s_mock_failed_setup",
+  stopped: "s_mock_stopped",
+  reply: "s_mock_reply",
+  review: "s_mock_review",
+} as const
+
+/** The release whose `gh release create` is still running at startup: its card shows `inFlight`. */
+export const IN_FLIGHT_TAG = "indexer-v0.9.3"
+
+export const buildFixtures = (paths: { readonly repoPath: string; readonly worktrees: string }) => {
+  const worktree = (branch: string | null) => (branch === null ? null : `${paths.worktrees}/${branch}`)
+
+  /** The real `newSession` for the alert, moved to `status` with the evidence that state implies. */
+  const session = (a: Alert, status: Session["status"], minutes: { readonly started: number; readonly updated: number }, overrides: Partial<Session> = {}): Session => {
+    const base = newSession(a, a.sessionId ?? "", paths.repoPath)
+    return {
+      ...base,
+      status,
+      activity: "",
+      worktree: worktree(base.branch),
+      claudeSessionId: crypto.randomUUID(),
+      startedAt: ago(minutes.started),
+      updatedAt: ago(minutes.updated),
+      ...overrides,
+    }
+  }
+  const shipped = (milestones: Partial<Session["milestones"]>) => ({ ...NO_MILESTONES, diagnosed: true, fixed: true, prOpened: true, ...milestones })
+  const reviewed = { channelName: "product-approvals", permalink: slack("C05APPROVALS", tsAgo(20)), handledReviewId: null, posted: true }
+
+  const A = {
+    running: alert({ channel: DEV, minutesAgo: 9, title: "merkl-api · 5xx rate 3.1% on /v4/opportunities", summary: "Sentry: TypeError: Cannot read properties of undefined (reading 'apr')", source: "generic", sessionId: SESSION.running, triage: auto("Agent-resolvable runtime_error (actionable 88% · agent 81%)", jev("runtime_error", 0.88, 0.81, 0.07, "standard", 2.1)) }),
+    ask: alert({ channel: ENGINE, minutesAgo: 26, title: "Keeper missed 2 root updates on Arbitrum", summary: "merkl-keeper: last successful update 2h14m ago (threshold 1h)", source: "engine", fields: { _tag: "engine", subject: "merkl-keeper", error: "root update overdue on Arbitrum", txHash: null }, sessionId: SESSION.ask, triage: auto("Agent-resolvable onchain_or_keeper (actionable 86% · agent 77%)", jev("onchain_or_keeper", 0.86, 0.77, 0.2, "deep", 2.6)) }),
+    ci: alert({ channel: RELEASES, minutesAgo: 38, title: "merkl-studio v1.4.0 · Build failed", summary: "Approval ✓ · Build ✗ (1 attempt failed)", source: "releases", fields: release("merkl-studio", "v1.4.0", "studio-v1.4.0", "Build"), sessionId: SESSION.ci, triage: auto("Agent-resolvable build_failure (actionable 92% · agent 84%)", jev("build_failure", 0.92, 0.84, 0.11, "standard", 1.8)) }),
+    merge: alert({ channel: RELEASES, minutesAgo: 70, title: "merkl-app v2.15.0 · Build failed", summary: "Approval ✓ · Build ✗ (1 attempt failed)", source: "releases", fields: release("merkl-app", "v2.15.0", "app-v2.15.0", "Build"), sessionId: SESSION.merge, triage: auto("Agent-resolvable build_failure (actionable 93% · agent 86%)", jev("build_failure", 0.93, 0.86, 0.05, "standard", 1.7)) }),
+    release: alert({ channel: RELEASES, minutesAgo: 110, title: "merkl-dispute v0.4.2 · Build failed", summary: "Approval ✓ · Build ✗ (2 attempts failed)", source: "releases", fields: release("merkl-dispute", "v0.4.2", "dispute-v0.4.2", "Build"), sessionId: SESSION.release, triage: auto("Agent-resolvable build_failure (actionable 91% · agent 83%)", jev("build_failure", 0.91, 0.83, 0.09, "quick", 1.4)) }),
+    inFlight: alert({ channel: RELEASES, minutesAgo: 150, title: "merkl-indexer v0.9.2 · Build failed", summary: "Approval ✓ · Build ✗ (docker pull rate-limited)", source: "releases", fields: release("merkl-indexer", "v0.9.2", "indexer-v0.9.2", "Build"), sessionId: SESSION.inFlight, triage: auto("Agent-resolvable build_failure (actionable 83% · agent 79%)", jev("build_failure", 0.83, 0.79, 0.15, "quick", 1.2)) }),
+    deploying: alert({ channel: RELEASES, minutesAgo: 190, title: "merkl-api v1.35.10 · Production deploy failed", summary: "Approval ✓ · Build ✓ · Production ✗", source: "releases", fields: release("merkl-api", "v1.35.10", "api-v1.35.10", "Production"), sessionId: SESSION.deploying, triage: auto("Agent-resolvable deploy_failure (actionable 90% · agent 78%)", jev("deploy_failure", 0.9, 0.78, 0.1, "standard", 2.2)) }),
+    resolved: alert({ channel: RELEASES, minutesAgo: 300, title: "merkl-admin v0.6.0 · Build failed", summary: "Approval ✓ · Build ✗ (1 attempt failed)", source: "releases", fields: release("merkl-admin", "v0.6.0", "admin-v0.6.0", "Build"), sessionId: SESSION.resolved, triage: auto("Agent-resolvable build_failure (actionable 92% · agent 84%)", jev("build_failure", 0.92, 0.84, 0.11, "standard", 1.8)) }),
+    closed: alert({
+      channel: ENGINE, minutesAgo: 420, title: "TX Executor · 14 transactions stuck pending on Base", summary: "tx-executor: nonce gap at 48,211, oldest pending tx 41m", source: "engine", sessionId: SESSION.closed,
+      fields: { _tag: "engine", subject: "tx-executor", error: "nonce gap at 48,211", txHash: "0x9e1b77fa" },
+      raw: [":rotating_light: *TX Executor · 14 transactions stuck pending on Base*", "*Chain:* Base (8453)", "*Signer:* `0x7a3f…c21d` (executor-base-1)", "*Nonce gap:* 48,211 (mempool lowest 48,212)", "*Pending:* 14 transactions, oldest 41m", "<https://grafana.merkl.xyz/d/tx-executor?var-chain=base|Grafana dashboard> · <https://www.notion.so/merkl/runbook-tx-executor|Runbook>", "cc <!subteam^S04ONCALL|@engine-oncall>"].join("\n"),
+      triage: auto("Agent-resolvable onchain_or_keeper (actionable 87% · agent 76%)", jev("onchain_or_keeper", 0.87, 0.76, 0.14, "deep", 2.3)),
+    }),
+    failedCi: alert({ channel: RELEASES, minutesAgo: 600, title: "merkl-states-exporter v0.1.0 · Build failed", summary: "Approval ✓ · Build ✗ (3 attempts failed)", source: "releases", fields: release("merkl-states-exporter", "v0.1.0", "states-exporter-v0.1.0", "Build"), sessionId: SESSION.failedCi, triage: auto("Agent-resolvable build_failure (actionable 89% · agent 80%)", jev("build_failure", 0.89, 0.8, 0.12, "quick", 1.3)) }),
+    failedSetup: alert({ channel: ENGINE, minutesAgo: 140, title: "Dispute bot health check failing on Polygon", summary: "merkl-dispute: /health returned 503 for 10 minutes", source: "engine", fields: { _tag: "engine", subject: "merkl-dispute", error: "/health 503", txHash: null }, sessionId: SESSION.failedSetup, triage: auto("Agent-resolvable runtime_error (actionable 80% · agent 76%)", jev("runtime_error", 0.8, 0.76, 0.2, "standard", 1.7)) }),
+    stopped: alert({ channel: DEV, minutesAgo: 250, title: "merkl-api · p99 latency 2.3s on /v4/campaigns", summary: "Grafana: p99 above 2s for 15 minutes", source: "generic", sessionId: SESSION.stopped, triage: auto("Agent-resolvable runtime_error (actionable 82% · agent 77%)", jev("runtime_error", 0.82, 0.77, 0.18, "standard", 1.5)) }),
+    reply: alert({ channel: ENG_API, minutesAgo: 6, title: "Pierre · #eng-api: opportunities page 500s with an empty chainId?", summary: "\"@alex can you check why /opportunities 500s when chainId is empty?\"", raw: "<@U03ALEX> can you check why /opportunities 500s when chainId is empty?", source: "inbox", fields: inbox("U03PIERRE", "Pierre", "mention"), sessionId: SESSION.reply, triage: auto("Delegable investigation (needs you 84% · agent 79%)", jev("investigation", 0.84, 0.79, 0.12, "standard", 1.1)) }),
+    review: alert({ channel: ENGINE, minutesAgo: 24, title: "Engine · reward computation timed out for campaign 0x4f1c…a9e2", summary: "merkl-engine: computeRewards exceeded 900s on Ethereum, epoch 18,402", source: "engine", fields: { _tag: "engine", subject: "merkl-engine", error: "computeRewards timeout", txHash: null }, sessionId: SESSION.review, triage: auto("Agent-resolvable runtime_error (actionable 82% · agent 61%)", jev("runtime_error", 0.82, 0.81, 0.1, "deep", 1.9)) }),
+    investigate: alert({ channel: UPTIME, minutesAgo: 7, title: "Incident started on api.merkl.xyz/v4/roots/delay", summary: "Better Stack: 3 of 5 regions failing, HTTP 504 after 30s", source: "uptime", fields: { _tag: "uptime", target: "api.merkl.xyz/v4/roots/delay", state: "incident" }, triage: { decision: "suggest", reason: "Borderline uptime_incident (actionable 71% · agent 46%)", jev: jev("uptime_incident", 0.71, 0.46, 0.18, "standard", 2.4) } }),
+    escalated: alert({ channel: DM_HUGO, minutesAgo: 1, title: "Hugo Lextrait · DM: should we prioritise the sparkline work over the studio revamp?", summary: "Direct message asking for a prioritisation call", raw: "should we prioritise the sparkline work over the studio revamp?", source: "inbox", fields: inbox("U04HUGO", "Hugo Lextrait", "dm"), triage: { decision: "escalate", reason: "A decision only you can make (needs you 90% · agent 4%)", jev: jev("decision_or_approval", 0.9, 0.04, 0, "quick", 1.6) } }),
+    opened: alert({ channel: PRODUCT, minutesAgo: 45, title: "Baptiste · #product: review #3336 when you get a chance?", summary: "PR review request", raw: "<@U03ALEX> review https://nocturlab.ghe.com/Merkl/monorepo/pull/3336 when you get a chance?", source: "inbox", fields: inbox("U04BAPTISTE", "Baptiste", "mention", pr(3336)), triage: { decision: "escalate", reason: "PR reviews always go to you", jev: jev("pr_review", 0.95, 0.1, 0.02, "quick", 1.2) }, events: [{ minutesAgo: 40, text: "Opened by you in Slack or Revv" }], disposition: { kind: "opened", minutesAgo: 40 } }),
+    dismissed: alert({ channel: DEV, minutesAgo: 131, title: "merkl-api · p95 latency 1.4s on /v4/campaigns", summary: "Grafana: p95 above 1.2s for 10 minutes, error rate normal", raw: "*[FIRING:1] merkl-api p95 latency*\n*Summary:* p95 latency 1.41s on /v4/campaigns (threshold 1.2s) for 10m\n*Error rate:* 0.2% (normal)", source: "generic", triage: { decision: "suggest", reason: "Borderline runtime_error (actionable 58% · agent 44%)", jev: jev("runtime_error", 0.58, 0.44, 0.22, "standard", 1.3) }, events: [{ minutesAgo: 118, text: "Dismissed by you, no agent started" }], disposition: { kind: "dismissed", minutesAgo: 118 } }),
+    ignored: alert({ channel: RELEASES, minutesAgo: 63, title: "merkl-api v1.35.9 · Deployed", summary: "Approval ✓ · Build ✓ · Production ✓", source: "releases", triage: { decision: "ignore", reason: "Not actionable (actionable 3%)", jev: jev("informational", 0.03, 0.02, 0, "quick", 0.1) }, feedback: "good", events: [{ minutesAgo: 60, text: "You marked Jev's call as right" }] }),
+    filtered: alert({ channel: INFRA, minutesAgo: 172, title: "SSL certificate for merkl.xyz expires in 7 days", summary: "cert-manager will renew automatically at 30 days remaining", source: "uptime", fields: { _tag: "uptime", target: "merkl.xyz", state: "ssl_expiry" }, triage: { decision: "filtered", reason: "Certificate notices are handled by cert-manager", jev: null } }),
+    filteredDeploy: alert({ channel: RELEASES, minutesAgo: 372, title: "merkl-app v2.14.0 · Deployed", summary: "Approval ✓ · Build ✓ · Production ✓", source: "releases", triage: { decision: "filtered", reason: "Deployed", jev: null } }),
+  }
+
+  const S = {
+    running: { ...newSession(A.running, SESSION.running, paths.repoPath), startedAt: ago(8) },
+    ask: { ...newSession(A.ask, SESSION.ask, paths.repoPath), startedAt: ago(25) },
+    ci: session(A.ci, "ci", { started: 37, updated: 3 }, {
+      activity: "CI running on #3340", phase: "ci", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3340), ciRounds: 1, costUsd: 1.84, review: reviewed, component: "studio",
+      diagnosis: "vite 6.4.0 (pulled in by a caret range) changed how `import.meta.glob` resolves eager imports, breaking the route manifest in apps/studio. Pinning vite to 6.3.5 restores it.",
+      release: { image: "merkl-studio", tag: "studio", version: "" }, milestones: shipped({}),
+    }),
+    merge: session(A.merge, "awaiting_merge", { started: 69, updated: 12 }, {
+      activity: "#3345 approved and green, ready to merge", phase: "ci", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3345), costUsd: 0.97, review: reviewed, component: "app",
+      diagnosis: "The sparkline component imports `d3-shape` from a path that only exists in d3 v7; the lockfile resolved v6 after a dedupe. Import from the package root.",
+      release: { image: "merkl-app", tag: "app", version: "" }, milestones: shipped({ ciGreen: true }),
+    }),
+    release: session(A.release, "awaiting_release", { started: 109, updated: 30 }, {
+      activity: "Merged, ready to cut dispute-v0.4.3", phase: "deploy", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3338), costUsd: 0.62, review: reviewed, component: "dispute",
+      diagnosis: "The Dockerfile copies `bun.lockb`, which the repo replaced with `bun.lock`. Copy the new lockfile.",
+      release: { image: "merkl-dispute", tag: "dispute", version: "" }, milestones: shipped({ ciGreen: true, merged: true }), mergeRequestedAt: ago(31),
+    }),
+    inFlight: session(A.inFlight, "awaiting_release", { started: 149, updated: 2 }, {
+      activity: "Merged, ready to cut indexer-v0.9.3", phase: "deploy", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3336), costUsd: 0.88, review: reviewed, component: "indexer",
+      diagnosis: "Base image pulls hit Docker Hub's anonymous rate limit on the shared runner. Pull from the GHCR mirror instead.",
+      release: { image: "merkl-indexer", tag: "indexer", version: "" }, milestones: shipped({ ciGreen: true, merged: true }), mergeRequestedAt: ago(20),
+    }),
+    deploying: session(A.deploying, "deploying", { started: 189, updated: 15 }, {
+      activity: "Waiting for release approval", phase: "deploy", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3333), costUsd: 1.21, review: reviewed, component: "api",
+      diagnosis: "The ETL job's new migration adds a NOT NULL column without a default; existing rows fail it. Added a default and a backfill.",
+      release: { image: "merkl-api", tag: "api-v1.35.11", version: "v1.35.11" }, milestones: shipped({ ciGreen: true, merged: true, released: true }),
+      mergeRequestedAt: ago(40), releaseTag: "api-v1.35.11", deployStage: { _tag: "AwaitingApproval" },
+    }),
+    resolved: session(A.resolved, "resolved", { started: 297, updated: 250 }, {
+      activity: "Deployed admin-v0.6.1", phase: "done", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3329), costUsd: 1.31, review: reviewed, component: "admin", worktree: null,
+      diagnosis: "A caret range let vite 6.4.0 in, which changed eager `import.meta.glob` resolution and emptied the route manifest. Pinned vite to 6.3.5.",
+      release: { image: "merkl-admin", tag: "admin-v0.6.1", version: "v0.6.1" }, milestones: shipped({ ciGreen: true, merged: true, released: true, deployed: true }),
+      resolution: "deployed admin-v0.6.1", mergeRequestedAt: ago(280), releaseTag: "admin-v0.6.1", deployStage: { _tag: "Deployed" },
+    }),
+    closed: session(A.closed, "closed", { started: 418, updated: 380 }, {
+      activity: "Closed by you", outcome: "needs_human", rootCauseFound: false, costUsd: 1.46, pushbacks: 1, resolution: "root cause not found",
+      diagnosis: "Best hypothesis, unconfirmed: the signer's nonce 48,211 was built and signed at 09:41:07 UTC but never broadcast, so the 14 transactions after it sit in the mempool. Either `TxSender.flush` swallowed a JSON-RPC error body, or the nightly rebalancer raced for the nonce. Re-broadcasting 48,211 would unblock the queue but moves funds, so a person has to do it.",
+      milestones: { ...NO_MILESTONES },
+    }),
+    failedCi: session(A.failedCi, "failed", { started: 598, updated: 540 }, {
+      activity: "Agent stopped: error_max_turns", phase: "ci", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3302), ciRounds: 2, costUsd: 3.92, component: "states-exporter",
+      diagnosis: "The exporter's Dockerfile pins a Debian image whose apt mirror is gone; switching to bookworm fixes the build, but the integration test then times out against the staging RPC.",
+      release: { image: "merkl-states-exporter", tag: "states-exporter", version: "" }, milestones: shipped({}), resolution: "agent stopped: error_max_turns",
+    }),
+    failedSetup: session(A.failedSetup, "failed", { started: 139.6, updated: 139 }, {
+      activity: "Could not start: git fetch: The requested URL returned error: 403", worktree: null, claudeSessionId: null, costUsd: 0,
+      resolution: "Could not start: git fetch: The requested URL returned error: 403",
+    }),
+    stopped: session(A.stopped, "stopped", { started: 248, updated: 236 }, {
+      activity: "Stopped by you", rootCauseFound: null, costUsd: 0.41, resolution: "stopped by you", milestones: { ...NO_MILESTONES, diagnosed: true },
+      diagnosis: null,
+    }),
+    reply: session(A.reply, "waiting", { started: 5.5, updated: 1.5 }, {
+      activity: "Reproduced it: an empty chainId parses as NaN and slips past validation; fix is a one-line coercion.", outcome: "recommendation", rootCauseFound: true, costUsd: 0.58,
+      diagnosis: "`chainId=\"\"` is parsed as `NaN`, which slips past the zod schema and makes `getChain()` throw. Coercing empty strings to undefined fixes it.",
+      milestones: { ...NO_MILESTONES, diagnosed: true },
+    }),
+    review: session(A.review, "waiting", { started: 23, updated: 4 }, {
+      activity: "Could not reproduce the timeout locally", outcome: "needs_human", rootCauseFound: false, costUsd: 1.12, pushbacks: 1,
+      diagnosis: "Couldn't reproduce the timeout: the same epoch computes in 212s locally against an archive node. Ruled out RPC latency (p99 180ms), the campaign config (unchanged) and memory (61% peak). The slow part in the failing run is `fetchPositions` for 3 Uniswap v4 pools (18k sequential calls); a cold cache on the engine pod is possible but unproven.",
+    }),
+  } satisfies Record<keyof typeof SESSION, Session>
+
+  const card = (spec: Omit<Action, "id" | "createdAt" | "url" | "options"> & { readonly url?: string | null; readonly options?: ReadonlyArray<string>; readonly minutesAgo: number }): Action => {
+    const { minutesAgo, ...rest } = spec
+    return { options: [], url: null, ...rest, id: `a_mock_${spec.kind}_${spec.sessionId ?? spec.alertId ?? ""}`.replace(/[^a-z0-9_]/gi, "_"), createdAt: ago(minutesAgo) }
+  }
+  const forSession = (s: Session) => ({ sessionId: s.id, alertId: s.alertId })
+
+  const actions: ReadonlyArray<Action> = [
+    card({ kind: "escalate", title: A.escalated.title, detail: A.escalated.triage.reason, primaryLabel: "Open in Slack", sessionId: null, alertId: A.escalated.id, payload: A.escalated.fingerprint, url: A.escalated.permalink, minutesAgo: 1 }),
+    card({ kind: "reply", title: "Reply to Pierre", detail: "Reproduced: /opportunities 500s when chainId is empty because the param parses as NaN and slips past validation. A one-line fix coerces empty strings to undefined; I can open the PR.", primaryLabel: "Send reply", ...forSession(S.reply), payload: "Reproduced: /opportunities 500s when chainId is empty because the param parses as NaN and slips past validation. A one-line fix coerces empty strings to undefined; I can open the PR.", minutesAgo: 1.5 }),
+    card({ kind: "review", title: `Root cause not found · ${S.review.title}`, detail: S.review.diagnosis ?? "", primaryLabel: "Close session", ...forSession(S.review), payload: null, minutesAgo: 4 }),
+    card({ kind: "investigate", title: A.investigate.title, detail: `#${A.investigate.channelName} · ${A.investigate.triage.reason}`, primaryLabel: "Investigate", sessionId: null, alertId: A.investigate.id, payload: A.investigate.fingerprint, minutesAgo: 7 }),
+    card({ kind: "merge", title: "Merge fix(app): import d3-shape from the package root", detail: `#3345 · ${S.merge.diagnosis ?? ""}`, primaryLabel: "Merge", ...forSession(S.merge), payload: S.merge.prUrl, minutesAgo: 12 }),
+    card({ kind: "release", title: `Ship ${S.release.title}`, detail: `Merged ${pr(3338)}. Cutting dispute-v0.4.3 starts the deploy; approval stays with the reviewers.`, primaryLabel: "Cut dispute-v0.4.3", ...forSession(S.release), payload: "dispute-v0.4.3", minutesAgo: 30 }),
+    card({ kind: "release", title: `Ship ${S.inFlight.title}`, detail: `Merged ${pr(3336)}. Cutting ${IN_FLIGHT_TAG} starts the deploy; approval stays with the reviewers.`, primaryLabel: `Cut ${IN_FLIGHT_TAG}`, ...forSession(S.inFlight), payload: IN_FLIGHT_TAG, minutesAgo: 20 }),
+    card({ kind: "review", title: `Agent failed · ${S.failedSetup.title}`, detail: "Could not start: git fetch: The requested URL returned error: 403 (the Merkl IP allow list refused this network)", primaryLabel: "Retry", ...forSession(S.failedSetup), payload: RETRY, minutesAgo: 139 }),
+    card({ kind: "review", title: `Agent failed · ${S.failedCi.title}`, detail: "Agent stopped: error_max_turns", primaryLabel: "Retry", ...forSession(S.failedCi), payload: RETRY, minutesAgo: 540 }),
+  ]
+
+  const t = (minutesAgo: number, kind: TranscriptEntry["kind"], text: string): TranscriptEntry => ({ at: ago(minutesAgo), kind, text })
+  const transcripts: Readonly<Record<string, ReadonlyArray<TranscriptEntry>>> = {
+    [SESSION.ci]: [
+      t(37, "status", "Session started"),
+      t(36.8, "tool", "Bash gh run view 11873345 --log-failed"),
+      t(36.2, "text", "The release build fails in `vite build` for apps/studio: `import.meta.glob` returns an empty object for ./routes/**/*.tsx."),
+      t(34.9, "tool", "Bash bun pm ls vite"),
+      t(34.1, "text", "bun.lock resolved vite@6.4.0 via ^6.3.0. 6.4 changed eager glob resolution."),
+      t(31, "tool", "Edit apps/studio/package.json"),
+      t(30.4, "tool", "Bash bun install && bun run --filter studio build"),
+      t(27.9, "tool", "Bash gh pr create --title \"fix(app-studio): pin vite to 6.3\""),
+      t(27.5, "result", "Pinned vite to 6.3.5; build passes locally. PR #3340."),
+      t(26.8, "status", "Review requested in #product-approvals"),
+      t(19.2, "error", "CI round 1: typecheck failed in packages/ui"),
+      t(12.6, "tool", "Bash gh pr checks 3340"),
+      t(9.4, "status", "Resumed with a follow-up"),
+    ],
+    [SESSION.closed]: [
+      t(418, "status", "Session started"),
+      t(415, "tool", "Bash bun run scripts/nonce.ts --chain base"),
+      t(410, "text", "Nonce 48,211 was signed at 09:41:07 UTC and never broadcast. 14 later transactions are stuck behind it."),
+      t(404, "tool", "Read packages/tx-executor/src/TxSender.ts"),
+      t(398, "text", "Two leads, neither confirmed: swallowed JSON-RPC errors in TxSender.flush, or a nonce race with the nightly rebalancer."),
+      t(395, "status", "Bridgetown sent the agent back: it handed off without a confirmed root cause"),
+      t(386, "result", "Root cause not confirmed; re-broadcasting 48,211 needs a human."),
+    ],
+    [SESSION.failedCi]: [
+      t(598, "status", "Session started"),
+      t(590, "tool", "Edit apps/states-exporter/Dockerfile"),
+      t(570, "tool", "Bash gh pr checks 3302"),
+      t(560, "error", "CI round 2: integration test timed out against the staging RPC"),
+      t(540, "error", "Agent stopped: error_max_turns"),
+    ],
+    [SESSION.failedSetup]: [
+      t(139.6, "status", "Fetching origin/main and creating worktree on fix-bt-dispute-bot-health-check-failing-on-polygon-etup (then bun install)…"),
+      t(139, "error", "Could not start: git fetch: The requested URL returned error: 403"),
+    ],
+    [SESSION.reply]: [
+      t(5.5, "status", "Session started"),
+      t(5.1, "tool", "Bash curl -s 'localhost:3000/v4/opportunities?chainId=' -w '%{http_code}'"),
+      t(4.8, "text", "500 · TypeError: Cannot read properties of undefined (reading 'name') at getChain"),
+      t(1.5, "result", "Drafted a reply for Pierre."),
+    ],
+    [SESSION.review]: [
+      t(23, "status", "Session started"),
+      t(19.8, "tool", "Bash bun run engine:compute --campaign 0x4f1c…a9e2 --epoch 18402"),
+      t(15.1, "text", "Computed in 212s locally. No timeout."),
+      t(9, "status", "Bridgetown sent the agent back: it handed off without a confirmed root cause"),
+      t(4, "result", "Could not reproduce the timeout locally"),
+    ],
+    [SESSION.merge]: [
+      t(69, "status", "Session started"),
+      t(66, "tool", "Bash gh run view 291250190 --log-failed"),
+      t(63, "text", "`d3-shape/src/curve` is only exported by d3 v7; the lockfile dedupe resolved v6."),
+      t(58, "tool", "Edit apps/app/src/components/Sparkline.tsx"),
+      t(55, "tool", "Bash gh pr create --title \"fix(app): import d3-shape from the package root\""),
+      t(54, "result", "Imports from the package root; build passes. PR #3345."),
+      t(40, "status", "Review requested in #product-approvals"),
+    ],
+    [SESSION.release]: [
+      t(109, "status", "Session started"),
+      t(104, "text", "The Dockerfile still copies `bun.lockb`, which the repo replaced with `bun.lock`."),
+      t(101, "tool", "Edit apps/dispute/Dockerfile"),
+      t(98, "result", "Copies the new lockfile; docker build passes. PR #3338."),
+      t(31, "status", "Merged #3338"),
+    ],
+    [SESSION.inFlight]: [
+      t(149, "status", "Session started"),
+      t(144, "text", "Docker Hub's anonymous pull limit is hit on the shared runner; GHCR mirrors the same base image."),
+      t(141, "tool", "Edit apps/indexer/Dockerfile"),
+      t(138, "result", "Pulls from the GHCR mirror. PR #3336."),
+      t(20, "status", "Merged #3336"),
+    ],
+    [SESSION.deploying]: [
+      t(189, "status", "Session started"),
+      t(183, "tool", "Bash bun run --filter api migrate:status"),
+      t(178, "text", "Migration 0141 adds `campaigns.etl_version NOT NULL` without a default; production has 41k rows."),
+      t(171, "tool", "Edit packages/db/migrations/0141_campaign_etl_version.sql"),
+      t(166, "result", "Added a default and a backfill. PR #3333."),
+      t(40, "status", "Merged #3333"),
+      t(15, "status", "Released api-v1.35.11"),
+    ],
+    [SESSION.stopped]: [t(248, "status", "Session started"), t(240, "tool", "Bash bun run scripts/latency.ts --route /v4/campaigns"), t(236, "status", "Stopped by you")],
+    [SESSION.resolved]: [t(297, "status", "Session started"), t(281, "result", "Pinned vite to 6.3.5. PR #3329."), t(250, "status", "Deployed admin-v0.6.1")],
+  }
+
+  const fakePr = (title: string, checks: FakePr["checks"], review: FakePr["review"], merged = false): FakePr => ({ title, checks, review, merged, moves: false })
+  const prs: Readonly<Record<string, FakePr>> = {
+    [pr(3340)]: fakePr("fix(app-studio): pin vite to 6.3", "pending", "REVIEW_REQUIRED"),
+    [pr(3345)]: fakePr("fix(app): import d3-shape from the package root", "green", "APPROVED"),
+    [pr(3338)]: fakePr("fix(dispute): copy bun.lock in the Dockerfile", "green", "APPROVED", true),
+    [pr(3336)]: fakePr("fix(indexer): pull base images from GHCR", "green", "APPROVED", true),
+    [pr(3302)]: fakePr("fix(states-exporter): move to bookworm", "red", "REVIEW_REQUIRED"),
+  }
+  const tags = ["admin-v0.6.0", "admin-v0.6.1", "app-v2.15.0", "api-v1.35.10", "api-v1.35.11", "dispute-v0.4.2", "indexer-v0.9.2", "studio-v1.4.0"]
+
+  const settings: Settings = {
+    ...DEFAULT_SETTINGS,
+    channels: DEFAULT_SETTINGS.channels.map((c) => (c.name === "alert-infra" ? { ...c, enabled: false } : c)),
+    dryRun: false,
+    // The two scripted agents never finish; room for the ones you start.
+    maxConcurrent: 4,
+    monorepoPath: paths.repoPath,
+    deploymentRepoPath: paths.repoPath,
+    quietHours: { enabled: true, start: "22:00", end: "08:00" },
+  }
+
+  const sessions: ReadonlyArray<Session> = Object.values(S)
+  /** Each session's alert says it started, and (once over) how it ended, as the real repo writes it. */
+  const alerts: ReadonlyArray<Alert> = Object.values(A).map((a) => {
+    const s = sessions.find((x) => x.id === a.sessionId)
+    if (s === undefined) return a
+    const started = { at: s.startedAt, text: `Agent session started (${s.model}, ${s.effort})` }
+    const ended = s.status === "resolved" || s.status === "closed" || s.status === "failed" || s.status === "stopped" ? [{ at: s.updatedAt, text: sessionEndEvent(s) }] : []
+    return { ...a, events: [...a.events, started, ...ended] }
+  })
+
+  return { alerts: [...alerts, ...background()], sessions, actions, transcripts, prs, tags, settings }
+}
+
+/**
+ * A day of the routine traffic that never reaches Recent's first page: successful
+ * deploys and recoveries filtered by rules, chatter Jev ignored. Fills the overview's
+ * 24h chart. Deterministic, so screenshots compare.
+ */
+const background = (): ReadonlyArray<Alert> => {
+  const images = ["merkl-api", "merkl-app", "merkl-studio", "merkl-indexer", "merkl-engine", "merkl-admin"]
+  // Alerts per hour, oldest first: a quiet night, a busy working day.
+  const perHour = [1, 0, 0, 1, 0, 0, 0, 1, 2, 3, 2, 4, 3, 2, 3, 5, 4, 2, 3, 2, 1, 2, 1, 0]
+  return perHour.flatMap((count, hour) =>
+    Array.from({ length: count }, (_, i) => {
+      const minutesAgo = (23 - hour) * 60 + 5 + ((i * 17 + hour * 7) % 50)
+      const image = images[(hour + i) % images.length] ?? "merkl-api"
+      const n = (hour * 3 + i) % 4
+      return n === 3
+        ? alert({ channel: UPTIME, minutesAgo, title: `${image} · Recovered`, summary: "Back up after a 40s blip", source: "uptime", triage: { decision: "filtered", reason: "Recovered", jev: null } })
+        : n === 2
+          ? alert({ channel: DEV, minutesAgo, title: `${image} · Slow query warning`, summary: "p95 820ms on a cold cache", source: "generic", triage: { decision: "ignore", reason: "Not actionable (actionable 8%)", jev: jev("informational", 0.08, 0.1, 0, "quick", 0.2) } })
+          : alert({ channel: RELEASES, minutesAgo, title: `${image} v1.${hour}.${i} · Deployed`, summary: "Approval ✓ · Build ✓ · Production ✓", source: "releases", triage: { decision: "filtered", reason: "Deployed", jev: null } })
+    }),
+  )
+}

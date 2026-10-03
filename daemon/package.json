@@ -1,0 +1,28 @@
+{
+  "name": "bridgetown-daemon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare": "../scripts/prepare-effect.sh",
+    "dev": "bun --watch src/main.ts",
+    "start": "bun src/main.ts",
+    "replay": "bun scripts/replay.ts",
+    "mock": "bun scripts/mock/main.ts",
+    "check": "tsc --noEmit",
+    "test": "bun test",
+    "build": "bun build src/main.ts --compile --outfile dist/bridgetown-daemon"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.220",
+    "@effect/platform-bun": "4.0.0",
+    "@effect/sql-sqlite-bun": "4.0.0",
+    "@typesafe-ai/sdk": "^0.6.0",
+    "effect": "4.0.0",
+    "zod": "^4"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "typescript": "^7.0.2"
+  }
+}

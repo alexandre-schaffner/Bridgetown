@@ -1,0 +1,142 @@
+import { Duration, Effect } from "effect"
+import { GheBlocked, type GitHubError } from "../../src/domain/errors.ts"
+import type { JevVerdict } from "../../src/domain/model.ts"
+import { type GitHubShape, nextTagFrom, type PullRequest } from "../../src/ship/github.ts"
+import type { SlackClientShape } from "../../src/slack/client.ts"
+import type { JevShape } from "../../src/triage/jev.ts"
+
+/** Slack that reads nothing new and swallows every post: the mock never reaches slack.com. */
+export const fakeSlack: SlackClientShape = {
+  identity: () => Effect.succeed({ user_id: "U03ALEX", user: "alex", url: "https://merkl.slack.com/" }),
+  latest: () => Effect.succeed([]),
+  replies: () => Effect.succeed([]),
+  permalink: (channel, ts) => Effect.succeed(`https://merkl.slack.com/archives/${channel}/p${ts.replace(".", "")}`),
+  search: () => Effect.succeed([]),
+  groupsOf: () => Effect.succeed([]),
+  userName: (id) => Effect.succeed(id),
+  post: () => Effect.sync(() => (Date.now() / 1000).toFixed(6)),
+}
+
+const verdict: JevVerdict = {
+  actionable: 0.9, agentResolvable: 0.8, humanOnIt: 0.05, kind: "runtime_error", kindConfidence: 0.85, depth: "standard", urgency: 1.5,
+}
+
+/** Jev without TypeSafe; only consulted if something new is ingested (`POST /poll` finds nothing). */
+export const fakeJev: JevShape = { judge: () => Effect.succeed(verdict), judgeInbox: () => Effect.succeed({ ...verdict, kind: "investigation" }) }
+
+/** How a pull request looks to the fake. `script` PRs move on their own: checks go green, then a reviewer approves. */
+export interface FakePr {
+  readonly title: string
+  readonly checks: "pending" | "green" | "red"
+  readonly review: "REVIEW_REQUIRED" | "APPROVED"
+  readonly merged: boolean
+  /** Moves pending → green (after 15s) → approved (after 30s). Fixtures that must stay put leave it off. */
+  readonly moves: boolean
+}
+
+export interface FakeGitHubOptions {
+  readonly prs: Readonly<Record<string, FakePr>>
+  readonly tags: ReadonlyArray<string>
+  /** How long `gh pr merge` / `gh release create` take, so `inFlight` shows. */
+  readonly latencyMs: number
+  /** Tags whose `gh release create` takes this long instead (the release that is in flight at startup). */
+  readonly holds: Readonly<Record<string, number>>
+  readonly blocked: boolean
+  /** A release was cut: the mock's release tracker takes it from here. */
+  readonly onRelease: (tag: string) => void
+}
+
+const checks = (state: FakePr["checks"]): PullRequest["statusCheckRollup"] => [
+  { name: "lint", status: "COMPLETED", conclusion: "SUCCESS" },
+  { name: "typecheck", status: "COMPLETED", conclusion: "SUCCESS" },
+  { name: "test", status: "COMPLETED", conclusion: "SUCCESS" },
+  state === "pending"
+    ? { name: "build", status: "IN_PROGRESS", conclusion: null }
+    : { name: "build", status: "COMPLETED", conclusion: state === "green" ? "SUCCESS" : "FAILURE" },
+]
+
+/**
+ * GitHub Enterprise in memory: PRs, tags and releases, with `gh`'s latency, and
+ * an IP-allow-list switch. The real shipper and gates (`ship/gates.ts`) run
+ * against it, so a merge or a release resolves once, shows `inFlight` while it
+ * runs, and a second click gets a 409.
+ */
+export const makeFakeGitHub = (options: FakeGitHubOptions) => {
+  const prs = new Map(Object.entries(options.prs).map(([url, pr]) => [url, { ...pr, openedAt: Date.now(), mergedAt: pr.merged ? new Date().toISOString() : null }]))
+  const tags = [...options.tags]
+  let blocked = options.blocked
+
+  const ghe = <A>(operation: string, effect: Effect.Effect<A, GitHubError>): Effect.Effect<A, GitHubError> =>
+    Effect.suspend(() =>
+      blocked
+        ? Effect.fail(new GheBlocked({ operation, message: "HTTP 403: the `Merkl` organization has an IP allow list enabled" }))
+        : effect,
+    )
+
+  const prOf = (url: string) => {
+    const known = prs.get(url)
+    if (known !== undefined) return known
+    // A PR an agent just opened in the mock: it moves through CI and review on its own.
+    const opened = { title: `Bridgetown fix #${url.split("/").pop() ?? ""}`, checks: "pending" as const, review: "REVIEW_REQUIRED" as const, merged: false, moves: true, openedAt: Date.now(), mergedAt: null }
+    prs.set(url, opened)
+    return opened
+  }
+
+  const view = (url: string): PullRequest => {
+    const pr = prOf(url)
+    const age = Date.now() - pr.openedAt
+    const ci = pr.moves && age > 15_000 ? "green" : pr.checks
+    const review = pr.moves && age > 30_000 ? "APPROVED" : pr.review
+    return {
+      number: Number(url.split("/").pop()),
+      title: pr.title,
+      state: pr.mergedAt === null ? "OPEN" : "MERGED",
+      mergedAt: pr.mergedAt,
+      url,
+      reviewDecision: review,
+      latestReviews: review === "APPROVED" ? [{ id: `r_${url}`, state: "APPROVED", body: "", author: { login: "baptiste" } }] : [],
+      statusCheckRollup: checks(ci),
+    }
+  }
+
+  const slow = (ms: number) => Effect.sleep(Duration.millis(ms))
+
+  const github: GitHubShape = {
+    viewPr: (url) => ghe("pr view", Effect.sync(() => view(url))),
+    mergePr: (url) =>
+      ghe(
+        "pr merge",
+        slow(options.latencyMs).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              const pr = prOf(url)
+              prs.set(url, { ...pr, mergedAt: pr.mergedAt ?? new Date().toISOString() })
+            }),
+          ),
+        ),
+      ),
+    rerunFailedJobs: () => ghe("run rerun", slow(options.latencyMs)),
+    nextPatchTag: (_repoPath, prefix) => ghe("ls-remote", Effect.sync(() => nextTagFrom(tags, prefix))),
+    tagExists: (_repoPath, tag) => ghe("ls-remote", Effect.sync(() => tags.includes(tag))),
+    createRelease: (tag) =>
+      ghe(
+        "release create",
+        slow(options.holds[tag] ?? options.latencyMs).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              if (!tags.includes(tag)) tags.push(tag)
+              options.onRelease(tag)
+            }),
+          ),
+        ),
+      ),
+    branchPushed: () => Effect.succeed(true),
+    reachability: Effect.sync(() => (blocked ? "blocked" : "ok")),
+  }
+
+  return {
+    github,
+    /** Flips the IP allow list; returns whether GHE is blocked now. */
+    toggleBlocked: () => (blocked = !blocked),
+  }
+}

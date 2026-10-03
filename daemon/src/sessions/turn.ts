@@ -1,0 +1,112 @@
+import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
+import { type Cause, Effect, Exit, Queue, Stream } from "effect"
+import { AdapterError, errorMessage } from "../domain/errors.ts"
+import type { Session } from "../domain/model.ts"
+import type { HubShape } from "../hub.ts"
+import type { SlackThreadShape } from "../slack/thread.ts"
+import { truncate } from "../slack/text.ts"
+import type { StoreShape } from "../store/store.ts"
+import { abortOnReturn, type AgentShape } from "./agent.ts"
+import type { AsksShape } from "./asks.ts"
+import type { SessionRepoShape } from "./repo.ts"
+import { handleMessage, type TurnEnd } from "./sdk-events.ts"
+import { sdkOptions } from "./sdk-options.ts"
+import type { ToolCallbacks } from "./tools.ts"
+
+/**
+ * A turn's streaming input. The first prompt goes in when the turn is claimed;
+ * your messages go in while it runs (the agent reads them at its next step); the
+ * turn's result ends it so the CLI exits. Once ended, `offer` returns false.
+ */
+export type TurnInput = Queue.Queue<SDKUserMessage, Cause.Done>
+
+/** `next`: the CLI hands it to the agent at its next step instead of after the turn. */
+export const userMessage = (text: string, priority?: "next"): SDKUserMessage => ({
+  type: "user",
+  message: { role: "user", content: text },
+  parent_tool_use_id: null,
+  ...(priority === undefined ? {} : { priority }),
+})
+
+export const makeTurnInput = (prompt: string) =>
+  Effect.gen(function* () {
+    const input: TurnInput = yield* Queue.unbounded<SDKUserMessage, Cause.Done>()
+    yield* Queue.offer(input, userMessage(prompt))
+    return input
+  })
+
+export interface TurnDeps {
+  readonly store: StoreShape
+  readonly hub: HubShape
+  readonly thread: SlackThreadShape
+  readonly repo: SessionRepoShape
+  readonly asks: AsksShape
+  readonly agent: AgentShape
+  /** The Promise boundary for the SDK's tool callbacks; fibers it starts belong to the runner's scope. */
+  readonly runPromise: <A, E>(effect: Effect.Effect<A, E>) => Promise<A>
+  readonly onEnd: (id: string) => (end: TurnEnd) => Effect.Effect<void, AdapterError>
+  readonly onFailure: (id: string, reason: string) => Effect.Effect<void>
+}
+
+export const makeTurns = (deps: TurnDeps) => {
+  const { store, thread, repo, asks, runPromise } = deps
+
+  const toolsFor = (session: Session): ToolCallbacks => ({
+    slackContext: (minutes) =>
+      runPromise(
+        Effect.gen(function* () {
+          const alert = yield* store.getAlert(session.alertId)
+          if (alert === undefined) return "The alert is no longer stored."
+          const replies = yield* thread.replies(alert)
+          const around = yield* thread.nearby(alert, minutes)
+          return [
+            `Thread replies (${replies.length}):`,
+            ...replies.map((r) => `- ${r.slice(0, 1_500)}`),
+            "",
+            `#${alert.channelName} within ±${minutes} min (${around.length}):`,
+            ...around.map((m) => `- ${m}`),
+          ].join("\n")
+        }).pipe(Effect.orElseSucceed(() => "Slack context is unavailable right now.")),
+      ),
+    report: (phase, note, prUrl) =>
+      runPromise(
+        repo
+          .patch(session.id, { phase, activity: note, ...(prUrl === undefined ? {} : { prUrl }) })
+          .pipe(Effect.andThen(repo.log(session.id, "status", `${phase}: ${note}`)), Effect.ignore),
+      ),
+    ask: (question, options) => runPromise(asks.ask(session, question, options)),
+  })
+
+  /**
+   * One SDK query, consumed as a stream until the CLI exits. Interrupting it (a
+   * stop, shutdown) aborts the query and kills the CLI; a failure that was not
+   * an abort fails the session.
+   */
+  const runTurn = (id: string, session: Session, input: TurnInput, resume: boolean): Effect.Effect<void> =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* repo.log(id, "status", resume ? "Resumed with a follow-up" : "Session started")
+        const abort = yield* Effect.acquireRelease(
+          Effect.sync(() => new AbortController()),
+          (controller, exit) => (Exit.isSuccess(exit) ? Effect.void : Effect.sync(() => controller.abort())),
+        )
+        const onRefused = (what: string, reason: string) => {
+          void runPromise(repo.log(id, "error", `Refused: ${truncate(what, 120)} — ${reason}`).pipe(Effect.ignore))
+        }
+        const sink = { repo, hub: deps.hub, closeInput: () => void Queue.endUnsafe(input), onEnd: deps.onEnd(id) }
+        const messages = deps.agent.query({
+          prompt: Stream.toAsyncIterable(Stream.fromQueue(input)),
+          options: sdkOptions({ session, abort, resume, tools: toolsFor(session), onRefused }),
+        })
+        yield* Stream.fromAsyncIterable(
+          abortOnReturn(messages, abort),
+          (cause) => new AdapterError({ adapter: "claude", operation: "query", message: errorMessage(cause), cause }),
+        ).pipe(Stream.runForEach((message) => handleMessage(id, message, sink).pipe(Effect.ignore)))
+      }),
+    ).pipe(
+      Effect.ensuring(Queue.end(input)),
+      Effect.catch((error) => deps.onFailure(id, error.message)),
+    )
+
+  return { runTurn }
+}

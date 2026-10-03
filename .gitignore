@@ -1,0 +1,6 @@
+.repos/effect
+node_modules/
+daemon/dist/
+app/.build/
+build/
+.DS_Store

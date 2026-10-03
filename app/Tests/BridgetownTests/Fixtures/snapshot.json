@@ -1,0 +1,269 @@
+{
+  "status": {
+    "paused": false,
+    "dryRun": false,
+    "slack": "ok",
+    "jev": "ok",
+    "grafanaMcp": "down",
+    "github": "blocked",
+    "lastPollAt": "2026-10-03T09:41:12.512Z",
+    "error": null
+  },
+  "actions": [
+    {
+      "id": "act_merge_1",
+      "kind": "merge",
+      "title": "Merge fix(app-admin): pin vite to 6.3",
+      "detail": "PR #3340 · CI green · review approved in #product-approvals",
+      "primaryLabel": "Merge",
+      "options": [],
+      "sessionId": "ses_running",
+      "alertId": "C0AUKD42N3U:1790933006.433649",
+      "url": null,
+      "inFlight": true,
+      "dismissCloses": true,
+      "createdAt": "2026-10-03T09:30:00.000Z"
+    },
+    {
+      "id": "act_review_1",
+      "kind": "review",
+      "title": "Agent finished without a fix",
+      "detail": "Root cause not found. Leads: the keeper's RPC timed out twice.",
+      "primaryLabel": "Close session",
+      "options": [],
+      "sessionId": "ses_closed",
+      "alertId": "C0AUKD42N3U:1790930000.000100",
+      "url": null,
+      "inFlight": false,
+      "dismissCloses": true,
+      "createdAt": "2026-10-03T08:10:00Z"
+    },
+    {
+      "id": "act_answer_1",
+      "kind": "answer",
+      "title": "Which environment should I check first?",
+      "detail": "The alert fired for both staging and prod.",
+      "primaryLabel": "Reply",
+      "options": ["prod", "staging"],
+      "sessionId": "ses_running",
+      "alertId": "C0AUKD42N3U:1790933006.433649",
+      "url": null,
+      "inFlight": false,
+      "dismissCloses": false,
+      "createdAt": "2026-10-03T09:35:00Z"
+    },
+    {
+      "id": "act_escalate_1",
+      "kind": "escalate",
+      "title": "Hugo asked you to review the fee change",
+      "detail": "PR #3351 in Merkl/monorepo",
+      "primaryLabel": "Open in Revv",
+      "options": [],
+      "sessionId": null,
+      "alertId": "D0INBOX:1790934000.000200",
+      "url": "revv://pr?host=nocturlab.ghe.com&repo=Merkl%2Fmonorepo&number=3351",
+      "inFlight": false,
+      "dismissCloses": false,
+      "createdAt": "2026-10-03T09:40:00Z"
+    }
+  ],
+  "sessions": [
+    {
+      "id": "ses_running",
+      "alertId": "C0AUKD42N3U:1790933006.433649",
+      "title": "merkl-admin v0.6.0 · Build failed",
+      "channelName": "alert-releases",
+      "status": "awaiting_merge",
+      "steps": [
+        { "key": "diagnose", "label": "Diagnose", "state": "done" },
+        { "key": "fix", "label": "Fix", "state": "done" },
+        { "key": "pr", "label": "PR", "state": "done" },
+        { "key": "ci", "label": "CI", "state": "done" },
+        { "key": "deploy", "label": "Deploy", "state": "pending" }
+      ],
+      "headline": "Ready to merge",
+      "tone": "waiting",
+      "resolution": null,
+      "rootCauseFound": true,
+      "activity": "Waiting for you to merge PR #3340",
+      "diagnosis": "vite 6.4 dropped `build.cssTarget`; the admin build relies on it.",
+      "outcome": "fix_pr",
+      "prUrl": "https://nocturlab.ghe.com/Merkl/monorepo/pull/3340",
+      "branch": "fix-bt-admin-vite",
+      "worktree": "/Users/alex/code/monorepo/.shared/worktrees/fix-bt-admin-vite",
+      "claudeSessionId": "4f1c2e9a-0d1b-4c55-9a77-3f0b1e2d9c10",
+      "model": "Opus",
+      "ciRounds": 1,
+      "costUsd": 1.42,
+      "slackThreadUrl": "https://merkl.slack.com/archives/C0AUKD42N3U/p1790933006433649",
+      "acceptsMessages": true,
+      "revvUrl": "revv://pr?host=nocturlab.ghe.com&repo=Merkl%2Fmonorepo&number=3340",
+      "reviewChannel": "product-approvals",
+      "reviewUrl": "https://merkl.slack.com/archives/C0PRODAPP/p1790933900000100",
+      "startedAt": "2026-10-03T09:02:00Z",
+      "updatedAt": "2026-10-03T09:30:00Z"
+    },
+    {
+      "id": "ses_closed",
+      "alertId": "C0AUKD42N3U:1790930000.000100",
+      "title": "keeper · RPC timeouts",
+      "channelName": "alert-engine",
+      "status": "closed",
+      "steps": [
+        { "key": "diagnose", "label": "Root cause?", "state": "failed" },
+        { "key": "fix", "label": "Fix", "state": "pending" },
+        { "key": "pr", "label": "No PR", "state": "pending" },
+        { "key": "ci", "label": "CI", "state": "pending" },
+        { "key": "deploy", "label": "Deploy", "state": "skipped" }
+      ],
+      "headline": "Closed · root cause not found",
+      "tone": "neutral",
+      "resolution": "Closed by you without a fix",
+      "rootCauseFound": false,
+      "activity": "Finished",
+      "diagnosis": null,
+      "outcome": "needs_human",
+      "prUrl": null,
+      "branch": null,
+      "worktree": null,
+      "claudeSessionId": null,
+      "model": "Sonnet",
+      "ciRounds": 0,
+      "costUsd": 0.31,
+      "slackThreadUrl": null,
+      "acceptsMessages": false,
+      "revvUrl": null,
+      "reviewChannel": null,
+      "reviewUrl": null,
+      "startedAt": "2026-10-03T08:00:00Z",
+      "updatedAt": "2026-10-03T08:12:00Z"
+    }
+  ],
+  "alerts": [
+    {
+      "id": "C0AUKD42N3U:1790933006.433649",
+      "channelId": "C0AUKD42N3U",
+      "channelName": "alert-releases",
+      "ts": "1790933006.433649",
+      "permalink": "https://merkl.slack.com/archives/C0AUKD42N3U/p1790933006433649",
+      "title": "merkl-admin v0.6.0 · Build failed",
+      "summary": "vite build failed in the admin app",
+      "source": "releases",
+      "receivedAt": "2026-10-03T09:01:00Z",
+      "triage": {
+        "decision": "auto",
+        "reason": "Build failure an agent can fix without prod access",
+        "jev": {
+          "actionable": 0.94,
+          "agentResolvable": 0.81,
+          "humanOnIt": 0.05,
+          "kind": "build_failure",
+          "kindConfidence": 0.9,
+          "depth": "standard",
+          "urgency": 2.1
+        }
+      },
+      "sessionId": "ses_running",
+      "feedback": "good",
+      "outcome": { "kind": "session", "headline": "Ready to merge", "sentence": null, "tone": "waiting" }
+    },
+    {
+      "id": "C0AUKD42N3U:1790930000.000100",
+      "channelId": "C0AUKD42N3U",
+      "channelName": "alert-engine",
+      "ts": "1790930000.000100",
+      "permalink": null,
+      "title": "keeper · RPC timeouts",
+      "summary": "Keeper RPC calls timing out on Arbitrum",
+      "source": "engine",
+      "receivedAt": "2026-10-03T07:59:00Z",
+      "triage": { "decision": "auto", "reason": "Runtime error with logs available", "jev": null },
+      "sessionId": "ses_closed",
+      "feedback": null,
+      "outcome": { "kind": "session", "headline": "Closed · root cause not found", "sentence": null, "tone": "neutral" }
+    },
+    {
+      "id": "C0UPTIME:1790920000.000300",
+      "channelId": "C0UPTIME",
+      "channelName": "alert-uptime",
+      "ts": "1790920000.000300",
+      "permalink": "https://merkl.slack.com/archives/C0UPTIME/p1790920000000300",
+      "title": "api.merkl.xyz · Recovered",
+      "summary": "Uptime check recovered",
+      "source": "uptime",
+      "receivedAt": "2026-10-03T05:13:20Z",
+      "triage": { "decision": "filtered", "reason": "Recovery notice", "jev": null },
+      "sessionId": null,
+      "feedback": null,
+      "outcome": { "kind": "filtered", "headline": "Filtered by a rule", "sentence": "Recovery notice", "tone": "neutral" }
+    },
+    {
+      "id": "C0UPTIME:1790910000.000400",
+      "channelId": "C0UPTIME",
+      "channelName": "alert-uptime",
+      "ts": "1790910000.000400",
+      "permalink": null,
+      "title": "status page · Slow response",
+      "summary": "p95 above 2s for 5 minutes",
+      "source": "uptime",
+      "receivedAt": "2026-10-03T02:26:40Z",
+      "triage": {
+        "decision": "suggest",
+        "reason": "Might need an agent, not sure it's actionable",
+        "jev": {
+          "actionable": 0.55,
+          "agentResolvable": 0.42,
+          "humanOnIt": 0.2,
+          "kind": "uptime_incident",
+          "kindConfidence": 0.7,
+          "depth": "quick",
+          "urgency": 1.0
+        }
+      },
+      "sessionId": null,
+      "feedback": "bad",
+      "outcome": {
+        "kind": "dismissed",
+        "headline": "Dismissed by you",
+        "sentence": "No agent ran. Jev suggested one, and you dismissed it.",
+        "tone": "neutral"
+      }
+    },
+    {
+      "id": "D0INBOX:1790934000.000200",
+      "channelId": "D0INBOX",
+      "channelName": "hugo",
+      "ts": "1790934000.000200",
+      "permalink": "https://merkl.slack.com/archives/D0INBOX/p1790934000000200",
+      "title": "Hugo: can you review the fee change?",
+      "summary": "PR #3351",
+      "source": "inbox",
+      "receivedAt": "2026-10-03T09:40:00Z",
+      "triage": { "decision": "escalate", "reason": "PR reviews always go to you", "jev": null },
+      "sessionId": null,
+      "feedback": null,
+      "outcome": { "kind": "waiting", "headline": "Waiting on you", "sentence": "Jev sent it to you personally. It's in Needs you.", "tone": "waiting" }
+    }
+  ],
+  "settings": {
+    "channels": [
+      { "id": "C0AUKD42N3U", "name": "alert-releases", "enabled": true },
+      { "id": "C0UPTIME", "name": "alert-uptime", "enabled": false }
+    ],
+    "thresholds": {
+      "autoActionable": 0.8,
+      "autoResolvable": 0.75,
+      "autoHumanOnItMax": 0.3,
+      "suggestActionable": 0.5,
+      "suggestResolvable": 0.4
+    },
+    "autoStart": true,
+    "inbox": true,
+    "maxConcurrent": 2,
+    "dryRun": false,
+    "pollSeconds": 30,
+    "monorepoPath": "~/code/monorepo",
+    "deploymentRepoPath": "~/code/deployment",
+    "quietHours": { "enabled": true, "start": "22:00", "end": "08:00" }
+  }
+}

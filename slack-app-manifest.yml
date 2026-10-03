@@ -1,0 +1,22 @@
+# Create at https://api.slack.com/apps → "Create New App" → "From an app manifest", pick the Merkl workspace,
+# install it to yourself, and copy the *User OAuth Token* (xoxp-…) into Bridgetown → Settings → Accounts.
+display_information:
+  name: Bridgetown
+  description: Hands Merkl alerts and requests to Claude agents, and posts their progress as you.
+  background_color: "#1d1d1f"
+oauth_config:
+  scopes:
+    user:
+      - channels:history   # read #alert-* channels and threads
+      - groups:history     # private alert channels (#alert-dev)
+      - im:history         # DM threads for inbox context
+      - mpim:history       # group DM threads
+      - search:read        # find mentions, team mentions and DMs across Slack
+      - usergroups:read    # which teams (@dev-product…) you belong to
+      - users:read         # names for inbox items
+      - reactions:read     # 👀 means someone is on it
+      - chat:write         # 🤖 progress in alert threads, review requests, approved replies
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

@@ -1,0 +1,29 @@
+{
+  "alert": {
+    "id": "C0UPTIME:1790910000.000400",
+    "channelId": "C0UPTIME",
+    "channelName": "alert-uptime",
+    "ts": "1790910000.000400",
+    "permalink": null,
+    "title": "status page · Slow response",
+    "summary": "p95 above 2s for 5 minutes",
+    "source": "uptime",
+    "receivedAt": "2026-10-03T02:26:40Z",
+    "triage": { "decision": "suggest", "reason": "Might need an agent, not sure it's actionable", "jev": null },
+    "sessionId": null,
+    "feedback": null,
+    "outcome": {
+      "kind": "dismissed",
+      "headline": "Dismissed by you",
+      "sentence": "No agent ran. Jev suggested one, and you dismissed it.",
+      "tone": "neutral"
+    }
+  },
+  "raw": ":warning: *status page* p95 &gt; 2s · <https://grafana.merkl.xyz/d/abc|dashboard> cc <!subteam^S0DEV|dev-product>",
+  "events": [
+    { "at": "2026-10-03T02:26:41Z", "text": "Suggested by Jev: Might need an agent, not sure it's actionable" },
+    { "at": "2026-10-03T02:40:00Z", "text": "Dismissed by you, no agent started" }
+  ],
+  "session": null,
+  "actions": []
+}
