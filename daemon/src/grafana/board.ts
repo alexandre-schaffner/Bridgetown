@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "effect"
+import { Context, Deferred, Effect, Layer } from "effect"
 import { errorMessage } from "../domain/errors.ts"
 import { now as nowIso } from "../domain/ids.ts"
 import { Hub } from "../hub.ts"
@@ -40,7 +40,12 @@ export interface Deploy {
 }
 
 export interface BoardsShape {
-  /** The board, from the cache when it's younger than 5 minutes. */
+  /**
+   * The board. Fresh from the cache when under 5 minutes old; an older one comes back at
+   * once while a new one is fetched; with none, waits for the fetch. One fetch per board
+   * at a time, and it outlives the request that started it, so closing the popover
+   * mid-fetch still leaves the board cached for the next open.
+   */
   readonly build: (spec: BoardSpec) => Effect.Effect<Board>
   /** Rebuilds the overview boards, so opening the popover never waits on a day of logs. */
   readonly warm: Effect.Effect<void>
@@ -140,20 +145,36 @@ export const BoardsLive = Layer.effect(Boards)(
         return { ...envelope, panels: allFailed ? [] : panels, deploys: deployList, error: allFailed ? (panels[0]?.error ?? GRAFANA_DOWN) : null }
       })
 
-    const refresh = (spec: BoardSpec) =>
+    const inflight = new Map<string, Deferred.Deferred<Board>>()
+
+    const refresh = (spec: BoardSpec): Effect.Effect<Board> =>
       Effect.gen(function* () {
-        const board = yield* fresh(spec)
-        // A failure is not cached, so the next open tries again.
-        if (board.error === null) cache.set(spec.key, { at: Date.now(), board })
-        return board
+        const running = inflight.get(spec.key)
+        if (running !== undefined) return yield* Deferred.await(running)
+        const done = yield* Deferred.make<Board>()
+        inflight.set(spec.key, done)
+        yield* fresh(spec).pipe(
+          Effect.tap((board) =>
+            Effect.sync(() => {
+              // A failure is not cached, so the next open tries again.
+              if (board.error === null) cache.set(spec.key, { at: Date.now(), board })
+            }),
+          ),
+          Effect.exit,
+          Effect.flatMap((exit) => Deferred.done(done, exit)),
+          Effect.ensuring(Effect.sync(() => inflight.delete(spec.key))),
+          Effect.forkDetach,
+        )
+        return yield* Deferred.await(done)
       })
 
     return {
       build: (spec) =>
         Effect.gen(function* () {
           const hit = cache.get(spec.key)
-          if (hit !== undefined && Date.now() - hit.at < CACHE_MS) return hit.board
-          return yield* refresh(spec)
+          if (hit === undefined) return yield* refresh(spec)
+          if (Date.now() - hit.at >= CACHE_MS) yield* Effect.forkDetach(refresh(spec))
+          return hit.board
         }),
       warm: Effect.forEach(OVERVIEW_VIEWS, (view) => refresh(overviewBoard(view, new Date())), { discard: true }),
     }

@@ -277,6 +277,9 @@ struct Loadable<Value> {
             return Loadable(value: try await fetch(), error: nil)
         } catch is CancellationError {
             return self
+        } catch let error as URLError where error.code == .cancelled {
+            // The view went away mid-request (the popover closed): not a failure.
+            return self
         } catch {
             return Loadable(value: value, error: value == nil ? error.userMessage : self.error)
         }

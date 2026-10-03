@@ -296,19 +296,24 @@ struct BoardMessage: View {
 // MARK: Loading
 
 /// Loads a board and keeps it fresh: refetched every minute while on screen (the daemon
-/// answers from its cache, so this costs Grafana nothing). A failed refetch keeps the
-/// last board.
+/// answers from its cache, so this costs Grafana nothing). Reopening the popover keeps
+/// the board it had; only a different key starts over. A failed refetch keeps the last
+/// board.
 struct BoardLoader<Content: View>: View {
     let key: String
     let fetch: () async throws -> Board?
     @ViewBuilder let content: (Loadable<Board?>) -> Content
 
     @ViewState private var board = Loadable<Board?>()
+    @ViewState private var loadedKey: String?
 
     var body: some View {
         content(board)
             .task(id: key) {
-                board = Loadable()
+                if loadedKey != key {
+                    board = Loadable()
+                    loadedKey = key
+                }
                 while !Task.isCancelled {
                     board = await board.reloaded(fetch)
                     try? await Task.sleep(for: .seconds(60))
