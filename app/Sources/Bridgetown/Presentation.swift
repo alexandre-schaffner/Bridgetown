@@ -23,36 +23,28 @@ extension Tone {
     var isQuiet: Bool { self == .neutral || self == .unknown }
 }
 
-// MARK: - Telemetry
+// MARK: - Grafana boards
 
-extension Tone {
-    /// Stacking order in the alert chart, bottom up: what matters sits on the baseline.
-    static let chartOrder: [Tone] = [.failure, .waiting, .live, .success, .neutral]
-
-    /// An alert's outcome, as the chart legend names it.
-    var metricLabel: String {
+extension Board.Panel.Unit {
+    /// "1.2k", "423 ms", "0.9/s", "567 MB".
+    func format(_ value: Double) -> String {
         switch self {
-        case .live: "Agent"
-        case .waiting: "Needs you"
-        case .success: "Resolved"
-        case .failure: "Failed"
-        case .neutral, .unknown: "Other"
+        case .ms:
+            return value >= 1000 ? "\((value / 1000).formatted(.number.precision(.fractionLength(1)))) s" : "\(Int(value.rounded())) ms"
+        case .per_s:
+            return "\(value.formatted(.number.precision(.significantDigits(1...2))))/s"
+        case .bytes:
+            return Int64(value).formatted(.byteCount(style: .memory))
+        case .count, .unknown:
+            return value.formatted(.number.notation(.compactName).precision(.significantDigits(1...3)))
         }
     }
+}
 
-    var metricHelp: String {
-        switch self {
-        case .live: "An agent is working on it"
-        case .waiting: "Waiting on you"
-        case .success: "Fixed and verified"
-        case .failure: "The agent failed"
-        case .neutral, .unknown: "Filtered, ignored, dismissed, or closed without a fix"
-        }
-    }
-
-    /// Neutral recedes in charts: a quiet gray under the coloured outcomes.
-    var chartColor: Color {
-        isQuiet ? Color.secondary.opacity(0.4) : color
+extension Board {
+    /// "per 30m": what one point of a count panel covers.
+    var stepLabel: String {
+        stepSeconds % 3600 == 0 ? "\(stepSeconds / 3600)h" : "\(max(1, stepSeconds / 60))m"
     }
 }
 
@@ -111,6 +103,56 @@ extension Session {
         default: state = ciRounds > 0 ? "Not passed" : "Not run"
         }
         return ciRounds > 0 ? "\(state) · \(rounds)" : state
+    }
+}
+
+// MARK: - Who has the next move
+
+extension Session {
+    /// Who an active session is waiting on. The tone can't tell: "In review" is live
+    /// (in flight, not on you) yet no agent is working on it.
+    enum Holder: CaseIterable {
+        case agent, you, reviewers, ci, deploy, queue
+
+        var label: String {
+            switch self {
+            case .agent: "working"
+            case .you: "on you"
+            case .reviewers: "in review"
+            case .ci: "on CI"
+            case .deploy: "deploying"
+            case .queue: "queued"
+            }
+        }
+
+        /// Something is progressing with no person involved: the agent, CI or a deploy.
+        var isMoving: Bool { self == .agent || self == .ci || self == .deploy }
+    }
+
+    /// Nil once the session is finished.
+    var holder: Holder? {
+        switch status {
+        case .preparing, .running: .agent
+        case .waiting, .awaiting_merge, .awaiting_release: .you
+        // CI green but the review request didn't go out: the daemon hands that to you.
+        case .ci: reviewChannel != nil ? .reviewers : tone == .waiting ? .you : .ci
+        case .deploying: .deploy
+        case .queued: .queue
+        case .resolved, .closed, .failed, .stopped, .unknown: nil
+        }
+    }
+
+    /// "1 working · 2 in review", in `Holder` order, empty groups left out; the first
+    /// `limit` groups when space is short.
+    static func breakdown(_ sessions: [Session], limit: Int = .max) -> String {
+        let holders = sessions.compactMap(\.holder)
+        return Holder.allCases
+            .compactMap { h in
+                let n = holders.filter { $0 == h }.count
+                return n > 0 ? "\(n) \(h.label)" : nil
+            }
+            .prefix(limit)
+            .joined(separator: " · ")
     }
 }
 

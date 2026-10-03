@@ -3,6 +3,8 @@ import { Cause, Data, Effect, Stream } from "effect"
 import { Actions } from "../actions/actions.ts"
 import { VERSION } from "../config.ts"
 import { type DaemonError, errorMessage, NotFound, statusOf } from "../domain/errors.ts"
+import { Boards } from "../grafana/board.ts"
+import { alertBoard, OVERVIEW_VIEWS, type OverviewView, overviewBoard } from "../grafana/boards.ts"
 import { Hub } from "../hub.ts"
 import { AlertPipeline } from "../pipeline/alerts.ts"
 import { SessionRunner } from "../sessions/runner.ts"
@@ -11,7 +13,9 @@ import { FeedbackBody, mergeSettings, MessageBody, pathId, PauseBody, readBody, 
 import { snapshotEvents, SSE_TIMING, type SseTiming } from "./sse.ts"
 import { alertDetail, snapshot } from "./views.ts"
 
-type Services = Store | Hub | Actions | AlertPipeline | SessionRunner
+type Services = Store | Hub | Actions | AlertPipeline | SessionRunner | Boards
+
+const isOverviewView = (value: string): value is OverviewView => OVERVIEW_VIEWS.some((view) => view === value)
 
 const TRANSCRIPT_LIMIT = 200
 
@@ -93,6 +97,18 @@ const getRoute = (path: string, options: ServerOptions) =>
       const found = yield* alertDetail(yield* pathId(detail[1]))
       if (found === undefined) return yield* new NotFound({ message: "unknown alert" })
       return json(found)
+    }
+    const overview = /^\/boards\/([a-z]+)$/.exec(path)?.[1]
+    if (overview !== undefined) {
+      if (!isOverviewView(overview)) return yield* new NotFound({ message: "unknown board" })
+      return json(yield* (yield* Boards).build(overviewBoard(overview, new Date())))
+    }
+    const board = /^\/alerts\/([^/]+)\/board$/.exec(path)
+    if (board !== null) {
+      const alert = yield* (yield* Store).getAlert(yield* pathId(board[1]))
+      if (alert === undefined) return yield* new NotFound({ message: "unknown alert" })
+      const spec = alertBoard(alert, new Date())
+      return json(spec === null ? null : yield* (yield* Boards).build(spec))
     }
     const transcript = /^\/sessions\/([^/]+)\/transcript$/.exec(path)
     if (transcript !== null) {

@@ -68,6 +68,7 @@ struct AlertDetailView: View {
         VStack(alignment: .leading, spacing: 18) {
             summary(alert, now: now)
             DetailSection(title: "How it ended") { howItEnded(alert, now: now) }
+            GrafanaSection(alertId: alert.id)
             DetailSection(title: "Jev's call") { jevsCall(alert) }
             if !events.isEmpty {
                 DetailSection(title: "History") { AlertHistory(events: events) }

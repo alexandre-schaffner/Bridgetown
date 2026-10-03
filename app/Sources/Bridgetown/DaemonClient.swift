@@ -50,6 +50,9 @@ struct DaemonClient: Sendable {
 
     private static let rest = session(timeout: 15)
 
+    /// A Grafana board the daemon hasn't cached yet runs a day of LogsQL stats (up to ~45s a query).
+    private static let boards = session(timeout: 120)
+
     /// Resolving can merge a PR or cut a release; the daemon answers when that's done.
     private static let slow = session(timeout: 300)
 
@@ -77,6 +80,16 @@ struct DaemonClient: Sendable {
 
     func alertDetail(id: String) async throws -> AlertDetail {
         try await get("/alerts/\(escape(id))")
+    }
+
+    /// `incidents` or `infra`.
+    func board(view: String) async throws -> Board {
+        try await get("/boards/\(escape(view))", session: Self.boards)
+    }
+
+    /// Nil when nothing in Grafana tracks what the alert is about.
+    func alertBoard(id: String) async throws -> Board? {
+        try await get("/alerts/\(escape(id))/board", session: Self.boards)
     }
 
     func resolve(actionId: String, response: String?) async throws -> Snapshot {
@@ -159,8 +172,8 @@ struct DaemonClient: Sendable {
         return r
     }
 
-    private func get<T: Decodable>(_ path: String) async throws -> T {
-        let (data, response) = try await Self.rest.data(for: makeRequest(path, method: "GET"))
+    private func get<T: Decodable>(_ path: String, session: URLSession = Self.rest) async throws -> T {
+        let (data, response) = try await session.data(for: makeRequest(path, method: "GET"))
         try Self.check(response, body: data)
         return try JSON.decoder().decode(T.self, from: data)
     }

@@ -2,6 +2,8 @@ import { Layer } from "effect"
 import { ActionsLive } from "./actions/actions.ts"
 import { ActionQueueLive } from "./actions/queue.ts"
 import { appSupportDir, type Env } from "./config.ts"
+import { BoardsLive } from "./grafana/board.ts"
+import { Grafana, GrafanaLive } from "./grafana/client.ts"
 import { HealthLive } from "./health.ts"
 import { HubLive } from "./hub.ts"
 import { AlertPipelineLive } from "./pipeline/alerts.ts"
@@ -20,19 +22,19 @@ import { Store, StoreLive } from "./store/store.ts"
 import { Jev, JevLive } from "./triage/jev.ts"
 
 /**
- * Store, Slack, Jev, agent SDK, GitHub → Hub → the record keepers (sessions, cards, Slack threads,
- * identity, health) → asks → runner → shipper → alert pipeline → inbox, actions → scheduler.
+ * Store, Slack, Jev, agent SDK, GitHub, Grafana → Hub → the record keepers (sessions, cards, Slack threads,
+ * identity, health, Grafana boards) → asks → runner → shipper → alert pipeline → inbox, actions → scheduler.
  */
 export const appLayer = (env: Env) =>
   appLayerWith(
     env,
-    Layer.mergeAll(StoreLive(appSupportDir()), SlackClientLive(env.slackToken), JevLive(env.typesafeKey, env.jevModel), AgentLive, GitHubLive),
+    Layer.mergeAll(StoreLive(appSupportDir()), SlackClientLive(env.slackToken), JevLive(env.typesafeKey, env.jevModel), AgentLive, GitHubLive, GrafanaLive),
   )
 
-/** The app over any Store, Slack client, Jev, agent SDK and GitHub: tests and the mock daemon pass fakes for the outside world. */
-export const appLayerWith = <E>(env: Env, base: Layer.Layer<Store | SlackClient | Jev | Agent | GitHub, E>) => {
+/** The app over any Store, Slack client, Jev, agent SDK, GitHub and Grafana: tests and the mock daemon pass fakes for the outside world. */
+export const appLayerWith = <E>(env: Env, base: Layer.Layer<Store | SlackClient | Jev | Agent | GitHub | Grafana, E>) => {
   const withHub = HubLive(env).pipe(Layer.provideMerge(base))
-  const records = Layer.mergeAll(SlackThreadLive, SessionRepoLive, ActionQueueLive, SlackMeLive, HealthLive).pipe(Layer.provideMerge(withHub))
+  const records = Layer.mergeAll(SlackThreadLive, SessionRepoLive, ActionQueueLive, SlackMeLive, HealthLive, BoardsLive).pipe(Layer.provideMerge(withHub))
   const withAsks = AsksLive.pipe(Layer.provideMerge(records))
   const withRunner = SessionRunnerLive.pipe(Layer.provideMerge(withAsks))
   const withShipper = ShipperLive.pipe(Layer.provideMerge(withRunner))

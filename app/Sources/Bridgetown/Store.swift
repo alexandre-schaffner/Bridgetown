@@ -216,6 +216,16 @@ final class Store {
         return try await client.alertDetail(id: id)
     }
 
+    func board(view: String) async throws -> Board {
+        guard let client else { throw DaemonError.notConnected }
+        return try await client.board(view: view)
+    }
+
+    func alertBoard(alertId: String) async throws -> Board? {
+        guard let client else { throw DaemonError.notConnected }
+        return try await client.alertBoard(id: alertId)
+    }
+
     func transcript(for session: Session) async throws -> [TranscriptEntry] {
         guard let client else { throw DaemonError.notConnected }
         return try await client.transcript(sessionId: session.id)

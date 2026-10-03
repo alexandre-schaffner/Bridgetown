@@ -126,3 +126,32 @@ import Testing
         #expect(!settings[channel: "C0UPTIME"])
     }
 }
+
+@Suite struct BoardDecoding {
+    private let json = """
+    {"title":"API · /v4/opportunities","from":"2026-10-04T03:00:00.000Z","to":"2026-10-04T12:00:00.000Z",
+     "stepSeconds":720,"marker":"2026-10-04T09:00:00.000Z","fetchedAt":"2026-10-04T12:00:01.000Z","error":null,
+     "panels":[{"id":"api_5xx","title":"API 5xx","unit":"count","series":[{"label":"API 5xx","points":[[1791075600,3],[1791076320,0]]}],
+                "latest":0,"link":"https://grafana.internal.merkl.xyz/d/pihjbxm?from=1&to=2","error":null},
+               {"id":"api_p99","title":"API p99 latency","unit":"ms","series":[],"latest":null,"link":"x","error":"timed out"}],
+     "deploys":[{"at":"2026-10-04T08:41:00.000Z","image":"merkl-api","version":"v1.35.11","stage":"engine","status":"deployed"}]}
+    """
+
+    @Test func decodesTheContract() throws {
+        let board = try JSON.decoder().decode(Board.self, from: Data(json.utf8))
+        #expect(board.panels.count == 2)
+        #expect(board.panels[0].series[0].points[0] == [1791075600, 3])
+        #expect(board.panels[1].error == "timed out")
+        #expect(board.deploys.first?.status == .deployed)
+        #expect(board.stepLabel == "12m")
+    }
+
+    @Test func nullMeansNoBoard() throws {
+        #expect(try JSON.decoder().decode(Board?.self, from: Data("null".utf8)) == nil)
+    }
+
+    @Test func unitsFormatForTheirKind() {
+        #expect(Board.Panel.Unit.ms.format(423.4) == "423 ms")
+        #expect(Board.Panel.Unit.ms.format(2300) == "2.3 s" || Board.Panel.Unit.ms.format(2300) == "2,3 s")
+    }
+}

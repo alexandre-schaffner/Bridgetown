@@ -26,10 +26,7 @@ struct JobRow: View {
 
     private var content: some View {
         HStack(alignment: .top, spacing: 8) {
-            Circle()
-                .fill(session.tone.color)
-                .frame(width: 7, height: 7)
-                .modifier(Pulse(active: session.tone == .live))
+            HolderDot(session: session)
                 .padding(.top, 5)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -78,5 +75,27 @@ struct JobRow: View {
         let detail = session.statusDetail
         if !detail.isEmpty, !session.headline.localizedCaseInsensitiveContains(detail) { parts.append(detail) }
         return parts.joined(separator: " · ")
+    }
+}
+
+/// Filled and pulsing while something moves (agent, CI, deploy); filled orange when it's
+/// on you; a ring while it waits on someone else (reviewers, the queue).
+private struct HolderDot: View {
+    let session: Session
+
+    var body: some View {
+        let holder = session.holder
+        Group {
+            if holder?.isMoving == true || holder == .you {
+                Circle()
+                    .fill(session.tone.color)
+                    .modifier(Pulse(active: holder?.isMoving == true))
+            } else {
+                Circle()
+                    .strokeBorder(holder == .reviewers ? Color.accentColor : Color.secondary, lineWidth: 1.5)
+            }
+        }
+        .frame(width: 7, height: 7)
+        .help(holder.map { "\($0.label.prefix(1).uppercased())\($0.label.dropFirst())" } ?? "")
     }
 }

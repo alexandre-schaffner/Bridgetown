@@ -28,6 +28,8 @@ All timestamps are ISO-8601 strings. Every nullable field is always present, set
 | GET | `/state` | | `Snapshot` |
 | GET | `/events` | | SSE stream. Every change sends `event: snapshot` with `data: <Snapshot JSON>` (at most one per 150ms: a burst shares snapshots, and the last one is always read after the last change). The first message arrives on connect. A `: ping` comment is sent every 15s. |
 | GET | `/sessions/:id/transcript` | | `TranscriptEntry[]` (last 200) |
+| GET | `/boards/:view` | | `Board`: `incidents` (API 5xx and p99, engine and job errors) or `infra` (RPC errors, failed job pods, OOM kills, Postgres backends waiting), last 24h. Rebuilt every 5 minutes in the background. |
+| GET | `/alerts/:id/board` | | `Board` picked from what the alert is about (an API route, a release image, a chain, its kind), 6h either side of it; `null` when nothing in Grafana tracks it (a DM). |
 | GET | `/alerts/:id` | | `AlertDetail` — the full message, its history, its session (if any) and open actions. `:id` is URL-encoded (`C0AUKD42N3U%3A1790933006.433649`). |
 | POST | `/actions/:id/resolve` | `{ "response": string \| null }` | `Snapshot`. `409` while the same action is already being resolved (`inFlight`). Merge and release are idempotent per session: a repeat never merges or tags twice. |
 | POST | `/actions/:id/dismiss` | `{}` | `Snapshot`. When `dismissCloses` is true, the session is recorded as closed. |
@@ -56,15 +58,7 @@ type Snapshot = {
 }
 
 type Metrics = {
-  since: string          // start of the oldest hour in the window
-  alertsByHour: Array<{  // 24 buckets, oldest first, the current hour last
-    at: string           // start of the hour
-    live: number         // each alert counts once, by its outcome's tone
-    waiting: number
-    success: number
-    neutral: number
-    failure: number
-  }>
+  since: string          // start of the window: 24h ago
   sessions: {            // sessions started in the window
     started: number
     resolved: number
@@ -72,6 +66,38 @@ type Metrics = {
     closed: number       // closed or stopped without a verified fix
     costUsd: number
   }
+}
+
+// A small Grafana dashboard: `GET /boards/:view` and `GET /alerts/:id/board`. Read through the
+// local grafana MCP container (read-only tools only); the daemon never calls Grafana itself.
+type Board = {
+  title: string          // "Incidents", "API · /v4/opportunities", "merkl-api", "Chain 42161"…
+  from: string           // the window
+  to: string
+  stepSeconds: number    // one point per step; count panels count per step
+  marker: string | null  // when the alert fired, for an alert's board
+  panels: Panel[]
+  deploys: Deploy[]      // newest first: the window (72h on the overview and for a release's image)
+  fetchedAt: string      // boards are cached up to 5 minutes
+  error: string | null   // nothing could be fetched (Grafana MCP down…); panels is then []
+}
+
+type Panel = {
+  id: string
+  title: string
+  unit: "count" | "ms" | "per_s" | "bytes"
+  series: Array<{ label: string, points: Array<[number, number]> }>  // [unix seconds, value], oldest first
+  latest: number | null  // sum of each series' last point (e.g. all pods across versions)
+  link: string           // the Grafana dashboard over the board's window, for the browser
+  error: string | null   // this panel's query failed; the others still show
+}
+
+type Deploy = {
+  at: string
+  image: string          // "merkl-api"
+  version: string        // "v1.35.11"
+  stage: string          // "engine", "front-production", or where it failed
+  status: "deployed" | "failed"   // deployed = a prod stage succeeded; a green build alone is not a deploy
 }
 
 type Status = {

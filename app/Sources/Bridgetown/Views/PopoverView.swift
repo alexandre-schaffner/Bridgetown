@@ -83,7 +83,7 @@ private struct OverviewPane: View {
                             title: "Agents",
                             count: running.count,
                             tint: .accentColor,
-                            trailing: "\(running.filter { $0.tone == .live }.count) working · limit \(snap.settings.maxConcurrent)"
+                            trailing: Session.breakdown(running)
                         )
                         VStack(spacing: 0) {
                             ForEach(running) { JobRow(session: $0, now: now) }

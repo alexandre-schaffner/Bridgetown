@@ -5,6 +5,7 @@ import { Effect, Layer, ManagedRuntime } from "effect"
 import type { Env } from "../../src/config.ts"
 import { MissingCredential } from "../../src/domain/errors.ts"
 import type { JevVerdict } from "../../src/domain/model.ts"
+import { Grafana, type GrafanaShape } from "../../src/grafana/client.ts"
 import { appLayerWith } from "../../src/layers.ts"
 import { Agent, AgentLive, type AgentShape } from "../../src/sessions/agent.ts"
 import { GitHub, GitHubLive, type GitHubShape } from "../../src/ship/github.ts"
@@ -33,12 +34,20 @@ const noJev: JevShape = {
   judgeInbox: () => Effect.fail(new MissingCredential({ service: "jev", message: "no TypeSafe API key" })),
 }
 
+/** Grafana with no data: every query answers with no series and no rows. */
+export const noGrafana: GrafanaShape = {
+  prom: () => Effect.succeed([]),
+  logStats: () => Effect.succeed([]),
+  logRows: () => Effect.succeed([]),
+}
+
 export interface WorldOptions {
   readonly slack?: SlackClientShape
   readonly jev?: JevShape
   readonly dryRun?: boolean
   readonly agent?: AgentShape
   readonly github?: GitHubShape
+  readonly grafana?: GrafanaShape
   /** An existing `BRIDGETOWN_HOME` (a store an older daemon wrote); a fresh temp dir otherwise. */
   readonly home?: string
 }
@@ -54,6 +63,7 @@ export const makeWorld = (options: WorldOptions = {}) => {
     Layer.succeed(Jev)(options.jev ?? noJev),
     options.agent === undefined ? AgentLive : Layer.succeed(Agent)(options.agent),
     options.github === undefined ? GitHubLive : Layer.succeed(GitHub)(options.github),
+    Layer.succeed(Grafana)(options.grafana ?? noGrafana),
   )
   return ManagedRuntime.make(appLayerWith(env, base))
 }

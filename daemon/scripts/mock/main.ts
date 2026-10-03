@@ -10,6 +10,7 @@
  *   MOCK_EXTRA=1 …          # the running agent also asks a question (answer card with quick replies)
  *   MOCK_GITHUB=blocked …   # start with GHE refusing this network; `kill -USR1 <pid>` toggles it
  *   MOCK_RELEASE_HOLD_SECONDS=600 …  # how long the release in flight at startup takes
+ *   MOCK_GRAFANA=live …     # real prod charts through the local grafana MCP (read-only) instead of fake series
  *
  * Then: make dev-app (BRIDGETOWN_ATTACH=1 BRIDGETOWN_API_TOKEN=dev swift run --package-path app Bridgetown)
  */
@@ -31,6 +32,7 @@ import { AlertPipeline } from "../../src/pipeline/alerts.ts"
 import { Agent } from "../../src/sessions/agent.ts"
 import { SessionRepo } from "../../src/sessions/repo.ts"
 import { SessionRunner } from "../../src/sessions/runner.ts"
+import { Grafana, GrafanaLive } from "../../src/grafana/client.ts"
 import { GitHub } from "../../src/ship/github.ts"
 import { Shipper } from "../../src/ship/shipper.ts"
 import { SlackClient } from "../../src/slack/client.ts"
@@ -38,6 +40,7 @@ import { Store, StoreLive } from "../../src/store/store.ts"
 import { Jev } from "../../src/triage/jev.ts"
 import { scriptedAgent } from "./agent.ts"
 import { fakeJev, fakeSlack, makeFakeGitHub } from "./fakes.ts"
+import { fakeGrafana } from "./grafana.ts"
 import { buildFixtures, IN_FLIGHT_TAG } from "./fixtures.ts"
 import { scriptFor } from "./scripts.ts"
 
@@ -86,6 +89,8 @@ const layer = appLayerWith(
     Layer.succeed(Jev)(fakeJev),
     Layer.succeed(Agent)(agent),
     Layer.succeed(GitHub)(fake.github),
+    // MOCK_GRAFANA=live reads real prod charts through the local grafana MCP (read-only).
+    process.env.MOCK_GRAFANA === "live" ? GrafanaLive : Layer.succeed(Grafana)(fakeGrafana()),
   ),
 )
 
@@ -134,6 +139,8 @@ const program = Effect.gen(function* () {
     for (const entry of entries) yield* store.appendTranscript(sessionId, entry)
   }
   yield* hub.patchStatus({ grafanaMcp: "up", lastPollAt: now() })
+  // Live Grafana: the real probe decides, so a stopped container shows as down.
+  if (process.env.MOCK_GRAFANA === "live") yield* health.probeGrafana
   yield* health.probeGithub
   yield* serve(server, { token })
 

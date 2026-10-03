@@ -20,6 +20,7 @@ struct SessionDetailView: View {
                         origin
                         summary
                     }
+                    GrafanaSection(alertId: session.alertId)
                     if let jev = alert?.triage.jev {
                         DetailSection(title: "Jev verdict") { JevScores(jev: jev) }
                     } else if let alert {

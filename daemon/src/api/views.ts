@@ -102,19 +102,7 @@ export const snapshot = Effect.gen(function* () {
   const of = (id: string | null) => (id === null ? undefined : sessions.get(id))
   const openCards = (alertId: string) => actions.filter((a) => a.alertId === alertId).length
 
-  const at = new Date()
-  const since = windowStart(at).toISOString()
-  const daySessions = yield* store.sessionsUpdatedSince(since)
-  const dayAlerts = yield* store.alertsSince(since)
-  const byId = yield* sessionsById([...sessions.values(), ...daySessions], dayAlerts.map((a) => a.sessionId))
-  const metrics = metricsOf(
-    at,
-    dayAlerts.map((alert) => ({
-      receivedAt: alert.receivedAt,
-      tone: alertOutcome(alert, alert.sessionId === null ? undefined : byId.get(alert.sessionId), openCards(alert.id)).tone,
-    })),
-    daySessions,
-  )
+  const metrics = metricsOf(new Date(), yield* store.sessionsUpdatedSince(windowStart(new Date()).toISOString()))
   return {
     status: { ...status, dryRun },
     actions: actions.map((action) => actionView(action, of(action.sessionId), inFlight)),

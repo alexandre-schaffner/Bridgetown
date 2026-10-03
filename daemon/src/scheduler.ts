@@ -1,5 +1,6 @@
 import { Context, Duration, Effect, Layer, Schedule } from "effect"
 import { Health } from "./health.ts"
+import { Boards } from "./grafana/board.ts"
 import { Hub } from "./hub.ts"
 import { AlertPipeline } from "./pipeline/alerts.ts"
 import { Inbox } from "./pipeline/inbox.ts"
@@ -36,6 +37,7 @@ export const SchedulerLive = Layer.effect(Scheduler)(
     const inbox = yield* Inbox
     const shipper = yield* Shipper
     const runner = yield* SessionRunner
+    const boards = yield* Boards
 
     // Sessions cannot fetch or push while GHE refuses this network, so they wait in the queue.
     const scheduleTick = Effect.gen(function* () {
@@ -57,6 +59,7 @@ export const SchedulerLive = Layer.effect(Scheduler)(
           yield* loop("inbox", inbox.poll, spacedBy(seconds((poll) => Math.max(30, poll * 2))))
           yield* loop("schedule", scheduleTick, Schedule.spaced("3 seconds"))
           yield* loop("grafana", health.probeGrafana, Schedule.spaced("60 seconds"), "60 seconds")
+          yield* loop("boards", boards.warm, Schedule.spaced("300 seconds"))
           return yield* Effect.never
         }),
       ),

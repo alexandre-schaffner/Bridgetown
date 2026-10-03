@@ -33,32 +33,8 @@ struct Snapshot: Codable, Sendable, Equatable {
 
 // MARK: - Telemetry
 
-/// The last 24 hours, counted by the daemon from its whole store (the snapshot's
-/// `alerts` are only the newest 30).
+/// The overview's numbers over the last day, counted by the daemon from its whole store.
 struct Telemetry: Codable, Sendable, Equatable {
-    /// One hour of alerts, each counted once by its outcome's tone.
-    struct Bucket: Codable, Sendable, Equatable, Identifiable {
-        var at: Date
-        var live: Int
-        var waiting: Int
-        var success: Int
-        var neutral: Int
-        var failure: Int
-
-        var id: Date { at }
-        var total: Int { live + waiting + success + neutral + failure }
-
-        func count(_ tone: Tone) -> Int {
-            switch tone {
-            case .live: live
-            case .waiting: waiting
-            case .success: success
-            case .failure: failure
-            case .neutral, .unknown: neutral
-            }
-        }
-    }
-
     /// Sessions started in the window.
     struct Sessions: Codable, Sendable, Equatable {
         var started: Int
@@ -70,13 +46,60 @@ struct Telemetry: Codable, Sendable, Equatable {
     }
 
     var since: Date
-    /// Oldest first, the current hour last.
-    var alertsByHour: [Bucket]
     var sessions: Sessions
+}
 
-    var alertCount: Int { alertsByHour.reduce(0) { $0 + $1.total } }
+// MARK: - Grafana boards
 
-    func alertCount(_ tone: Tone) -> Int { alertsByHour.reduce(0) { $0 + $1.count(tone) } }
+/// A small Grafana dashboard (`GET /boards/:view`, `GET /alerts/:id/board`), read by the
+/// daemon through the local grafana MCP container.
+struct Board: Codable, Sendable, Equatable {
+    struct Panel: Codable, Sendable, Equatable, Identifiable {
+        enum Unit: String, LenientStringEnum { case count, ms, per_s, bytes, unknown }
+
+        struct Series: Codable, Sendable, Equatable {
+            var label: String
+            /// `[unix seconds, value]`, oldest first.
+            var points: [[Double]]
+        }
+
+        var id: String
+        var title: String
+        var unit: Unit
+        var series: [Series]
+        /// The sum of each series' last point.
+        var latest: Double?
+        /// The Grafana dashboard over the board's window, opened in the browser.
+        var link: String
+        /// This panel's query failed; the others still show.
+        var error: String?
+    }
+
+    struct Deploy: Codable, Sendable, Equatable, Identifiable {
+        /// `deployed` = a prod stage succeeded; a green build alone is not a deploy.
+        enum Status: String, LenientStringEnum { case deployed, failed, unknown }
+
+        var at: Date
+        var image: String
+        var version: String
+        var stage: String
+        var status: Status
+
+        var id: String { "\(image)@\(version)@\(stage)@\(at.timeIntervalSince1970)" }
+    }
+
+    var title: String
+    var from: Date
+    var to: Date
+    var stepSeconds: Int
+    /// When the alert fired, on an alert's board.
+    var marker: Date?
+    var panels: [Panel]
+    /// Newest first.
+    var deploys: [Deploy]
+    var fetchedAt: Date
+    /// Nothing could be fetched (Grafana MCP down…); `panels` is then empty.
+    var error: String?
 }
 
 struct Status: Codable, Sendable, Equatable {
