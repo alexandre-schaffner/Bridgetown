@@ -19,6 +19,7 @@ struct LinkButton: View {
             }
         }
         .buttonStyle(.link)
+        .foregroundStyle(Ink.blue)
         .help(help ?? url)
     }
 }

@@ -14,7 +14,7 @@ import Testing
     }
 
     @Test func greenCheckOnlyForResolved() throws {
-        for status in [Session.State.queued, .running, .waiting, .ci, .awaiting_merge, .deploying, .closed, .failed, .stopped] {
+        for status in [Session.State.queued, .running, .waiting, .critiquing, .ci, .awaiting_merge, .deploying, .closed, .failed, .stopped] {
             // Even if a daemon bug sent success for these, no check without `resolved`.
             let glyph = OutcomeGlyph(outcome(.session, .success), session: try session(status))
             #expect(glyph.symbol != "checkmark.circle.fill", "status \(status)")
@@ -35,14 +35,37 @@ import Testing
         #expect(OutcomeGlyph(outcome(.dismissed), session: nil).dimmed)
         #expect(!OutcomeGlyph(outcome(.waiting, .waiting), session: nil).dimmed)
         #expect(OutcomeGlyph(outcome(.waiting, .waiting), session: nil).symbol != OutcomeGlyph(outcome(.suggested), session: nil).symbol)
+        // A teammate's alert is worth reading, but it is neither a success nor waiting on you.
+        let teammate = OutcomeGlyph(outcome(.teammate), session: nil)
+        #expect(!teammate.dimmed)
+        #expect(teammate.symbol == "person.fill")
     }
 
     @Test func ciTextComesFromTheStep() throws {
         var s = try session(.ci)
         #expect(s.ciText == "Passed · 1 round")
-        s.steps[3].state = .skipped
+        s.steps[4].state = .skipped
         s.ciRounds = 0
         #expect(s.ciText == "Not needed")
+    }
+
+    @Test func critiqueTextComesFromTheStepAndTheLastReview() throws {
+        var s = try session(.critiquing)
+        s.steps[3].state = .current
+        s.critiqueRounds = 1
+        #expect(s.critiqueText == "Reviewing · round 2")
+        #expect(s.holder == .agent)
+        s.status = .ci
+        s.steps[3].state = .done
+        s.critique = Critique(reviewer: .codex, passed: true, blocking: 0, dropped: 2)
+        #expect(s.critiqueText == "Passed · 1 round of fixes · 2 dropped by Jev")
+        // Sent back: the step is still current, but nobody is reviewing.
+        s.status = .running
+        s.steps[3].state = .current
+        s.critique = Critique(reviewer: .codex, passed: false, blocking: 1, dropped: 1)
+        #expect(s.critiqueText == "1 blocking finding · 1 dropped by Jev · agent fixing")
+        s.steps[3].state = .skipped
+        #expect(s.critiqueText == "Not run")
     }
 }
 
@@ -157,6 +180,7 @@ import Testing
         #expect(Format.channel("alert-dev") == "#alert-dev")
         #expect(Format.channel("DM") == "DM")
         #expect(Format.channel("group DM") == "group DM")
+        #expect(Format.channel("Grafana") == "Grafana")
     }
 }
 

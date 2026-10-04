@@ -41,7 +41,7 @@ struct AlertDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             DetailTopBar(title: alert?.title ?? "", lineLimit: 2)
-            Divider()
+            Hairline()
             if let alert, detail.value != nil || detail.error != nil {
                 TimelineView(.periodic(from: .now, by: 30)) { context in
                     PaneScrollView {
@@ -50,7 +50,7 @@ struct AlertDetailView: View {
                             .padding(.vertical, 14)
                     }
                 }
-                Divider()
+                Hairline()
                 bottomBar(alert)
             } else if let error = detail.error {
                 failure(error)
@@ -78,7 +78,7 @@ struct AlertDetailView: View {
                     ClampedText(
                         text: AttributedString(Mrkdwn.plain(raw)),
                         lineLimit: 8,
-                        font: .system(size: 10.5, design: .monospaced),
+                        font: .geistMono(10.5),
                         lineSpacing: 1.5,
                         moreLabel: "Show full message",
                         lessLabel: "Show less",
@@ -89,7 +89,7 @@ struct AlertDetailView: View {
             }
             if let error = detail.error {
                 Text("Couldn't load the full alert · \(error)")
-                    .font(.system(size: 11))
+                    .font(.geist(11))
                     .foregroundStyle(.tertiary)
             }
         }
@@ -100,7 +100,7 @@ struct AlertDetailView: View {
             StatusLine(headline: alert.outcome.headline, tone: alert.outcome.tone, size: 13)
             if !alert.summary.isEmpty {
                 Text(alert.summary)
-                    .font(.system(size: 12))
+                    .font(.geist(12))
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -109,7 +109,7 @@ struct AlertDetailView: View {
             HStack(spacing: 8) {
                 ChannelChip(name: alert.channelName)
                 Text(Format.ago(alert.receivedAt, now: now))
-                    .font(.system(size: 11))
+                    .font(.geist(11))
                     .monospacedDigit()
                     .foregroundStyle(.tertiary)
                     .help(alert.receivedAt.formatted(date: .abbreviated, time: .shortened))
@@ -129,7 +129,7 @@ struct AlertDetailView: View {
             // Every outcome but `session` means no agent ran. The daemon's sentence says
             // what happened instead; without one, say just that.
             Text(alert.outcome.sentence.flatMap { $0.isEmpty ? nil : $0 } ?? Self.noSessionLine(alert.outcome.kind))
-                .font(.system(size: 12, weight: .medium))
+                .font(.geist(12, .medium))
                 .foregroundStyle(.primary)
                 .lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
@@ -155,10 +155,10 @@ struct AlertDetailView: View {
         return VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(byRule ? "Decided by a rule, no model call" : triage.decision.callLabel)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.geist(12, .medium))
                 if showsReason {
                     Text(triage.reason)
-                        .font(.system(size: 12))
+                        .font(.geist(12))
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
@@ -167,12 +167,12 @@ struct AlertDetailView: View {
             if let jev = triage.jev {
                 JevScores(jev: jev)
                 Text("Kind: \(jev.kindLabel) · Depth: \(jev.depth.rawValue)")
-                    .font(.system(size: 11))
+                    .font(.geist(11))
                     .foregroundStyle(.tertiary)
                     .help("Kind confidence \(Format.percent(jev.kindConfidence)) · urgency \(jev.urgencyLabel) of 3")
             } else if !byRule {
                 Text("No scores from Jev for this one")
-                    .font(.system(size: 11))
+                    .font(.geist(11))
                     .foregroundStyle(.tertiary)
             }
             FeedbackRow(alert: alert)
@@ -186,11 +186,11 @@ struct AlertDetailView: View {
             Button {
                 SystemActions.open(alert.permalink)
             } label: {
-                Label("Open in Slack", systemImage: "arrow.up.right.square")
+                Label(alert.permalinkLabel, systemImage: "arrow.up.right.square")
             }
-            .controlSize(.small)
+            .buttonStyle(.stage(.secondary, compact: true))
             .disabled(alert.permalink == nil)
-            .help(alert.permalink == nil ? "No permalink for this message" : "Open the message in Slack")
+            .help(alert.permalink == nil ? "No permalink for this message" : alert.source == .watch ? "Open the dashboard in Grafana" : "Open the message in Slack")
 
             Spacer(minLength: 0)
 
@@ -199,15 +199,10 @@ struct AlertDetailView: View {
                 let button = Button(session == nil ? "Investigate" : "Investigate again") {
                     store.investigate(alert)
                 }
-                .controlSize(.small)
                 .disabled(store.isBusy(alert.id))
                 .help("Start an agent on this alert")
-                // Prominent only when investigating is the expected next step.
-                if waiting {
-                    button.buttonStyle(.borderedProminent)
-                } else {
-                    button
-                }
+                // Primary only when investigating is the expected next step.
+                button.buttonStyle(.stage(waiting ? .primary : .secondary, compact: true))
             }
         }
         .padding(.horizontal, 16)
@@ -219,13 +214,13 @@ struct AlertDetailView: View {
     private func failure(_ message: String) -> some View {
         VStack(spacing: 8) {
             Text("Couldn't load this alert")
-                .font(.system(size: 12, weight: .medium))
+                .font(.geist(12, .medium))
             Text(message)
-                .font(.system(size: 11))
+                .font(.geist(11))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             Button("Try again") { Task { await load() } }
-                .controlSize(.small)
+                .buttonStyle(.stage(.secondary, compact: true))
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -253,7 +248,7 @@ private struct FeedbackRow: View {
     var body: some View {
         HStack(spacing: 4) {
             Text(text)
-                .font(.system(size: 11))
+                .font(.geist(11))
                 .foregroundStyle(alert.feedback == nil ? .tertiary : .secondary)
             Spacer(minLength: 0)
             thumb(.good, symbol: "hand.thumbsup", help: "Good call")
@@ -268,7 +263,7 @@ private struct FeedbackRow: View {
             store.feedback(alert, label)
         } label: {
             Image(systemName: selected ? symbol + ".fill" : symbol)
-                .font(.system(size: 12))
+                .font(.geist(12))
                 .frame(width: 24, height: 22)
                 .contentShape(Rectangle())
         }
@@ -293,16 +288,16 @@ private struct AlertHistory: View {
                 let latest = index == events.count - 1
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Circle()
-                        .fill(latest ? AnyShapeStyle(.secondary) : AnyShapeStyle(.quaternary))
+                        .fill(latest ? AnyShapeStyle(.secondary) : AnyShapeStyle(Ink.track))
                         .frame(width: 5, height: 5)
                         .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 3.5 }
                     Text(event.at, format: Format.clock)
-                        .font(.system(size: 11))
+                        .font(.geist(11))
                         .monospacedDigit()
                         .foregroundStyle(.tertiary)
                         .help(event.at.formatted(date: .abbreviated, time: .standard))
                     Text(event.text)
-                        .font(.system(size: 11.5))
+                        .font(.geist(11.5))
                         .foregroundStyle(latest ? .primary : .secondary)
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)

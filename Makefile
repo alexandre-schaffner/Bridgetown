@@ -19,6 +19,7 @@ app:
 	mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
 	cp "$$(swift build -c release --package-path app --show-bin-path)/Bridgetown" $(APP)/Contents/MacOS/Bridgetown
 	cp app/Info.plist $(APP)/Contents/Info.plist
+	cp -R app/Fonts $(APP)/Contents/Resources/Fonts
 	@if [ -f $(DAEMON) ]; then \
 		cp $(DAEMON) $(APP)/Contents/Resources/bridgetown-daemon; \
 		echo "bundled $(DAEMON)"; \

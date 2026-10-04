@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// A session in the overview's Agents list, in two lines: status dot, title and elapsed
-/// time; then channel, what it's doing, and the five steps without labels. The full card
+/// time; then channel, what it's doing, and the six steps without labels. The full card
 /// (`SessionRow`) is in the session and alert details.
 struct JobRow: View {
     @Environment(Store.self) private var store
@@ -32,39 +32,31 @@ struct JobRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(session.title)
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(.geist(12.5, .medium))
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Spacer(minLength: 4)
                     Text(Format.duration(from: session.startedAt, to: now))
-                        .font(.system(size: 10.5))
-                        .monospacedDigit()
+                        .font(Typo.time)
                         .foregroundStyle(.tertiary)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                        .opacity(hovering ? 1 : 0)
                 }
                 HStack(alignment: .center, spacing: 8) {
                     Text(subtitle)
-                        .font(.system(size: 11))
+                        .font(.geist(11))
                         .foregroundStyle(session.tone.isQuiet ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Spacer(minLength: 4)
                     PhaseStepper(session: session, showsLabels: false)
-                        .frame(width: 64)
+                        .frame(width: 72)
                 }
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(.quaternary.opacity(hovering ? 0.7 : 0))
-        )
+        .background(hovering ? Ink.hover : .clear)
         .animation(.easeOut(duration: 0.12), value: hovering)
     }
 
@@ -87,12 +79,10 @@ private struct HolderDot: View {
         let holder = session.holder
         Group {
             if holder?.isMoving == true || holder == .you {
-                Circle()
-                    .fill(session.tone.color)
-                    .modifier(Pulse(active: holder?.isMoving == true))
+                LiveDot(color: session.tone.color, live: holder?.isMoving == true, size: 7)
             } else {
                 Circle()
-                    .strokeBorder(holder == .reviewers ? Color.accentColor : Color.secondary, lineWidth: 1.5)
+                    .strokeBorder(Color.secondary, lineWidth: 1.5)
             }
         }
         .frame(width: 7, height: 7)

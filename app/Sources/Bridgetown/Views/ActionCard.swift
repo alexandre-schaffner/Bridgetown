@@ -59,25 +59,37 @@ struct ActionCard: View {
 
     private var icon: some View {
         Image(systemName: action.kind.symbol)
-            .font(.system(size: 10.5, weight: .semibold))
-            .foregroundStyle(.orange)
-            .frame(width: 22, height: 22)
-            .background(Color.orange.opacity(0.14), in: Circle())
+            .font(.system(size: 12, weight: .regular))
+            .foregroundStyle(iconTint.map(AnyShapeStyle.init) ?? AnyShapeStyle(.secondary))
+            .frame(width: 16)
+    }
+
+    /// Green when a verified fix is ready to ship, amber for a new incident, red when an
+    /// agent failed; questions and replies stay neutral.
+    private var iconTint: Color? {
+        switch action.kind {
+        case .merge, .release: Ink.green
+        case .investigate, .grafana: Ink.amber
+        case .rerun: Ink.red
+        case .review:
+            action.sessionId.flatMap { store.snapshot?.session(id: $0)?.tone } == .failure ? Ink.red : nil
+        default: nil
+        }
     }
 
     /// One row: icon, title over a line of detail, then the primary button, progress, or a
     /// disclosure chevron for the kinds that need input.
     private var compact: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: 12) {
             icon
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(action.title)
-                    .font(.system(size: 12.5, weight: .medium))
+                    .font(.geist(12.5, .medium))
                     .lineLimit(1)
                     .truncationMode(.tail)
                 if !action.detail.isEmpty {
                     Text(action.detail)
-                        .font(.system(size: 11))
+                        .font(.geist(11))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -89,24 +101,21 @@ struct ActionCard: View {
                     .help(action.kind.progressLabel)
             } else if oneClick {
                 Button(action.primaryLabel) { store.resolve(action) }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                    .buttonStyle(.stage(.secondary, compact: true))
                     .lineLimit(1)
                     .fixedSize()
             } else {
-                Text(action.kind == .reply ? "Review reply" : "Answer")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.accentColor)
+                // Needs input: the button opens the card where it's typed or chosen.
+                Button(action.kind == .reply ? "Review reply" : "Answer") { onToggle?() }
+                    .buttonStyle(.stage(.secondary, compact: true))
+                    .lineLimit(1)
                     .fixedSize()
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .contentShape(Rectangle())
-        .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(.quaternary.opacity(hovering ? 0.7 : 0))
-        )
+        .background(hovering ? Ink.hover : .clear)
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
         .onTapGesture { onToggle?() }
@@ -123,12 +132,12 @@ struct ActionCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(action.title)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.geist(13, .semibold))
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                     if showsDetail {
                         Text(action.detail)
-                            .font(.system(size: 11))
+                            .font(.geist(11))
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -147,13 +156,13 @@ struct ActionCard: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(onToggle == nil ? Metrics.inset : 10)
+        .padding(12)
         .background {
-            // In the overview the card sits in a panel; elsewhere it carries its own fill.
+            // In the overview the open card is a row of the table; elsewhere it stands alone.
             if onToggle == nil {
-                RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous).fill(.quaternary.opacity(0.5))
+                Color.clear.outlined()
             } else {
-                RoundedRectangle(cornerRadius: 7, style: .continuous).fill(.quaternary.opacity(0.55))
+                Color.white.opacity(0.03)
             }
         }
         .overlay(alignment: .topTrailing) {
@@ -176,7 +185,7 @@ struct ActionCard: View {
     private var closeConfirmation: some View {
         HStack(spacing: 8) {
             Text("Close without a fix?")
-                .font(.system(size: 11))
+                .font(.geist(11))
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
             ConfirmButtons(confirmLabel: "Close session") {
@@ -193,7 +202,7 @@ struct ActionCard: View {
         HStack(spacing: 6) {
             ProgressView().controlSize(.mini)
             Text(action.kind.progressLabel)
-                .font(.system(size: 11))
+                .font(.geist(11))
                 .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
@@ -205,21 +214,17 @@ struct ActionCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 TextField("Reply", text: $draft, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 12))
+                    .font(.geist(12))
                     .lineLimit(2...8)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(.background.opacity(0.6), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(.quaternary, lineWidth: 0.5))
+                    .inputField()
                 HStack(spacing: 8) {
                     Button(action.primaryLabel) { store.resolve(action, response: draft) }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
+                        .buttonStyle(.stage(.primary, compact: true))
                         .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     if draft != action.detail {
                         Button("Revert") { draft = action.detail }
                             .buttonStyle(.plain)
-                            .font(.system(size: 11))
+                            .font(.geist(11))
                             .foregroundStyle(.secondary)
                     }
                     if store.isBusy(action.id) { ProgressView().controlSize(.mini) }
@@ -228,16 +233,16 @@ struct ActionCard: View {
         } else if action.kind == .answer && action.options.isEmpty {
             HStack(spacing: 6) {
                 TextField("Reply to the agent", text: $reply)
-                    .textFieldStyle(.roundedBorder)
-                    .controlSize(.small)
+                    .textFieldStyle(.plain)
+                    .font(.geist(12))
+                    .inputField()
                     .focused($replyFocused)
                     .onSubmit(send)
                 Button(action: send) {
                     Image(systemName: "arrow.up")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.geist(10, .bold))
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+                .buttonStyle(.stage(.primary, compact: true))
                 .disabled(reply.trimmingCharacters(in: .whitespaces).isEmpty)
                 .help(action.primaryLabel)
             }
@@ -246,8 +251,7 @@ struct ActionCard: View {
         } else {
             HStack(spacing: 10) {
                 Button(action.primaryLabel) { store.resolve(action) }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                    .buttonStyle(.stage(.primary, compact: true))
                 // review: the agent ended without a fix. Talking to it is the alternative
                 // to Retry / Close session, so it opens the session's message field,
                 // offered only when the daemon will take a message.
@@ -255,7 +259,7 @@ struct ActionCard: View {
                    store.snapshot?.session(id: session)?.acceptsMessages == true {
                     Button("Reply to agent") { store.show(.session(session)) }
                         .buttonStyle(.plain)
-                        .font(.system(size: 11))
+                        .font(.geist(11))
                         .foregroundStyle(.secondary)
                         .help("Open the session to message the agent")
                 }
@@ -287,12 +291,10 @@ private struct OptionChips: View {
             ForEach(Array(options.enumerated()), id: \.offset) { index, option in
                 if index == 0 {
                     Button(option) { choose(option) }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
+                        .buttonStyle(.stage(.primary, compact: true))
                 } else {
                     Button(option) { choose(option) }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                        .buttonStyle(.stage(.secondary, compact: true))
                 }
             }
         }

@@ -122,8 +122,9 @@ struct Status: Codable, Sendable, Equatable {
 // MARK: - Alerts
 
 struct AlertView: Codable, Sendable, Equatable, Identifiable {
-    /// `inbox` = a mention, group mention or DM anywhere in Slack.
-    enum Source: String, LenientStringEnum { case releases, uptime, engine, inbox, generic, unknown }
+    /// `inbox` = a mention, group mention or DM anywhere in Slack. `watch` = Bridgetown saw a prod
+    /// signal rise in Grafana on its own; `permalink` is then the Grafana dashboard, not a Slack message.
+    enum Source: String, LenientStringEnum { case releases, uptime, engine, inbox, generic, watch, unknown }
     enum Feedback: String, LenientStringEnum { case good, bad, unknown }
 
     var id: String
@@ -143,12 +144,18 @@ struct AlertView: Codable, Sendable, Equatable, Identifiable {
     var outcome: AlertOutcome
 }
 
+extension AlertView {
+    /// What opening `permalink` shows: a prod finding's is its Grafana dashboard.
+    var permalinkLabel: String { source == .watch ? "Open in Grafana" : "Open in Slack" }
+}
+
 struct AlertOutcome: Codable, Sendable, Equatable {
     /// waiting = an open card is in "Needs you" · dismissed = the user dismissed its card
-    /// and no agent ran · opened = the user opened it from an escalation ·
+    /// and no agent ran · opened = the user opened it from an escalation · teammate = someone
+    /// else's Bridgetown claimed it in Slack, or they reacted 👀 ("Alice's agent is on it") ·
     /// session = an agent session owns it; headline and tone are the session's own.
     enum Kind: String, LenientStringEnum {
-        case pending, filtered, ignored, suggested, escalated, waiting, dismissed, opened, session, unknown
+        case pending, filtered, ignored, suggested, escalated, waiting, dismissed, opened, teammate, session, unknown
     }
 
     var kind: Kind
@@ -206,7 +213,7 @@ struct AlertDetail: Codable, Sendable, Equatable {
 
 struct Session: Codable, Sendable, Equatable, Identifiable {
     enum State: String, LenientStringEnum {
-        case queued, preparing, running, waiting, ci, awaiting_merge, awaiting_release, deploying
+        case queued, preparing, running, waiting, critiquing, ci, awaiting_merge, awaiting_release, deploying
         /// `resolved` = a verified outcome. `closed` = the user closed it without a fix.
         case resolved, closed, failed, stopped
         case unknown
@@ -219,7 +226,7 @@ struct Session: Codable, Sendable, Equatable, Identifiable {
     var title: String
     var channelName: String
     var status: State
-    /// Always five, in order, computed by the daemon from evidence.
+    /// Always six, in order, computed by the daemon from evidence.
     var steps: [Step]
     /// Status line, e.g. "Running", "Closed · root cause not found".
     var headline: String
@@ -236,6 +243,10 @@ struct Session: Codable, Sendable, Equatable, Identifiable {
     var claudeSessionId: String?
     var model: String
     var ciRounds: Int
+    /// Times the adversarial review sent the agent back on this PR.
+    var critiqueRounds: Int
+    /// The last adversarial review of the pushed head; nil before the first one.
+    var critique: Critique?
     var costUsd: Double
     var slackThreadUrl: String?
     /// `POST /sessions/:id/message` is allowed: live, or finished and handed back with
@@ -251,15 +262,27 @@ struct Session: Codable, Sendable, Equatable, Identifiable {
     var updatedAt: Date
 }
 
+/// What another vendor's model found in the agent's fix, after Jev dropped the nitpicks.
+struct Critique: Codable, Sendable, Equatable {
+    enum Reviewer: String, LenientStringEnum { case codex, unknown }
+
+    var reviewer: Reviewer
+    var passed: Bool
+    /// Findings sent back to the agent.
+    var blocking: Int
+    /// Findings Jev judged not worth a round (style, speculation, already answered).
+    var dropped: Int
+}
+
 struct Step: Codable, Sendable, Equatable {
-    enum Key: String, LenientStringEnum { case diagnose, fix, pr, ci, deploy, unknown }
+    enum Key: String, LenientStringEnum { case diagnose, fix, pr, critique, ci, deploy, unknown }
 
     /// done = evidence it happened · current = in progress · pending = not reached ·
     /// failed = where it stopped or broke · skipped = not applicable.
     enum State: String, LenientStringEnum { case done, current, pending, failed, skipped, unknown }
 
     var key: Key
-    /// "Diagnose", "Fix", "PR", "CI", "Deploy", or the truth ("Root cause?", "No PR", "Merged").
+    /// "Diagnose", "Fix", "PR", "Review", "CI", "Deploy", or the truth ("Root cause?", "No PR", "No review").
     var label: String
     var state: State
 }
@@ -306,6 +329,10 @@ struct Settings: Codable, Sendable, Equatable {
         var autoHumanOnItMax: Double
         var suggestActionable: Double
         var suggestResolvable: Double
+        /// A reviewer finding goes back to the agent only above these, and below `findingRebutted`.
+        var findingReal: Double
+        var findingBlocking: Double
+        var findingRebutted: Double
     }
 
     struct QuietHours: Codable, Sendable, Equatable {
@@ -317,7 +344,7 @@ struct Settings: Codable, Sendable, Equatable {
     /// The top-level fields, which are also the granularity of `POST /settings`
     /// (`Partial<Settings>` is shallow: a nested object is always sent whole).
     enum CodingKeys: String, CodingKey, CaseIterable, Sendable {
-        case channels, thresholds, autoStart, inbox, maxConcurrent, dryRun, pollSeconds
+        case channels, thresholds, autoStart, inbox, maxConcurrent, dryRun, adversarialReview, watchProd, pollSeconds
         case monorepoPath, deploymentRepoPath, quietHours
     }
 
@@ -328,6 +355,10 @@ struct Settings: Codable, Sendable, Equatable {
     var inbox: Bool
     var maxConcurrent: Int
     var dryRun: Bool
+    /// Another vendor's model reviews each pushed fix before the PR leaves draft.
+    var adversarialReview: Bool
+    /// Watch prod signals in Grafana and suggest an investigation when one rises before any alert.
+    var watchProd: Bool
     var pollSeconds: Int
     var monorepoPath: String
     var deploymentRepoPath: String
@@ -344,6 +375,8 @@ extension Settings {
         case .inbox: inbox = other.inbox
         case .maxConcurrent: maxConcurrent = other.maxConcurrent
         case .dryRun: dryRun = other.dryRun
+        case .adversarialReview: adversarialReview = other.adversarialReview
+        case .watchProd: watchProd = other.watchProd
         case .pollSeconds: pollSeconds = other.pollSeconds
         case .monorepoPath: monorepoPath = other.monorepoPath
         case .deploymentRepoPath: deploymentRepoPath = other.deploymentRepoPath

@@ -25,6 +25,7 @@ struct PopoverView: View {
             }
         }
         .frame(width: Metrics.width, height: height, alignment: .top)
+        .stage()
         .clipped()
     }
 }
@@ -41,12 +42,12 @@ private struct OverviewPane: View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             VStack(spacing: 0) {
                 HeaderView(now: context.date)
-                Divider()
+                Hairline()
                 PaneScrollView {
                     content(now: context.date)
                         .padding(Metrics.inset)
                 }
-                Divider()
+                Hairline()
                 FooterView()
             }
         }
@@ -56,40 +57,32 @@ private struct OverviewPane: View {
     private func content(now: Date) -> some View {
         if let snap = store.snapshot {
             let running = snap.activeSessions
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 24) {
                 TelemetryPanel(snapshot: snap, now: now)
                 if snap.actions.isEmpty && running.isEmpty && snap.alerts.isEmpty {
                     EmptyState(channelCount: snap.settings.channels.filter(\.enabled).count, paused: snap.status.paused)
                 }
                 if !snap.actions.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        SectionHeader(title: "Needs you", count: snap.actions.count, tint: .orange)
-                        VStack(spacing: 2) {
-                            ForEach(snap.sortedActions) { action in
-                                ActionCard(action: action, expanded: expandedAction == action.id) {
-                                    withAnimation(.snappy(duration: 0.2)) {
-                                        expandedAction = expandedAction == action.id ? nil : action.id
-                                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        SectionHeader(title: "Needs you", count: snap.actions.count, tint: Ink.amber)
+                        RowList(data: snap.sortedActions) { action in
+                            ActionCard(action: action, expanded: expandedAction == action.id) {
+                                withAnimation(.snappy(duration: 0.2)) {
+                                    expandedAction = expandedAction == action.id ? nil : action.id
                                 }
                             }
                         }
-                        .padding(4)
-                        .panel()
                     }
                 }
                 if !running.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 8) {
                         SectionHeader(
                             title: "Agents",
                             count: running.count,
-                            tint: .accentColor,
+                            tint: running.contains { $0.holder?.isMoving == true } ? Ink.blue : nil,
                             trailing: Session.breakdown(running)
                         )
-                        VStack(spacing: 0) {
-                            ForEach(running) { JobRow(session: $0, now: now) }
-                        }
-                        .padding(4)
-                        .panel()
+                        RowList(data: running) { JobRow(session: $0, now: now) }
                     }
                 }
                 if !snap.alerts.isEmpty {
@@ -104,24 +97,17 @@ private struct OverviewPane: View {
     private func recent(_ snap: Snapshot, now: Date) -> some View {
         let shown = showAllRecent ? snap.alerts : Array(snap.alerts.prefix(Self.recentLimit))
         let hidden = snap.alerts.count - shown.count
-        return VStack(alignment: .leading, spacing: 6) {
+        return VStack(alignment: .leading, spacing: 8) {
             SectionHeader(title: "Recent")
-            VStack(spacing: 0) {
-                ForEach(shown) { alert in
-                    AlertRow(alert: alert, session: snap.session(id: alert.sessionId), now: now)
-                }
+            RowList(data: shown) { alert in
+                AlertRow(alert: alert, session: snap.session(id: alert.sessionId), now: now)
             }
-            .padding(4)
-            .panel()
             if hidden > 0 || showAllRecent {
                 Button(showAllRecent ? "Show less" : "Show \(hidden) more") {
                     withAnimation(.snappy(duration: 0.2)) { showAllRecent.toggle() }
                 }
-                .buttonStyle(.plain)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 4)
-                .padding(.top, 2)
+                .buttonStyle(.stage(.secondary, compact: true))
+                .frame(maxWidth: .infinity)
             }
         }
     }
@@ -134,15 +120,15 @@ private struct EmptyState: View {
     var body: some View {
         VStack(spacing: 6) {
             Image(systemName: "bolt.shield")
-                .font(.system(size: 26, weight: .light))
+                .font(.geist(26, .light))
                 .foregroundStyle(.tertiary)
                 .padding(.bottom, 4)
             Text("Nothing has fired yet")
-                .font(.system(size: 13, weight: .medium))
+                .font(.geist(14, .semibold))
             Text(paused
                 ? "Paused. Alerts are still triaged, but no agent starts on its own."
                 : "Watching \(channelCount) channel\(channelCount == 1 ? "" : "s"). Alerts land here as they're triaged; anything that needs you shows up on top.")
-                .font(.system(size: 11))
+                .font(.geist(11))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -170,17 +156,17 @@ private struct ConnectingState: View {
         VStack(spacing: 8) {
             if let blocker {
                 Image(systemName: "exclamationmark.shield")
-                    .font(.system(size: 24, weight: .light))
+                    .font(.geist(24, .light))
                     .foregroundStyle(.secondary)
                 Text(blocker)
-                    .font(.system(size: 12))
+                    .font(.geist(12))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 ProgressView().controlSize(.small)
                 Text(daemon.mode == .attach ? "Attaching to daemon on port \(daemon.endpoint.port)…" : "Starting daemon…")
-                    .font(.system(size: 12))
+                    .font(.geist(12))
                     .foregroundStyle(.secondary)
             }
         }
@@ -199,9 +185,9 @@ private struct FooterView: View {
                 .keyboardShortcut("q")
         }
         .buttonStyle(.plain)
-        .font(.system(size: 11))
+        .font(.geist(11))
         .foregroundStyle(.secondary)
         .padding(.horizontal, 16)
-        .padding(.vertical, 9)
+        .padding(.vertical, 10)
     }
 }

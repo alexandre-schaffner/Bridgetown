@@ -5,7 +5,7 @@ import SwiftUI
 struct ClampedText: View {
     let text: AttributedString
     let lineLimit: Int
-    var font: Font = .system(size: 12)
+    var font: Font = .geist(12)
     var lineSpacing: CGFloat = 2
     var moreLabel = "Show more"
     var lessLabel = "Show less"
@@ -36,13 +36,13 @@ struct ClampedText: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background {
                     if boxed {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.quaternary.opacity(0.35))
+                        Color.clear.outlined()
                     }
                 }
             if truncated || expanded {
                 Button(expanded ? lessLabel : moreLabel) { expanded.toggle() }
                     .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.geist(11, .medium))
                     .foregroundStyle(.tint)
             }
         }

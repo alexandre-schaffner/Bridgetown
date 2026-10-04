@@ -11,7 +11,7 @@ struct GrafanaSection: View {
         BoardLoader(key: alertId, fetch: { try await store.alertBoard(alertId: alertId) }) { loaded in
             if let found = loaded.value {
                 if let board = found {
-                    DetailSection(title: "Grafana · \(board.title)") { BoardView(board: board, maxDeploys: 4) }
+                    DetailSection(title: "Grafana", detail: board.title) { BoardView(board: board, maxDeploys: 4) }
                 }
             } else if let error = loaded.error {
                 DetailSection(title: "Grafana") {

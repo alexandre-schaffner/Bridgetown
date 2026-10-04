@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A session as a card: channel, title, the five steps and the status line. Used in
+/// A session as a card: channel, title, the six steps and the status line. Used in
 /// Running and, for the alert it belongs to, in the alert detail.
 struct SessionRow: View {
     @Environment(Store.self) private var store
@@ -19,7 +19,7 @@ struct SessionRow: View {
             if confirmingStop {
                 HStack(spacing: 8) {
                     Text("Stop this session?")
-                        .font(.system(size: 11))
+                        .font(.geist(11))
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 0)
                     ConfirmButtons(confirmLabel: "Stop session") {
@@ -68,18 +68,17 @@ struct SessionRow: View {
                     ChannelChip(name: session.channelName)
                     Spacer(minLength: 0)
                     Text(Format.duration(from: session.startedAt, to: session.isActive ? now : session.updatedAt))
-                        .font(.system(size: 11))
-                        .monospacedDigit()
+                        .font(Typo.time)
                         .foregroundStyle(.tertiary)
                     if onOpen != nil {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.geist(10, .semibold))
                             .foregroundStyle(.tertiary)
                             .opacity(hovering ? 1 : 0.6)
                     }
                 }
                 Text(session.title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.geist(13, .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -94,7 +93,7 @@ struct SessionRow: View {
                         ReviewRequestedChip(channel: channel)
                     } else if !session.statusDetail.isEmpty {
                         Text(session.statusDetail)
-                            .font(.system(size: 11))
+                            .font(.geist(11))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -116,15 +115,15 @@ private struct ReviewRequestedChip: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "person.crop.circle.badge.checkmark")
-                .font(.system(size: 10))
+                .font(.geist(10))
             Text("Review requested · #\(channel)")
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
-        .font(.system(size: 11))
+        .font(.geist(11))
         .foregroundStyle(.secondary)
         .padding(.horizontal, 7)
         .padding(.vertical, 2)
-        .background(.quaternary.opacity(0.7), in: Capsule())
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: Ink.tagRadius))
     }
 }

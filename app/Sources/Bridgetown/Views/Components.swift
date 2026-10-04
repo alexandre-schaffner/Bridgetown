@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 // Small shared building blocks for the popover. Spacing runs on a 4pt grid:
-// 12 inside cards, 16 between sections, 8 between related lines.
+// 12 inside blocks, 24 between sections, 8 between related lines.
 
 enum Metrics {
     static let width: CGFloat = 380
@@ -10,7 +10,7 @@ enum Metrics {
     /// through the `popoverHeight` environment value.
     static let height: CGFloat = 620
     static let inset: CGFloat = 12
-    static let cardRadius: CGFloat = 10
+    static let cardRadius: CGFloat = Ink.panelRadius
 }
 
 private struct PopoverHeightKey: EnvironmentKey {
@@ -25,31 +25,77 @@ extension EnvironmentValues {
     }
 }
 
-// MARK: Card
+// MARK: Hairline
 
-struct CardBackground: ViewModifier {
-    var highlighted = false
+/// The stage's divider: a 1pt line at hairline white, in place of the system separator.
+struct Hairline: View {
+    var vertical = false
+    @Environment(\.displayScale) private var scale
 
-    func body(content: Content) -> some View {
-        content
-            .background(
-                .quaternary.opacity(highlighted ? 0.85 : 0.5),
-                in: RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous)
-            )
+    /// One device pixel.
+    private var width: CGFloat { 1 / max(scale, 1) }
+
+    var body: some View {
+        if vertical {
+            Ink.hairline.frame(width: width)
+        } else {
+            Ink.hairline.frame(height: width)
+        }
     }
 }
 
-extension View {
-    func card(highlighted: Bool = false) -> some View { modifier(CardBackground(highlighted: highlighted)) }
+// MARK: Row list
 
-    /// A grouped surface holding several rows or a chart: the card fill plus a hairline,
-    /// so the rows inside can use their own hover fill.
-    func panel() -> some View {
-        background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous)
-                    .strokeBorder(Color(nsColor: .separatorColor).opacity(0.6), lineWidth: 0.5)
-            )
+/// Rows in one outlined block, a hairline between each: a table, not a stack of cards.
+struct RowList<Data: RandomAccessCollection, Row: View>: View where Data.Element: Identifiable {
+    let data: Data
+    @ViewBuilder let row: (Data.Element) -> Row
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(data.enumerated()), id: \.element.id) { index, element in
+                if index > 0 { Hairline() }
+                row(element)
+            }
+        }
+        .outlined()
+    }
+}
+
+// MARK: Cell grid
+
+/// Two cells a row in one outlined block, hairlines between: how charts sit side by side.
+struct CellGrid<Item: Identifiable, Cell: View>: View {
+    let items: [Item]
+    @ViewBuilder let cell: (Item) -> Cell
+
+    var body: some View {
+        let rows = stride(from: 0, to: items.count, by: 2).map { Array(items[$0..<min($0 + 2, items.count)]) }
+        VStack(spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                if index > 0 { Hairline() }
+                HStack(spacing: 0) {
+                    cell(row[0]).frame(maxWidth: .infinity)
+                    Hairline(vertical: true)
+                    if row.count > 1 {
+                        cell(row[1]).frame(maxWidth: .infinity)
+                    } else {
+                        Color.clear.frame(maxWidth: .infinity)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .outlined()
+    }
+}
+
+// MARK: Card
+
+extension View {
+    /// A standalone outlined block; `highlighted` on hover.
+    func card(highlighted: Bool = false) -> some View {
+        outlined(fill: highlighted ? Color(white: 0.06) : Ink.surface)
     }
 }
 
@@ -63,51 +109,61 @@ struct SectionHeader: View {
     var trailing: String?
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .font(Typo.title)
+                .tracking(Typo.titleTracking)
+                .foregroundStyle(.primary)
             if let count, count > 1 {
-                Text(count, format: .number)
-                    .font(.system(size: 10, weight: .semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(tint.map(AnyShapeStyle.init) ?? AnyShapeStyle(.secondary))
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .background((tint ?? .secondary).opacity(0.14), in: Capsule())
-                    .contentTransition(.numericText())
+                Badge(text: "\(count)", tint: tint)
             }
             Spacer(minLength: 0)
             if let trailing {
                 Text(trailing)
-                    .font(.system(size: 10))
+                    .font(.geist(11))
                     .monospacedDigit()
                     .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.head)
             }
         }
-        .padding(.horizontal, 4)
+        .frame(height: 20)
         .accessibilityAddTraits(.isHeader)
     }
 }
 
 // MARK: Detail section
 
-/// A titled block in a detail pane: small semibold label, content below. No card.
+/// A titled block in a detail pane: the title, content below. No outline of its own.
 struct DetailSection<Content: View>: View {
     let title: String
+    /// Shown after the title as written, never uppercased: a route or a board name.
+    var detail: String?
     @ViewBuilder var content: Content
 
-    init(title: String, @ViewBuilder content: () -> Content) {
+    init(title: String, detail: String? = nil, @ViewBuilder content: () -> Content) {
         self.title = title
+        self.detail = detail
         self.content = content()
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .accessibilityAddTraits(.isHeader)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(title)
+                    .font(Typo.title)
+                    .tracking(Typo.titleTracking)
+                    .foregroundStyle(.primary)
+                if let detail {
+                    Text(detail)
+                        .font(.geist(12))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -121,12 +177,12 @@ struct ChannelChip: View {
 
     var body: some View {
         Text(Format.channel(name))
-            .font(.caption)
+            .font(.geist(11, .medium))
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .padding(.horizontal, 6)
-            .padding(.vertical, 1.5)
-            .background(.quaternary.opacity(0.7), in: Capsule())
+            .frame(height: 18)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: Ink.tagRadius))
     }
 }
 
@@ -158,7 +214,7 @@ struct HoverHighlight: ViewModifier {
         content
             .background(
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .fill(.quaternary.opacity(hovering ? 0.6 : 0))
+                    .fill(hovering ? Ink.hover : .clear)
             )
             .onHover { hovering = $0 }
             .animation(.easeOut(duration: 0.12), value: hovering)
@@ -250,11 +306,9 @@ struct ConfirmButtons: View {
     var body: some View {
         HStack(spacing: 8) {
             Button("Cancel", action: onCancel)
-                .controlSize(.small)
+                .buttonStyle(.stage(.secondary, compact: true))
             Button(confirmLabel, role: .destructive, action: onConfirm)
-                .controlSize(.small)
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
+                .buttonStyle(.stage(.danger, compact: true))
         }
         .task {
             try? await Task.sleep(for: .seconds(5))

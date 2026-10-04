@@ -1,23 +1,24 @@
 import SwiftUI
 
-/// The daemon's five evidence-backed steps. Each state has its own shape and label
+/// The daemon's six evidence-backed steps. Each state has its own shape and label
 /// treatment, so nothing relies on colour alone:
-/// done = filled accent · current = accent, pulsing while live · pending = hollow outline ·
+/// done = filled neutral (green once the outcome is verified) · current = the session's
+/// colour, pulsing while live · pending = hollow outline ·
 /// failed = filled red (failure) or gray (closed, stopped) with a glyph · skipped = dashed.
 struct PhaseStepper: View {
     let session: Session
     var showsLabels = true
 
-    private static let height: CGFloat = 4
+    private var height: CGFloat { showsLabels ? 5 : 4 }
 
     private var tone: Tone { session.tone }
 
     var body: some View {
-        StepColumns(spacing: 3) {
+        StepColumns(spacing: showsLabels ? 4 : 3) {
             ForEach(Array(session.steps.enumerated()), id: \.offset) { _, step in
                 VStack(alignment: .leading, spacing: 4) {
                     segment(step.state)
-                        .frame(height: Self.height)
+                        .frame(height: height)
                     if showsLabels {
                         label(step)
                     }
@@ -34,9 +35,9 @@ struct PhaseStepper: View {
     private func segment(_ state: Step.State) -> some View {
         switch state {
         case .done:
-            Capsule().fill(Color.accentColor)
+            Capsule().fill(tone == .success ? Ink.green : Ink.mark)
         case .current:
-            Capsule().fill(Color.accentColor)
+            Capsule().fill(tone.isQuiet ? Ink.mark : tone.color)
                 .modifier(Pulse(active: tone == .live))
         case .failed:
             Capsule().fill(tone.stopTint)
@@ -44,7 +45,7 @@ struct PhaseStepper: View {
             DashedLine()
                 .stroke(.tertiary, style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: [2, 3]))
         case .pending, .unknown:
-            Capsule().strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1)
+            Capsule().strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
         }
     }
 
@@ -52,13 +53,13 @@ struct PhaseStepper: View {
         HStack(spacing: 2) {
             if step.state == .failed {
                 Image(systemName: tone.stopSymbol)
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.geist(9, .medium))
             }
             Text(step.label)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
         }
-        .font(.system(size: 10, weight: step.state.isEmphasized ? .semibold : .regular))
+        .font(.geist(10.5, step.state.isEmphasized ? .semibold : .regular))
         .foregroundStyle(step.state.labelStyle(stopTint: tone.stopTint))
     }
 

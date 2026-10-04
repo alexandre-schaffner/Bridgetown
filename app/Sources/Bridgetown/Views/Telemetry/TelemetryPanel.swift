@@ -18,11 +18,9 @@ struct TelemetryPanel: View {
     @AppStorage("telemetryMode") private var mode: Mode = .incidents
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 24) {
             StatStrip(snapshot: snapshot)
-                .padding(.horizontal, Metrics.inset)
-                .padding(.vertical, 10)
-            Divider().opacity(0.6)
+                .outlined()
             VStack(alignment: .leading, spacing: 8) {
                 header
                 BoardLoader(key: mode.view, fetch: { try await store.board(view: mode.view) }) { loaded in
@@ -35,25 +33,18 @@ struct TelemetryPanel: View {
                     }
                 }
             }
-            .padding(Metrics.inset)
         }
-        .panel()
     }
 
     private var header: some View {
         HStack(alignment: .center, spacing: 8) {
             Text("Prod")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .font(Typo.title)
+                .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
-            Picker("Board", selection: $mode) {
-                ForEach(Mode.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .controlSize(.mini)
-            .fixedSize()
+            TabSwitch(options: Mode.allCases, selection: $mode) { $0.rawValue }
         }
+        .frame(height: 20)
     }
 }
 
@@ -74,22 +65,25 @@ private struct StatStrip: View {
                 label: "Needs you",
                 value: "\(snapshot.actions.count)",
                 caption: snapshot.actions.isEmpty ? "Nothing waiting" : waitingCaption,
-                tint: snapshot.actions.isEmpty ? nil : .orange
+                tint: snapshot.actions.isEmpty ? nil : Ink.amber
             )
+            Hairline(vertical: true)
             Stat(
                 label: "Agents",
                 value: "\(active.count)",
                 caption: active.isEmpty ? "None active" : Session.breakdown(active, limit: 1),
-                tint: moving ? .accentColor : nil,
+                tint: moving ? Ink.blue : nil,
                 live: moving
             )
+            Hairline(vertical: true)
             Stat(
                 label: "Resolved",
                 value: sessions.map { "\($0.resolved)" } ?? "–",
                 caption: sessions.map { "of \($0.started) · 24h" } ?? "24h",
-                tint: (sessions?.resolved ?? 0) > 0 ? .green : nil
+                tint: (sessions?.resolved ?? 0) > 0 ? Ink.green : nil
             )
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     /// The oldest card's age: how long something has been waiting on you.
@@ -107,31 +101,32 @@ private struct Stat: View {
     var live = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            HStack(spacing: 4) {
-                Text(label)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary)
-                if live {
-                    Circle()
-                        .fill(Color.accentColor)
-                        .frame(width: 5, height: 5)
-                        .modifier(Pulse(active: true))
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                SectionLabel(label)
+                Spacer(minLength: 0)
+                if let tint {
+                    LiveDot(color: tint, live: live)
                 }
             }
-            Text(value)
-                .font(.system(size: 18, weight: .semibold).monospacedDigit())
-                .foregroundStyle(tint.map(AnyShapeStyle.init) ?? AnyShapeStyle(.primary))
-                .contentTransition(.numericText())
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text(caption)
-                .font(.system(size: 10))
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(value)
+                    .font(.geist(22).monospacedDigit())
+                    .tracking(-0.4)
+                    .foregroundStyle(.primary)
+                    .contentTransition(.numericText())
+                    .lineLimit(1)
+                    .fixedSize()
+                Text(caption)
+                    .font(.geist(11))
+                    .monospacedDigit()
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
         .animation(.snappy(duration: 0.25), value: value)

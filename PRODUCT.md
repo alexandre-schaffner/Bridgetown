@@ -14,7 +14,7 @@ Bridgetown watches Slack (alert channels, mentions, DMs) and asks Jev whether ea
 
 ## Brand Personality
 
-Calm, precise, honest. Like a flight-status board or Things: quiet, exact, and never claiming more than happened. The voice is plain and specific ("Root cause not found", "PR #3340 open, CI running"), never cheerful or vague. Color is reserved for meaning: accent for live work, green only for verified outcomes, orange for "needs you", red for failure. Everything else is neutral.
+Calm, precise, honest. Like a flight-status board or the Vercel dashboard: black, exact, and never claiming more than happened. The voice is plain and specific ("Root cause not found", "PR #3340 open, CI running"), never cheerful or vague. Color is reserved for meaning, on small status marks only: blue for live work, green only for verified outcomes, amber for "needs you", red for failure. Data, finished steps and controls are monochrome.
 
 ## Anti-references
 
@@ -29,8 +29,8 @@ Calm, precise, honest. Like a flight-status board or Things: quiet, exact, and n
 2. **Distinguish outcomes.** Resolved, closed without a fix, failed and stopped are different facts and look different.
 3. **Quiet by default, loud when it matters.** Neutral surfaces; color and motion only for live work and things that need the user.
 4. **One glance, one decision.** Each card says what happened and offers the single next action as a verb plus object.
-5. **Native first.** Behave like a first-party macOS utility: system materials, SF Pro, standard controls.
+5. **One identity.** A black stage, structure drawn with one-pixel outlines rather than fills, rows separated by hairlines like a table, Geist for words and Geist Mono for machine text (times, branches, logs), a white button for the one next step. Behave like a macOS utility (menu bar, keyboard, context menus); look like Bridgetown.
 
 ## Accessibility & Inclusion
 
-WCAG AA contrast for all text, including secondary text on materials. Status is never conveyed by color alone (always a label or glyph too). Respect Reduce Motion: pulses become static. Works in light and dark appearance.
+WCAG AA contrast for all text: the three text greys are 16:1, 7.6:1 and 5.5:1 on black. Status is never conveyed by color alone (always a label or glyph too). Respect Reduce Motion: pulses become static. The popover is always dark; Settings follows the system appearance.

@@ -22,12 +22,10 @@ struct StatusLine: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Circle()
-                .fill(tone.color)
-                .frame(width: 6, height: 6)
+            LiveDot(color: tone.color, live: tone == .live)
                 .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + size * 0.35 }
             Text(headline)
-                .font(.system(size: size, weight: .medium))
+                .font(.geist(size, .medium))
                 .foregroundStyle(tone.isQuiet ? .secondary : .primary)
                 .lineLimit(lineLimit)
                 .truncationMode(.tail)

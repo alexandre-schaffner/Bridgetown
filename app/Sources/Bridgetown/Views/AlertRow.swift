@@ -11,19 +11,19 @@ struct AlertRow: View {
         let glyph = OutcomeGlyph(alert.outcome, session: session)
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: glyph.symbol)
-                .font(.system(size: 12, weight: .medium))
+                .font(.geist(12, .medium))
                 .foregroundStyle(glyph.style)
                 .frame(width: 16)
                 .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4.5 }
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(alert.title)
-                    .font(.system(size: 12.5))
+                    .font(.geist(12.5))
                     .foregroundStyle(glyph.dimmed ? .secondary : .primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text("\(alert.channelName) · \(alert.outcome.headline)")
-                    .font(.system(size: 11))
+                Text("\(Format.channel(alert.channelName)) · \(alert.outcome.headline)")
+                    .font(.geist(11))
                     .foregroundStyle(glyph.dimmed ? .tertiary : .secondary)
                     .lineLimit(1)
             }
@@ -33,24 +33,18 @@ struct AlertRow: View {
             HStack(spacing: 4) {
                 if let fb = alert.feedback, fb != .unknown {
                     Image(systemName: fb == .good ? "hand.thumbsup.fill" : "hand.thumbsdown.fill")
-                        .font(.system(size: 9))
+                        .font(.geist(9))
                         .foregroundStyle(.tertiary)
                 }
                 Text(Format.relative(alert.receivedAt, now: now))
-                    .font(.system(size: 11))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                // Space is always reserved, so the time doesn't shift when it appears.
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(Typo.time)
                     .foregroundStyle(.tertiary)
-                    .opacity(hovering ? 1 : 0)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .contentShape(Rectangle())
-        .hoverHighlight(radius: 6)
+        .background(hovering ? Ink.hover : .clear)
         .onHover { hovering = $0 }
         .onTapGesture { store.show(.alert(alert.id)) }
         .help(tooltip)
@@ -83,7 +77,7 @@ struct AlertRow: View {
             Label("Bad call", systemImage: alert.feedback == .bad ? "checkmark" : "hand.thumbsdown")
         }
         Divider()
-        Button("Open in Slack") { SystemActions.open(alert.permalink) }
+        Button(alert.permalinkLabel) { SystemActions.open(alert.permalink) }
             .disabled(alert.permalink == nil)
     }
 

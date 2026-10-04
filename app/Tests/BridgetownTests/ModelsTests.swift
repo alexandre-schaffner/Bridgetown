@@ -3,6 +3,13 @@ import Testing
 @testable import Bridgetown
 
 @Suite struct SnapshotDecoding {
+    @Test func aProdFindingOpensInGrafana() throws {
+        var alert = try #require(try Fixture.snapshot().alerts.first)
+        #expect(alert.permalinkLabel == "Open in Slack")
+        alert.source = try JSONDecoder().decode(AlertView.Source.self, from: Data(#""watch""#.utf8))
+        #expect(alert.source == .watch && alert.permalinkLabel == "Open in Grafana")
+    }
+
     @Test func decodesEveryContractField() throws {
         let snap = try Fixture.snapshot()
 
@@ -24,7 +31,10 @@ import Testing
         #expect(running.acceptsMessages)
         #expect(running.status == .awaiting_merge)
         #expect(running.tone == .waiting)
-        #expect(running.steps.map(\.key) == [.diagnose, .fix, .pr, .ci, .deploy])
+        #expect(running.steps.map(\.key) == [.diagnose, .fix, .pr, .critique, .ci, .deploy])
+        #expect(running.critique == Critique(reviewer: .codex, passed: true, blocking: 0, dropped: 2))
+        #expect(snap.settings.adversarialReview && snap.settings.thresholds.findingReal == 0.6)
+        #expect(snap.settings.watchProd)
         #expect(running.revvUrl != nil && running.reviewChannel == "product-approvals")
         let closed = try #require(snap.session(id: "ses_closed"))
         #expect(!closed.acceptsMessages)
@@ -115,7 +125,7 @@ import Testing
         #expect(Set(json.keys) == ["monorepoPath", "thresholds"])
         #expect(json["monorepoPath"] as? String == "~/src/monorepo")
         // Partial<Settings> is shallow: a nested object goes whole.
-        #expect((json["thresholds"] as? [String: Any])?.count == 5)
+        #expect((json["thresholds"] as? [String: Any])?.count == 8)
     }
 
     @Test func channelSubscriptIgnoresUnknownIds() throws {
@@ -152,6 +162,16 @@ import Testing
 
     @Test func unitsFormatForTheirKind() {
         #expect(Board.Panel.Unit.ms.format(423.4) == "423 ms")
-        #expect(Board.Panel.Unit.ms.format(2300) == "2.3 s" || Board.Panel.Unit.ms.format(2300) == "2,3 s")
+        #expect(Board.Panel.Unit.ms.format(2300) == "2.3 s")
+        #expect(Board.Panel.Unit.ms.format(2000) == "2 s")
+        #expect(Board.Panel.Unit.count.format(20.9) == "21")
+        #expect(Board.Panel.Unit.count.format(4.5) == "4.5")
+        #expect(Board.Panel.Unit.count.format(3) == "3")
+        #expect(Board.Panel.Unit.count.format(1172) == "1.2k")
+        #expect(Board.Panel.Unit.count.format(34_400) == "34k")
+        #expect(Board.Panel.Unit.per_s.format(0.15) == "0.15/s")
+        #expect(Format.cost(0.97) == "$0.97")
+        #expect(Board.Panel.Unit.bytes.format(35.25 * 1_073_741_824) == "35.3 GB")
+        #expect(Board.Panel.Unit.bytes.format(567 * 1_048_576) == "567 MB")
     }
 }

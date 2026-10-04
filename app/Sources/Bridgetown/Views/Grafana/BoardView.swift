@@ -1,7 +1,7 @@
 import Charts
 import SwiftUI
 
-/// A Grafana board in two columns of small panels. Hovering one panel moves a shared
+/// A Grafana board as one outlined grid, two cells a row, hairlines between. Hovering one panel moves a shared
 /// crosshair across all of them, as in Grafana, and each shows its value at that time.
 /// Deploys are dashed rules (red when they failed), the alert that opened the board is an
 /// orange rule. Clicking a panel opens its dashboard in Grafana.
@@ -11,16 +11,12 @@ struct BoardView: View {
 
     @ViewState private var hover: Date?
 
-    private let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
-
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let error = board.error {
                 BoardMessage(symbol: "chart.xyaxis.line", text: error)
             } else {
-                LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(board.panels) { MiniPanel(panel: $0, board: board, hover: $hover) }
-                }
+                CellGrid(items: board.panels) { MiniPanel(panel: $0, board: board, hover: $hover) }
             }
             if !board.deploys.isEmpty {
                 DeployList(deploys: board.deploys, limit: maxDeploys)
@@ -41,8 +37,7 @@ struct BoardView: View {
             Spacer(minLength: 0)
             Text("Grafana · \(Format.ago(board.fetchedAt, now: .now))")
         }
-        .font(.system(size: 10))
-        .monospacedDigit()
+        .font(.geist(10.5).monospacedDigit())
         .foregroundStyle(.tertiary)
         .lineLimit(1)
     }
@@ -82,12 +77,12 @@ private struct MiniPanel: View {
         }
     }
 
-    /// The current series (the one still reporting) in accent, the rest gray: for pods by
+    /// The current series (the one still reporting) bright, the rest faint: for pods by
     /// version, the new tag reads as the live one.
     private func color(_ label: String) -> Color {
-        guard panel.series.count > 1 else { return .accentColor }
+        guard panel.series.count > 1 else { return Color.white.opacity(0.85) }
         let latest = panel.series.first { $0.label == label }?.points.last?[1] ?? 0
-        return latest > 0 ? .accentColor : .secondary
+        return latest > 0 ? Ink.mark : Color.white.opacity(0.25)
     }
 
     private var yMax: Double {
@@ -107,13 +102,13 @@ private struct MiniPanel: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(panel.title)
-                    .font(.system(size: 10.5, weight: .medium))
+                    .font(.geist(10.5, .semibold))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 2)
                 Text(shown.map(panel.unit.format) ?? "–")
-                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    .font(Typo.figure(12.5))
                     .foregroundStyle(panel.error == nil ? .primary : .tertiary)
                     .contentTransition(.numericText())
                     .lineLimit(1)
@@ -121,22 +116,22 @@ private struct MiniPanel: View {
             }
             if let error = panel.error {
                 Text(error)
-                    .font(.system(size: 10))
+                    .font(.geist(10))
                     .foregroundStyle(.tertiary)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, minHeight: 38, alignment: .topLeading)
                     .help(error)
             } else if points.isEmpty {
                 Text("No data in this window")
-                    .font(.system(size: 10))
+                    .font(.geist(10))
                     .foregroundStyle(.tertiary)
                     .frame(maxWidth: .infinity, minHeight: 38, alignment: .center)
             } else {
                 chart.frame(height: 38)
             }
         }
-        .padding(8)
-        .background(.quaternary.opacity(hovering ? 0.65 : 0.4), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .padding(10)
+        .background(hovering ? Ink.hover : .clear)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture { SystemActions.open(panel.link) }
@@ -152,9 +147,10 @@ private struct MiniPanel: View {
         let single = panel.series.count == 1
         return Chart {
             ForEach(points) { p in
+                // One series: a soft fade under the line, so the shape reads at a glance.
                 if single {
                     AreaMark(x: .value("Time", p.at), y: .value("Value", p.value))
-                        .foregroundStyle(Color.accentColor.opacity(0.14))
+                        .foregroundStyle(LinearGradient(colors: [Color.white.opacity(0.16), Color.white.opacity(0)], startPoint: .top, endPoint: .bottom))
                         .interpolationMethod(.monotone)
                 }
                 LineMark(x: .value("Time", p.at), y: .value("Value", p.value), series: .value("Series", p.series))
@@ -162,14 +158,20 @@ private struct MiniPanel: View {
                     .lineStyle(StrokeStyle(lineWidth: 1.25, lineCap: .round, lineJoin: .round))
                     .interpolationMethod(.monotone)
             }
+            // The latest point, where the value in the corner comes from.
+            if single, hover == nil, let last = points.last {
+                PointMark(x: .value("Time", last.at), y: .value("Value", last.value))
+                    .symbolSize(16)
+                    .foregroundStyle(Ink.text)
+            }
             ForEach(board.deploys.filter { $0.at >= board.from && $0.at <= board.to }) { deploy in
                 RuleMark(x: .value("Deploy", deploy.at))
-                    .foregroundStyle(deploy.status == .failed ? Color.red.opacity(0.8) : Color.secondary.opacity(0.55))
+                    .foregroundStyle(deploy.status == .failed ? Ink.red.opacity(0.8) : Color.white.opacity(0.3))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 2]))
             }
             if let marker = board.marker {
                 RuleMark(x: .value("Alert", marker))
-                    .foregroundStyle(Color.orange)
+                    .foregroundStyle(Ink.amber)
                     .lineStyle(StrokeStyle(lineWidth: 1.25))
             }
             if let hover {
@@ -214,20 +216,20 @@ private struct DeployList: View {
             ForEach(deploys.prefix(limit)) { deploy in
                 HStack(spacing: 6) {
                     Image(systemName: deploy.status == .failed ? "xmark.octagon.fill" : "arrow.up.circle")
-                        .font(.system(size: 10))
-                        .foregroundStyle(deploy.status == .failed ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
+                        .font(.geist(10))
+                        .foregroundStyle(deploy.status == .failed ? AnyShapeStyle(Ink.red) : AnyShapeStyle(.secondary))
                         .frame(width: 12)
                     Text("\(deploy.image) \(deploy.version)")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.geist(11, .medium))
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Text(deploy.status == .failed ? "failed at \(deploy.stage)" : "deployed · \(deploy.stage)")
-                        .font(.system(size: 11))
-                        .foregroundStyle(deploy.status == .failed ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
+                        .font(.geist(11))
+                        .foregroundStyle(deploy.status == .failed ? AnyShapeStyle(Ink.red) : AnyShapeStyle(.secondary))
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     Text(Format.relative(deploy.at))
-                        .font(.system(size: 10.5))
+                        .font(.geist(10.5))
                         .monospacedDigit()
                         .foregroundStyle(.tertiary)
                 }
@@ -235,7 +237,7 @@ private struct DeployList: View {
             }
             if deploys.count > limit {
                 Text("\(deploys.count - limit) more deploy\(deploys.count - limit == 1 ? "" : "s")")
-                    .font(.system(size: 10.5))
+                    .font(.geist(10.5))
                     .foregroundStyle(.tertiary)
                     .padding(.leading, 18)
             }
@@ -251,26 +253,28 @@ struct BoardSkeleton: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
-                ForEach(0..<count, id: \.self) { _ in
-                    VStack(alignment: .leading, spacing: 8) {
-                        RoundedRectangle(cornerRadius: 2).fill(.quaternary).frame(width: 70, height: 7)
-                        RoundedRectangle(cornerRadius: 3).fill(.quaternary.opacity(0.6)).frame(height: 32)
-                    }
-                    .padding(8)
-                    .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    .modifier(Pulse(active: true))
+            CellGrid(items: (0..<count).map(SkeletonCell.init)) { _ in
+                VStack(alignment: .leading, spacing: 8) {
+                    RoundedRectangle(cornerRadius: 2).fill(Ink.track).frame(width: 70, height: 7)
+                    RoundedRectangle(cornerRadius: 3).fill(Ink.track.opacity(0.6)).frame(height: 32)
                 }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .modifier(Pulse(active: true))
             }
             HStack(spacing: 6) {
                 ProgressView().controlSize(.mini)
                 Text("Querying Grafana…")
             }
-            .font(.system(size: 10))
+            .font(.geist(10))
             .foregroundStyle(.tertiary)
         }
         .accessibilityLabel("Loading Grafana charts")
     }
+}
+
+private struct SkeletonCell: Identifiable {
+    let id: Int
 }
 
 struct BoardMessage: View {
@@ -280,16 +284,16 @@ struct BoardMessage: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: symbol)
-                .font(.system(size: 12))
+                .font(.geist(12))
                 .foregroundStyle(.secondary)
             Text(text)
-                .font(.system(size: 11))
+                .font(.geist(11))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .padding(10)
-        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .outlined()
     }
 }
 
@@ -315,7 +319,11 @@ struct BoardLoader<Content: View>: View {
                     loadedKey = key
                 }
                 while !Task.isCancelled {
-                    board = await board.reloaded(fetch)
+                    let next = await board.reloaded(fetch)
+                    // Switching tabs cancels this task after the next one has reset the board:
+                    // writing now would put this key's board (or error) under the other tab.
+                    guard !Task.isCancelled else { return }
+                    board = next
                     try? await Task.sleep(for: .seconds(60))
                 }
             }

@@ -9,17 +9,19 @@ struct HeaderView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 8) {
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 7) {
+                        BrandMark(size: 20)
                         Text("Bridgetown")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.geist(15, .semibold))
+                            .tracking(-0.4)
                         if store.snapshot?.status.dryRun == true {
                             Text("Dry run")
-                                .font(.system(size: 10, weight: .medium))
+                                .font(.geist(10, .medium))
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal, 5)
-                                .padding(.vertical, 1)
-                                .overlay(Capsule().strokeBorder(.tertiary, lineWidth: 0.5))
+                                .padding(.vertical, 2)
+                                .overlay(PixelStroke(radius: Ink.tagRadius, style: Ink.outline))
                                 .help("Agents run, but nothing is posted to Slack")
                         }
                     }
@@ -27,7 +29,7 @@ struct HeaderView: View {
                         HealthStrip(status: status, now: now)
                     } else {
                         Text(subtitle)
-                            .font(.system(size: 11))
+                            .font(.geist(11))
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -50,8 +52,8 @@ struct HeaderView: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 10)
+        .padding(.top, 14)
+        .padding(.bottom, 12)
     }
 
     private func showSettings() {
@@ -232,7 +234,7 @@ private struct HealthStrip: View {
     }
 
     var body: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: 8) {
             ForEach(services) { service in
                 HStack(spacing: 4) {
                     dot(service.health)
@@ -250,16 +252,16 @@ private struct HealthStrip: View {
                     .monospacedDigit()
             }
         }
-        .font(.system(size: 10.5, weight: .medium))
+        .font(.geist(10.5, .medium))
         .lineLimit(1)
     }
 
     @ViewBuilder
     private func dot(_ health: Service.Health) -> some View {
         switch health {
-        case .ok: Circle().fill(Color.secondary.opacity(0.6)).frame(width: 5, height: 5)
-        case .warning: Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 8)).foregroundStyle(.orange)
-        case .error: Image(systemName: "exclamationmark.octagon.fill").font(.system(size: 8)).foregroundStyle(.red)
+        case .ok: Circle().fill(Ink.faint).frame(width: 5, height: 5)
+        case .warning: Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 8)).foregroundStyle(Ink.amber)
+        case .error: Image(systemName: "exclamationmark.octagon.fill").font(.system(size: 8)).foregroundStyle(Ink.red)
         case .unknown: Circle().strokeBorder(Color.secondary, lineWidth: 1).frame(width: 5, height: 5)
         }
     }
@@ -272,10 +274,10 @@ private struct ProblemLine: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: problem.severity == .error ? "exclamationmark.octagon.fill" : "exclamationmark.triangle.fill")
-                .font(.system(size: 10))
-                .foregroundStyle(problem.severity == .error ? Color.red : Color.orange)
+                .font(.geist(10))
+                .foregroundStyle(problem.severity == .error ? Ink.red : Ink.amber)
             Text(problem.text)
-                .font(.system(size: 11))
+                .font(.geist(11))
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
                 .help(problem.text)
@@ -283,7 +285,8 @@ private struct ProblemLine: View {
             if let fix = problem.fix {
                 Button(fix.label, action: onFix)
                     .buttonStyle(.link)
-                    .font(.system(size: 11))
+                    .foregroundStyle(Ink.blue)
+                    .font(.geist(11))
             }
         }
     }

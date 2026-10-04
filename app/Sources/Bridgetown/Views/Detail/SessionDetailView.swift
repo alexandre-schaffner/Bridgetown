@@ -10,13 +10,16 @@ struct SessionDetailView: View {
 
     private var alert: AlertView? { store.snapshot?.alert(id: session.alertId) }
 
+    /// "Codex", "CI": one column, so their values line up.
+    private static let keyWidth: CGFloat = 40
+
     var body: some View {
         VStack(spacing: 0) {
             DetailTopBar(title: session.title)
-            Divider()
+            Hairline()
             PaneScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 10) {
                         origin
                         summary
                     }
@@ -26,7 +29,7 @@ struct SessionDetailView: View {
                     } else if let alert {
                         DetailSection(title: "Triage") {
                             Text(alert.triage.reason)
-                                .font(.system(size: 12))
+                                .font(.geist(12))
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -50,7 +53,7 @@ struct SessionDetailView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
             }
-            Divider()
+            Hairline()
             bottomBar
         }
         .task(id: session.updatedAt) { await reloadTranscript() }
@@ -69,7 +72,7 @@ struct SessionDetailView: View {
                 // A finished session shows its outcome, not the last thing the agent was doing.
                 if !session.isActive, let resolution = session.resolutionLine {
                     Text(resolution)
-                        .font(.system(size: 11))
+                        .font(.geist(11))
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
@@ -80,12 +83,12 @@ struct SessionDetailView: View {
             VStack(alignment: .leading, spacing: 3) {
                 if session.isActive && !session.activity.isEmpty {
                     Text(session.activity)
-                        .font(.system(size: 11))
+                        .font(.geist(11))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
                 Text(session.meta(now: .now))
-                    .font(.system(size: 11))
+                    .font(.geist(11))
                     .monospacedDigit()
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
@@ -103,10 +106,11 @@ struct SessionDetailView: View {
             Text("·").foregroundStyle(.tertiary)
             Button("View alert") { store.show(.alert(session.alertId)) }
                 .buttonStyle(.link)
+                .foregroundStyle(Ink.blue)
                 .help("How Jev triaged it, the original message and its history")
             Spacer(minLength: 0)
         }
-        .font(.system(size: 11))
+        .font(.geist(11))
     }
 
     // MARK: PR / CI / Slack
@@ -128,7 +132,7 @@ struct SessionDetailView: View {
                     }
                     Spacer(minLength: 0)
                 }
-                .font(.system(size: 12))
+                .font(.geist(12))
                 .labelStyle(.titleAndIcon)
                 .imageScale(.small)
                 .lineLimit(1)
@@ -142,20 +146,32 @@ struct SessionDetailView: View {
                             LinkButton(title: "View", url: url, help: "Open the review request in Slack")
                         }
                     }
-                    .font(.system(size: 11))
+                    .font(.geist(11))
                 }
+
+                HStack(spacing: 6) {
+                    Text(session.reviewerName)
+                        .foregroundStyle(.tertiary)
+                        .frame(width: Self.keyWidth, alignment: .leading)
+                    Text(session.critiqueText)
+                        .foregroundStyle(.secondary)
+                }
+                .font(.geist(11))
+                .monospacedDigit()
+                .help("Another vendor's model reviews each fix the agent pushes; Jev drops the nitpicks. The PR leaves draft once it passes.")
 
                 HStack(spacing: 6) {
                     Text("CI")
                         .foregroundStyle(.tertiary)
+                        .frame(width: Self.keyWidth, alignment: .leading)
                     Text(session.ciText)
                         .foregroundStyle(.secondary)
                 }
-                .font(.system(size: 11))
+                .font(.geist(11))
                 .monospacedDigit()
                 if let branch = session.branch {
                     Text(branch)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.geistMono(11))
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -184,19 +200,17 @@ struct SessionDetailView: View {
         HStack(alignment: .bottom, spacing: 6) {
             TextField("Message the agent", text: $message, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12))
+                .font(.geist(12))
                 .lineLimit(1...4)
                 .onSubmit(send)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .inputField()
             Button(action: send) {
                 Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 20))
+                    .font(.geist(20))
                     .symbolRenderingMode(.hierarchical)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(canSend ? Color.accentColor : Color.secondary)
+            .foregroundStyle(canSend ? Ink.text : Color.secondary)
             .disabled(!canSend)
             .help("Send to the agent")
         }
@@ -227,7 +241,7 @@ struct SessionDetailView: View {
             } label: {
                 Label("Take over in Terminal", systemImage: "terminal")
             }
-            .controlSize(.small)
+            .buttonStyle(.stage(.secondary, compact: true))
             .disabled(session.claudeSessionId == nil)
             .help(session.claudeSessionId == nil ? "No Claude session yet" : "claude --resume in the worktree")
 
@@ -245,9 +259,9 @@ struct SessionDetailView: View {
                     Button(role: .destructive) {
                         confirmingStop = true
                     } label: {
-                        Text("Stop").foregroundStyle(.red)
+                        Text("Stop").foregroundStyle(Ink.red)
                     }
-                    .controlSize(.small)
+                    .buttonStyle(.stage(.secondary, compact: true))
                     .disabled(store.isBusy(session.id))
                 }
             }
@@ -263,20 +277,20 @@ private struct RootCauseNotice: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: "questionmark.circle")
-                .font(.system(size: 11, weight: .medium))
+                .font(.geist(11, .medium))
             VStack(alignment: .leading, spacing: 1) {
                 Text("Root cause not found")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.geist(11, .semibold))
                     .foregroundStyle(.primary)
                 Text("What follows are the agent's leads, not a confirmed cause.")
-                    .font(.system(size: 11))
+                    .font(.geist(11))
             }
         }
         .foregroundStyle(.secondary)
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .outlined()
         .accessibilityElement(children: .combine)
     }
 }
@@ -289,7 +303,7 @@ private struct TranscriptView: View {
         Group {
             if entries.isEmpty {
                 Text(error.map { "Couldn't load transcript · \($0)" } ?? "No transcript yet")
-                    .font(.system(size: 11))
+                    .font(.geist(11))
                     .foregroundStyle(.tertiary)
                     .frame(maxWidth: .infinity, minHeight: 60)
             } else {
@@ -308,7 +322,7 @@ private struct TranscriptView: View {
                 }
             }
         }
-        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .outlined()
     }
 
     private func row(_ e: TranscriptEntry) -> some View {
@@ -322,7 +336,8 @@ private struct TranscriptView: View {
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .font(.system(size: 10.5, design: .monospaced))
+        .font(.geistMono(10.5))
+        .lineSpacing(2)
         .textSelection(.enabled)
     }
 }

@@ -11,10 +11,10 @@ extension Tone {
     /// failure = red, everything else neutral.
     var color: Color {
         switch self {
-        case .live: .accentColor
-        case .waiting: .orange
-        case .success: .green
-        case .failure: .red
+        case .live: Ink.blue
+        case .waiting: Ink.amber
+        case .success: Ink.green
+        case .failure: Ink.red
         case .neutral, .unknown: .secondary
         }
     }
@@ -30,13 +30,13 @@ extension Board.Panel.Unit {
     func format(_ value: Double) -> String {
         switch self {
         case .ms:
-            return value >= 1000 ? "\((value / 1000).formatted(.number.precision(.fractionLength(1)))) s" : "\(Int(value.rounded())) ms"
+            return value >= 1000 ? "\(Format.decimal(value / 1000, digits: 1)) s" : "\(Int(value.rounded())) ms"
         case .per_s:
-            return "\(value.formatted(.number.precision(.significantDigits(1...2))))/s"
+            return "\(value.formatted(.number.precision(.significantDigits(1...2)).locale(Format.locale)))/s"
         case .bytes:
-            return Int64(value).formatted(.byteCount(style: .memory))
+            return Format.bytes(value)
         case .count, .unknown:
-            return value.formatted(.number.notation(.compactName).precision(.significantDigits(1...3)))
+            return Format.count(value)
         }
     }
 }
@@ -57,6 +57,7 @@ extension Session.State {
         case .preparing: "Preparing worktree"
         case .running: "Running"
         case .waiting: "Waiting on you"
+        case .critiquing: "In adversarial review"
         case .ci: "Waiting on CI"
         case .awaiting_merge: "Ready to merge"
         case .awaiting_release: "Ready to release"
@@ -104,6 +105,32 @@ extension Session {
         }
         return ciRounds > 0 ? "\(state) · \(rounds)" : state
     }
+
+    /// Who reviews the agent's fix: the other vendor's model.
+    var reviewerName: String {
+        switch critique?.reviewer {
+        case .unknown?: "Reviewer"
+        default: "Codex"
+        }
+    }
+
+    /// From the daemon's review step and the last review. The step stays current for the
+    /// whole loop, so only a `critiquing` session is being reviewed right now.
+    var critiqueText: String {
+        if status == .critiquing { return "Reviewing · round \(critiqueRounds + 1)" }
+        let dropped = (critique?.dropped ?? 0) > 0 ? "\(critique?.dropped ?? 0) dropped by Jev" : nil
+        let parts: [String?]
+        switch steps.first(where: { $0.key == .critique })?.state {
+        case .done?:
+            parts = ["Passed", critiqueRounds == 1 ? "1 round of fixes" : critiqueRounds > 1 ? "\(critiqueRounds) rounds of fixes" : nil, dropped]
+        case .skipped?:
+            return "Not run"
+        default:
+            guard let critique, !critique.passed else { return "Not run" }
+            parts = [critique.blocking == 1 ? "1 blocking finding" : "\(critique.blocking) blocking findings", dropped, status == .running ? "agent fixing" : nil]
+        }
+        return parts.compactMap { $0 }.joined(separator: " · ")
+    }
 }
 
 // MARK: - Who has the next move
@@ -132,7 +159,7 @@ extension Session {
     /// Nil once the session is finished.
     var holder: Holder? {
         switch status {
-        case .preparing, .running: .agent
+        case .preparing, .running, .critiquing: .agent
         case .waiting, .awaiting_merge, .awaiting_release: .you
         // CI green but the review request didn't go out: the daemon hands that to you.
         case .ci: reviewChannel != nil ? .reviewers : tone == .waiting ? .you : .ci
@@ -187,7 +214,7 @@ extension Step.State {
 extension Tone {
     /// Where a session stopped: red only when the daemon calls it a failure; a closed or
     /// stopped session is gray.
-    var stopTint: Color { self == .failure ? .red : .secondary }
+    var stopTint: Color { self == .failure ? Ink.red : .secondary }
 
     var stopSymbol: String { self == .failure ? "xmark.circle" : "minus.circle" }
 }
@@ -213,7 +240,7 @@ extension Jev {
     /// "build failure" from `build_failure`.
     var kindLabel: String { kind.replacingOccurrences(of: "_", with: " ") }
 
-    var urgencyLabel: String { urgency.formatted(.number.precision(.fractionLength(1))) }
+    var urgencyLabel: String { Format.decimal(urgency, digits: 1) }
 }
 
 // MARK: - Alert outcome
@@ -233,9 +260,11 @@ struct OutcomeGlyph {
         case .ignored: self.init("minus.circle", .tertiary, dimmed: true)
         case .suggested: self.init("hand.raised", .secondary)
         case .escalated: self.init("person.fill.questionmark", .secondary)
-        case .waiting: self.init("hand.raised.fill", .orange)
+        case .waiting: self.init("hand.raised.fill", Ink.amber)
         case .dismissed: self.init("xmark.circle", .tertiary, dimmed: true)
         case .opened: self.init("arrow.up.right.circle", .secondary)
+        // Someone else owns it: worth reading, not yours to act on.
+        case .teammate: self.init("person.fill", .secondary)
         case .session: self.init(session: session, tone: outcome.tone)
         case .unknown: self.init("questionmark.circle", .tertiary, dimmed: true)
         }
@@ -243,17 +272,17 @@ struct OutcomeGlyph {
 
     private init(session: Session?, tone: Tone) {
         switch session?.status {
-        case .resolved?: self.init("checkmark.circle.fill", .green)
+        case .resolved?: self.init("checkmark.circle.fill", Ink.green)
         // Closed by the user without a fix: neutral, never a success mark.
         case .closed?: self.init("minus.circle", .secondary)
-        case .failed?: self.init("xmark.octagon", .red)
+        case .failed?: self.init("xmark.octagon", Ink.red)
         case .stopped?: self.init("stop.circle", .secondary, dimmed: true)
         case nil, .unknown?:
             // The session has aged out of the snapshot: only its tone is known. Success is
             // the daemon's word for a verified outcome, the same fact as `resolved`.
             switch tone {
-            case .success: self.init("checkmark.circle.fill", .green)
-            case .failure: self.init("xmark.octagon", .red)
+            case .success: self.init("checkmark.circle.fill", Ink.green)
+            case .failure: self.init("xmark.octagon", Ink.red)
             case .live, .waiting: self.init("bolt.fill", tone.color)
             case .neutral, .unknown: self.init("minus.circle", .secondary)
             }
@@ -318,7 +347,7 @@ extension TranscriptEntry.Kind {
         case .text, .result: AnyShapeStyle(.primary)
         case .tool: AnyShapeStyle(.secondary)
         case .status, .unknown: AnyShapeStyle(.tertiary)
-        case .error: AnyShapeStyle(Color.red)
+        case .error: AnyShapeStyle(Ink.red)
         }
     }
 
@@ -334,9 +363,41 @@ extension TranscriptEntry.Kind {
 // MARK: - Formatting
 
 enum Format {
+    /// Numbers follow the copy, which is English: "1.2k" and "$0.97", never "1,2k" or "0,97 $".
+    static let locale = Locale(identifier: "en_US")
+
+    /// "0.9", "2.3": at most `digits` decimals, no trailing zeros.
+    static func decimal(_ value: Double, digits: Int) -> String {
+        value.formatted(.number.precision(.fractionLength(0...digits)).rounded(rule: .toNearestOrAwayFromZero).locale(locale))
+    }
+
+    /// Memory in binary units, one decimal below 100: "567 MB", "35.3 GB".
+    static func bytes(_ value: Double) -> String {
+        let units = ["B", "KB", "MB", "GB", "TB", "PB"]
+        var v = max(0, value)
+        var i = 0
+        while v >= 1024, i < units.count - 1 {
+            v /= 1024
+            i += 1
+        }
+        return "\(decimal(v, digits: i == 0 || v >= 100 ? 0 : 1)) \(units[i])"
+    }
+
+    /// A count as a person reads it: "4.5" and "21" below a thousand (a decimal only
+    /// while it changes the reading), then "1.2k", "34k", "1.2M".
+    static func count(_ value: Double) -> String {
+        let v = abs(value)
+        switch v {
+        case 1_000_000...: return "\(decimal(value / 1_000_000, digits: v < 10_000_000 ? 1 : 0))M"
+        case 1000...: return "\(decimal(value / 1000, digits: v < 10_000 ? 1 : 0))k"
+        case 10...: return decimal(value.rounded(), digits: 0)
+        default: return decimal(value, digits: 1)
+        }
+    }
+
     /// "#alert-dev"; a direct message is named "DM" or "group DM" by the daemon and takes no `#`.
     static func channel(_ name: String) -> String {
-        name == "DM" || name == "group DM" ? name : "#\(name)"
+        name == "DM" || name == "group DM" || name == "Grafana" ? name : "#\(name)"
     }
 
     /// "now", "4m", "2h", "3d", then a short date.
@@ -371,7 +432,7 @@ enum Format {
     }
 
     static func cost(_ usd: Double) -> String {
-        usd.formatted(.currency(code: "USD").presentation(.narrow).precision(.fractionLength(2)))
+        usd.formatted(.currency(code: "USD").precision(.fractionLength(2)).locale(locale))
     }
 
     /// "#4123" from a GitHub PR URL, else "".

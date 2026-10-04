@@ -205,6 +205,17 @@ private struct TriageTab: View {
                 threshold("Actionable ≥", \.suggestActionable)
                 threshold("Agent-resolvable ≥", \.suggestResolvable)
             }
+
+            Section {
+                threshold("Real defect ≥", \.findingReal)
+                threshold("Blocking ≥", \.findingBlocking)
+                threshold("Answered by agent <", \.findingRebutted)
+            } header: {
+                Text("Review finding goes back to the agent when")
+            } footer: {
+                Text("Jev judges each finding from the adversarial review. Everything else is dropped as a nitpick.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
     }
@@ -287,6 +298,20 @@ private struct BehaviourTab: View {
                 Toggle("Dry run", isOn: settings.binding(\.dryRun))
             } footer: {
                 Text("Agents still run, but nothing is posted to Slack.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("Adversarial review", isOn: settings.binding(\.adversarialReview))
+            } footer: {
+                Text("Codex reviews every fix an agent pushes, and the agent fixes what it finds, before the PR leaves draft. Off: PRs go straight to CI.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("Watch prod", isOn: settings.binding(\.watchProd))
+            } footer: {
+                Text("Every 5 minutes, Bridgetown checks the overview's prod signals in Grafana. When one stays well above its usual level and no Slack alert covers it, you get a suggestion to investigate. It never starts an agent on its own.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 

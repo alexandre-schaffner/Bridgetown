@@ -14,7 +14,8 @@ struct DetailTopBar: View {
             }
             .keyboardShortcut(.cancelAction)
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.geist(15, .semibold))
+                .tracking(-0.4)
                 .lineLimit(lineLimit)
                 .truncationMode(.tail)
                 .fixedSize(horizontal: false, vertical: true)
@@ -24,6 +25,6 @@ struct DetailTopBar: View {
         }
         .padding(.leading, 8)
         .padding(.trailing, 16)
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
     }
 }

@@ -45,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Geist.register()
         NSApp.setActivationPolicy(.accessory)
         installSignalHandlers()
 
