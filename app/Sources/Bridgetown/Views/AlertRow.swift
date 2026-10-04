@@ -5,11 +5,21 @@ struct AlertRow: View {
     let alert: AlertView
     let session: Session?
     let now: Date
-    @ViewState private var hovering = false
 
     var body: some View {
+        Button { store.show(.alert(alert.id)) } label: { content }
+            .buttonStyle(RowButtonStyle())
+            .help(tooltip)
+            .accessibilityElement(children: .combine)
+            .accessibilityHint("Shows how this alert was triaged and how it ended")
+            .contextMenu { menu }
+            .opacity(store.isBusy(alert.id) ? 0.5 : 1)
+            .animation(Easing.quick, value: store.isBusy(alert.id))
+    }
+
+    private var content: some View {
         let glyph = OutcomeGlyph(alert.outcome, session: session)
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        return HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: glyph.symbol)
                 .font(.geist(12, .medium))
                 .foregroundStyle(glyph.style)
@@ -43,17 +53,8 @@ struct AlertRow: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .background(hovering ? Ink.hover : .clear)
-        .onHover { hovering = $0 }
-        .onTapGesture { store.show(.alert(alert.id)) }
-        .help(tooltip)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityHint("Shows how this alert was triaged and how it ended")
-        .accessibilityAction { store.show(.alert(alert.id)) }
-        .contextMenu { menu }
-        .opacity(store.isBusy(alert.id) ? 0.5 : 1)
     }
 
     @ViewBuilder

@@ -8,7 +8,7 @@ import SwiftUI
 /// pointer through everywhere but the island itself, so it never blocks the menu bar or
 /// the windows under it.
 ///
-/// - Hovering swells the island (and taps the trackpad); clicking opens it.
+/// - Hovering swells the island (and taps the trackpad); pressing it opens it.
 /// - A new "Needs you" drops a banner under the notch for a few seconds.
 /// - Open, it takes keyboard focus without activating the app, like Spotlight; Esc, a
 ///   click outside, or opening another of the app's windows closes it.
@@ -52,7 +52,7 @@ final class IslandController {
         let root = IslandView(model: model) { [weak self] in self?.open() }
             .environment(store)
             .environment(daemon)
-        let host = NSHostingView(rootView: root)
+        let host = FirstMouseHostingView(rootView: root)
         host.sizingOptions = []
         panel.contentView = host
         self.panel = panel
@@ -169,15 +169,17 @@ final class IslandController {
 
     // MARK: Panel
 
-    /// Sizes the panel for the open island plus room for its shadow, hung from the top
-    /// edge, centred on the notch.
+    /// Sizes the panel for the open island plus room for its whole shadow (it falls 14pt
+    /// and blurs 26pt, so it needs about 80 below and 60 aside; less cuts it off in a hard
+    /// line), hung from the top edge, centred on the notch.
     private func place() {
         model.geometry = .current()
         guard let panel else { return }
         let g = model.geometry
-        let margin: CGFloat = 48
-        let width = IslandModel.layout(.open, hovering: false, glance: model.glance, geometry: g).frameWidth + 2 * margin
-        let height = g.notch.height + g.openHeight + margin
+        let side: CGFloat = 64
+        let below: CGFloat = 88
+        let width = IslandModel.layout(.open, hovering: false, glance: model.glance, geometry: g).frameWidth + 2 * side
+        let height = g.notch.height + g.openHeight + below
         panel.setFrame(NSRect(x: g.centerX - width / 2, y: g.top - height, width: width, height: height), display: true)
     }
 
@@ -208,21 +210,35 @@ final class IslandController {
             MainActor.assumeIsolated { self?.trackPointer(moved: true) }
             return event
         }) { monitors.append(m) }
-        // A click anywhere else closes it: in another app (global) or another of our windows.
-        if let m = NSEvent.addGlobalMonitorForEvents(matching: clicks, handler: { [weak self] _ in
-            MainActor.assumeIsolated { self?.clickedOutside() }
+        // A press on the island opens it; anywhere else, in another app (global) or another
+        // of our windows (local), closes it.
+        if let m = NSEvent.addGlobalMonitorForEvents(matching: clicks, handler: { [weak self] event in
+            MainActor.assumeIsolated { self?.pressed(event) }
         }) { monitors.append(m) }
         if let m = NSEvent.addLocalMonitorForEvents(matching: clicks, handler: { [weak self] event in
-            MainActor.assumeIsolated {
-                if event.window !== self?.panel { self?.clickedOutside() }
-            }
+            MainActor.assumeIsolated { self?.pressed(event) }
             return event
         }) { monitors.append(m) }
     }
 
-    private func clickedOutside() {
-        guard model.presentation != .resting, !model.frame.contains(NSEvent.mouseLocation) else { return }
+    /// Opens on the press, not the release, the way a menu does. The first press can reach
+    /// the island before any pointer move has let the panel take the mouse (it then lands
+    /// on the menu bar under it, seen by the global monitor) or while the panel is not key
+    /// yet; opening from here makes the first click count either way.
+    private func pressed(_ event: NSEvent) {
+        let point = NSEvent.mouseLocation
+        if model.presentation != .open, event.type == .leftMouseDown, model.isTarget, hitFrame.contains(point) {
+            open()
+            return
+        }
+        guard model.presentation != .resting, !model.frame.contains(point) else { return }
         close()
+    }
+
+    /// The island's frame plus the screen's top row, which the pointer can sit on a hair
+    /// above the frame's open edge.
+    private var hitFrame: NSRect {
+        model.frame.insetBy(dx: -2, dy: 0).offsetBy(dx: 0, dy: 1).union(model.frame)
     }
 
     /// The panel takes the pointer only over the island; hovering the resting island swells it.
@@ -236,7 +252,7 @@ final class IslandController {
         guard let panel, panel.isVisible else { return }
         let point = NSEvent.mouseLocation
         // The pointer can sit on the screen's top row, a hair above the frame's open edge.
-        let inside = model.isTarget && model.frame.insetBy(dx: -2, dy: 0).offsetBy(dx: 0, dy: 1).union(model.frame).contains(point)
+        let inside = model.isTarget && hitFrame.contains(point)
         panel.ignoresMouseEvents = !inside
         guard model.presentation != .open else { return }
         guard inside else {
@@ -257,7 +273,7 @@ final class IslandController {
             self.hoverTask = nil
             guard self.model.presentation != .open, !self.model.hovering,
                   NSEvent.pressedMouseButtons == 0,
-                  self.model.frame.insetBy(dx: -2, dy: 0).offsetBy(dx: 0, dy: 1).union(self.model.frame).contains(NSEvent.mouseLocation)
+                  self.hitFrame.contains(NSEvent.mouseLocation)
             else { return }
             Haptics.perform(.alignment, "island.hover")
             withAnimation(Self.swell) { self.model.hovering = true }
@@ -274,6 +290,12 @@ extension IslandController {
     }
 }
 #endif
+
+/// Takes the click that brings the panel forward as a click: the island is never key while
+/// resting, and without this its first click only focuses it.
+private final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
 
 /// Borderless, transparent, above the menu bar, on every Space and over full-screen apps.
 final class IslandPanel: NSPanel {

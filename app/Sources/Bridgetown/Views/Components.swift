@@ -47,6 +47,8 @@ struct Hairline: View {
 // MARK: Row list
 
 /// Rows in one outlined block, a hairline between each: a table, not a stack of cards.
+/// A row that arrives fades in where it lands and one that leaves fades out as the rest
+/// close up, so a card resolving or an alert coming in reads as one change, not a jump.
 struct RowList<Data: RandomAccessCollection, Row: View>: View where Data.Element: Identifiable {
     let data: Data
     @ViewBuilder let row: (Data.Element) -> Row
@@ -54,11 +56,15 @@ struct RowList<Data: RandomAccessCollection, Row: View>: View where Data.Element
     var body: some View {
         VStack(spacing: 0) {
             ForEach(Array(data.enumerated()), id: \.element.id) { index, element in
-                if index > 0 { Hairline() }
-                row(element)
+                VStack(spacing: 0) {
+                    if index > 0 { Hairline() }
+                    row(element)
+                }
+                .transition(.opacity)
             }
         }
         .outlined()
+        .animation(Easing.state, value: data.map(\.id))
     }
 }
 
@@ -192,16 +198,63 @@ struct ChannelChip: View {
 /// footer, content pinned to the top. The popover has a constant height because a
 /// MenuBarExtra window does not shrink when its content does, and a growing and
 /// shrinking window leaves blank bands around centred content.
+///
+/// Scrolled, a soft shadow falls from the top edge, as if the content slid under what is
+/// above it; with more below, the bottom edge fades out. Neither shows when everything fits.
 struct PaneScrollView<Content: View>: View {
     @ViewBuilder var content: Content
 
+    @ViewState private var edges = ScrollEdges()
+
     var body: some View {
-        ScrollView(.vertical) {
-            content.frame(maxWidth: .infinity, alignment: .topLeading)
+        GeometryReader { viewport in
+            ScrollView(.vertical) {
+                content
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .background {
+                        GeometryReader { geo in
+                            Color.clear.preference(key: ContentFrameKey.self, value: geo.frame(in: .named(ScrollEdges.space)))
+                        }
+                    }
+            }
+            .coordinateSpace(name: ScrollEdges.space)
+            .scrollBounceBehavior(.basedOnSize)
+            .onPreferenceChange(ContentFrameKey.self) { frame in
+                let next = ScrollEdges(
+                    above: frame.minY < -1,
+                    below: frame.maxY > viewport.size.height + 1
+                )
+                if next != edges { withAnimation(Easing.quick) { edges = next } }
+            }
+            .overlay(alignment: .top) {
+                LinearGradient(colors: [.black.opacity(0.7), .black.opacity(0)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 14)
+                    .opacity(edges.above ? 1 : 0)
+                    .allowsHitTesting(false)
+            }
+            .overlay(alignment: .bottom) {
+                LinearGradient(colors: [.black.opacity(0), .black.opacity(0.85)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 24)
+                    .opacity(edges.below ? 1 : 0)
+                    .allowsHitTesting(false)
+            }
         }
-        .scrollBounceBehavior(.basedOnSize)
         .frame(maxHeight: .infinity, alignment: .top)
     }
+}
+
+private struct ScrollEdges: Equatable {
+    static let space = "paneScroll"
+
+    /// Content scrolled up past the top edge.
+    var above = false
+    /// More content below the bottom edge.
+    var below = false
+}
+
+private struct ContentFrameKey: PreferenceKey {
+    static let defaultValue = CGRect.zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
 }
 
 // MARK: Hover
@@ -223,6 +276,42 @@ struct HoverHighlight: ViewModifier {
 
 extension View {
     func hoverHighlight(radius: CGFloat = 6) -> some View { modifier(HoverHighlight(radius: radius)) }
+
+    /// A row in a `RowList` with controls of its own: a faint fill on hover. A row that is
+    /// one button uses `RowButtonStyle`, which also answers the press.
+    func rowHighlight() -> some View { modifier(RowHighlight()) }
+}
+
+struct RowHighlight: ViewModifier {
+    @ViewState private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(hovering ? Ink.hover : .clear)
+            .onHover { hovering = $0 }
+            .animation(Easing.quick, value: hovering)
+    }
+}
+
+/// A whole row as a button: a faint fill on hover, a firmer one while the button is
+/// down, so a click is felt before it navigates.
+struct RowButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        RowLabel(configuration: configuration)
+    }
+
+    private struct RowLabel: View {
+        let configuration: Configuration
+        @ViewState private var hovering = false
+
+        var body: some View {
+            configuration.label
+                .background(configuration.isPressed ? Ink.selected : hovering ? Ink.hover : .clear)
+                .onHover { hovering = $0 }
+                .animation(Easing.quick, value: hovering)
+                .animation(Easing.quick, value: configuration.isPressed)
+        }
+    }
 }
 
 // MARK: Pulse
@@ -266,12 +355,15 @@ struct IconButton: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: size, weight: weight))
+                // Pause becomes play (and back) as one symbol morphing, not a swap.
+                .contentTransition(.symbolEffect(.replace))
                 .frame(width: 24, height: 24)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
         .hoverHighlight(radius: 6)
+        .animation(Easing.state, value: systemName)
         .help(help)
         .accessibilityLabel(help)
     }

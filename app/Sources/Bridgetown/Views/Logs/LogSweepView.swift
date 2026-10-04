@@ -57,9 +57,10 @@ private struct SweepContent: View {
             if !steady.isEmpty {
                 if showSteady {
                     RowList(data: steady) { PatternRow(pattern: $0) }
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                 }
                 Button(showSteady ? "Hide steady errors" : "Show \(steady.count) steady error\(steady.count == 1 ? "" : "s")") {
-                    withAnimation(.snappy(duration: 0.2)) { showSteady.toggle() }
+                    withAnimation(Easing.state) { showSteady.toggle() }
                 }
                 .buttonStyle(.stage(.secondary, compact: true))
                 .frame(maxWidth: .infinity)
@@ -78,14 +79,9 @@ private struct SweepContent: View {
             Button {
                 SystemActions.open(sweep.link)
             } label: {
-                HStack(spacing: 3) {
-                    Text("Open in Grafana")
-                    Image(systemName: "arrow.up.right")
-                        .font(.geist(8.5, .semibold))
-                }
+                NudgeLabel(title: "Open in Grafana", symbol: "arrow.up.right", nudge: CGSize(width: 1.5, height: -1.5))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
             .help("Prod's error lines over the last 3 hours, in Grafana Explore")
         }
         .font(.geist(10.5).monospacedDigit())
@@ -99,7 +95,6 @@ private struct SweepContent: View {
 private struct PatternRow: View {
     @Environment(Store.self) private var store
     let pattern: LogSweep.Pattern
-    @ViewState private var hovering = false
 
     /// Jev called it a problem and the daemon raised a finding for it.
     private var problem: Bool { pattern.alertId != nil }
@@ -145,15 +140,10 @@ private struct PatternRow: View {
                             Button {
                                 store.show(.alert(alertId))
                             } label: {
-                                HStack(spacing: 2) {
-                                    Text("Finding")
-                                    Image(systemName: "chevron.right")
-                                        .font(.geist(8, .semibold))
-                                }
+                                NudgeLabel(title: "Finding", symbol: "chevron.right", nudge: CGSize(width: 2, height: 0))
                             }
                             .buttonStyle(.plain)
                             .font(.geist(10.5, .medium))
-                            .foregroundStyle(.secondary)
                             .help("Show the finding Bridgetown raised for this pattern")
                         }
                     }
@@ -163,15 +153,13 @@ private struct PatternRow: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .contentShape(Rectangle())
-        .background(hovering ? Ink.hover : .clear)
-        .onHover { hovering = $0 }
+        .rowHighlight()
         .onTapGesture { SystemActions.open(pattern.link) }
         .help(tooltip)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isLink)
         .accessibilityHint("Opens its lines in Grafana")
         .contextMenu { menu }
-        .animation(.easeOut(duration: 0.12), value: hovering)
     }
 
     @ViewBuilder
@@ -195,5 +183,27 @@ private struct PatternRow: View {
         if !pattern.versions.isEmpty { lines.append("Versions \(pattern.versions.joined(separator: ", "))") }
         lines.append("Click to open its lines in Grafana")
         return lines.joined(separator: "\n")
+    }
+}
+
+/// A text link whose trailing glyph leans the way it goes on hover: right for into the
+/// app, up and out for the browser. The text brightens with it.
+private struct NudgeLabel: View {
+    let title: String
+    let symbol: String
+    let nudge: CGSize
+    @ViewState private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Text(title)
+            Image(systemName: symbol)
+                .font(.geist(8.5, .semibold))
+                .offset(hovering ? nudge : .zero)
+        }
+        .foregroundStyle(hovering ? .primary : .secondary)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .animation(Easing.quick, value: hovering)
     }
 }

@@ -26,14 +26,32 @@ struct TelemetryPanel: View {
                 .outlined()
             VStack(alignment: .leading, spacing: 8) {
                 header
-                switch mode {
-                case .incidents: board("incidents")
-                case .infra: board("infra")
-                case .database: board("database")
-                case .logs: LogSweepView(now: now)
+                // One board crossfades into the next, rather than swapping in a frame.
+                Group {
+                    switch mode {
+                    case .incidents: board("incidents")
+                    case .infra: board("infra")
+                    case .database: board("database")
+                    case .logs: LogSweepView(now: now)
+                    }
                 }
+                .id(mode)
+                .transition(.opacity)
             }
+            .animation(Easing.state, value: mode)
+            .onHorizontalSwipe(swipedTab)
         }
+    }
+
+    /// Fingers moving left show the next board, right the previous one; nothing past either end.
+    private func swipedTab(_ direction: SwipeDirection) -> Bool {
+        let all = Mode.allCases
+        guard let index = all.firstIndex(of: mode) else { return false }
+        let next = direction == .forward ? index + 1 : index - 1
+        guard all.indices.contains(next) else { return false }
+        Haptics.perform(.alignment, "telemetry.swipeTab")
+        mode = all[next]
+        return true
     }
 
     /// A board view of `GET /boards/:view`.

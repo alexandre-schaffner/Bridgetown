@@ -2,7 +2,7 @@
 
 A macOS menu bar app that handles Merkl's Slack alerts and requests so you don't have to context-switch.
 
-It lives in the notch too: wings either side of it show running agents and what needs you, a banner drops out of it when something new lands, and clicking (or `make dev-app ARGS=--island-demo` for design review) unfolds the whole app wide under it. On a screen without a notch it hangs from the top centre and only shows when it has something to say. Turn it off in **Settings → Behaviour**; the menu bar item stays.
+It lives in the notch too: wings either side of it show running agents and what needs you, a banner drops out of it when something new lands, and clicking (or `make dev-app ARGS=--island-demo` for design review) unfolds the whole app wide under it. On a screen without a notch it hangs from the top centre and only shows when it has something to say. Turn it off in **Settings → Behaviour**; the menu bar item stays. A two-finger swipe goes back from a session or alert, and moves between Prod's boards.
 
 It watches the `#alert-*` channels plus every mention, team mention and DM addressed to you. For each item it asks
 **Jev** (TypeSafe System One) one question: hand this to a Claude agent, or put it in front of you? Agents take

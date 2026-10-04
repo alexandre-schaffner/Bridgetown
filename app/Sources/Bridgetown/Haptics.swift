@@ -10,12 +10,24 @@ import OSLog
 /// - `.alignment`: something snapped into place, like a tab or a card opening.
 /// - `.generic`: you moved somewhere, into a session or back out.
 /// - `.levelChange`: the island opening under your click.
+///
+/// One gesture, one tap: a second one within `minimumGap` (hovering the island and
+/// pressing it at once, a click that both selects and navigates) is dropped, since two
+/// taps that close together feel like a stutter, not two events.
 @MainActor
 enum Haptics {
     private static let log = Logger(subsystem: "xyz.merkl.bridgetown", category: "haptics")
+    private static let minimumGap: TimeInterval = 0.2
+    private static var last: Date?
 
     /// `source` names the call site in the log (`log stream --predicate 'category == "haptics"'`).
     static func perform(_ pattern: NSHapticFeedbackManager.FeedbackPattern, _ source: StaticString) {
+        let now = Date()
+        if let last, now.timeIntervalSince(last) < minimumGap {
+            log.debug("\(source, privacy: .public) pattern=\(pattern.rawValue) dropped: too close to the last")
+            return
+        }
+        last = now
         log.debug("\(source, privacy: .public) pattern=\(pattern.rawValue)")
         NSHapticFeedbackManager.defaultPerformer.perform(pattern, performanceTime: .drawCompleted)
     }

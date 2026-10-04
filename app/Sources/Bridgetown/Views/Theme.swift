@@ -38,6 +38,18 @@ enum Ink {
     static let tagRadius: CGFloat = 4
 }
 
+// MARK: Motion
+
+/// The app's timings: quick for feedback under the pointer (a press, a hover), state for
+/// something that changed (a tab, a list, a card), both easing out without a bounce.
+/// Under Reduce Motion each becomes a short fade-length ease, and nothing scales or slides.
+enum Easing {
+    static var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
+    static var quick: Animation { reduceMotion ? .easeOut(duration: 0.08) : .easeOut(duration: 0.12) }
+    static var state: Animation { reduceMotion ? .easeOut(duration: 0.12) : .smooth(duration: 0.24) }
+}
+
 // MARK: Type
 
 /// Geist, bundled under `app/Fonts` and registered at launch. Until it is (or if it
@@ -244,6 +256,7 @@ struct StageButtonStyle: ButtonStyle {
         let kind: Kind
         let compact: Bool
         @Environment(\.isEnabled) private var isEnabled
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @ViewState private var hovering = false
 
         var body: some View {
@@ -262,8 +275,11 @@ struct StageButtonStyle: ButtonStyle {
                 }
                 .opacity(isEnabled ? 1 : 0.4)
                 .contentShape(RoundedRectangle(cornerRadius: Ink.controlRadius))
+                // Pressed in a touch, so the click lands before the request does.
+                .scaleEffect(configuration.isPressed && !reduceMotion ? 0.965 : 1)
                 .onHover { hovering = $0 }
-                .animation(.easeOut(duration: 0.12), value: hovering)
+                .animation(Easing.quick, value: hovering)
+                .animation(Easing.quick, value: configuration.isPressed)
         }
 
         private var foreground: Color {
@@ -296,11 +312,13 @@ extension ButtonStyle where Self == StageButtonStyle {
 
 // MARK: Tab switch
 
-/// A small outlined segmented control: the selected option on a raised fill.
+/// A small outlined segmented control: the selected option on a raised fill that slides
+/// to the option you pick.
 struct TabSwitch<Option: Hashable & Identifiable>: View {
     let options: [Option]
     @Binding var selection: Option
     let title: (Option) -> String
+    @Namespace private var fill
 
     var body: some View {
         HStack(spacing: 2) {
@@ -316,7 +334,13 @@ struct TabSwitch<Option: Hashable & Identifiable>: View {
                         .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                         .padding(.horizontal, 9)
                         .frame(height: 20)
-                        .background(selected ? Ink.selected : .clear, in: RoundedRectangle(cornerRadius: Ink.tagRadius))
+                        .background {
+                            if selected {
+                                RoundedRectangle(cornerRadius: Ink.tagRadius)
+                                    .fill(Ink.selected)
+                                    .matchedGeometryEffect(id: "selection", in: fill)
+                            }
+                        }
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -325,6 +349,6 @@ struct TabSwitch<Option: Hashable & Identifiable>: View {
         }
         .padding(2)
         .overlay(PixelStroke(radius: Ink.controlRadius, style: Ink.outline))
-        .animation(.easeOut(duration: 0.15), value: selection)
+        .animation(Easing.state, value: selection)
     }
 }

@@ -20,6 +20,7 @@ struct RouteContent<Overview: View>: View {
         case let .session(id):
             if let session = store.snapshot?.session(id: id) {
                 SessionDetailView(session: session)
+                    .onHorizontalSwipe(swipedBack)
                     .transition(detail)
             } else {
                 overview()
@@ -28,11 +29,20 @@ struct RouteContent<Overview: View>: View {
         case let .alert(id):
             AlertDetailView(alertId: id)
                 .id(id)
+                .onHorizontalSwipe(swipedBack)
                 .transition(detail)
         case .overview:
             overview()
                 .transition(back)
         }
+    }
+
+    /// Fingers moving right over a detail go back to the overview, like the chevron.
+    private func swipedBack(_ direction: SwipeDirection) -> Bool {
+        guard direction == .back else { return false }
+        Haptics.perform(.generic, "detail.swipeBack")
+        store.back()
+        return true
     }
 
     private var detail: AnyTransition {

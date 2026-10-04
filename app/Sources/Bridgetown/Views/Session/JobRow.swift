@@ -8,12 +8,9 @@ struct JobRow: View {
     let session: Session
     let now: Date
 
-    @ViewState private var hovering = false
-
     var body: some View {
         Button { store.show(.session(session.id)) } label: { content }
-            .buttonStyle(.plain)
-            .onHover { hovering = $0 }
+            .buttonStyle(RowButtonStyle())
             .help(session.headline)
             .accessibilityElement(children: .combine)
             .accessibilityHint("Shows session details")
@@ -56,8 +53,6 @@ struct JobRow: View {
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .background(hovering ? Ink.hover : .clear)
-        .animation(.easeOut(duration: 0.12), value: hovering)
     }
 
     /// "#alert-dev · Running · Bash bun test…": where it came from, the daemon's headline,

@@ -59,7 +59,6 @@ private struct MiniPanel: View {
     let board: Board
     @Binding var hover: Date?
 
-    @ViewState private var hovering = false
 
     private struct Point: Identifiable {
         let series: String
@@ -131,12 +130,10 @@ private struct MiniPanel: View {
             }
         }
         .padding(10)
-        .background(hovering ? Ink.hover : .clear)
         .contentShape(Rectangle())
-        .onHover { hovering = $0 }
+        .rowHighlight()
         .onTapGesture { SystemActions.open(panel.link) }
         .help("\(panel.title) · open in Grafana")
-        .animation(.easeOut(duration: 0.12), value: hovering)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(panel.title)
         .accessibilityValue(panel.latest.map(panel.unit.format) ?? "No data")

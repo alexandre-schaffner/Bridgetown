@@ -21,8 +21,6 @@ struct ActionCard: View {
         _draft = ViewState(initialValue: action.detail)
     }
 
-    @ViewState private var hovering = false
-
     /// Kinds whose primary button needs nothing typed or chosen, so a collapsed row can offer it.
     private var oneClick: Bool {
         switch action.kind {
@@ -43,6 +41,7 @@ struct ActionCard: View {
         }
         .disabled(store.isBusy(action.id))
         .opacity(store.isBusy(action.id) && !action.inFlight ? 0.6 : 1)
+        .animation(Easing.quick, value: store.isBusy(action.id))
         .animation(.snappy(duration: 0.18), value: confirmingClose)
         .onChange(of: action.detail) { old, new in
             if draft == old { draft = new }  // the agent revised its draft; keep user edits
@@ -115,9 +114,7 @@ struct ActionCard: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .contentShape(Rectangle())
-        .background(hovering ? Ink.hover : .clear)
-        .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: hovering)
+        .rowHighlight()
         .onTapGesture { onToggle?() }
         .help(action.detail.isEmpty ? action.title : "\(action.title)\n\(Markdown.plain(action.detail))")
         .accessibilityElement(children: .contain)
