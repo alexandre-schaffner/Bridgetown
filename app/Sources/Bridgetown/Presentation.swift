@@ -21,6 +21,26 @@ extension Tone {
 
     /// Neutral lines read as secondary text; the others are worth the primary colour.
     var isQuiet: Bool { self == .neutral || self == .unknown }
+
+    /// A status word in a row's detail ("Waiting on you", "Failed") in its tone, so what
+    /// happened reads first. Nil for neutral words, which keep the line's grey. The word
+    /// says it either way: colour is never the only cue.
+    var wordColor: Color? {
+        switch self {
+        case .live, .waiting, .success, .failure: color
+        case .neutral, .unknown: nil
+        }
+    }
+
+    /// `headline` with its status word, the part before the first " · ", in this tone,
+    /// and the rest ("root cause not found", "#product-approvals") left in the line's grey.
+    func headline(_ headline: String) -> Text {
+        guard let split = headline.range(of: " · ") else {
+            return Text(headline).foregroundColor(wordColor)
+        }
+        return Text(headline[..<split.lowerBound]).foregroundColor(wordColor)
+            + Text(headline[split.lowerBound...])
+    }
 }
 
 // MARK: - Grafana boards
@@ -41,7 +61,78 @@ extension Board.Panel.Unit {
     }
 }
 
+extension Board.Panel {
+    /// The window's usual level, the median of its one series; nil for several series,
+    /// an empty window or a median of zero.
+    var typical: Double? {
+        guard series.count == 1, let median = Self.median(series[0].points.compactMap { $0.count == 2 ? $0[1] : nil })
+        else { return nil }
+        return median > 0 ? median : nil
+    }
+
+    private static func median(_ values: [Double]) -> Double? {
+        let values = values.sorted()
+        guard !values.isEmpty else { return nil }
+        let mid = values.count / 2
+        return values.count.isMultiple(of: 2) ? (values[mid - 1] + values[mid]) / 2 : values[mid]
+    }
+
+    struct Sample: Equatable {
+        var at: Date
+        var value: Double
+    }
+
+    /// The window at a glance, over the series summed at each timestamp (as `latest` is).
+    struct Summary: Equatable {
+        /// The highest bucket, the first if several tie.
+        var peak: Sample
+        var low: Sample
+        var median: Double
+        /// Every bucket added up: for a count, how many in the window.
+        var total: Double
+    }
+
+    /// Nil when the panel failed or has no samples.
+    var summary: Summary? {
+        var sums: [Double: Double] = [:]
+        for s in series {
+            for p in s.points where p.count == 2 { sums[p[0], default: 0] += p[1] }
+        }
+        let totals = sums.sorted { $0.key < $1.key }.map { Sample(at: Date(timeIntervalSince1970: $0.key), value: $0.value) }
+        guard error == nil,
+              let peak = totals.max(by: { $0.value < $1.value }),
+              let low = totals.min(by: { $0.value < $1.value }),
+              let median = Self.median(totals.map(\.value))
+        else { return nil }
+        return Summary(peak: peak, low: low, median: median, total: totals.reduce(0) { $0 + $1.value })
+    }
+
+    /// A series' value nearest `date`, or its last when `date` is nil.
+    static func value(of series: Series, at date: Date?) -> Double? {
+        guard let date else { return series.points.last?.last }
+        let t = date.timeIntervalSince1970
+        return series.points.min { abs($0[0] - t) < abs($1[0] - t) }?.last
+    }
+
+    /// Well above usual: at least 1.8× the median, and more than one over it.
+    static func isSpike(_ value: Double, typical: Double?) -> Bool {
+        guard let typical else { return false }
+        return value >= max(typical * 1.8, typical + 1)
+    }
+
+    /// How unusual the latest value is, as a multiple of the median, when it spikes.
+    var spikeRatio: Double? {
+        guard error == nil, let latest, let typical, Self.isSpike(latest, typical: typical) else { return nil }
+        return latest / typical
+    }
+}
+
 extension Board {
+    /// The panel to lead with: the one spiking hardest, or else the board's first.
+    var lead: Board.Panel? {
+        panels.filter { $0.spikeRatio != nil }.max { ($0.spikeRatio ?? 0) < ($1.spikeRatio ?? 0) } ?? panels.first
+    }
+
     /// "per 30m": what one point of a count panel covers.
     var stepLabel: String {
         stepSeconds % 3600 == 0 ? "\(stepSeconds / 3600)h" : "\(max(1, stepSeconds / 60))m"
@@ -90,6 +181,36 @@ extension Session {
         return [model, Format.duration(from: startedAt, to: end), Format.cost(costUsd)]
             .filter { !$0.isEmpty }
             .joined(separator: " · ")
+    }
+
+    /// What there is to show for a step, under its name in the stepper: "Cause found",
+    /// "#3340", the reviewer's result, "Running · 1 round". Only what the daemon has
+    /// evidence for; nil where it has none, and for steps not reached.
+    func evidence(for step: Step) -> String? {
+        guard step.state != .pending, step.state != .unknown else { return nil }
+        switch step.key {
+        case .diagnose:
+            return rootCauseFound.map { $0 ? "Cause found" : "No root cause" }
+        case .pr:
+            return prUrl.map(Format.prLabel).flatMap { $0.isEmpty ? nil : $0 }
+        case .critique:
+            return critiqueLine.flatMap { $0.isEmpty ? nil : $0 }
+        case .ci:
+            return ciRounds > 0 || step.state == .current ? ciText : nil
+        case .fix, .deploy, .unknown:
+            return nil
+        }
+    }
+
+    /// The CI line's colour, from the same step: green once it passed, blue while it
+    /// runs, red when it failed; grey otherwise.
+    var ciColor: Color? {
+        switch steps.first(where: { $0.key == .ci })?.state {
+        case .done?: Ink.green
+        case .current?: Ink.blue
+        case .failed?: Ink.red
+        default: nil
+        }
     }
 
     /// From the daemon's CI step, never inferred from status.
@@ -221,6 +342,12 @@ extension Jev {
 
 // MARK: - Alert outcome
 
+extension AlertOutcome {
+    /// Nothing was done and nothing is owed: a rule filtered it, or Jev ignored it. Recent
+    /// folds these away.
+    var isQuiet: Bool { kind == .filtered || kind == .ignored }
+}
+
 /// The glyph for an alert's outcome in Recent. The daemon's `outcome.kind` decides; for a
 /// session, its status refines it. The green check is reserved for `resolved`.
 struct OutcomeGlyph {
@@ -303,6 +430,93 @@ extension Action.Kind {
         case .investigate: "Starting an agent…"
         case .reply, .answer: "Sending…"
         default: "Working…"
+        }
+    }
+}
+
+/// The decision an action asks for. "Needs you" lists actions under these, so a row
+/// doesn't repeat what its group already says.
+enum ActionGroup: CaseIterable {
+    /// Someone is waiting on an answer: a teammate, an agent, or a call only you can make.
+    case answer
+    /// A verified fix is ready to merge or release.
+    case ship
+    /// A new incident or prod signal no agent has picked up.
+    case investigate
+    /// An agent ended without a fix: retry it, or close the session.
+    case retry
+
+    var title: String {
+        switch self {
+        case .answer: "Answer"
+        case .ship: "Ship"
+        case .investigate: "Investigate"
+        case .retry: "Retry or close"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .answer: "bubble.left"
+        case .ship: "arrow.triangle.merge"
+        case .investigate: "magnifyingglass"
+        case .retry: "arrow.clockwise"
+        }
+    }
+
+    /// The meanings colour has everywhere else: green for a verified fix, amber for
+    /// someone or something waiting on you. Retries stay neutral, since they mix agents
+    /// that failed (marked red on their rows) with sessions that merely ended.
+    var tint: Color? {
+        switch self {
+        case .ship: Ink.green
+        case .answer, .investigate: Ink.amber
+        case .retry: nil
+        }
+    }
+}
+
+extension Action.Kind {
+    var group: ActionGroup {
+        switch self {
+        case .escalate, .reply, .answer, .unknown: .answer
+        case .merge, .release: .ship
+        case .investigate, .grafana: .investigate
+        case .review, .rerun: .retry
+        }
+    }
+}
+
+extension Action {
+    /// Its primary button needs nothing typed or chosen, so a row can offer it as is.
+    var isOneClick: Bool {
+        switch kind {
+        case .reply, .answer: false
+        default: options.isEmpty
+        }
+    }
+}
+
+extension [Action] {
+    /// The primary button these share, to press on all of them at once: the same kind and
+    /// label, nothing to type or choose, and nothing to open (a browser tab per row is not
+    /// a bulk action). Nil when they differ, or one is already being resolved.
+    var sharedPrimary: String? {
+        guard let first else { return nil }
+        let shared = allSatisfy {
+            $0.kind == first.kind && $0.primaryLabel == first.primaryLabel && $0.isOneClick && $0.url == nil && !$0.inFlight
+        }
+        return shared ? first.primaryLabel : nil
+    }
+}
+
+extension Snapshot {
+    /// `sortedActions` under their groups, in `ActionGroup` order; empty groups left out.
+    var actionGroups: [(group: ActionGroup, actions: [Action])] {
+        let sorted = sortedActions
+        return ActionGroup.allCases.compactMap { group in
+            let actions = sorted.filter { $0.kind.group == group }
+            return actions.isEmpty ? nil : (group, actions)
         }
     }
 }

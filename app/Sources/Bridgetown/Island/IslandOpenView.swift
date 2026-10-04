@@ -57,7 +57,9 @@ struct IslandOpenView: View {
                         ConnectingState()
                     }
                 }
-                .padding(Metrics.inset)
+                // Bottom only: the stats sit straight under the header, and they and the
+                // charts run to the column's edges.
+                .padding(.bottom, Metrics.inset)
             }
         }
     }
@@ -81,10 +83,11 @@ struct IslandOpenView: View {
                             if snap.actions.isEmpty {
                                 ColumnNote(title: "Needs you", text: "Nothing is waiting on you.")
                             } else {
-                                NeedsYouSection(snapshot: snap)
+                                NeedsYouSection(snapshot: snap, now: now)
                             }
                         }
-                        .padding(Metrics.inset)
+                        // Vertical only: the sections' rows run to the column's edges.
+                        .padding(.vertical, Metrics.inset)
                     }
                     Hairline(vertical: true)
                     PaneScrollView {
@@ -98,7 +101,7 @@ struct IslandOpenView: View {
                                 RecentSection(snapshot: snap, now: now)
                             }
                         }
-                        .padding(Metrics.inset)
+                        .padding(.vertical, Metrics.inset)
                     }
                 }
             }
@@ -122,5 +125,6 @@ private struct ColumnNote: View {
                 .foregroundStyle(.tertiary)
                 .padding(.vertical, 4)
         }
+        .padding(.horizontal, Metrics.inset)
     }
 }

@@ -1,67 +1,88 @@
 import SwiftUI
 
-/// A session in the overview's Agents list, in two lines: status dot, title and elapsed
-/// time; then channel, what it's doing, and the six steps without labels. The full card
-/// (`SessionRow`) is in the session and alert details.
+/// A session on the overview's Agents board: status dot, title and elapsed time over
+/// where it came from and what it's doing; under them, the six steps as one track in the
+/// board's columns. The full card (`SessionRow`) is in the session and alert details.
 struct JobRow: View {
     @Environment(Store.self) private var store
     let session: Session
     let now: Date
+    var pick: RowPick?
+    @ViewState private var hovering = false
 
     var body: some View {
-        Button { store.show(.session(session.id)) } label: { content }
-            .buttonStyle(RowButtonStyle())
-            .help(session.headline)
-            .accessibilityElement(children: .combine)
-            .accessibilityHint("Shows session details")
-            .contextMenu {
-                Button("Show details") { store.show(.session(session.id)) }
-                if session.prUrl != nil { Button("Open PR") { SystemActions.open(session.prUrl) } }
-                if session.slackThreadUrl != nil { Button("Open Slack thread") { SystemActions.open(session.slackThreadUrl) } }
+        Button {
+            if pick?.click() == true { return }
+            store.show(.session(session.id))
+        } label: {
+            content
+        }
+        .buttonStyle(RowButtonStyle(selected: pick?.selected == true))
+        .onHover { hovering = $0 }
+        .help(session.headline)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Shows session details")
+        .accessibilityAddTraits(pick?.selected == true ? .isSelected : [])
+        .contextMenu {
+            Button("Show details") { store.show(.session(session.id)) }
+            if session.prUrl != nil { Button("Open PR") { SystemActions.open(session.prUrl) } }
+            if session.slackThreadUrl != nil { Button("Open Slack thread") { SystemActions.open(session.slackThreadUrl) } }
+            if let pick {
+                Divider()
+                Button(pick.selected ? "Deselect" : "Select", action: pick.toggle)
             }
+        }
     }
 
     private var content: some View {
-        HStack(alignment: .top, spacing: 8) {
-            HolderDot(session: session)
-                .padding(.top, 5)
-
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(session.title)
-                        .font(.geist(12.5, .medium))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Spacer(minLength: 4)
-                    Text(Format.duration(from: session.startedAt, to: now))
-                        .font(Typo.time)
-                        .foregroundStyle(.tertiary)
+        VStack(alignment: .leading, spacing: 13) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                SelectMark(pick: pick, hovering: hovering) {
+                    HolderDot(session: session)
                 }
-                HStack(alignment: .center, spacing: 8) {
-                    Text(subtitle)
-                        .font(.geist(11))
-                        .foregroundStyle(session.tone.isQuiet ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
-                        .lineLimit(1)
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
+
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(session.title)
+                            .font(Typo.rowTitle)
+                            .tracking(Typo.rowTitleTracking)
+                            .lineSpacing(Typo.rowLineSpacing)
+                            .lineLimit(2)
+                            .truncationMode(.tail)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 4)
+                        Text(Format.duration(from: session.startedAt, to: now))
+                            .font(Typo.rowTime)
+                            .foregroundStyle(.tertiary)
+                    }
+                    subtitle
+                        .font(Typo.rowDetail)
+                        .lineSpacing(Typo.rowLineSpacing)
+                        .lineLimit(2)
                         .truncationMode(.tail)
-                    Spacer(minLength: 4)
-                    PhaseStepper(session: session, showsLabels: false)
-                        .frame(width: 72)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            StepTrack(session: session)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, Metrics.inset)
+        .padding(.top, 16)
+        .padding(.bottom, 13)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
     }
 
-    /// "#alert-dev · Running · Bash bun test…": where it came from, the daemon's headline,
-    /// then what the agent is doing if that adds anything.
-    private var subtitle: String {
-        var parts = [Format.channel(session.channelName), session.headline]
+    /// "#alert-dev · Waiting on you · Asked: …": where it came from, the daemon's headline
+    /// in its tone, then what the agent is doing if that adds anything.
+    private var subtitle: some View {
+        var text = Text("\(Format.channel(session.channelName)) · ")
+            + session.tone.headline(session.headline)
         let detail = Markdown.plain(session.statusDetail)
-        if !detail.isEmpty, !session.headline.localizedCaseInsensitiveContains(detail) { parts.append(detail) }
-        return parts.joined(separator: " · ")
+        if !detail.isEmpty, !session.headline.localizedCaseInsensitiveContains(detail) {
+            text = text + Text(" · \(detail)")
+        }
+        return text.foregroundStyle(session.tone.isQuiet ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
     }
 }
 

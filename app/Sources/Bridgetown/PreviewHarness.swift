@@ -6,6 +6,8 @@ import SwiftUI
 ///
 /// - `--preview-window`, `--preview-detail <session id>`, `--preview-alert <alert id>`,
 ///   `--preview-settings <tab>`: the UI in a normal window, for screenshots and design work.
+/// - `--preview-island`: the open island in a normal window, at its widest; with
+///   `--preview-detail` or `--preview-alert`, showing that session or alert.
 /// - `--snapshot <png>` (+ `--snapshot-quit`): render that window to a PNG once data arrives.
 /// - `--appearance dark|light`, `--preview-height <pt>`: for long content.
 /// - `--island-demo`: the notch island cycles hover, banner, open and close, for
@@ -14,6 +16,7 @@ import SwiftUI
 final class PreviewHarness {
     struct Arguments {
         var previewWindow = false
+        var previewIsland = false
         var previewDetail: String?
         var previewAlert: String?
         var previewSettings: SettingsView.Tab?
@@ -28,6 +31,7 @@ final class PreviewHarness {
             while let arg = it.next() {
                 switch arg {
                 case "--preview-window": previewWindow = true
+                case "--preview-island": previewIsland = true
                 case "--preview-detail": previewDetail = it.next()
                 case "--preview-alert": previewAlert = it.next()
                 case "--preview-settings": previewSettings = it.next().flatMap(SettingsView.Tab.init(rawValue:)) ?? .accounts
@@ -60,7 +64,21 @@ final class PreviewHarness {
         if let appearance = args.appearance { NSApp.appearance = appearance }
         if args.islandDemo { islandDemo(island, store: store) }
 
-        if let tab = args.previewSettings {
+        if args.previewIsland {
+            // Once data is in: shown before, the first snapshot finds no such session yet
+            // and sends the island back to the overview.
+            let route: Store.Route? = args.previewDetail.map { .session($0) } ?? args.previewAlert.map { .alert($0) }
+            if let route {
+                Task { @MainActor in
+                    for _ in 0..<100 where store.snapshot == nil { try? await Task.sleep(for: .milliseconds(100)) }
+                    store.show(route)
+                }
+            }
+            var geometry = NotchGeometry.current()
+            geometry.openWidth = NotchGeometry.maxOpenWidth
+            geometry.openHeight = args.previewHeight ?? NotchGeometry.maxOpenHeight
+            openWindow(title: "Bridgetown · Island", IslandOpenView(model: IslandModel(geometry: geometry)).environment(store).environment(daemon))
+        } else if let tab = args.previewSettings {
             openWindow(title: "Settings", SettingsView(initialTab: tab).environment(store).environment(daemon))
         } else if args.previewWindow || args.previewDetail != nil || args.previewAlert != nil {
             if let id = args.previewDetail {

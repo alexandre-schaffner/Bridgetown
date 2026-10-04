@@ -24,8 +24,10 @@ private struct OverviewPane: View {
                 HeaderView(now: context.date)
                 Hairline()
                 PaneScrollView {
+                    // Bottom only: the stats sit straight under the header, and the
+                    // sections' rows run to the pane's edges.
                     content(now: context.date)
-                        .padding(Metrics.inset)
+                        .padding(.bottom, Metrics.inset)
                 }
                 Hairline()
                 FooterView()
@@ -41,9 +43,10 @@ private struct OverviewPane: View {
                 TelemetryPanel(snapshot: snap, now: now)
                 if snap.isQuiet {
                     EmptyState(snapshot: snap)
+                        .padding(.horizontal, Metrics.inset)
                 }
                 if !snap.actions.isEmpty {
-                    NeedsYouSection(snapshot: snap)
+                    NeedsYouSection(snapshot: snap, now: now)
                 }
                 if !running.isEmpty {
                     AgentsSection(running: running, now: now)

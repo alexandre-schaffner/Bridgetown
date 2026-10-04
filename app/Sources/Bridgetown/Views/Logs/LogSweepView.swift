@@ -20,8 +20,9 @@ struct LogSweepView: View {
                     ProgressView().controlSize(.mini)
                     Text("Reading the last sweep…")
                 }
-                .font(.geist(10))
+                .font(.geist(11))
                 .foregroundStyle(.tertiary)
+                .bleedInset()
             }
         }
     }
@@ -66,6 +67,7 @@ private struct SweepContent: View {
                 .frame(maxWidth: .infinity)
             }
             footer
+                .bleedInset()
         }
     }
 
@@ -84,7 +86,7 @@ private struct SweepContent: View {
             .buttonStyle(.plain)
             .help("Prod's error lines over the last 3 hours, in Grafana Explore")
         }
-        .font(.geist(10.5).monospacedDigit())
+        .font(.geist(11.5).monospacedDigit())
         .foregroundStyle(.tertiary)
         .lineLimit(1)
     }
@@ -102,30 +104,32 @@ private struct PatternRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: pattern.level == .warning ? "exclamationmark.triangle" : "xmark.octagon")
-                .font(.geist(11, .medium))
+                .font(.geist(12.5, .medium))
                 .foregroundStyle(problem ? AnyShapeStyle(Ink.red) : AnyShapeStyle(.tertiary))
                 .frame(width: 16)
-                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    // New, surging or risky: amber, the sweep's reason to look. Steady noise grey.
                     Text(pattern.headline)
-                        .font(.geist(11.5, .medium))
-                        .foregroundStyle(pattern.suspicious ? .primary : .secondary)
+                        .font(.geist(13, .medium))
+                        .foregroundStyle(pattern.suspicious ? AnyShapeStyle(Ink.amber) : AnyShapeStyle(.secondary))
                         .fixedSize()
                     Text("· \(pattern.sourcesLabel)")
-                        .font(.geist(11))
+                        .font(Typo.rowDetail)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer(minLength: 4)
                     Text("\(Format.count(pattern.recent)) in 15m")
-                        .font(Typo.time)
+                        .font(Typo.rowTime)
                         .foregroundStyle(.tertiary)
                         .fixedSize()
                 }
                 Text(pattern.example)
-                    .font(.geistMono(10.5))
+                    .font(.geistMono(11.5))
+                    .lineSpacing(Typo.rowLineSpacing)
                     .foregroundStyle(pattern.suspicious ? .secondary : .tertiary)
                     .lineLimit(2)
                     .truncationMode(.tail)
@@ -133,7 +137,7 @@ private struct PatternRow: View {
                 if let verdict = pattern.verdictLine {
                     HStack(spacing: 6) {
                         Text(verdict)
-                            .font(.geist(10.5).monospacedDigit())
+                            .font(.geist(11.5).monospacedDigit())
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
                         if let alertId = pattern.alertId {
@@ -143,15 +147,15 @@ private struct PatternRow: View {
                                 NudgeLabel(title: "Finding", symbol: "chevron.right", nudge: CGSize(width: 2, height: 0))
                             }
                             .buttonStyle(.plain)
-                            .font(.geist(10.5, .medium))
+                            .font(.geist(11.5, .medium))
                             .help("Show the finding Bridgetown raised for this pattern")
                         }
                     }
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Metrics.inset)
+        .padding(.vertical, 14)
         .contentShape(Rectangle())
         .rowHighlight()
         .onTapGesture { SystemActions.open(pattern.link) }
@@ -188,7 +192,7 @@ private struct PatternRow: View {
 
 /// A text link whose trailing glyph leans the way it goes on hover: right for into the
 /// app, up and out for the browser. The text brightens with it.
-private struct NudgeLabel: View {
+struct NudgeLabel: View {
     let title: String
     let symbol: String
     let nudge: CGSize

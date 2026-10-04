@@ -10,27 +10,29 @@ struct SessionDetailView: View {
 
     private var alert: AlertView? { store.snapshot?.alert(id: session.alertId) }
 
-    /// "Codex", "CI": one column, so their values line up.
-    private static let keyWidth: CGFloat = 40
+    /// "Codex", "CI", "Branch": one column, so their values line up.
+    private static let keyWidth: CGFloat = 64
 
     var body: some View {
         VStack(spacing: 0) {
             DetailTopBar(title: session.title)
             Hairline()
             PaneScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 28) {
+                    VStack(alignment: .leading, spacing: 14) {
                         origin
                         summary
                     }
+                    .bleedInset()
                     GrafanaSection(alertId: session.alertId)
                     if let jev = alert?.triage.jev {
-                        DetailSection(title: "Jev verdict") { JevScores(jev: jev) }
+                        DetailSection(title: "Jev verdict") { JevScores(jev: jev).bleedInset() }
                     } else if let alert {
                         DetailSection(title: "Triage") {
                             Text(alert.triage.reason)
-                                .font(.geist(12))
+                                .font(.geist(13))
                                 .foregroundStyle(.secondary)
+                                .bleedInset()
                         }
                     }
                     let diagnosis = session.diagnosis.flatMap { $0.isEmpty ? nil : $0 }
@@ -40,8 +42,9 @@ struct SessionDetailView: View {
                                 RootCauseNotice()
                             }
                             if let diagnosis {
-                                ClampedText(markdown: diagnosis, lineLimit: 6)
+                                ClampedText(markdown: diagnosis, lineLimit: 6, size: 13.5, lineSpacing: 4)
                                     .id(session.id)
+                                    .bleedInset()
                             }
                         }
                     }
@@ -50,8 +53,10 @@ struct SessionDetailView: View {
                     }
                     transcriptBlock
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
+                // Vertical only: charts and the transcript run to the pane's edges, like
+                // the overview's lists; text takes the inset (`bleedInset`).
+                .padding(.vertical, 18)
+                .environment(\.fullBleed, true)
             }
             Hairline()
             bottomBar
@@ -66,13 +71,14 @@ struct SessionDetailView: View {
     // MARK: Summary
 
     private var summary: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 4) {
-                StatusLine(session: session, lineLimit: session.isActive ? 1 : 3)
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                StatusLine(session: session, size: 15, lineLimit: session.isActive ? 2 : 3)
                 // A finished session shows its outcome, not the last thing the agent was doing.
                 if !session.isActive, let resolution = session.resolutionLine {
                     Text(resolution)
-                        .font(.geist(11))
+                        .font(.geist(13))
+                        .lineSpacing(Typo.rowLineSpacing)
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
@@ -80,15 +86,17 @@ struct SessionDetailView: View {
                 }
             }
             PhaseStepper(session: session)
-            VStack(alignment: .leading, spacing: 3) {
+                .padding(.vertical, 4)
+            VStack(alignment: .leading, spacing: 5) {
                 if session.isActive && !session.activity.isEmpty {
-                    Text(Markdown.line(session.activity, size: 11))
-                        .font(.geist(11))
+                    Text(Markdown.line(session.activity, size: 13))
+                        .font(.geist(13))
+                        .lineSpacing(Typo.rowLineSpacing)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
                 Text(session.meta(now: .now))
-                    .font(.geist(11))
+                    .font(.geist(12))
                     .monospacedDigit()
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
@@ -110,15 +118,15 @@ struct SessionDetailView: View {
                 .help("How Jev triaged it, the original message and its history")
             Spacer(minLength: 0)
         }
-        .font(.geist(11))
+        .font(.geist(12))
     }
 
     // MARK: PR / CI / Slack
 
     private var links: some View {
         DetailSection(title: "Pull request") {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(spacing: 14) {
                     if let pr = session.prUrl {
                         LinkButton(title: "PR \(Format.prLabel(pr))", systemImage: "arrow.triangle.pull", url: pr, help: "Open pull request \(pr)")
                     } else {
@@ -132,67 +140,77 @@ struct SessionDetailView: View {
                     }
                     Spacer(minLength: 0)
                 }
-                .font(.geist(12))
+                .font(.geist(13, .medium))
                 .labelStyle(.titleAndIcon)
                 .imageScale(.small)
                 .lineLimit(1)
                 .fixedSize(horizontal: false, vertical: true)
 
                 if let channel = session.reviewChannel {
-                    HStack(spacing: 4) {
-                        Text("Review requested in #\(channel)")
-                            .foregroundStyle(.secondary)
-                        if let url = session.reviewUrl {
-                            LinkButton(title: "View", url: url, help: "Open the review request in Slack")
+                    keyValue("Review") {
+                        HStack(spacing: 6) {
+                            Text("Requested in #\(channel)")
+                                .foregroundStyle(.secondary)
+                            if let url = session.reviewUrl {
+                                LinkButton(title: "View", url: url, help: "Open the review request in Slack")
+                            }
                         }
                     }
-                    .font(.geist(11))
                 }
 
                 if let reviewer = session.reviewerName, let line = session.critiqueLine {
-                    HStack(spacing: 6) {
-                        Text(reviewer)
-                            .foregroundStyle(.tertiary)
-                            .frame(width: Self.keyWidth, alignment: .leading)
+                    keyValue(reviewer) {
                         Text(line)
                             .foregroundStyle(.secondary)
                     }
-                    .font(.geist(11))
-                    .monospacedDigit()
                     .help("Another vendor's model reviews each fix the agent pushes; Jev drops the nitpicks. The PR leaves draft once it passes.")
                 }
 
-                HStack(spacing: 6) {
-                    Text("CI")
-                        .foregroundStyle(.tertiary)
-                        .frame(width: Self.keyWidth, alignment: .leading)
+                keyValue("CI") {
                     Text(session.ciText)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(session.ciColor.map(AnyShapeStyle.init) ?? AnyShapeStyle(.secondary))
                 }
-                .font(.geist(11))
-                .monospacedDigit()
                 if let branch = session.branch {
-                    Text(branch)
-                        .font(.geistMono(11))
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
+                    keyValue("Branch") {
+                        Text(branch)
+                            .font(.geistMono(12))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                    }
                 }
             }
+            .bleedInset()
         }
+    }
+
+    /// A key in the first column, its value beside it: the PR section's facts line up.
+    private func keyValue<Value: View>(_ key: String, @ViewBuilder value: () -> Value) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(key)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+                .frame(width: Self.keyWidth, alignment: .leading)
+            value()
+            Spacer(minLength: 0)
+        }
+        .font(.geist(12.5))
+        .monospacedDigit()
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: Transcript
 
     private var transcriptBlock: some View {
         DetailSection(title: "Transcript") {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 TranscriptView(entries: transcript.value ?? [], error: transcript.error)
                 // The daemon decides: live, or finished and handed back with its worktree
                 // intact ("Reply to agent" on a review card lands here).
                 if session.acceptsMessages {
                     messageField
+                        .bleedInset()
                 }
             }
         }
@@ -202,7 +220,7 @@ struct SessionDetailView: View {
         HStack(alignment: .bottom, spacing: 6) {
             TextField("Message the agent", text: $message, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.geist(12))
+                .font(.geist(13))
                 .lineLimit(1...4)
                 .onSubmit(send)
                 .inputField()
@@ -268,7 +286,7 @@ struct SessionDetailView: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Metrics.inset)
         .padding(.vertical, 10)
         .animation(.snappy(duration: 0.18), value: confirmingStop)
     }
@@ -277,22 +295,23 @@ struct SessionDetailView: View {
 /// Neutral, not alarming: the agent finished without a confirmed cause.
 private struct RootCauseNotice: View {
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: "questionmark.circle")
-                .font(.geist(11, .medium))
-            VStack(alignment: .leading, spacing: 1) {
+                .font(.geist(13, .medium))
+            VStack(alignment: .leading, spacing: 3) {
                 Text("Root cause not found")
-                    .font(.geist(11, .semibold))
+                    .font(.geist(13, .semibold))
                     .foregroundStyle(.primary)
                 Text("What follows are the agent's leads, not a confirmed cause.")
-                    .font(.geist(11))
+                    .font(.geist(12.5))
             }
         }
         .foregroundStyle(.secondary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.horizontal, Metrics.inset)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .outlined()
+        .background(Color.white.opacity(0.03))
+        .tableFrame()
         .accessibilityElement(children: .combine)
     }
 }
@@ -305,41 +324,44 @@ private struct TranscriptView: View {
         Group {
             if entries.isEmpty {
                 Text(error.map { "Couldn't load transcript · \($0)" } ?? "No transcript yet")
-                    .font(.geist(11))
+                    .font(.geist(12))
                     .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity, minHeight: 60)
+                    .frame(maxWidth: .infinity, minHeight: 72)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 3) {
+                        LazyVStack(alignment: .leading, spacing: 6) {
                             ForEach(Array(entries.enumerated()), id: \.offset) { index, entry in
                                 row(entry).id(index)
                             }
                         }
-                        .padding(8)
+                        .padding(.horizontal, Metrics.inset)
+                        .padding(.vertical, 12)
                     }
-                    .frame(height: 168)
+                    .scrollIndicators(.never)
+                    .frame(height: 260)
                     .onAppear { proxy.scrollTo(entries.count - 1, anchor: .bottom) }
                     .onChange(of: entries.count) { _, n in proxy.scrollTo(n - 1, anchor: .bottom) }
                 }
             }
         }
-        .outlined()
+        .background(Color.white.opacity(0.02))
+        .tableFrame()
     }
 
     private func row(_ e: TranscriptEntry) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text(e.at, format: Format.clock)
                 .foregroundStyle(.tertiary)
                 .help(e.at.formatted(date: .abbreviated, time: .standard))
-            Text(e.kind == .text ? Markdown.lines(e.text, size: 10.5, mono: true) : AttributedString(e.kind.prefix + e.text))
+            Text(e.kind == .text ? Markdown.lines(e.text, size: 12, mono: true) : AttributedString(e.kind.prefix + e.text))
                 .foregroundStyle(e.kind.style)
                 .lineLimit(e.kind.lineLimit)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .font(.geistMono(10.5))
-        .lineSpacing(2)
+        .font(.geistMono(12))
+        .lineSpacing(3)
         .textSelection(.enabled)
     }
 }

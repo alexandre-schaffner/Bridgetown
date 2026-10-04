@@ -21,11 +21,15 @@ struct TelemetryPanel: View {
     @AppStorage("telemetryMode") private var mode: Mode = .incidents
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            StatStrip(snapshot: snapshot)
-                .outlined()
-            VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 20) {
+            // Straight under the header's hairline, so only its own bottom one is drawn.
+            VStack(spacing: 0) {
+                StatStrip(snapshot: snapshot)
+                Hairline()
+            }
+            VStack(alignment: .leading, spacing: 10) {
                 header
+                    .bleedInset()
                 // One board crossfades into the next, rather than swapping in a frame.
                 Group {
                     switch mode {
@@ -41,6 +45,8 @@ struct TelemetryPanel: View {
             .animation(Easing.state, value: mode)
             .onHorizontalSwipe(swipedTab)
         }
+        // Its numbers and charts run to the column's edges, like the lists beside it.
+        .environment(\.fullBleed, true)
     }
 
     /// Fingers moving left show the next board, right the previous one; nothing past either end.
@@ -58,7 +64,7 @@ struct TelemetryPanel: View {
     private func board(_ view: String) -> some View {
         PollingLoader(key: view, fetch: { try await store.board(view: view) }) { loaded in
             if let board = loaded.value ?? nil {
-                BoardView(board: board)
+                BoardView(board: board, rows: true)
             } else if let error = loaded.error {
                 BoardMessage(symbol: "exclamationmark.triangle", text: "Couldn't load the \(view) board · \(error)")
             } else {
@@ -71,17 +77,18 @@ struct TelemetryPanel: View {
         HStack(alignment: .center, spacing: 8) {
             Text("Prod")
                 .font(Typo.title)
+                .tracking(Typo.titleTracking)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
             TabSwitch(options: Mode.allCases, selection: $mode) { $0.rawValue }
         }
-        .frame(height: 20)
+        .frame(height: SectionHeader.height)
     }
 }
 
 // MARK: Stat strip
 
-/// Needs you · Agents · Resolved. Colour only where the number means something:
+/// Needs you · Agents · Resolved. The number itself takes the colour, only where it means something:
 /// orange when you're needed, accent while an agent, CI or a deploy is moving (not
 /// while everything waits on reviewers), green for verified fixes.
 private struct StatStrip: View {
@@ -132,32 +139,35 @@ private struct Stat: View {
     var live = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                SectionLabel(label)
+                Text(label)
+                    .font(.geist(12, .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 Spacer(minLength: 0)
                 if let tint {
-                    LiveDot(color: tint, live: live)
+                    LiveDot(color: tint, live: live, size: 7)
                 }
             }
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(value)
-                    .font(.geist(22).monospacedDigit())
-                    .tracking(-0.4)
-                    .foregroundStyle(.primary)
+                    .font(.geist(26).monospacedDigit())
+                    .tracking(-0.5)
+                    .foregroundStyle(tint.map(AnyShapeStyle.init) ?? AnyShapeStyle(.primary))
                     .contentTransition(.numericText())
                     .lineLimit(1)
                     .fixedSize()
                 Text(caption)
-                    .font(.geist(11))
+                    .font(.geist(12))
                     .monospacedDigit()
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, Metrics.inset)
+        .padding(.vertical, 15)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
         .animation(.snappy(duration: 0.25), value: value)

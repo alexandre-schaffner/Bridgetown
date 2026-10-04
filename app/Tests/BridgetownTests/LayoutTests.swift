@@ -2,25 +2,23 @@ import CoreGraphics
 import Testing
 @testable import Bridgetown
 
-@Suite struct StepColumnsTests {
-    @Test func equalSharesWhenEverythingFits() {
-        let widths = StepColumns.widths(ideals: [40, 30, 20, 20, 50], total: 312, spacing: 3)
-        #expect(widths == Array(repeating: 60, count: 5))
+@Suite struct StepFlowTests {
+    @Test func leftoverRoomIsSharedByTheHairlines() {
+        // 300 - 200 = 100 left over, shared by the four columns before the last.
+        let widths = StepFlow.widths(minimums: [60, 30, 30, 40, 40], total: 300)
+        #expect(widths == [85, 55, 55, 65, 40])
     }
 
-    @Test func wideLabelKeepsItsIdealOthersShareTheRest() {
-        // "Root cause?" needs 90; the rest split 300 - 12 - 90 = 198 four ways.
-        let widths = StepColumns.widths(ideals: [90, 30, 20, 20, 30], total: 300, spacing: 3)
-        #expect(widths == [90, 49.5, 49.5, 49.5, 49.5])
+    @Test func scalesDownWhenMinimumsDontFit() {
+        #expect(StepFlow.widths(minimums: [100, 100], total: 100) == [50, 50])
     }
 
-    @Test func scalesDownWhenIdealsDontFit() {
-        let widths = StepColumns.widths(ideals: [100, 100], total: 103, spacing: 3)
-        #expect(widths == [50, 50])
+    @Test func aLoneColumnTakesTheWidth() {
+        #expect(StepFlow.widths(minimums: [40], total: 120) == [120])
     }
 
-    @Test func unspecifiedWidthUsesIdeals() {
-        #expect(StepColumns.widths(ideals: [10, 20], total: nil, spacing: 3) == [10, 20])
+    @Test func unspecifiedWidthUsesMinimums() {
+        #expect(StepFlow.widths(minimums: [10, 20], total: nil) == [10, 20])
     }
 }
 

@@ -14,24 +14,33 @@ enum Ink {
     /// Hover on a row, the selected tab.
     static let hover = Color.white.opacity(0.045)
     static let selected = Color.white.opacity(0.09)
+    /// A row picked for a bulk action: the accent, faintly, as macOS shows a selection.
+    static let picked = blue.opacity(0.13)
+    /// `hover` over the stage, opaque: for something laid over a hovered row's text.
+    static let hoverSolid = Color(white: 0.045)
     /// Panel outlines and the dividers between rows.
     static let hairline = Color.white.opacity(0.17)
     /// Control outlines (secondary buttons, inputs, the tab switch): one step stronger.
     static let outline = Color.white.opacity(0.26)
     static let track = Color.white.opacity(0.08)
-    /// Data marks and finished steps: neutral, a step below the text.
+    /// Data marks: neutral, a step below the text.
     static let mark = Color.white.opacity(0.62)
+    /// Finished steps: further down (4.3:1), so the colour of the step in play is the
+    /// brightest thing in the stepper.
+    static let settled = Color.white.opacity(0.44)
 
     /// Text levels on black: 16:1, 7.6:1, 5.5:1 (all AA).
     static let text = Color(white: 0.93)
     static let dim = Color(white: 0.63)
     static let faint = Color(white: 0.53)
 
-    /// Status marks only.
-    static let blue = Color(red: 0, green: 0.565, blue: 1)
+    /// Status marks only. Each clears 7:1 on black (AAA), so a status word reads as
+    /// clearly as the text around it and a mark stands out from the greys: blue 7.7:1,
+    /// amber 11.6:1, green 8.7:1, red 7.1:1.
+    static let blue = Color(red: 0.24, green: 0.63, blue: 1)
     static let amber = Color(red: 1, green: 0.698, blue: 0.141)
-    static let green = Color(red: 0.188, green: 0.643, blue: 0.424)
-    static let red = Color(red: 0.898, green: 0.282, blue: 0.302)
+    static let green = Color(red: 0.204, green: 0.741, blue: 0.482)
+    static let red = Color(red: 1, green: 0.38, blue: 0.36)
 
     static let panelRadius: CGFloat = 8
     static let controlRadius: CGFloat = 6
@@ -114,6 +123,15 @@ enum Typo {
     static func figure(_ size: CGFloat) -> Font { .geist(size, .medium).monospacedDigit() }
     /// Times, durations and ages in rows.
     static let time = Font.geist(11).monospacedDigit()
+
+    /// The overview's rows, sized to read at a glance: a title, a line of detail a step
+    /// below it, and its time. Long titles wrap to a second line rather than cut off.
+    static let rowTitle = Font.geist(13.5, .medium)
+    /// A touch tight, so titles set firm rather than loose.
+    static let rowTitleTracking: CGFloat = -0.15
+    static let rowDetail = Font.geist(12)
+    static let rowTime = Font.geist(11.5).monospacedDigit()
+    static let rowLineSpacing: CGFloat = 2.5
 }
 
 // MARK: Stage
@@ -161,7 +179,8 @@ extension Ink {
 
 // MARK: Live
 
-/// A status dot; live, it breathes (static under Reduce Motion).
+/// A status dot with a 1pt halo of its colour, like the step bars; live, it breathes
+/// (static under Reduce Motion).
 struct LiveDot: View {
     let color: Color
     var live = false
@@ -171,6 +190,7 @@ struct LiveDot: View {
         Circle()
             .fill(color)
             .frame(width: size, height: size)
+            .shadow(color: color.opacity(0.5), radius: 1)
             .modifier(Pulse(active: live))
     }
 }

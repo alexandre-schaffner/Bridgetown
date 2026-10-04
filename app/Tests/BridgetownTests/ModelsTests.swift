@@ -180,6 +180,37 @@ import Testing
         #expect(Board.Panel.Unit.bytes.format(35.25 * 1_073_741_824) == "35.3 GB")
         #expect(Board.Panel.Unit.bytes.format(567 * 1_048_576) == "567 MB")
     }
+
+    @Test func summarySumsSeriesAtEachTimestamp() {
+        let panel = Board.Panel(
+            id: "pods", title: "Pods", unit: .count,
+            series: [
+                .init(label: "v1", points: [[100, 4], [200, 4], [300, 1]]),
+                .init(label: "v2", points: [[200, 2], [300, 6]]),
+            ],
+            latest: 7, link: "x"
+        )
+        let summary = panel.summary
+        #expect(summary?.peak == .init(at: Date(timeIntervalSince1970: 300), value: 7))
+        #expect(summary?.low == .init(at: Date(timeIntervalSince1970: 100), value: 4))
+        #expect(summary?.median == 6)
+        #expect(summary?.total == 17)
+    }
+
+    @Test func noSummaryWithoutSamples() {
+        let empty = Board.Panel(id: "a", title: "A", unit: .ms, series: [], latest: nil, link: "x")
+        #expect(empty.summary == nil)
+        var failed = empty
+        failed.series = [.init(label: "A", points: [[100, 1]])]
+        failed.error = "timed out"
+        #expect(failed.summary == nil)
+    }
+
+    @Test func seriesValueIsTheNearestSampleOrTheLast() {
+        let s = Board.Panel.Series(label: "A", points: [[100, 1], [200, 2], [300, 3]])
+        #expect(Board.Panel.value(of: s, at: nil) == 3)
+        #expect(Board.Panel.value(of: s, at: Date(timeIntervalSince1970: 190)) == 2)
+    }
 }
 
 @Suite struct LogSweepDecoding {

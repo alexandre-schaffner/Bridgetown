@@ -51,7 +51,7 @@ struct HeaderView: View {
                 ProblemLine(problem: problem) { fix(problem.fix) }
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Metrics.inset)
         .padding(.top, 14)
         .padding(.bottom, 12)
     }
@@ -234,9 +234,9 @@ private struct HealthStrip: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             ForEach(services) { service in
-                HStack(spacing: 4) {
+                HStack(spacing: 5) {
                     dot(service.health)
                     Text(service.name)
                         .foregroundStyle(service.health == .ok ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
@@ -252,17 +252,17 @@ private struct HealthStrip: View {
                     .monospacedDigit()
             }
         }
-        .font(.geist(10.5, .medium))
+        .font(.geist(11.5, .medium))
         .lineLimit(1)
     }
 
     @ViewBuilder
     private func dot(_ health: Service.Health) -> some View {
         switch health {
-        case .ok: Circle().fill(Ink.faint).frame(width: 5, height: 5)
-        case .warning: Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 8)).foregroundStyle(Ink.amber)
-        case .error: Image(systemName: "exclamationmark.octagon.fill").font(.system(size: 8)).foregroundStyle(Ink.red)
-        case .unknown: Circle().strokeBorder(Color.secondary, lineWidth: 1).frame(width: 5, height: 5)
+        case .ok: Circle().fill(Ink.faint).frame(width: 6, height: 6)
+        case .warning: Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 9)).foregroundStyle(Ink.amber)
+        case .error: Image(systemName: "exclamationmark.octagon.fill").font(.system(size: 9)).foregroundStyle(Ink.red)
+        case .unknown: Circle().strokeBorder(Color.secondary, lineWidth: 1).frame(width: 6, height: 6)
         }
     }
 }
@@ -274,19 +274,20 @@ private struct ProblemLine: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: problem.severity == .error ? "exclamationmark.octagon.fill" : "exclamationmark.triangle.fill")
-                .font(.geist(10))
+                .font(.geist(11.5))
                 .foregroundStyle(problem.severity == .error ? Ink.red : Ink.amber)
             Text(problem.text)
-                .font(.geist(11))
+                .font(.geist(12))
+                .lineSpacing(Typo.rowLineSpacing)
                 .foregroundStyle(.secondary)
-                .lineLimit(2)
+                .lineLimit(3)
                 .help(problem.text)
             Spacer(minLength: 0)
             if let fix = problem.fix {
                 Button(fix.label, action: onFix)
                     .buttonStyle(.link)
                     .foregroundStyle(Ink.blue)
-                    .font(.geist(11))
+                    .font(.geist(12))
             }
         }
     }

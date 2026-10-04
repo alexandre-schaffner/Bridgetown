@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Dot plus the daemon's headline, coloured by `tone`. The dot carries the colour; the
-/// words carry the meaning, so the line reads the same without colour.
+/// Dot plus the daemon's headline, its status word in `tone`'s colour. The words carry
+/// the meaning, so the line reads the same without colour.
 struct StatusLine: View {
     let headline: String
     let tone: Tone
@@ -24,7 +24,7 @@ struct StatusLine: View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             LiveDot(color: tone.color, live: tone == .live)
                 .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + size * 0.35 }
-            Text(headline)
+            tone.headline(headline)
                 .font(.geist(size, .medium))
                 .foregroundStyle(tone.isQuiet ? .secondary : .primary)
                 .lineLimit(lineLimit)
