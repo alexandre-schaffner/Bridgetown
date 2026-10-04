@@ -735,6 +735,83 @@ chapter("ch-watch", 81, 83.6);
   tl.to({}, { duration: 0.01 }, E + 9);
 }
 
+// MARK: Splices
+
+// Two shots cut in after the rest was timed: everything from `at` on (in the cut before any
+// splice) moves `d` seconds later, cues included, and the score maps its sections the same way.
+// Each is whole bars, so the grid holds. Times above this are in the cut before the splices; the
+// spliced shots below are timed in the final cut.
+const INSERTS = [
+  { at: 36, d: 6 }, // calibration, after Depth
+  { at: 96, d: 6 }, // health, after the logs
+];
+for (const { at, d } of [...INSERTS].sort((a, b) => b.at - a.at)) {
+  for (const c of tl.getChildren(false, true, true)) if (c.startTime() >= at - 1e-6) c.startTime(c.startTime() + d);
+  for (const c of cues) if (c.t >= at - 1e-6) c.t = +(c.t + d).toFixed(3);
+}
+
+// MARK: 4b · Calibration (36–42)
+
+{
+  const T = 36;
+  const s = shot("calibrate");
+  enter("calibrate", T, "cut");
+  drift("calibrate", T, 6, { rotateY: -6, z: -40 }, { rotateY: 3, z: 30 });
+  reveal($(".hl-m", s), T + 0.05);
+  reveal($(".sub", s), T + 0.7, { stagger: 0.03, dur: 0.8, hit: false });
+  const rows = $$("[data-vrow]", s);
+  tl.fromTo(rows, { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.6, ease: "expo.out", stagger: 0.18 }, T + 0.4);
+  const ptr = $<SVGElement>("[data-pointer]", s);
+  const label = (row: HTMLElement, i: number, text: string, at: number) => {
+    const thumb = $$("[data-thumb]", row)[i]!;
+    const q = $("[data-vq]", row);
+    tl.call(() => thumb.classList.add("picked"), [], at + 0.05);
+    tl.to(q, { opacity: 0, duration: 0.12 }, at + 0.05);
+    tl.call(() => (q.textContent = text), [], at + 0.18);
+    tl.to(q, { opacity: 1, color: "#a1a1a6", duration: 0.4 }, at + 0.19);
+    return thumb;
+  };
+  const up = label(rows[0]!, 0, "You marked this a good call", T + 2.0);
+  press(ptr, up, T + 2.0, { dx: 240, dy: 260 }, 0.8);
+  const down = label(rows[1]!, 1, "You marked this a bad call", T + 3.4);
+  const off = offsetWithin(down, $(".cam", s));
+  tl.to(ptr, { x: off.x, y: off.y, duration: 0.6, ease: "power3.inOut" }, T + 2.7);
+  tl.to(ptr, { scale: 0.82, duration: 0.08 }, T + 3.4);
+  tl.to(ptr, { scale: 1, duration: 0.25, ease: "back.out(3)" }, T + 3.48);
+  tl.to(down, { scale: 0.9, duration: 0.08 }, T + 3.4);
+  tl.to(down, { scale: 1, duration: 0.4, ease: "back.out(3)" }, T + 3.48);
+  cue(T + 3.4, "click");
+  tl.to(ptr, { opacity: 0, x: "+=60", y: "+=80", duration: 0.5, ease: "power2.in" }, T + 4.4);
+  leave("calibrate", T + 5.6);
+}
+
+// MARK: 9b · Health (102–108)
+
+{
+  const T = 102;
+  const s = shot("health");
+  enter("health", T, "cut");
+  drift("health", T, 6, { z: -50, rotateX: 5 }, { z: 30, rotateX: 0 });
+  reveal($(".hl-m", s), T + 0.05);
+  tl.fromTo($("[data-hcard]", s), { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.8, ease: "expo.out" }, T + 0.35);
+  const dot = $('[data-svc="Grafana"] .dot', s);
+  const fold = $("[data-hfold]", s);
+  tl.call(() => (dot.className = "dot dot-amber"), [], T + 1.3);
+  tl.to($('[data-svc="Grafana"]', s), { color: "#f5f5f7", duration: 0.3 }, T + 1.3);
+  cue(T + 1.3, "amber");
+  tl.to(fold, { height: () => fold.scrollHeight, duration: 0.6, ease: "expo.out" }, T + 1.35);
+  const line = $("[data-type]", fold);
+  typeInto(line, line.dataset.type!, T + 1.6, 64);
+  // Fixed: the dot goes quiet again and the warning folds away.
+  tl.call(() => (dot.className = "dot dot-done"), [], T + 4.1);
+  tl.to($('[data-svc="Grafana"]', s), { color: "#a1a1a6", duration: 0.3 }, T + 4.1);
+  tl.to($(".h-problem:not(.h-after)", fold), { opacity: 0, duration: 0.25 }, T + 4.1);
+  tl.to($("[data-hafter]", fold), { opacity: 1, duration: 0.35 }, T + 4.2);
+  cue(T + 4.1, "tick");
+  tl.to(fold, { height: 0, opacity: 0, duration: 0.6, ease: "expo.inOut" }, T + 5.0);
+  leave("health", T + 5.6);
+}
+
 // MARK: Run
 
 tl.eventCallback("onComplete", () => (window.__film.done = true));
@@ -743,6 +820,7 @@ window.__film = {
   done: false,
   duration: tl.duration(),
   cues: cues.sort((a, b) => a.t - b.t),
+  inserts: INSERTS,
   start: () => void tl.play(0),
 };
 const params = new URLSearchParams(location.search);

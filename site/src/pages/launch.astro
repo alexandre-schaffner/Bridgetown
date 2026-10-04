@@ -56,6 +56,16 @@ const depths = [
   { depth: "deep", model: "Opus", effort: "max", fill: 1, example: "A regression across services" },
 ];
 
+// Calibration: verdicts kept with their numbers, labelled with a thumb.
+const verdicts = [
+  { from: "#alert-api", who: "Monitor", text: "5xx rate 3.1% on /v4/orders over 5 minutes", route: ["Agent started", "blue"], nums: "actionable 93% · agent 86%" },
+  { from: "#alert-jobs", who: "Monitor", text: "cron rewards-sync exceeded 15 min", route: ["Suggested to you", "amber"], nums: "actionable 61% · agent 72%" },
+  { from: "#eng-infra", who: "Julien", text: "is the Base indexer behind again?", route: ["Needs you", "amber"], nums: "needs you 84% · agent 9%" },
+] as const;
+
+// Health: the header's strip, a quiet dot per service until one isn't.
+const services = ["Slack", "Jev", "GitHub", "Grafana"];
+
 const rail = ["Diagnose", "Fix", "Draft PR", "Second review", "CI", "Review request", "Merge", "Release", "Deploy"];
 const rise = [...series(40, 12, 3, 9), 14, 22, 41, 63, 71, 69, 74, 72];
 const diff: [number, string, string][] = [
@@ -320,6 +330,32 @@ const montage = ["Triage.", "Diagnose.", "Fix.", "Review.", "Ship.", "Watch.", "
       </div>
     </section>
 
+    <section class="shot" data-shot="calibrate">
+      <div class="cam calibrate">
+        <div class="team-copy">
+          <h2 class="hl-m" data-split>Tell it when <span class="dim">it’s wrong.</span></h2>
+          <p class="sub" data-split>Every verdict is kept with its numbers. A thumb labels it for calibration.</p>
+        </div>
+        <ol class="verdicts">
+          {
+            verdicts.map((v) => (
+              <li class="v-row" data-vrow>
+                <p class="t-meta"><span class="mono">{v.from}</span><span>{v.who}</span></p>
+                <p class="v-text">{v.text}</p>
+                <p class="v-route"><i class={`dot dot-${v.route[1]}`} /> {v.route[0]} <span class="faint mono">{v.nums}</span></p>
+                <div class="v-fb">
+                  <span class="v-q" data-vq>Was this the right call?</span>
+                  <span class="thumb" data-thumb><Icon name="thumbs-up" size={24} /></span>
+                  <span class="thumb" data-thumb><Icon name="thumbs-down" size={24} /></span>
+                </div>
+              </li>
+            ))
+          }
+        </ol>
+        <svg class="pointer big" data-pointer width="34" height="34" viewBox="0 0 22 22"><path d="M4 2.5v15.2l3.9-3.6 2.5 5.6 2.6-1.1-2.4-5.5h5.3z" fill="#000" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+      </div>
+    </section>
+
     <!-- 4 · The agents' path, Diagnose to Deploy. -->
     <section class="shot" data-shot="pipe">
       <ol class="rail">
@@ -580,6 +616,22 @@ const montage = ["Triage.", "Diagnose.", "Fix.", "Review.", "Ship.", "Watch.", "
               </li>
             ))}
           </ol>
+        </div>
+      </div>
+    </section>
+
+    <section class="shot" data-shot="health">
+      <div class="cam health">
+        <h2 class="hl-m" data-split>When it can’t see, <span class="dim">it says so.</span></h2>
+        <div class="h-card" data-hcard>
+          <p class="h-strip">
+            {services.map((s) => <span class="h-svc" data-svc={s}><i class="dot dot-done" />{s}</span>)}
+            <span class="faint mono h-poll">polled 12s ago</span>
+          </p>
+          <div class="h-fold" data-hfold>
+            <p class="h-problem"><i class="dot dot-amber" /> <span class="mono" data-type="grafana MCP · sessions: not reachable. Run `bun grafana:mcp` in the monorepo."></span></p>
+            <p class="h-problem h-after" data-hafter><i class="dot dot-done" /> Grafana is back. The warning clears itself.</p>
+          </div>
         </div>
       </div>
     </section>
@@ -2115,6 +2167,146 @@ const montage = ["Triage.", "Diagnose.", "Fix.", "Review.", "Ship.", "Watch.", "
     box-shadow: inset 0 0 0 1px var(--hair-strong);
     color: var(--hi);
     font-size: 21px;
+  }
+
+  /* MARK: Calibration */
+
+  .calibrate {
+    display: grid;
+    grid-template-columns: 700px 900px;
+    gap: 120px;
+    justify-content: center;
+    align-content: center;
+    align-items: center;
+  }
+
+  .verdicts {
+    margin: 0;
+    padding: 14px 44px;
+    list-style: none;
+    border-radius: 28px;
+    background: var(--card);
+    box-shadow: inset 0 0 0 1px var(--hair);
+  }
+
+  .v-row {
+    display: grid;
+    gap: 10px;
+    padding: 30px 0;
+  }
+
+  .v-row + .v-row {
+    border-top: 1px solid var(--hair);
+  }
+
+  .v-text {
+    font-size: 28px;
+    letter-spacing: -0.015em;
+    color: var(--hi);
+  }
+
+  .v-route {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 20px;
+    color: var(--mid);
+  }
+
+  .v-route .mono {
+    margin-left: 6px;
+    font-size: 17px;
+  }
+
+  .v-fb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    font-size: 19px;
+  }
+
+  .v-q {
+    margin-right: auto;
+    color: var(--lo);
+  }
+
+  .thumb {
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 42px;
+    border-radius: 10px;
+    color: var(--mid);
+  }
+
+  .thumb:global(.picked) {
+    color: var(--hi);
+    background: rgb(255 255 255 / 0.08);
+  }
+
+  .thumb:global(.picked) :global(svg) {
+    fill: currentColor;
+  }
+
+  /* MARK: Health */
+
+  .health {
+    display: grid;
+    justify-items: center;
+    align-content: center;
+    gap: 70px;
+  }
+
+  .h-card {
+    width: 1360px;
+    padding: 40px 50px;
+    border-radius: 28px;
+    background: var(--card);
+    box-shadow: inset 0 0 0 1px var(--hair);
+  }
+
+  .h-strip {
+    display: flex;
+    align-items: center;
+    gap: 40px;
+    font-size: 30px;
+    color: var(--mid);
+  }
+
+  .h-svc {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .h-poll {
+    margin-left: auto;
+    font-size: 20px;
+  }
+
+  .h-fold {
+    position: relative;
+    height: 0;
+    overflow: hidden;
+  }
+
+  .h-problem {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-top: 26px;
+    padding-top: 26px;
+    border-top: 1px solid var(--hair);
+    font-size: 25px;
+    color: var(--hi);
+  }
+
+  .h-problem.h-after {
+    position: absolute;
+    inset: 0 0 auto;
+    color: var(--mid);
+    opacity: 0;
   }
 
   /* MARK: Safety */
