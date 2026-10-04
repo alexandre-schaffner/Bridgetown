@@ -82,17 +82,22 @@ const seed = (session: Session) =>
     yield* store.putSession(session)
   })
 
-/** One critic pass, then the session once the review it started has written its result. */
-const tickUntil = (done: (s: Session) => boolean) =>
+/** What `pick` finds in `read` once it finds something: a review runs on the critic's own fiber. */
+const eventually = <A, B, E, R>(read: Effect.Effect<A, E, R>, pick: (a: A) => B | undefined) =>
   Effect.gen(function* () {
-    const store = yield* Store
-    yield* (yield* Critic).tick
     for (let i = 0; i < 400; i++) {
-      const session = yield* store.getSession("s_crit")
-      if (session !== undefined && done(session)) return session
+      const found = pick(yield* read)
+      if (found !== undefined) return found
       yield* Effect.sleep("5 millis")
     }
     return yield* Effect.die("the review never finished")
+  })
+
+/** One critic pass, then the session once the review it started has written its result. */
+const tickUntil = (done: (s: Session) => boolean) =>
+  Effect.gen(function* () {
+    yield* (yield* Critic).tick
+    return yield* eventually(Store.use((store) => store.getSession("s_crit")), (s) => (s !== undefined && done(s) ? s : undefined))
   })
 
 const transcript = Effect.gen(function* () {
@@ -114,7 +119,7 @@ describe("the adversarial review", () => {
       )
       expect(session).toMatchObject({ critiqueRounds: 1, phase: "fix", critique: { sha: "aaaa111" } })
       expect(session.critique?.findings.map((f) => [f.title, f.blocks])).toEqual([[REAL.title, true], [NIT.title, false]])
-      for (let i = 0; i < 200 && texts().length === 0; i++) await Bun.sleep(5)
+      await world.runPromise(eventually(Effect.sync(texts), (sent) => (sent.length > 0 ? sent : undefined)))
       expect(texts()[0]).toContain("An independent reviewer")
       expect(texts()[0]).toContain(REAL.title)
       expect(texts()[0]).not.toContain(NIT.title)
@@ -139,6 +144,29 @@ describe("the adversarial review", () => {
       expect(session).toMatchObject({ phase: "ci", activity: "Waiting for CI", milestones: { critiqued: true }, critique: { sha: "aaaa111" } })
       expect(session.critique?.findings.every((f) => !f.blocks)).toBe(true)
       expect(state.ready).toEqual([PR])
+    } finally {
+      await world.dispose()
+    }
+  })
+
+  test("findings that never reached the agent (parked when the daemon stopped) are delivered, not reviewed again", async () => {
+    const { agent, texts } = recordingAgent()
+    const { github } = fakeGitHub()
+    const { reviewer, calls } = reviewerReturning({ summary: "", findings: [] })
+    const world = makeWorld({ agent, github, reviewer, jev })
+    try {
+      const recorded = { reviewer: "codex" as const, sha: "aaaa111", findings: [{ ...REAL, jev: null, blocks: true }], response: null }
+      const session = await world.runPromise(
+        Effect.gen(function* () {
+          yield* seed(reviewing({ critique: recorded, critiqueRounds: 2 }))
+          return yield* tickUntil((s) => s.status === "running")
+        }),
+      )
+      expect(calls.count).toBe(0)
+      expect(session).toMatchObject({ critiqueRounds: 2, phase: "fix" })
+      const [sent] = await world.runPromise(eventually(Effect.sync(texts), (all) => (all.length > 0 ? all : undefined)))
+      expect(sent).toContain(REAL.title)
+      expect(sent).toContain("round 2 of")
     } finally {
       await world.dispose()
     }
@@ -196,8 +224,8 @@ describe("the adversarial review", () => {
         }),
       )
       expect(session.status).toBe("critiquing")
-      for (let i = 0; i < 200 && !(await world.runPromise(transcript)).some((l) => l.includes("HTTP 502")); i++) await Bun.sleep(5)
-      expect(await world.runPromise(transcript)).toContain("error: Could not take the PR out of draft: HTTP 502")
+      const lines = await world.runPromise(eventually(transcript, (lines) => (lines.some((l) => l.includes("HTTP 502")) ? lines : undefined)))
+      expect(lines).toContain("error: Could not take the PR out of draft: HTTP 502")
       expect(calls.count).toBe(1)
     } finally {
       await world.dispose()
@@ -230,12 +258,7 @@ describe("the adversarial review", () => {
         Effect.gen(function* () {
           yield* seed(reviewing())
           yield* (yield* Critic).tick
-          for (let i = 0; i < 400; i++) {
-            const lines = yield* transcript
-            if (lines.some((l) => l.includes("moved"))) return lines
-            yield* Effect.sleep("5 millis")
-          }
-          return yield* transcript
+          return yield* eventually(transcript, (lines) => (lines.some((l) => l.includes("moved")) ? lines : undefined))
         }),
       )
       expect(lines).toContain("status: The branch moved during the review; its result is dropped")
@@ -276,10 +299,7 @@ describe("the adversarial review", () => {
           yield* seed(reviewing())
           for (let round = 1; round <= 3; round++) {
             yield* (yield* Critic).tick
-            for (let i = 0; i < 400; i++) {
-              if ((yield* transcript).filter((l) => l.startsWith("error: Review could not run")).length >= round) break
-              yield* Effect.sleep("5 millis")
-            }
+            yield* eventually(transcript, (lines) => (lines.filter((l) => l.startsWith("error: Review could not run")).length >= round ? lines : undefined))
           }
           const session = yield* tickUntil((s) => s.status === "waiting")
           return { session, cards: (yield* store.listActions()).map((a) => a.title) }

@@ -3,7 +3,7 @@ import { ActionQueue } from "../actions/queue.ts"
 import { alertFromParsed, type ParsedAlert } from "../domain/alert.ts"
 import type { AdapterError } from "../domain/errors.ts"
 import { now, tsToIso } from "../domain/ids.ts"
-import { type Alert, type Session, type Triage, triageEvent } from "../domain/model.ts"
+import { type Alert, type Session, triageEvent } from "../domain/model.ts"
 import { Hub } from "../hub.ts"
 import { followUpPrompt } from "../sessions/prompts.ts"
 import { SessionRepo } from "../sessions/repo.ts"
@@ -16,6 +16,7 @@ import { toThreadReplies } from "../slack/text.ts"
 import { Store } from "../store/store.ts"
 import { Jev } from "../triage/jev.ts"
 import { decideInbox } from "../triage/policy.ts"
+import { triageWith } from "../triage/verdict.ts"
 import { AlertPipeline, horizon } from "./alerts.ts"
 
 /** Mentions, group mentions and DMs anywhere in Slack, including what people write in alert channels. */
@@ -99,11 +100,8 @@ export const InboxLive = Layer.effect(Inbox)(
         return yield* hub.notify
       }
       const replies = yield* slack.replies(parsed.channelId, threadTs).pipe(Effect.orElseSucceed((): ReadonlyArray<SlackMessage> => []))
-      const verdict = yield* jev.judgeInbox({ item: parsed, thread: toThreadReplies(replies, identity.user_id), myName: identity.user }).pipe(Effect.result)
-      const triage: Triage =
-        verdict._tag === "Failure"
-          ? { decision: "escalate", reason: "Jev unavailable — your call", jev: null }
-          : { ...decideInbox(verdict.success, (yield* hub.settings).thresholds), jev: verdict.success }
+      const judging = jev.judgeInbox({ item: parsed, thread: toThreadReplies(replies, identity.user_id), myName: identity.user })
+      const triage = yield* triageWith(hub, judging, decideInbox, "escalate")
       const alert = alertFromParsed(parsed, {
         permalink: match.permalink ?? null,
         receivedAt: tsToIso(parsed.ts),

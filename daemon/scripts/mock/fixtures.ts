@@ -1,6 +1,6 @@
 import { RETRY } from "../../src/actions/queue.ts"
 import { DEFAULT_CHANNELS, DEFAULT_SETTINGS } from "../../src/config.ts"
-import { type Action, type Alert, type AlertFields, type AlertSource, type Channel, type Disposition, NO_MILESTONES, type Session, type Settings, type TranscriptEntry, type Triage, triageEvent } from "../../src/domain/model.ts"
+import { type Action, type Alert, type AlertFields, type AlertSource, type Channel, type Disposition, NO_MILESTONES, type Session, type Settings, type TranscriptEntry, type Triage, triageEvent, WATCH_CHANNEL } from "../../src/domain/model.ts"
 import { newSession } from "../../src/sessions/new-session.ts"
 import { sessionEndEvent } from "../../src/sessions/repo.ts"
 import type { FakePr } from "./fakes.ts"
@@ -156,9 +156,9 @@ export const buildFixtures = (paths: { readonly repoPath: string; readonly workt
     critique: alert({ channel: DEV, minutesAgo: 16, title: "merkl-api · 502s on /v4/rewards for Linea", summary: "Grafana: 502 rate 4.8% on /v4/rewards?chainId=59144 for 12 minutes", source: "generic", sessionId: SESSION.critique, triage: auto("Agent-resolvable runtime_error (actionable 89% · agent 82%)", jev("runtime_error", 0.89, 0.82, 0.06, "standard", 2.0)) }),
     watch: {
       ...alert({
-        channel: { id: "grafana", name: "Grafana", enabled: true }, minutesAgo: 3, title: "API 5xx at 640 per 5 min, usually up to 43",
+        channel: { ...WATCH_CHANNEL, enabled: true }, minutesAgo: 3, title: "API 5xx at 640 per 5 min, usually up to 43",
         summary: "Since 11:45 UTC, API 5xx has been 15× its usual level for the past 3 hours. Deploys around it: merkl-api v1.35.11 deployed at 11:41 UTC. Bridgetown saw this in Grafana; no Slack alert has fired for it.",
-        source: "watch", fields: { _tag: "watch", signal: "api_5xx", query: `k8s.container.name:="envoy" envoy.response_code:>=500 | stats count() n`, datasource: "logs", level: 640, usual: 43, since: ago(18) },
+        source: "watch", fields: { _tag: "watch", signal: "api_5xx", query: `k8s.container.name:="envoy" envoy.response_code:>=500 | stats count() n`, datasource: "logs", level: 640, usual: 43, since: ago(18), shape: "rise" },
         triage: { decision: "suggest", reason: "Agent-resolvable runtime_error (actionable 88% · agent 81%)", jev: jev("runtime_error", 0.88, 0.81, 0.02, "standard", 2.1) },
       }),
       id: `watch:api_5xx:${tsAgo(18)}`,
@@ -167,10 +167,10 @@ export const buildFixtures = (paths: { readonly repoPath: string; readonly workt
     },
     logs: {
       ...alert({
-        channel: { id: "grafana", name: "Grafana", enabled: true }, minutesAgo: 9, title: "merkl-precompute-* and 1 more: Error fetching batch 1/1: Error: Max retries (2) exceeded for request: Rate limi…",
+        channel: { ...WATCH_CHANNEL, enabled: true }, minutesAgo: 9, title: "merkl-precompute-* and 1 more: Error fetching batch 1/1: Error: Max retries (2) exceeded for request: Rate limi…",
         summary: "Steady: 1,813 lines in the last 15 minutes, about as often as over the 2 hours before. Logged by merkl-precompute-*, merkl-compute-* (v1.62.35) at warning level since 11:51 UTC. Bridgetown found this in the logs; no Slack alert has fired for it.",
         raw: "Pattern (numbers collapsed to <N>): Error fetching batch <N>/<N>: Error: Max retries (<N>) exceeded for request: Rate limited: the preview community blocks subgraphs are being retired, and this shared endpoint is now throttled and will be removed without further notice.\nJev: problem 94% · agent 58% · users affected 43%",
-        source: "watch", fields: { _tag: "watch", signal: "log:1234567890", query: `(severity_text:="WARN" OR severity_text:="WARNING") (merkl.job:~"^merkl-precompute-[0-9]+$" OR merkl.job:~"^merkl-compute-[0-9]+$") "and this shared endpoint is now throttled and will be"`, datasource: "logs", level: 1813, usual: 1790, since: ago(24) },
+        source: "watch", fields: { _tag: "watch", signal: "log:1234567890", query: `(severity_text:="WARN" OR severity_text:="WARNING") (merkl.job:~"^merkl-precompute-[0-9]+$" OR merkl.job:~"^merkl-compute-[0-9]+$") "and this shared endpoint is now throttled and will be"`, datasource: "logs", level: 1813, usual: 1790, since: ago(24), shape: "rise" },
         triage: { decision: "suggest", reason: "Jev: likely a real problem (problem 94% · agent 58% · users 43%)", jev: jev("runtime_error", 0.94, 0.58, 0, "standard", 1.3) },
       }),
       id: `watch:log:1234567890:${tsAgo(24)}`,

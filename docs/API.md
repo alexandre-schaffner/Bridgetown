@@ -28,7 +28,7 @@ All timestamps are ISO-8601 strings. Every nullable field is always present, set
 | GET | `/state` | | `Snapshot` |
 | GET | `/events` | | SSE stream. Every change sends `event: snapshot` with `data: <Snapshot JSON>` (at most one per 150ms: a burst shares snapshots, and the last one is always read after the last change). The first message arrives on connect. A `: ping` comment is sent every 15s. |
 | GET | `/sessions/:id/transcript` | | `TranscriptEntry[]` (last 200) |
-| GET | `/boards/:view` | | `Board`: `incidents` (API 5xx and p99, engine and job errors) or `infra` (RPC errors, failed job pods, OOM kills, Postgres backends waiting), over the last hour. |
+| GET | `/boards/:view` | | `Board`: `incidents` (API 5xx and p99, engine and job errors), `infra` (RPC errors, failed job pods, OOM kills, Postgres backends waiting) or `database` (prod Postgres connections by state, backends waiting on locks, longest transaction, replication lag), over the last hour. |
 | GET | `/alerts/:id/board` | | `Board` picked from what the alert is about (an API route, a release image, a chain, its kind), 6h either side of it; `null` when nothing in Grafana tracks it (a DM). |
 | GET | `/alerts/:id` | | `AlertDetail` — the full message, its history, its session (if any) and open actions. `:id` is URL-encoded (`C0AUKD42N3U%3A1790933006.433649`). |
 | POST | `/actions/:id/resolve` | `{ "response": string \| null }` | `Snapshot`. `409` while the same action is already being resolved (`inFlight`). Merge and release are idempotent per session: a repeat never merges or tags twice. |
@@ -137,9 +137,10 @@ type Claimant = {
 }
 
 type AlertOutcome = {
-  kind: "pending" | "filtered" | "ignored" | "suggested" | "escalated" | "waiting" | "dismissed" | "opened" | "teammate" | "session"
+  kind: "pending" | "filtered" | "ignored" | "suggested" | "escalated" | "waiting" | "dismissed" | "opened" | "withdrawn" | "teammate" | "session"
   // waiting   = an open card for this alert is in "Needs you"
   // dismissed = you dismissed its card and no agent ran · opened = you opened it in Slack/Revv from an escalation
+  // withdrawn = a Bridgetown finding whose signal went back to normal before anyone acted; its card was withdrawn
   // teammate  = no session of yours, and a teammate is on it (`claimedBy`): "Julien's agent is on it", "Baptiste is on it (+1)"
   // session   = an agent session owns it; headline and tone are the session's own
   headline: string       // "Filtered by a rule", "Ignored by Jev", "Waiting on you", "Dismissed by you", "Resolved · deployed admin-v0.6.1"
@@ -187,6 +188,8 @@ type Session = {
   steps: Step[]            // always 6, in order; computed from evidence by the daemon. Render these, never infer.
   headline: string         // status line, e.g. "Running", "Waiting on you", "Resolved · deployed admin-v0.6.1", "Closed · root cause not found"
   tone: "live" | "waiting" | "success" | "neutral" | "failure"   // color of the status dot and headline. success only for verified outcomes
+  reviewerName: string     // who reviews the agent's fixes, e.g. "Codex"
+  critiqueLine: string     // where the adversarial review stands: "Reviewing · round 2", "Passed · 1 round of fixes · 2 dropped by Jev", "1 blocking finding · agent fixing", "Not run"
   resolution: string | null  // for finished sessions: the honest one-line outcome
   rootCauseFound: boolean | null
   activity: string         // latest one-line activity ("Reading failed job logs…")
@@ -259,7 +262,7 @@ type Settings = {
   maxConcurrent: number         // 2
   dryRun: boolean               // never post to Slack
   adversarialReview: boolean    // true — another vendor's model reviews each pushed fix before the PR leaves draft
-  watchProd: boolean            // true — every 5 min, check the overview's prod signals in Grafana and suggest (never auto-start) an investigation when one rises with no Slack alert covering it
+  watchProd: boolean            // true — every 5 min, check the overview's prod signals in Grafana for rises and spikes, every 10 sweep prod's logs for new, surging or risky patterns (judged by Jev); each anomaly no Slack alert covers gets an investigation (decision "auto", started per autoStart/paused like an alert's)
   pollSeconds: number           // 30
   monorepoPath: string
   deploymentRepoPath: string

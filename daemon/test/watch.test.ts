@@ -24,7 +24,7 @@ const panel = (id: string, value: (stepsAgo: number) => number, overrides: Parti
   return { id, title: "API 5xx", unit: "count", series: [{ label: "API 5xx", points }], latest: null, link: "", error: null, ...overrides }
 }
 
-describe("detect: a sustained rise over a floor, never one burst", () => {
+describe("detect: a sustained rise, or one step far above usual", () => {
   test("three complete steps far above the usual level", () => {
     const anomaly = detect(panel("api_5xx", (ago) => (ago >= 1 && ago <= RECENT_STEPS ? 400 : 5)), STEP, NOW)
     expect(anomaly).toMatchObject({ level: 400, usual: 5 })
@@ -38,11 +38,21 @@ describe("detect: a sustained rise over a floor, never one burst", () => {
   test("a Prometheus point at now already covers the step before it, so it counts", () => {
     const risen = (ago: number) => (ago <= 1 ? 20 : 1)
     expect(detect(panel("db_waiting", risen), STEP, NOW, "prom")).toMatchObject({ level: 20, since: new Date(NOW.getTime() - 3 * STEP * 1000) })
-    expect(detect(panel("db_waiting", risen), STEP, NOW, "logs")).toBeNull()
+    // Read as log buckets, the last one is still filling: one complete step up is a spike, not a rise.
+    expect(detect(panel("db_waiting", risen), STEP, NOW, "logs")).toMatchObject({ shape: "spike", level: 20 })
   })
 
-  test("a single burst, even a huge one, is not a rise", () => {
-    expect(detect(panel("api_5xx", (ago) => (ago === 2 ? 5_000 : 5)), STEP, NOW)).toBeNull()
+  test("a single burst far above usual is a spike, dated from its own step", () => {
+    const spike = detect(panel("api_5xx", (ago) => (ago === 2 ? 5_000 : 5)), STEP, NOW)
+    expect(spike).toMatchObject({ shape: "spike", level: 5_000, usual: 5 })
+    expect(spike?.since.toISOString()).toBe("2026-10-04T11:50:00.000Z")
+  })
+
+  test("a burst within a job's usual swings is neither", () => {
+    // Engine errors swing to 600 as jobs run; one step at 1,000 is not 3× that.
+    expect(detect(panel("engine_errors", (ago) => (ago === 1 ? 1_000 : ago % 6 === 0 ? 600 : 50)), STEP, NOW)).toBeNull()
+    // API 5xx: 90 in one step is under the spike floor of 100.
+    expect(detect(panel("api_5xx", (ago) => (ago === 1 ? 90 : 3)), STEP, NOW)).toBeNull()
   })
 
   test("two of three steps up is enough", () => {
@@ -155,15 +165,20 @@ describe("Watcher.tick", () => {
     expect(await findings()).toHaveLength(0)
   })
 
-  test("a rise becomes a suggestion, never an auto-start, even when Jev would hand it off", async () => {
+  test("a rise starts an investigation on its own", async () => {
     await world.runPromise(Hub.use((hub) => hub.patchStatus({ grafanaMcp: "up" })))
     await tick()
     const [finding] = await findings()
-    expect(finding).toMatchObject({ fingerprint: "watch:api_5xx", channelName: "Grafana", sessionId: null, triage: { decision: "suggest" } })
+    expect(finding).toMatchObject({ fingerprint: "watch:api_5xx", channelName: "Grafana", triage: { decision: "auto" } })
+    expect(finding?.sessionId).not.toBeNull()
+    expect(finding?.triage.reason).toStartWith("Anomaly in prod, investigating (Jev: ")
     expect(finding?.permalink).toContain("/d/pihjbxm")
-    expect(finding?.events.map((e) => e.text)).toEqual([expect.stringContaining("Seen by Bridgetown in Grafana"), expect.stringContaining("Suggested to you")])
-    const cards = await world.runPromise(ActionQueue.use((queue) => queue.list))
-    expect(cards).toEqual([expect.objectContaining({ kind: "investigate", alertId: finding?.id, detail: expect.stringMatching(/^Grafana · /) })])
+    expect(finding?.events.map((e) => e.text)).toEqual([
+      expect.stringContaining("Seen by Bridgetown in Grafana"),
+      expect.stringContaining("Handed to an agent"),
+      expect.stringContaining("Agent session started"),
+    ])
+    expect(await world.runPromise(ActionQueue.use((queue) => queue.list))).toEqual([])
   })
 
   test("the same rise is raised once", async () => {
@@ -194,7 +209,7 @@ describe("Watcher.tick with a session already on the signal", () => {
   test("the rise goes to that session, not to a second agent", async () => {
     const earlier: Alert = {
       id: "watch:api_5xx:1", channelId: "grafana", channelName: "Grafana", ts: "1", permalink: null, title: "API 5xx at 640", summary: "", raw: "",
-      source: "watch", fingerprint: "watch:api_5xx", fields: { _tag: "watch", signal: "api_5xx", query: "q", datasource: "logs", level: 640, usual: 40, since: "2026-10-04T00:00:00.000Z" },
+      source: "watch", fingerprint: "watch:api_5xx", fields: { _tag: "watch", signal: "api_5xx", query: "q", datasource: "logs", level: 640, usual: 40, since: "2026-10-04T00:00:00.000Z", shape: "rise" },
       mentionsMe: false, receivedAt: new Date(Date.now() - 7 * 3_600_000).toISOString(), triage: { decision: "suggest", reason: "", jev: null },
       sessionId: "s_watch", feedback: null, events: [], disposition: null, claimedBy: [],
     }
@@ -213,5 +228,124 @@ describe("Watcher.tick with a session already on the signal", () => {
     expect(await world.runPromise(ActionQueue.use((queue) => queue.list))).toEqual([])
     const transcript = await world.runPromise(Store.use((store) => store.transcript("s_watch", 10)))
     expect(transcript.map((e) => e.text)).toContainEqual(expect.stringContaining("Signal rose again"))
+  })
+})
+
+describe("Watcher.tick as a rise goes on, worsens and passes", () => {
+  /** A world where API 5xx sit at 5 per step, then at `level.now` for the last 20 minutes. */
+  const scenario = () => {
+    const level = { now: 400 }
+    const grafana: GrafanaShape = {
+      ...noGrafana,
+      logStats: (query, range: Range) =>
+        Effect.sync(() => {
+          if (!query.includes("response_code:>=500")) return []
+          const end = range.end.getTime() / 1000
+          const points: Array<readonly [number, number]> = []
+          for (let t = Math.ceil(range.start.getTime() / 1000 / STEP) * STEP; t <= end; t += STEP) points.push([t, t > end - 20 * 60 ? level.now : 5])
+          return [{ labels: {}, points }]
+        }),
+    }
+    const jev: JevShape = {
+      judge: () => Effect.succeed(verdict()),
+      judgeInbox: () => Effect.die("unused"),
+      judgeFinding: () => Effect.die("unused"),
+      judgeLogPatterns: () => Effect.die("unused"),
+    }
+    const world = makeWorld({ jev, grafana })
+    // With Auto-start off, findings wait in Needs you as Investigate cards: those are what this follows.
+    const tickAt = (now: number) => {
+      level.now = now
+      return world.runPromise(Effect.gen(function* () {
+        const hub = yield* Hub
+        yield* hub.patchStatus({ grafanaMcp: "up" })
+        yield* hub.updateSettings({ ...(yield* hub.settings), autoStart: false })
+        yield* (yield* Watcher).tick
+      }))
+    }
+    const findings = () => world.runPromise(Store.use((store) => store.alertsByFingerprint("watch:api_5xx", new Date(0).toISOString())))
+    const cards = () => world.runPromise(ActionQueue.use((queue) => queue.list)).then((all) => all.filter((a) => a.kind === "investigate"))
+    return { world, tickAt, findings, cards }
+  }
+
+  test("much worse within the cooldown: a new finding, and its card replaces the old one", async () => {
+    const { world, tickAt, findings, cards } = scenario()
+    await tickAt(400)
+    expect(await findings()).toHaveLength(1)
+    await tickAt(900)
+    expect(await findings()).toHaveLength(1)
+    await tickAt(1_500)
+    const all = await findings()
+    expect(all).toHaveLength(2)
+    expect(all.flatMap((a) => a.events.map((e) => e.text))).toContainEqual(expect.stringContaining("the level of the last finding"))
+    expect(await cards()).toHaveLength(1)
+    await world.dispose()
+  })
+
+  test("back to usual: the card is withdrawn, the finding stays and says why", async () => {
+    const { world, tickAt, findings, cards } = scenario()
+    await tickAt(400)
+    expect(await cards()).toHaveLength(1)
+    await tickAt(6)
+    expect(await cards()).toHaveLength(0)
+    const [finding] = await findings()
+    expect(finding?.events.map((e) => e.text)).toContainEqual(expect.stringContaining("Back to its usual level"))
+    expect(finding?.disposition?.kind).toBe("withdrawn")
+    await world.dispose()
+  })
+})
+
+describe("Watcher.tick on a spike", () => {
+  /** A world where API 5xx sit at 3 per step, with one step at 122 10 minutes ago while `burst.on`. */
+  const scenario = () => {
+    const burst = { on: true }
+    const grafana: GrafanaShape = {
+      ...noGrafana,
+      logStats: (query, range: Range) =>
+        Effect.sync(() => {
+          if (!query.includes("response_code:>=500")) return []
+          const end = range.end.getTime() / 1000
+          const spikeAt = Math.floor((end - 10 * 60) / STEP) * STEP
+          const points: Array<readonly [number, number]> = []
+          for (let t = Math.ceil(range.start.getTime() / 1000 / STEP) * STEP; t <= end; t += STEP) points.push([t, burst.on && t === spikeAt ? 122 : 3])
+          return [{ labels: {}, points }]
+        }),
+    }
+    const jev: JevShape = {
+      judge: () => Effect.succeed(verdict({ actionable: 0.3, agentResolvable: 0.2 })),
+      judgeInbox: () => Effect.die("unused"),
+      judgeFinding: () => Effect.die("unused"),
+      judgeLogPatterns: () => Effect.die("unused"),
+    }
+    const world = makeWorld({ jev, grafana })
+    const tick = (autoStart: boolean) =>
+      world.runPromise(Effect.gen(function* () {
+        const hub = yield* Hub
+        yield* hub.patchStatus({ grafanaMcp: "up" })
+        yield* hub.updateSettings({ ...(yield* hub.settings), autoStart })
+        yield* (yield* Watcher).tick
+      }))
+    const findings = () => world.runPromise(Store.use((store) => store.alertsByFingerprint("watch:api_5xx", new Date(0).toISOString())))
+    return { world, burst, tick, findings }
+  }
+
+  test("one step far above usual that Jev sees nothing in is suggested, not investigated", async () => {
+    const { world, tick, findings } = scenario()
+    await tick(true)
+    const [finding] = await findings()
+    expect(finding).toMatchObject({ triage: { decision: "suggest" }, sessionId: null, fields: { shape: "spike", level: 122 } })
+    expect(finding?.triage.reason).toStartWith("Anomaly in prod, Jev doubts it")
+    expect(finding?.title).toBe("API 5xx spiked to 122 per 5 min, usually up to 3")
+    await world.dispose()
+  })
+
+  test("its card stays after the spike has passed, since what it needs is an explanation", async () => {
+    const { world, burst, tick } = scenario()
+    await tick(false)
+    burst.on = false
+    await tick(false)
+    const cards = await world.runPromise(ActionQueue.use((queue) => queue.list))
+    expect(cards).toEqual([expect.objectContaining({ kind: "investigate", payload: "watch:api_5xx" })])
+    await world.dispose()
   })
 })

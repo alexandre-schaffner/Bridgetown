@@ -44,8 +44,10 @@ export interface BoardSpec {
   readonly deploysFrom: Date
 }
 
-export type OverviewView = "incidents" | "infra"
-export const OVERVIEW_VIEWS: ReadonlyArray<OverviewView> = ["incidents", "infra"]
+export type OverviewView = "incidents" | "infra" | "database"
+export const OVERVIEW_VIEWS: ReadonlyArray<OverviewView> = ["incidents", "infra", "database"]
+/** The views the prod watcher sweeps: the database board has no rules of its own yet. */
+const WATCHED_VIEWS: ReadonlyArray<OverviewView> = ["incidents", "infra"]
 
 const HOUR = 3_600_000
 
@@ -138,6 +140,46 @@ const dbWaiting: PanelSpec = {
   unit: "count",
   source: "prom",
   query: () => `sum(cnpg_backends_waiting_total)`,
+  dashboard: "lexpwjz",
+}
+
+/** Prod Postgres: the CNPG cluster behind the API and jobs, not Argo's own. Any pod, so a failover keeps the series. */
+const PROD_DB = `service_name="cluster-timescaledb"`
+
+const dbConnections: PanelSpec = {
+  id: "db_connections",
+  title: "Connections",
+  unit: "count",
+  source: "prom",
+  query: () => `sum by (state) (cnpg_backends_total{${PROD_DB}})`,
+  dashboard: "lexpwjz",
+  seriesLabel: "state",
+}
+
+const dbLockWaits: PanelSpec = {
+  id: "db_lock_waits",
+  title: "Waiting on locks",
+  unit: "count",
+  source: "prom",
+  query: () => `sum(cnpg_backends_waiting_total{${PROD_DB}})`,
+  dashboard: "lexpwjz",
+}
+
+const dbLongestTx: PanelSpec = {
+  id: "db_longest_tx",
+  title: "Longest transaction",
+  unit: "ms",
+  source: "prom",
+  query: () => `max(cnpg_backends_max_tx_duration_seconds{${PROD_DB}}) * 1000`,
+  dashboard: "lexpwjz",
+}
+
+const dbReplicationLag: PanelSpec = {
+  id: "db_replication_lag",
+  title: "Replication lag",
+  unit: "ms",
+  source: "prom",
+  query: () => `max(cnpg_pg_replication_lag{${PROD_DB}}) * 1000`,
   dashboard: "lexpwjz",
 }
 
@@ -241,15 +283,25 @@ const literal = (value: string) => value.replaceAll(".", "[.]")
 
 // MARK: Boards
 
-const overviewPanels = (view: OverviewView): ReadonlyArray<PanelSpec> =>
-  view === "incidents" ? [api5xx, apiP99, engineErrors(null), jobErrors(null)] : [rpcErrors(null), failedJobPods, oomKills, dbWaiting]
+const overviewPanels = (view: OverviewView): ReadonlyArray<PanelSpec> => {
+  switch (view) {
+    case "incidents":
+      return [api5xx, apiP99, engineErrors(null), jobErrors(null)]
+    case "infra":
+      return [rpcErrors(null), failedJobPods, oomKills, dbWaiting]
+    case "database":
+      return [dbConnections, dbLockWaits, dbLongestTx, dbReplicationLag]
+  }
+}
+
+const VIEW_TITLES: Readonly<Record<OverviewView, string>> = { incidents: "Incidents", infra: "Infra", database: "Database" }
 
 export const overviewBoard = (view: OverviewView, now: Date): BoardSpec => {
   const from = new Date(now.getTime() - OVERVIEW_HOURS * HOUR)
   const panels = overviewPanels(view)
   return {
     key: `overview:${view}`,
-    title: view === "incidents" ? "Incidents" : "Infra",
+    title: VIEW_TITLES[view],
     from,
     to: now,
     stepSeconds: stepFor(from, now),
@@ -264,7 +316,7 @@ export const overviewBoard = (view: OverviewView, now: Date): BoardSpec => {
 export const WATCH_HOURS = 3
 export const WATCH_STEP_SECONDS = 300
 
-/** Every overview panel over the watch window, read by the prod watcher (src/watch/). */
+/** The watched overview panels over the watch window, read by the prod watcher (src/watch/). */
 export const watchBoard = (now: Date): BoardSpec => {
   const from = new Date(now.getTime() - WATCH_HOURS * HOUR)
   return {
@@ -274,7 +326,7 @@ export const watchBoard = (now: Date): BoardSpec => {
     to: now,
     stepSeconds: WATCH_STEP_SECONDS,
     marker: null,
-    panels: OVERVIEW_VIEWS.flatMap(overviewPanels),
+    panels: WATCHED_VIEWS.flatMap(overviewPanels),
     deployImage: null,
     deploysFrom: new Date(from.getTime() - HOUR),
   }
@@ -299,9 +351,9 @@ export const alertBoard = (alert: Alert, now: Date): BoardSpec | null => {
     if (alert.fields._tag === "watch") {
       // The overview board the signal is on, with the signal first.
       const signal = alert.fields.signal
-      const view = OVERVIEW_VIEWS.find((v) => overviewPanels(v).some((p) => p.id === signal)) ?? "incidents"
+      const view = WATCHED_VIEWS.find((v) => overviewPanels(v).some((p) => p.id === signal)) ?? "incidents"
       const panels = overviewPanels(view)
-      return { title: view === "incidents" ? "Incidents" : "Infra", panels: [...panels.filter((p) => p.id === signal), ...panels.filter((p) => p.id !== signal)] }
+      return { title: VIEW_TITLES[view], panels: [...panels.filter((p) => p.id === signal), ...panels.filter((p) => p.id !== signal)] }
     }
     switch (kind) {
       case "onchain_or_keeper":

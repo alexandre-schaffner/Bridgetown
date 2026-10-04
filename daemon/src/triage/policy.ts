@@ -20,6 +20,18 @@ export const decide = (jev: JevVerdict, t: Thresholds): { readonly decision: Dec
 }
 
 /**
+ * An anomaly Bridgetown finds in prod gets an investigation even when Jev only half believes it, since no Slack
+ * alert will: whatever `decide` would start or suggest. One Jev sees nothing in (a one-step spike on a normal
+ * day) is suggested instead, so prod noise never starts an agent on its own.
+ */
+export const decideAnomaly = (jev: JevVerdict, t: Thresholds): { readonly decision: Decision; readonly reason: string } => {
+  const { decision, reason } = decide(jev, t)
+  return decision === "ignore"
+    ? { decision: "suggest", reason: `Anomaly in prod, Jev doubts it (${reason})` }
+    : { decision: "auto", reason: `Anomaly in prod, investigating (Jev: ${reason})` }
+}
+
+/**
  * Inbox items have a third way out: escalation. Anything that asks something of
  * the user and is not clearly agent work lands in front of them; reviews always do,
  * since approving is theirs.

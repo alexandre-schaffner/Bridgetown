@@ -1,4 +1,6 @@
 import type { ParsedAlert } from "../domain/alert.ts"
+import { type Decision, type Triage, WATCH_CHANNEL } from "../domain/model.ts"
+import { clock, watchFingerprint } from "./detect.ts"
 import type { LogPatternInput, LogPatternVerdict } from "./judge.ts"
 
 /**
@@ -230,8 +232,6 @@ const oneLine = (text: string, max: number) => {
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
 }
 
-const clock = (date: Date) => `${date.toISOString().slice(11, 16)} UTC`
-
 /** A judged pattern as an alert Bridgetown raised itself, in channel "Grafana" like the metric findings. */
 export const logFinding = (p: LogPattern, verdict: LogPatternVerdict, now: Date, link: string): ParsedAlert => {
   const since = new Date(now.getTime() - RECENT_MINUTES * 60_000)
@@ -246,8 +246,8 @@ export const logFinding = (p: LogPattern, verdict: LogPatternVerdict, now: Date,
   const id = String(Bun.hash(p.key))
   return {
     id: `watch:log:${id}:${seconds}`,
-    channelId: "grafana",
-    channelName: "Grafana",
+    channelId: WATCH_CHANNEL.id,
+    channelName: WATCH_CHANNEL.name,
     ts: seconds,
     title,
     summary,
@@ -261,9 +261,21 @@ export const logFinding = (p: LogPattern, verdict: LogPatternVerdict, now: Date,
       `Dashboard: ${link}`,
     ].join("\n"),
     source: "watch",
-    fingerprint: `watch:log:${id}`,
-    fields: { _tag: "watch", signal: `log:${id}`, query, datasource: "logs", level: p.recent, usual: Math.round(p.usual * 10) / 10, since: since.toISOString() },
+    fingerprint: watchFingerprint(`log:${id}`),
+    fields: { _tag: "watch", signal: `log:${id}`, query, datasource: "logs", level: p.recent, usual: Math.round(p.usual * 10) / 10, since: since.toISOString(), shape: "rise" },
     mentionsMe: false,
     fromHuman: false,
   }
 }
+
+const pct = (value: number) => `${Math.round(value * 100)}%`
+
+/**
+ * A pattern Jev calls a problem is an anomaly: it gets an investigation, like a metric's (`decideAnomaly`), unless
+ * the sweep has started enough already and it is only suggested.
+ */
+export const logTriage = (verdict: LogPatternVerdict, decision: Extract<Decision, "auto" | "suggest">): Triage => ({
+  decision,
+  reason: `Anomaly in the logs, ${decision === "auto" ? "investigating" : "suggested"} (Jev: problem ${pct(verdict.problem)} · agent ${pct(verdict.agent)} · users ${pct(verdict.users)})`,
+  jev: { actionable: verdict.problem, agentResolvable: verdict.agent, humanOnIt: 0, kind: "runtime_error", kindConfidence: 0, depth: "standard", urgency: 3 * verdict.users },
+})

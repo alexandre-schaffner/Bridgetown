@@ -8,6 +8,9 @@ export const MAX_REVIEW_ERRORS = 3
 
 export type CritiqueStep = { readonly _tag: "Ready" } | Escalation
 
+/** The status line while the agent works on a round's findings. */
+export const fixingActivity = (round: number): string => `Fixing review findings (round ${round} of ${MAX_CRITIQUE_ROUNDS})`
+
 export const findingLine = (f: Finding): string => `${f.file}${f.line === null ? "" : `:${f.line}`} — ${f.title}`
 
 /** A review's blocking findings decide: on to CI, another round for the agent, or the user once the rounds are spent. */
@@ -18,7 +21,7 @@ export const critiqueStep = (session: Session, blocking: ReadonlyArray<Finding>)
         session.critiqueRounds,
         {
           phase: "fix",
-          working: (round) => `Fixing review findings (round ${round} of ${MAX_CRITIQUE_ROUNDS})`,
+          working: fixingActivity,
           exhausted: {
             activity: `Review still failing after ${MAX_CRITIQUE_ROUNDS} rounds`,
             title: "Review not passing",

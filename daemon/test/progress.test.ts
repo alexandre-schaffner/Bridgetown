@@ -59,6 +59,20 @@ describe("progress is evidence, not intent", () => {
     test("re-reviewing new commits after CI went green shows the review as current again", () => {
       expect(states(session({ status: "critiquing", milestones: { ...pushed, ciGreen: true } }))[3]).toBe("Review:current")
     })
+    test("the review row says where the review stands, from the step and the last review", () => {
+      const finding = (blocks: boolean) => ({ file: "a.ts", line: 1, title: "t", failureScenario: "f", jev: null, blocks })
+      const line = (overrides: Partial<Session>) => progressOf(session(overrides)).critiqueLine
+      expect(line({ status: "critiquing", critiqueRounds: 1, milestones: pushed })).toBe("Reviewing · round 2")
+      const passed = { reviewer: "codex" as const, sha: "abc", findings: [finding(false), finding(false)], response: null }
+      expect(line({ status: "ci", critiqueRounds: 1, critique: passed, milestones: { ...pushed, critiqued: true } })).toBe("Passed · 1 round of fixes · 2 dropped by Jev")
+      const failed = { ...passed, findings: [finding(true), finding(false)] }
+      expect(line({ status: "running", critique: failed, milestones: pushed })).toBe("1 blocking finding · 1 dropped by Jev · agent fixing")
+      expect(line({ status: "ci", milestones: pushed })).toBe("Not run")
+      expect(progressOf(session({ status: "critiquing", milestones: pushed })).reviewerName).toBe("Codex")
+      // Findings recorded, the agent's turn waiting for a slot: nobody is reviewing.
+      const parked = progressOf(session({ status: "critiquing", critique: failed, milestones: pushed }))
+      expect(parked).toMatchObject({ headline: "Review findings wait for a free agent slot", critiqueLine: "1 blocking finding · 1 dropped by Jev · waiting for an agent slot" })
+    })
     test("the agent fixing a review's findings after CI went green: the review is still in progress, not skipped", () => {
       const critique = { reviewer: "codex" as const, sha: "abc", findings: [], response: null }
       expect(states(session({ status: "running", critique, milestones: { ...pushed, ciGreen: true } }))[3]).toBe("Review:current")

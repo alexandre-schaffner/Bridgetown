@@ -1,4 +1,4 @@
-import { isActive, REVIEWER_NAMES, type Session } from "./model.ts"
+import { critiquePassed, findingsUnanswered, isActive, REVIEWER_NAMES, type Session } from "./model.ts"
 
 export type StepKey = "diagnose" | "fix" | "pr" | "critique" | "ci" | "deploy"
 export type StepState = "done" | "current" | "pending" | "failed" | "skipped"
@@ -14,6 +14,9 @@ export interface Progress {
   readonly steps: ReadonlyArray<Step>
   readonly headline: string
   readonly tone: Tone
+  /** Who reviews the agent's fixes, and where the review stands ("Passed · 1 round of fixes · 2 dropped by Jev"). */
+  readonly reviewerName: string
+  readonly critiqueLine: string
 }
 
 const LABELS: Readonly<Record<StepKey, string>> = {
@@ -62,9 +65,32 @@ export const progressOf = (session: Session): Progress => {
     const label = key === "diagnose" && session.rootCauseFound === false ? "Root cause?" : key === "pr" ? "No PR" : LABELS[key]
     return { key, label, state: "failed" }
   })
-  return { steps, ...headlineOf(session) }
+  return { steps, ...headlineOf(session), reviewerName: reviewerNameOf(session), critiqueLine: critiqueLineOf(session, steps) }
 }
 
+const reviewerNameOf = (session: Session): string => REVIEWER_NAMES[session.critique?.reviewer ?? "codex"]
+
+const plural = (n: number, one: string, many: string): string => (n === 1 ? `1 ${one}` : `${n} ${many}`)
+
+/** From the review step and the last review. The step stays current for the whole loop, so only `critiquing` is a review running now. */
+const critiqueLineOf = (session: Session, steps: ReadonlyArray<Step>): string => {
+  const critique = session.critique
+  if (session.status === "critiquing" && !findingsUnanswered(critique)) return `Reviewing · round ${session.critiqueRounds + 1}`
+  const dropped = critique === null ? 0 : critique.findings.filter((f) => !f.blocks).length
+  const droppedPart = dropped > 0 ? [`${dropped} dropped by Jev`] : []
+  switch (steps.find((step) => step.key === "critique")?.state) {
+    case "done":
+      return ["Passed", ...(session.critiqueRounds > 0 ? [plural(session.critiqueRounds, "round of fixes", "rounds of fixes")] : []), ...droppedPart].join(" · ")
+    case "skipped":
+      return "Not run"
+    default: {
+      if (critique === null || critiquePassed(critique)) return "Not run"
+      const blocking = critique.findings.length - dropped
+      const fixing = session.status === "running" ? ["agent fixing"] : session.status === "critiquing" ? ["waiting for an agent slot"] : []
+      return [plural(blocking, "blocking finding", "blocking findings"), ...droppedPart, ...fixing].join(" · ")
+    }
+  }
+}
 
 const headlineOf = (session: Session): { readonly headline: string; readonly tone: Tone } => {
   const outcome = session.resolution
@@ -81,7 +107,9 @@ const headlineOf = (session: Session): { readonly headline: string; readonly ton
         tone: "waiting",
       }
     case "critiquing":
-      return { headline: `${REVIEWER_NAMES[session.critique?.reviewer ?? "codex"]} reviewing · round ${session.critiqueRounds + 1}`, tone: "live" }
+      // Findings recorded, the agent's turn parked until a slot frees up: nobody is reviewing.
+      if (findingsUnanswered(session.critique)) return { headline: "Review findings wait for a free agent slot", tone: "neutral" }
+      return { headline: `${reviewerNameOf(session)} reviewing · round ${session.critiqueRounds + 1}`, tone: "live" }
     case "ci":
       if (session.review === null) return { headline: "CI running", tone: "live" }
       if (!session.review.posted) return { headline: "CI green · review request not sent", tone: "waiting" }

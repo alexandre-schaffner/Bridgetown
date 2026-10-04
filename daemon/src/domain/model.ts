@@ -70,8 +70,17 @@ export const WatchFields = Schema.TaggedStruct("watch", {
   level: Schema.Number,
   usual: Schema.Number,
   since: Schema.String,
+  /** A rise (where the signal sits) or a spike (one step, already over); log patterns are rises. Added later, so defaulted. */
+  shape: Schema.Literals(["rise", "spike"]).pipe(Schema.withDecodingDefaultKey(Effect.succeed("rise" as const))),
 })
 export type WatchFields = typeof WatchFields.Type
+
+/** The channel of a watch finding: it comes from Grafana, not a Slack channel. The app shows it without a "#". */
+export const WATCH_CHANNEL = { id: "grafana", name: "Grafana" } as const
+
+/** Where an alert came from, as written in text: `#channel`, or "Grafana" for a watch finding. */
+export const channelLabel = (alert: { readonly source: AlertSource; readonly channelName: string }): string =>
+  alert.source === "watch" ? WATCH_CHANNEL.name : `#${alert.channelName}`
 
 export const AlertFields = Schema.Union([ReleaseFields, UptimeFields, EngineFields, InboxFields, GenericFields, WatchFields])
 export type AlertFields = typeof AlertFields.Type
@@ -156,7 +165,8 @@ export const triageEvent = (triage: Triage): string => {
   }
 }
 
-export const Disposition = Schema.Struct({ kind: Schema.Literals(["dismissed", "opened"]), at: Schema.String })
+/** What became of an alert's last card: you dismissed or opened it, or Bridgetown withdrew it (its signal went back to normal). */
+export const Disposition = Schema.Struct({ kind: Schema.Literals(["dismissed", "opened", "withdrawn"]), at: Schema.String })
 export type Disposition = typeof Disposition.Type
 
 /**
@@ -281,6 +291,10 @@ export type Critique = typeof Critique.Type
 /** A review passes when nothing it found blocks. */
 export const critiquePassed = (critique: Critique): boolean => critique.findings.every((f) => !f.blocks)
 
+/** The review sent findings back and the agent has not answered them yet: they wait for (or are in) its next turn. */
+export const findingsUnanswered = (critique: Critique | null): boolean =>
+  critique !== null && critique.response === null && !critiquePassed(critique)
+
 /** The last review passed, and on this head. */
 export const passedAt = (critique: Critique | null, head: string | null): boolean =>
   critique !== null && head !== null && critique.sha === head && critiquePassed(critique)
@@ -404,6 +418,9 @@ export type TranscriptEntry = typeof TranscriptEntry.Type
 export const Channel = Schema.Struct({ id: Schema.String, name: Schema.String, enabled: Schema.Boolean })
 export type Channel = typeof Channel.Type
 
+/** Where a reviewer finding starts to block: the defaults, and what settings saved before these existed decode to. */
+export const FINDING_THRESHOLDS = { findingReal: 0.6, findingBlocking: 0.5, findingRebutted: 0.6 } as const
+
 export const Thresholds = Schema.Struct({
   autoActionable: Schema.Number,
   autoResolvable: Schema.Number,
@@ -411,9 +428,9 @@ export const Thresholds = Schema.Struct({
   suggestActionable: Schema.Number,
   suggestResolvable: Schema.Number,
   /** A reviewer finding blocks the PR only above these (and below `findingRebutted`). Added later, so defaulted. */
-  findingReal: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0.6))),
-  findingBlocking: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0.5))),
-  findingRebutted: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0.6))),
+  findingReal: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(FINDING_THRESHOLDS.findingReal))),
+  findingBlocking: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(FINDING_THRESHOLDS.findingBlocking))),
+  findingRebutted: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(FINDING_THRESHOLDS.findingRebutted))),
 })
 export type Thresholds = typeof Thresholds.Type
 

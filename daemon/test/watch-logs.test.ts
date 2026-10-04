@@ -4,11 +4,13 @@ import { ActionQueue } from "../src/actions/queue.ts"
 import { AdapterError } from "../src/domain/errors.ts"
 import type { GrafanaShape } from "../src/grafana/client.ts"
 import { Hub } from "../src/hub.ts"
+import type { Alert } from "../src/domain/model.ts"
 import { Store } from "../src/store/store.ts"
 import type { JevShape } from "../src/triage/jev.ts"
 import { logPatternQuestions, type LogPatternInput } from "../src/watch/judge.ts"
 import { BATCH, behaviourOf, behaviourText, candidates, linesQuery, logFinding, mergeRows, type PatternRow, rowOf, sweepQuery } from "../src/watch/logs.ts"
 import { Watcher } from "../src/watch/watcher.ts"
+import { makeSession } from "./fixtures/records.ts"
 import { makeWorld, noGrafana } from "./fixtures/world.ts"
 
 const DEADLOCK = "\nInvalid `prisma.nodesSources.upsert()` invocation:\n\nTransaction failed due to a write conflict or a deadlock. Please retry your transaction"
@@ -172,18 +174,18 @@ describe("Watcher.sweepLogs", () => {
     expect((await world.runPromise(Hub.use((hub) => hub.status))).jev).toBe("error")
   })
 
-  test("one batch for the candidates; only Jev's problems become suggestions", async () => {
+  test("one batch for the candidates; each of Jev's problems gets an investigation", async () => {
     failJev = false
     await sweep()
     expect(batches).toHaveLength(1)
     expect(batches[0]?.map((p) => p.level)).toEqual(["error", "warning"])
     const [finding, ...rest] = await findings()
     expect(rest).toHaveLength(0)
-    expect(finding).toMatchObject({ channelName: "Grafana", triage: { decision: "suggest" }, sessionId: null })
-    expect(finding?.triage.reason).toStartWith("Jev: likely a real problem (problem 88%")
+    expect(finding).toMatchObject({ channelName: "Grafana", triage: { decision: "auto" } })
+    expect(finding?.sessionId).not.toBeNull()
+    expect(finding?.triage.reason).toStartWith("Anomaly in the logs, investigating (Jev: problem 88%")
     expect(finding?.permalink).toStartWith("https://grafana.internal.merkl.xyz/explore?")
-    const cards = await world.runPromise(ActionQueue.use((queue) => queue.list))
-    expect(cards).toEqual([expect.objectContaining({ kind: "investigate", alertId: finding?.id })])
+    expect(await world.runPromise(ActionQueue.use((queue) => queue.list))).toEqual([])
   })
 
   test("judged patterns are not asked about again", async () => {
@@ -197,5 +199,49 @@ describe("Watcher.sweepLogs", () => {
     await world.runPromise(Hub.use((hub) => hub.settings.pipe(Effect.flatMap((s) => hub.updateSettings({ ...s, watchProd: false })))))
     await sweep()
     expect(sweeps).toBe(before)
+  })
+})
+
+describe("Watcher.sweepLogs after a bad deploy", () => {
+  const ERRORS = ["Pool exhausted while connecting to Postgres", "Cannot read properties of undefined (reading 'chainId')", "Redis connection reset by peer", "Upstream RPC returned 429 Too Many Requests"]
+  const rows = ERRORS.map((msg, i) => raw({ "merkl.job": `merkl-job-${i}`, _msg: msg }, 50 - i, 50 - i))
+  const grafana: GrafanaShape = { ...noGrafana, logRows: (query) => Effect.succeed(query.includes(`severity_text:="ERROR"`) ? rows : []) }
+  const problem = { problem: 0.9, agent: 0.7, users: 0.3 }
+  const jev: JevShape = {
+    judge: () => Effect.die("unused"),
+    judgeInbox: () => Effect.die("unused"),
+    judgeFinding: () => Effect.die("unused"),
+    judgeLogPatterns: (patterns) => Effect.succeed(patterns.map(() => problem)),
+  }
+  const world = makeWorld({ jev, grafana })
+  afterAll(() => world.dispose())
+
+  test("a pattern a running session owns goes to it; past two starts, the rest are suggested", async () => {
+    // The Redis pattern was found last week, and its agent is still on it.
+    const [redis] = mergeRows([rowOf("errors", rows[2] ?? {})].filter((r) => r !== undefined))
+    if (redis === undefined) throw new Error("no pattern")
+    const earlier: Alert = {
+      ...logFinding(redis, problem, new Date(Date.now() - 3 * 86_400_000), ""),
+      permalink: null, receivedAt: new Date(Date.now() - 3 * 86_400_000).toISOString(), triage: { decision: "auto", reason: "", jev: null },
+      sessionId: "s_redis", feedback: null, events: [], disposition: null, claimedBy: [],
+    }
+    const found = await world.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store
+        yield* store.putSession(makeSession("running", { id: "s_redis", alertId: earlier.id }))
+        yield* store.putAlert(earlier)
+        yield* (yield* Hub).patchStatus({ grafanaMcp: "up" })
+        yield* (yield* Watcher).sweepLogs
+        return (yield* store.recentAlerts(50)).filter((a) => a.source === "watch" && a.id !== earlier.id)
+      }),
+    )
+    expect(found).toHaveLength(4)
+    const attached = found.filter((a) => a.fingerprint === earlier.fingerprint)
+    expect(attached).toEqual([expect.objectContaining({ sessionId: "s_redis", triage: expect.objectContaining({ decision: "filtered" }) })])
+    const rest = found.filter((a) => a.fingerprint !== earlier.fingerprint)
+    expect(rest.filter((a) => a.triage.decision === "auto" && a.sessionId !== null)).toHaveLength(2)
+    expect(rest.filter((a) => a.triage.decision === "suggest")).toHaveLength(1)
+    const transcript = await world.runPromise(Store.use((store) => store.transcript("s_redis", 10)))
+    expect(transcript.map((e) => e.text)).toContainEqual(expect.stringContaining("Redis connection reset"))
   })
 })

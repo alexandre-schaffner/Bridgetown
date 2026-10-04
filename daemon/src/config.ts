@@ -1,6 +1,6 @@
 import { homedir } from "node:os"
 import { join } from "node:path"
-import type { Channel, Settings } from "./domain/model.ts"
+import { type Channel, FINDING_THRESHOLDS, type Settings } from "./domain/model.ts"
 import { type Secrets, secretsFromEnv } from "./secrets.ts"
 
 export const VERSION = "0.1.0"
@@ -74,6 +74,7 @@ export const DEFAULT_CHANNELS: ReadonlyArray<Channel> = [
   channel("C0BDVR6817G", "alert-unclaimed-rewards", true),
   channel("C0B9CT54W4A", "alert-token-whitelist", true),
   channel("C0BKM3NH6TB", "alert_campaign_events", true),
+  channel("C0ATB2GRB70", "general-dungeon-keeper", true),
 ]
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -84,9 +85,7 @@ export const DEFAULT_SETTINGS: Settings = {
     autoHumanOnItMax: 0.3,
     suggestActionable: 0.5,
     suggestResolvable: 0.4,
-    findingReal: 0.6,
-    findingBlocking: 0.5,
-    findingRebutted: 0.6,
+    ...FINDING_THRESHOLDS,
   },
   autoStart: true,
   inbox: true,

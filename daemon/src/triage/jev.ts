@@ -1,7 +1,7 @@
 import { choice, type EntryType, noul, type Questions, score, TypeSafeClient } from "@typesafe-ai/sdk"
 import { Context, Effect, Layer } from "effect"
 import { type AdapterError, attempt, MissingCredential } from "../domain/errors.ts"
-import type { Alert, FindingVerdict, JevVerdict } from "../domain/model.ts"
+import { type Alert, channelLabel, type FindingVerdict, type JevVerdict } from "../domain/model.ts"
 import type { ParsedAlert, ThreadReply } from "../domain/alert.ts"
 import { type FindingJudgeInput, findingQuestions, findingState } from "../critique/judge.ts"
 import { type LogPatternInput, type LogPatternVerdict, logPatternQuestions, logPatternState } from "../watch/judge.ts"
@@ -180,7 +180,7 @@ const buildInboxQuestions = () => ({
 export const judgeState = (input: JudgeInput) => ({
   context: CONTEXT,
   alert: {
-    channel: `#${input.alert.channelName}`,
+    channel: channelLabel(input.alert),
     title: input.alert.title,
     summary: input.alert.summary,
     fields: JSON.parse(JSON.stringify(input.alert.fields)),

@@ -59,11 +59,11 @@ export const makeFinish = ({ store, thread, repo, queue, github, hub, sendBack }
       const alert = yield* store.getAlert(before.alertId)
       const pushed = yield* branchPushed(before)
       const head = yield* prHead(result.prUrl ?? before.prUrl)
-      const critique = (yield* hub.settings).adversarialReview
+      const { adversarialReview } = yield* hub.settings
       // Decided on the row as it is when written, not on the one read before the slow `git ls-remote`.
       const decided: { value?: Finalized } = {}
       const session = yield* repo.modify(id, (current) => {
-        const decision = decideOutcome({ session: current, result, alert, pushed, head, critique })
+        const decision = decideOutcome({ session: current, result, alert, pushed, head, adversarialReview })
         decided.value = decision
         return withPatch(current, decision.patch)
       })

@@ -3,7 +3,7 @@ import { ActionQueue } from "../actions/queue.ts"
 import { alertFromParsed, type ParsedAlert } from "../domain/alert.ts"
 import { type AdapterError, NotFound } from "../domain/errors.ts"
 import { daysAgo, now, tsToIso } from "../domain/ids.ts"
-import { type Alert, type Channel, type Claimant, claimHeadline, isActive, type Triage, triageEvent } from "../domain/model.ts"
+import { type Alert, type Channel, channelLabel, type Claimant, claimHeadline, isActive, type Triage, triageEvent } from "../domain/model.ts"
 import { Hub } from "../hub.ts"
 import { SessionRunner } from "../sessions/runner.ts"
 import { Shipper } from "../ship/shipper.ts"
@@ -16,6 +16,7 @@ import { Store, type StoreShape } from "../store/store.ts"
 import { Jev } from "../triage/jev.ts"
 import { decide } from "../triage/policy.ts"
 import { applyRules } from "../triage/rules.ts"
+import { triageWith } from "../triage/verdict.ts"
 
 /** Alert channels: poll, parse, rule out, triage with Jev, then start, suggest or record. */
 export interface AlertPipelineShape {
@@ -88,18 +89,8 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
       const identity = yield* me.known
       const replies = toThreadReplies(thread, identity?.user_id)
       const mentioned = parsed.mentionsMe || replies.some((r) => identity !== undefined && r.text.includes(identity.user))
-      const verdict = yield* jev
-        .judge({ alert: { ...parsed, mentionsMe: mentioned }, thread: replies, reactions: reactionsOf(message, identity?.user_id), history })
-        .pipe(Effect.result)
-      if (verdict._tag === "Failure") {
-        yield* hub.patchStatus({ jev: verdict.failure._tag === "MissingCredential" ? "missing_key" : "error", error: `Jev: ${verdict.failure.message}` })
-        const fallback: Triage = { decision: "suggest", reason: "Jev unavailable — your call", jev: null }
-        return fallback
-      }
-      yield* hub.patchStatus({ jev: "ok" })
-      const decision = decide(verdict.success, (yield* hub.settings).thresholds)
-      const result: Triage = { decision: decision.decision, reason: decision.reason, jev: verdict.success }
-      return result
+      const judging = jev.judge({ alert: { ...parsed, mentionsMe: mentioned }, thread: replies, reactions: reactionsOf(message, identity?.user_id), history })
+      return yield* triageWith(hub, judging, decide, "suggest")
     })
 
     const suggest = (alert: Alert) =>
@@ -108,7 +99,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
         yield* queue.put({
           kind: "investigate",
           title: alert.title,
-          detail: `${alert.source === "watch" ? "Grafana" : `#${alert.channelName}`} · ${alert.triage.reason}`,
+          detail: `${channelLabel(alert)} · ${alert.triage.reason}`,
           primaryLabel: "Investigate",
           options: [],
           sessionId: null,

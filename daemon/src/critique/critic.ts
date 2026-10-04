@@ -1,9 +1,10 @@
 import { Context, Effect, FiberMap, Layer } from "effect"
 import { ActionQueue } from "../actions/queue.ts"
 import { type AdapterError, errorMessage } from "../domain/errors.ts"
-import { type Alert, type Critique, critiquePassed, type Finding, passedAt, REVIEWER_NAMES, reviewFindingOf, type Session } from "../domain/model.ts"
+import { type Alert, type Critique, critiquePassed, type Finding, findingsUnanswered, passedAt, REVIEWER_NAMES, reviewFindingOf, type Session } from "../domain/model.ts"
 import { Hub } from "../hub.ts"
 import { run } from "../proc.ts"
+import { cannotResume, type HandOff, makeHandOff } from "../sessions/hand-off.ts"
 import { SessionRepo } from "../sessions/repo.ts"
 import { SessionRunner } from "../sessions/runner.ts"
 import { GitHub } from "../ship/github.ts"
@@ -12,7 +13,7 @@ import { Jev } from "../triage/jev.ts"
 import { decideFinding, reviewerFor } from "../triage/policy.ts"
 import { critiqueFailedPrompt, critiquePrompt } from "./prompts.ts"
 import { Reviewer, type Verdict } from "./reviewer.ts"
-import { critiqueStep, findingLine, MAX_CRITIQUE_ROUNDS, reviewErrorStep } from "./transitions.ts"
+import { critiqueStep, findingLine, fixingActivity, MAX_CRITIQUE_ROUNDS, reviewErrorStep } from "./transitions.ts"
 
 /** The adversarial review between a pushed fix and CI: another vendor's model reviews, Jev drops the nitpicks, the agent fixes the rest. */
 export interface CriticShape {
@@ -45,19 +46,16 @@ export const CriticLive = Layer.effect(Critic)(
      * Writes only while the session is still in review. With `since` (the row the review started from), also only
      * if no turn ran in between: a turn records a new round or the agent's reply, which the result never read.
      */
-    const stillReviewing = (id: string, f: (current: Session) => Session, since?: Session) =>
-      repo.modify(id, (current) =>
-        current.status === "critiquing" &&
-        (since === undefined || (current.critiqueRounds === since.critiqueRounds && (current.critique?.response ?? null) === (since.critique?.response ?? null)))
-          ? f(current)
-          : undefined,
-      )
+    const inReview = (current: Session, since?: Session): boolean =>
+      current.status === "critiquing" &&
+      (since === undefined || (current.critiqueRounds === since.critiqueRounds && (current.critique?.response ?? null) === (since.critique?.response ?? null)))
 
-    const handOff = (id: string, critique: Critique | null, step: { readonly activity: string; readonly title: string; readonly detail: string }, since?: Session) =>
-      Effect.gen(function* () {
-        const waiting = yield* stillReviewing(id, (current) => ({ ...current, status: "waiting", activity: step.activity, critique: critique ?? current.critique }), since)
-        if (waiting !== undefined) yield* queue.handOff(waiting, step.title, step.detail)
-      })
+    const stillReviewing = (id: string, f: (current: Session) => Session, since?: Session) =>
+      repo.modify(id, (current) => (inReview(current, since) ? f(current) : undefined))
+
+    const handOffSession = makeHandOff(repo, queue)
+    const handOff = (id: string, critique: Critique | null, step: HandOff, since?: Session) =>
+      handOffSession(id, step, (current) => (inReview(current, since) ? { critique: critique ?? current.critique } : undefined))
 
     /** Out of draft and on to CI. A failed `gh pr ready` is not a review that could not run: only this step is retried. */
     const toCi = (session: Session, note: string, critiqued: boolean) =>
@@ -119,6 +117,11 @@ export const CriticLive = Layer.effect(Critic)(
         const head = yield* github.prHead(prUrl)
         if (head === null) return yield* onError(id, `GitHub reports no head commit for ${prUrl}`)
         if (session.critique !== null && passedAt(session.critique, head)) return yield* ready(session, session.critique)
+        // This head's findings were recorded but never reached the agent (its turn was parked for a slot when the
+        // daemon stopped): deliver them rather than review the same head again and spend another round.
+        if (session.critique !== null && session.critique.sha === head && findingsUnanswered(session.critique)) {
+          return yield* deliverFindings(id, session.critique, session.critiqueRounds)
+        }
 
         const alert: Alert | undefined = yield* store.getAlert(session.alertId)
         const profile = reviewerFor(alert?.triage.jev?.depth ?? "standard")
@@ -160,16 +163,17 @@ export const CriticLive = Layer.effect(Critic)(
           case "SendBack": {
             // Recorded before the turn: a message delivered into a running turn carries no patch.
             if ((yield* stillReviewing(id, (current) => ({ ...current, critique, critiqueRounds: step.round }), session)) === undefined) return
-            const delivery = yield* runner.continueWith(id, critiqueFailedPrompt(blocking, step.round, MAX_CRITIQUE_ROUNDS), {
-              phase: step.phase,
-              activity: step.activity,
-            })
-            if (delivery === "refused") {
-              yield* handOff(id, critique, { activity: "Could not resume the agent", title: "Agent cannot resume", detail: "Its worktree or agent session is gone, so Bridgetown cannot send it the review findings." })
-            }
-            return
+            return yield* deliverFindings(id, critique, step.round)
           }
         }
+      })
+
+    /** A round's blocking findings to the agent, as its next turn. */
+    const deliverFindings = (id: string, critique: Critique, round: number) =>
+      Effect.gen(function* () {
+        const blocking = critique.findings.filter((f) => f.blocks)
+        const delivery = yield* runner.continueWith(id, critiqueFailedPrompt(blocking, round, MAX_CRITIQUE_ROUNDS), { phase: "fix", activity: fixingActivity(round) })
+        if (delivery === "refused") yield* handOff(id, critique, cannotResume("send it the review findings"))
       })
 
     const onError = (id: string, message: string, title = "Review could not run") =>

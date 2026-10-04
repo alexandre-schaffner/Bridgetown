@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { DEFAULT_SETTINGS } from "../src/config.ts"
 import type { JevVerdict } from "../src/domain/model.ts"
 import { parseMessage } from "../src/slack/parse.ts"
-import { decide } from "../src/triage/policy.ts"
+import { decide, decideAnomaly } from "../src/triage/policy.ts"
 import { applyRules } from "../src/triage/rules.ts"
 import * as m from "./fixtures/messages.ts"
 
@@ -48,6 +48,12 @@ describe("policy", () => {
   test("ignore informational and human-only", () => {
     expect(decide(verdict({ actionable: 0.1 }), t).decision).toBe("ignore")
     expect(decide(verdict({ agentResolvable: 0.1 }), t).decision).toBe("ignore")
+  })
+  test("an anomaly is investigated unless Jev sees nothing in it, then suggested", () => {
+    expect(decideAnomaly(verdict({}), t).decision).toBe("auto")
+    expect(decideAnomaly(verdict({ actionable: 0.6, agentResolvable: 0.5 }), t).decision).toBe("auto")
+    expect(decideAnomaly(verdict({ humanOnIt: 0.7 }), t).decision).toBe("auto")
+    expect(decideAnomaly(verdict({ actionable: 0.1 }), t)).toMatchObject({ decision: "suggest", reason: expect.stringContaining("Jev doubts it") })
   })
 })
 

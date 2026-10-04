@@ -33,6 +33,7 @@ describe("alert outcome", () => {
     ["dismissed suggestion", alert("suggest", "dismissed"), undefined, 0, "dismissed", "Dismissed by you", "neutral"],
     ["dismissed escalation", alert("escalate", "dismissed"), undefined, 0, "dismissed", "Dismissed by you", "neutral"],
     ["opened escalation", alert("escalate", "opened"), undefined, 0, "opened", "Opened by you", "neutral"],
+    ["a finding withdrawn once its signal recovered", alert("auto", "withdrawn"), undefined, 0, "withdrawn", "Back to normal", "neutral"],
     ["running session wins over ignore", alert("ignore"), session("running"), 0, "session", "Agent working", "live"],
     ["running session wins over filtered (attached repeat)", alert("filtered"), session("running"), 0, "session", "Agent working", "live"],
     ["queued session wins over a dismissal", alert("suggest", "dismissed"), session("queued"), 0, "session", "Queued", "neutral"],

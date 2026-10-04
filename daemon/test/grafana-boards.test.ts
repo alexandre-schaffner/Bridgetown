@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { deploysQuery, toDeploy, zeroFilled } from "../src/grafana/board.ts"
-import { alertBoard, chainOf, imageOf, overviewBoard, routeOf, stepFor } from "../src/grafana/boards.ts"
+import { alertBoard, chainOf, imageOf, overviewBoard, routeOf, stepFor, watchBoard } from "../src/grafana/boards.ts"
+import { rowsOf } from "../src/grafana/client.ts"
 import type { Alert, JevVerdict } from "../src/domain/model.ts"
 import { makeAlert } from "./fixtures/records.ts"
 
@@ -76,6 +77,20 @@ describe("boards", () => {
     expect(overviewBoard("infra", now).panels.map((p) => p.id)).toEqual(["rpc_errors", "failed_job_pods", "oom_kills", "db_waiting"])
   })
 
+  test("the database board is prod Postgres only, whichever pod is primary", () => {
+    const board = overviewBoard("database", now)
+    expect(board.title).toBe("Database")
+    expect(board.panels.map((p) => p.id)).toEqual(["db_connections", "db_lock_waits", "db_longest_tx", "db_replication_lag"])
+    for (const panel of board.panels) expect(panel.query(120)).toContain(`{service_name="cluster-timescaledb"}`)
+    expect(board.panels[0]?.seriesLabel).toBe("state")
+  })
+
+  test("the prod watcher sweeps incidents and infra, not the database board", () => {
+    const ids = watchBoard(now).panels.map((p) => p.id)
+    expect(ids).toContain("db_waiting")
+    expect(ids.some((id) => id.startsWith("db_") && id !== "db_waiting")).toBe(false)
+  })
+
   test("the overview is the last hour, deploys included", () => {
     const board = overviewBoard("incidents", now)
     expect(board.from.toISOString()).toBe("2026-10-04T11:00:00.000Z")
@@ -101,5 +116,14 @@ describe("board data", () => {
     expect(toDeploy({ _time: t, image: "merkl-api", version: "v1", stage: "build", status: "failure" })?.status).toBe("failed")
     expect(toDeploy({ _time: t, status: "in_progress" })).toBeUndefined()
     expect(toDeploy({ _time: "not a time", status: "success" })).toBeUndefined()
+  })
+})
+
+describe("LogsQL rows", () => {
+  test("several lines come back as text, one line already parsed: both are rows", () => {
+    expect(rowsOf('{"n":"1"}\n{"n":"2"}\n')).toEqual([{ n: "1" }, { n: "2" }])
+    expect(rowsOf({ n: "2758" })).toEqual([{ n: "2758" }])
+    expect(rowsOf("")).toEqual([])
+    expect(rowsOf(null)).toEqual([])
   })
 })

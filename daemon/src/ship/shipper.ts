@@ -5,6 +5,7 @@ import type { Alert, Session } from "../domain/model.ts"
 import { releaseState } from "../domain/release.ts"
 import { Hub } from "../hub.ts"
 import { ciFailedPrompt, deployFailedPrompt, reviewChangesPrompt } from "../sessions/prompts.ts"
+import { cannotResume, makeHandOff } from "../sessions/hand-off.ts"
 import { SessionRepo } from "../sessions/repo.ts"
 import { SessionRunner } from "../sessions/runner.ts"
 import { removeWorktree } from "../sessions/worktree.ts"
@@ -50,6 +51,7 @@ export const ShipperLive = Layer.effect(Shipper)(
     const runner = yield* SessionRunner
     const thread = yield* SlackThread
     const github = yield* GitHub
+    const handOff = makeHandOff(repo, queue)
 
     const postFor = (session: Session, text: string) =>
       Effect.gen(function* () {
@@ -60,20 +62,14 @@ export const ShipperLive = Layer.effect(Shipper)(
     /** Another round for the agent, or a hand-off once the CI-round budget is spent. */
     const escalate = (session: Session, escalation: Escalation, prompt: string, patch: Partial<Session> = {}) =>
       Effect.gen(function* () {
-        if (escalation._tag === "HandOff") {
-          const waiting = yield* repo.patch(session.id, { ...patch, status: "waiting", activity: escalation.activity })
-          if (waiting !== undefined) yield* queue.handOff(waiting, escalation.title, escalation.detail)
-          return
-        }
+        if (escalation._tag === "HandOff") return yield* handOff(session.id, escalation, () => patch)
         const delivery = yield* runner.continueWith(session.id, prompt, {
           ...patch,
           phase: escalation.phase,
           ciRounds: escalation.round,
           activity: escalation.activity,
         })
-        if (delivery !== "refused") return
-        const waiting = yield* repo.patch(session.id, { ...patch, status: "waiting", activity: "Could not resume the agent" })
-        if (waiting !== undefined) yield* queue.handOff(waiting, "Agent cannot resume", "Its worktree or agent session is gone, so Bridgetown cannot send it back.")
+        if (delivery === "refused") yield* handOff(session.id, cannotResume("send it back"), () => patch)
       })
 
     /**
@@ -103,10 +99,15 @@ export const ShipperLive = Layer.effect(Shipper)(
             return
           }
           case "BadPrefix": {
-            const waiting = yield* repo.patch(sessionId, { status: "waiting", activity: "Merged; no valid release prefix", milestones: { ...session.milestones, merged: true } })
-            if (waiting !== undefined) {
-              yield* queue.handOff(waiting, "Merged, not released", `"${step.prefix}" is not a release tag prefix (like admin or states-exporter). Cut the release yourself if one is needed.`)
-            }
+            yield* handOff(
+              sessionId,
+              {
+                activity: "Merged; no valid release prefix",
+                title: "Merged, not released",
+                detail: `"${step.prefix}" is not a release tag prefix (like admin or states-exporter). Cut the release yourself if one is needed.`,
+              },
+              (current) => ({ milestones: { ...current.milestones, merged: true } }),
+            )
             yield* dropMergeCards
             return
           }
@@ -278,8 +279,7 @@ export const ShipperLive = Layer.effect(Shipper)(
           )
         }
         if (deployStalled(session, Date.now())) {
-          const waiting = yield* repo.patch(session.id, { status: "waiting", activity: "No deploy progress for 3h" })
-          if (waiting !== undefined) yield* queue.handOff(waiting, "Deploy stalled", `No tracker update for ${session.release?.tag ?? "the release"} in 3 hours.`)
+          yield* handOff(session.id, { activity: "No deploy progress for 3h", title: "Deploy stalled", detail: `No tracker update for ${session.release?.tag ?? "the release"} in 3 hours.` })
         }
       }
     })

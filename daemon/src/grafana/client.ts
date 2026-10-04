@@ -85,6 +85,17 @@ const firstText = (content: unknown): string | undefined => {
   return undefined
 }
 
+/**
+ * The rows of a LogsQL `query` answer. VictoriaLogs streams one JSON object per
+ * line; mcp-grafana hands that back as text, except when the body is a single
+ * line, which is valid JSON on its own and comes back already parsed.
+ */
+export const rowsOf = (data: unknown): ReadonlyArray<unknown> => {
+  if (typeof data === "string") return data.split("\n").filter((line) => line.trim() !== "").map((line): unknown => JSON.parse(line))
+  if (Array.isArray(data)) return data
+  return typeof data === "object" && data !== null ? [data] : []
+}
+
 export const GrafanaLive = Layer.effect(Grafana)(
   Effect.gen(function* () {
     /** The MCP session id from `initialize`; dropped when the server forgets it. */
@@ -190,14 +201,10 @@ export const GrafanaLive = Layer.effect(Grafana)(
         ),
       logRows: (query, range, limit) =>
         logsql("query", { query, start: seconds(range.start), end: seconds(range.end), limit: String(Math.min(limit, 100)) }).pipe(
-          Effect.flatMap((data) => {
-            const lines = typeof data === "string" ? data.split("\n").filter((line) => line.trim() !== "") : []
-            return Effect.forEach(lines, (line) =>
-              Effect.try({ try: (): unknown => JSON.parse(line), catch: (cause) => failure("logsql rows", errorMessage(cause)) }).pipe(
-                Effect.flatMap(decodeOr("grafana", "logsql rows", Row)),
-              ),
-            )
-          }),
+          Effect.flatMap((data) =>
+            Effect.try({ try: () => rowsOf(data), catch: (cause) => failure("logsql rows", errorMessage(cause)) }),
+          ),
+          Effect.flatMap((rows) => Effect.forEach(rows, decodeOr("grafana", "logsql rows", Row))),
         ),
     }
   }),

@@ -1,7 +1,7 @@
 import { type Alert, claimHeadline, type Session } from "./model.ts"
 import { progressOf, type Tone } from "./progress.ts"
 
-export type OutcomeKind = "pending" | "filtered" | "ignored" | "suggested" | "escalated" | "waiting" | "dismissed" | "opened" | "teammate" | "session"
+export type OutcomeKind = "pending" | "filtered" | "ignored" | "suggested" | "escalated" | "waiting" | "dismissed" | "opened" | "withdrawn" | "teammate" | "session"
 
 export interface AlertOutcome {
   readonly kind: OutcomeKind
@@ -70,6 +70,9 @@ export const alertOutcome = (alert: Alert, session: Session | undefined, openCar
           "Dismissed by you",
           personal ? "No agent ran. Jev sent it to you, and you dismissed it." : "No agent ran. Jev suggested one, and you dismissed it.",
         )
+      }
+      if (alert.disposition?.kind === "withdrawn") {
+        return outcome("withdrawn", "Back to normal", "No agent ran. The signal went back to its usual level, so its suggestion was withdrawn.")
       }
       if (decision === "auto") return outcome("suggested", "Handed to an agent", "Jev handed it to an agent, but no session has started.")
       return personal
