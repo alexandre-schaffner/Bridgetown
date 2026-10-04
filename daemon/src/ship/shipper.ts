@@ -11,6 +11,7 @@ import { SessionRunner } from "../sessions/runner.ts"
 import { removeWorktree } from "../sessions/worktree.ts"
 import { SlackThread } from "../slack/thread.ts"
 import { Store } from "../store/store.ts"
+import { mergeDetail, releaseDetail } from "./cards.ts"
 import { mergeOnce, releaseOnce } from "./gates.ts"
 import { ciState, GitHub, type PullRequest } from "./github.ts"
 import * as Messages from "./messages.ts"
@@ -120,11 +121,10 @@ export const ShipperLive = Layer.effect(Shipper)(
               milestones: { ...session.milestones, merged: true },
             })
             if (ready !== undefined && (yield* queue.forSession(sessionId, "release")).length === 0) {
-              const first = tag.endsWith("-v0.1.0") ? ` This is the first ${step.prefix} release.` : ""
               yield* queue.put({
                 kind: "release",
                 title: `Ship ${session.title}`,
-                detail: `Merged ${session.prUrl ?? ""}. Cutting ${tag} starts the deploy; approval stays with the reviewers.${first}`,
+                detail: releaseDetail(session.prUrl, tag, step.prefix),
                 primaryLabel: `Cut ${tag}`,
                 options: [],
                 sessionId,
@@ -212,7 +212,7 @@ export const ShipperLive = Layer.effect(Shipper)(
             yield* queue.put({
               kind: "merge",
               title: `Merge ${pr.title}`,
-              detail: `#${pr.number} · ${session.diagnosis ?? session.title}`,
+              detail: mergeDetail(session, pr),
               primaryLabel: "Merge",
               options: [],
               sessionId,

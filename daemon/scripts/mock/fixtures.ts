@@ -3,6 +3,7 @@ import { DEFAULT_CHANNELS, DEFAULT_SETTINGS } from "../../src/config.ts"
 import { type Action, type Alert, type AlertFields, type AlertSource, type Channel, type Disposition, NO_MILESTONES, type Session, type Settings, type TranscriptEntry, type Triage, triageEvent, WATCH_CHANNEL } from "../../src/domain/model.ts"
 import { newSession } from "../../src/sessions/new-session.ts"
 import { sessionEndEvent } from "../../src/sessions/repo.ts"
+import { releaseDetail } from "../../src/ship/cards.ts"
 import type { FakePr } from "./fakes.ts"
 
 /** The log finding's fingerprint: the Goldsky pattern in the mock's log sweep (grafana.ts) points at it. */
@@ -273,9 +274,9 @@ export const buildFixtures = (paths: { readonly repoPath: string; readonly workt
     card({ kind: "investigate", title: A.logs.title, detail: `Grafana · ${A.logs.triage.reason}`, primaryLabel: "Investigate", sessionId: null, alertId: A.logs.id, payload: A.logs.fingerprint, minutesAgo: 9 }),
     card({ kind: "investigate", title: A.watch.title, detail: `Grafana · ${A.watch.triage.reason}`, primaryLabel: "Investigate", sessionId: null, alertId: A.watch.id, payload: A.watch.fingerprint, minutesAgo: 3 }),
     card({ kind: "investigate", title: A.investigate.title, detail: `#${A.investigate.channelName} · ${A.investigate.triage.reason}`, primaryLabel: "Investigate", sessionId: null, alertId: A.investigate.id, payload: A.investigate.fingerprint, minutesAgo: 7 }),
-    card({ kind: "merge", title: "Merge fix(app): import d3-shape from the package root", detail: `#3345 · ${S.merge.diagnosis ?? ""}`, primaryLabel: "Merge", ...forSession(S.merge), payload: S.merge.prUrl, minutesAgo: 12 }),
-    card({ kind: "release", title: `Ship ${S.release.title}`, detail: `Merged ${pr(3338)}. Cutting dispute-v0.4.3 starts the deploy; approval stays with the reviewers.`, primaryLabel: "Cut dispute-v0.4.3", ...forSession(S.release), payload: "dispute-v0.4.3", minutesAgo: 30 }),
-    card({ kind: "release", title: `Ship ${S.inFlight.title}`, detail: `Merged ${pr(3336)}. Cutting ${IN_FLIGHT_TAG} starts the deploy; approval stays with the reviewers.`, primaryLabel: `Cut ${IN_FLIGHT_TAG}`, ...forSession(S.inFlight), payload: IN_FLIGHT_TAG, minutesAgo: 20 }),
+    card({ kind: "merge", title: "Merge fix(app): import d3-shape from the package root", detail: "#3345 · approved by julien · CI green, 6 checks · Codex passed", primaryLabel: "Merge", ...forSession(S.merge), payload: S.merge.prUrl, minutesAgo: 12 }),
+    card({ kind: "release", title: `Ship ${S.release.title}`, detail: releaseDetail(pr(3338), "dispute-v0.4.3", "dispute"), primaryLabel: "Cut dispute-v0.4.3", ...forSession(S.release), payload: "dispute-v0.4.3", minutesAgo: 30 }),
+    card({ kind: "release", title: `Ship ${S.inFlight.title}`, detail: releaseDetail(pr(3336), IN_FLIGHT_TAG, "indexer"), primaryLabel: `Cut ${IN_FLIGHT_TAG}`, ...forSession(S.inFlight), payload: IN_FLIGHT_TAG, minutesAgo: 20 }),
     card({ kind: "review", title: `Agent failed · ${S.failedSetup.title}`, detail: "Could not start: git fetch: The requested URL returned error: 403 (the Merkl IP allow list refused this network)", primaryLabel: "Retry", ...forSession(S.failedSetup), payload: RETRY, minutesAgo: 139 }),
     card({ kind: "review", title: `Agent failed · ${S.failedCi.title}`, detail: "Agent stopped: error_max_turns", primaryLabel: "Retry", ...forSession(S.failedCi), payload: RETRY, minutesAgo: 540 }),
   ]
