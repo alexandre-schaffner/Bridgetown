@@ -64,7 +64,7 @@ struct JobRow: View {
     /// then what the agent is doing if that adds anything.
     private var subtitle: String {
         var parts = [Format.channel(session.channelName), session.headline]
-        let detail = session.statusDetail
+        let detail = Markdown.plain(session.statusDetail)
         if !detail.isEmpty, !session.headline.localizedCaseInsensitiveContains(detail) { parts.append(detail) }
         return parts.joined(separator: " · ")
     }

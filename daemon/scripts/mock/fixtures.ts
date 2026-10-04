@@ -236,7 +236,7 @@ export const buildFixtures = (paths: { readonly repoPath: string; readonly workt
     }),
     review: session(A.review, "waiting", { started: 23, updated: 4 }, {
       activity: "Could not reproduce the timeout locally", outcome: "needs_human", rootCauseFound: false, costUsd: 1.12, pushbacks: 1,
-      diagnosis: "Couldn't reproduce the timeout: the same epoch computes in 212s locally against an archive node. Ruled out RPC latency (p99 180ms), the campaign config (unchanged) and memory (61% peak). The slow part in the failing run is `fetchPositions` for 3 Uniswap v4 pools (18k sequential calls); a cold cache on the engine pod is possible but unproven.",
+      diagnosis: "Couldn't reproduce the timeout: the same epoch computes in **212s** locally against an archive node.\n\nRuled out:\n- RPC latency (p99 180ms)\n- the campaign config (unchanged)\n- memory (61% peak)\n\nThe slow part in the failing run is `fetchPositions` for 3 Uniswap v4 pools (18k sequential calls); a cold cache on the engine pod is possible but unproven.",
     }),
     critique: session(A.critique, "critiquing", { started: 15, updated: 0.5 }, {
       activity: "Waiting for review", phase: "critique", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3352), costUsd: 0.86, component: "api",
@@ -286,7 +286,7 @@ export const buildFixtures = (paths: { readonly repoPath: string; readonly workt
       t(415, "tool", "Bash bun run scripts/nonce.ts --chain base"),
       t(410, "text", "Nonce 48,211 was signed at 09:41:07 UTC and never broadcast. 14 later transactions are stuck behind it."),
       t(404, "tool", "Read packages/tx-executor/src/TxSender.ts"),
-      t(398, "text", "Two leads, neither confirmed: swallowed JSON-RPC errors in TxSender.flush, or a nonce race with the nightly rebalancer."),
+      t(398, "text", "Two leads, neither confirmed:\n1. swallowed JSON-RPC errors in `TxSender.flush`\n2. a nonce race with the nightly rebalancer"),
       t(395, "status", "Bridgetown sent the agent back: it handed off without a confirmed root cause"),
       t(386, "result", "Root cause not confirmed; re-broadcasting 48,211 needs a human."),
     ],

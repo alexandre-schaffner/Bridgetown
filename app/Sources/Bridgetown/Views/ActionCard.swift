@@ -88,7 +88,7 @@ struct ActionCard: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                 if !action.detail.isEmpty {
-                    Text(action.detail)
+                    Text(Markdown.line(action.detail, size: 11))
                         .font(.geist(11))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -119,7 +119,7 @@ struct ActionCard: View {
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
         .onTapGesture { onToggle?() }
-        .help(action.detail.isEmpty ? action.title : "\(action.title)\n\(action.detail)")
+        .help(action.detail.isEmpty ? action.title : "\(action.title)\n\(Markdown.plain(action.detail))")
         .accessibilityElement(children: .contain)
         .accessibilityAction(named: "Expand") { onToggle?() }
     }
@@ -136,11 +136,8 @@ struct ActionCard: View {
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                     if showsDetail {
-                        Text(action.detail)
-                            .font(.geist(11))
+                        ClampedText(markdown: action.detail, lineLimit: 3, size: 11, lineSpacing: 1)
                             .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .padding(.trailing, 16)  // clear the dismiss button

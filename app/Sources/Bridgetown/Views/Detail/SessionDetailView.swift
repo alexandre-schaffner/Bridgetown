@@ -40,7 +40,7 @@ struct SessionDetailView: View {
                                 RootCauseNotice()
                             }
                             if let diagnosis {
-                                ClampedText(text: Mrkdwn.inlineMarkdown(diagnosis), lineLimit: 6)
+                                ClampedText(markdown: diagnosis, lineLimit: 6)
                                     .id(session.id)
                             }
                         }
@@ -82,7 +82,7 @@ struct SessionDetailView: View {
             PhaseStepper(session: session)
             VStack(alignment: .leading, spacing: 3) {
                 if session.isActive && !session.activity.isEmpty {
-                    Text(session.activity)
+                    Text(Markdown.line(session.activity, size: 11))
                         .font(.geist(11))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
@@ -330,7 +330,7 @@ private struct TranscriptView: View {
             Text(e.at, format: Format.clock)
                 .foregroundStyle(.tertiary)
                 .help(e.at.formatted(date: .abbreviated, time: .standard))
-            Text(e.kind.prefix + e.text)
+            Text(e.kind == .text ? Markdown.lines(e.text, size: 10.5, mono: true) : AttributedString(e.kind.prefix + e.text))
                 .foregroundStyle(e.kind.style)
                 .lineLimit(e.kind.lineLimit)
                 .truncationMode(.tail)

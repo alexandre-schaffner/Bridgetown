@@ -76,9 +76,10 @@ struct AlertDetailView: View {
             if let raw = detail.value?.raw, !raw.isEmpty {
                 DetailSection(title: "Message") {
                     ClampedText(
-                        text: AttributedString(Mrkdwn.plain(raw)),
+                        markdown: Mrkdwn.markdown(raw),
                         lineLimit: 8,
-                        font: .geistMono(10.5),
+                        size: 10.5,
+                        mono: true,
                         lineSpacing: 1.5,
                         moreLabel: "Show full message",
                         lessLabel: "Show less",

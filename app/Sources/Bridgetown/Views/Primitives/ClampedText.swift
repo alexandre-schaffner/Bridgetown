@@ -1,11 +1,14 @@
+import AppKit
 import SwiftUI
 
-/// Long text capped at `lineLimit` lines, with a "Show more" toggle that only
-/// appears when the text is actually cut off.
+/// Long Markdown capped at about `lineLimit` lines, with a "Show more" toggle that only
+/// appears when the text is actually cut off. The cut fades out, since a block layout
+/// can't stop on a line boundary the way a single `Text` does.
 struct ClampedText: View {
-    let text: AttributedString
+    let markdown: String
     let lineLimit: Int
-    var font: Font = .geist(12)
+    var size: CGFloat = 12
+    var mono = false
     var lineSpacing: CGFloat = 2
     var moreLabel = "Show more"
     var lessLabel = "Show less"
@@ -14,23 +17,28 @@ struct ClampedText: View {
 
     @ViewState private var expanded = false
     @ViewState private var fullHeight: CGFloat = 0
-    @ViewState private var shownHeight: CGFloat = 0
 
-    private var truncated: Bool { fullHeight > shownHeight + 1 }
+    private var lineHeight: CGFloat {
+        let font = NSFont(name: Geist.postScriptName(.regular, mono: mono), size: size) ?? .systemFont(ofSize: size)
+        return ceil(font.ascender - font.descender + font.leading) + lineSpacing
+    }
+
+    private var clampHeight: CGFloat { CGFloat(lineLimit) * lineHeight }
+    private var truncated: Bool { fullHeight > clampHeight + 1 }
+    private var clamped: Bool { truncated && !expanded }
 
     var body: some View {
         VStack(alignment: .leading, spacing: boxed ? 6 : 4) {
-            styled(Text(text))
-                .lineLimit(expanded ? nil : lineLimit)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shownHeight = $0 }
-                .background(alignment: .topLeading) {
-                    // The same text unclamped, invisible, to learn whether the clamp cut anything.
-                    styled(Text(text))
-                        .fixedSize(horizontal: false, vertical: true)
-                        .hidden()
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullHeight = $0 }
+            MarkdownView(blocks: Markdown.blocks(markdown), size: size, mono: mono, lineSpacing: lineSpacing)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullHeight = $0 }
+                .frame(maxHeight: expanded ? nil : clampHeight, alignment: .top)
+                .clipped()
+                .mask {
+                    VStack(spacing: 0) {
+                        Color.black
+                        LinearGradient(colors: [.black, .black.opacity(clamped ? 0 : 1)], startPoint: .top, endPoint: .bottom)
+                            .frame(height: clamped ? lineHeight : 0)
+                    }
                 }
                 .padding(boxed ? 8 : 0)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -39,16 +47,12 @@ struct ClampedText: View {
                         Color.clear.outlined()
                     }
                 }
-            if truncated || expanded {
+            if truncated {
                 Button(expanded ? lessLabel : moreLabel) { expanded.toggle() }
                     .buttonStyle(.plain)
                     .font(.geist(11, .medium))
                     .foregroundStyle(.tint)
             }
         }
-    }
-
-    private func styled(_ t: Text) -> some View {
-        t.font(font).lineSpacing(lineSpacing)
     }
 }

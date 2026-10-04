@@ -92,7 +92,7 @@ struct SessionRow: View {
                     if let channel = session.reviewChannel, session.status == .ci {
                         ReviewRequestedChip(channel: channel)
                     } else if !session.statusDetail.isEmpty {
-                        Text(session.statusDetail)
+                        Text(Markdown.line(session.statusDetail, size: 11))
                             .font(.geist(11))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
