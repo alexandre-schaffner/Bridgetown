@@ -1,10 +1,11 @@
 APP     := build/Bridgetown.app
 DAEMON  := daemon/dist/bridgetown-daemon
+ICON    := build/AppIcon.icns
 # A stable code-signing identity keeps Keychain "Always Allow" valid across rebuilds;
 # ad-hoc signatures change every build. Override with SIGN_IDENTITY="<name>".
 SIGN_IDENTITY ?= Bridgetown Local Signing
 
-.PHONY: all app daemon dev-app test-app mock clean
+.PHONY: all app daemon icon dev-app test-app mock clean
 
 all: daemon app
 
@@ -12,14 +13,22 @@ all: daemon app
 daemon:
 	cd daemon && bun run build
 
+# The app icon, drawn in code (scripts/app-icon.swift); redrawn only when the script changes.
+icon: $(ICON)
+
+$(ICON): scripts/app-icon.swift
+	mkdir -p $(@D)
+	swift scripts/app-icon.swift $@
+
 # Release build assembled into an ad-hoc signed, menu-bar-only .app.
-app:
+app: $(ICON)
 	swift build -c release --package-path app
 	rm -rf $(APP)
 	mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
 	cp "$$(swift build -c release --package-path app --show-bin-path)/Bridgetown" $(APP)/Contents/MacOS/Bridgetown
 	cp app/Info.plist $(APP)/Contents/Info.plist
 	cp -R app/Fonts $(APP)/Contents/Resources/Fonts
+	cp $(ICON) $(APP)/Contents/Resources/AppIcon.icns
 	@if [ -f $(DAEMON) ]; then \
 		cp $(DAEMON) $(APP)/Contents/Resources/bridgetown-daemon; \
 		echo "bundled $(DAEMON)"; \
