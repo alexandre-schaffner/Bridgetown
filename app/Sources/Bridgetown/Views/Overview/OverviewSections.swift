@@ -8,6 +8,26 @@ extension Snapshot {
     var isQuiet: Bool { actions.isEmpty && activeSessions.isEmpty && alerts.isEmpty }
 
     var watchedChannelCount: Int { settings.channels.filter(\.enabled).count }
+
+    /// Active sessions with no card in "Needs you": a card already stands for the rest.
+    var inFlightSessions: [Session] {
+        let carded = Set(actions.compactMap(\.sessionId))
+        return activeSessions.filter { !carded.contains($0.id) }
+    }
+
+    /// Alerts that aren't on screen already, as a card or as an active session.
+    var settledAlerts: [AlertView] {
+        let carded = Set(actions.compactMap(\.alertId))
+        let active = Set(activeSessions.map(\.id))
+        return alerts.filter { alert in
+            !carded.contains(alert.id) && !(alert.sessionId.map(active.contains) ?? false)
+        }
+    }
+}
+
+extension AlertOutcome.Kind {
+    /// Triage set it aside without asking anyone: kept for calibration, folded by default.
+    var isTriagedOut: Bool { self == .filtered || self == .ignored }
 }
 
 // MARK: Sections
@@ -15,13 +35,14 @@ extension Snapshot {
 /// The "Needs you" cards: one row each, the one you open shown in full.
 struct NeedsYouSection: View {
     let snapshot: Snapshot
+    let now: Date
     @ViewState private var expandedAction: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(title: "Needs you", count: snapshot.actions.count, tint: Ink.amber)
+            SectionHeader(title: "Needs you", count: snapshot.actions.count)
             RowList(data: snapshot.sortedActions) { action in
-                ActionCard(action: action, expanded: expandedAction == action.id) {
+                ActionCard(action: action, expanded: expandedAction == action.id, now: now) {
                     Haptics.perform(.alignment, "needsYou.toggle")
                     withAnimation(.snappy(duration: 0.2)) {
                         expandedAction = expandedAction == action.id ? nil : action.id
@@ -38,41 +59,59 @@ struct AgentsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(
-                title: "Agents",
-                count: running.count,
-                tint: running.contains { $0.holder?.isMoving == true } ? Ink.blue : nil,
-                trailing: Session.breakdown(running)
-            )
+            SectionHeader(title: "Agents", count: running.count)
             RowList(data: running) { JobRow(session: $0, now: now) }
         }
     }
 }
 
+/// Alerts that have settled: finished sessions, teammates' claims, dismissed cards. What
+/// triage filtered or ignored folds into one line, there to check Jev's calls.
 struct RecentSection: View {
     let snapshot: Snapshot
     let now: Date
     @ViewState private var showAll = false
+    @ViewState private var showTriagedOut = false
 
-    private static let limit = 8
+    private static let limit = 6
 
     var body: some View {
-        let alerts = snapshot.alerts
-        let shown = showAll ? alerts : Array(alerts.prefix(Self.limit))
-        let hidden = alerts.count - shown.count
-        VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(title: "Recent")
-            RowList(data: shown) { alert in
-                AlertRow(alert: alert, session: snapshot.session(id: alert.sessionId), now: now)
-            }
-            if hidden > 0 || showAll {
-                Button(showAll ? "Show less" : "Show \(hidden) more") {
-                    withAnimation(.snappy(duration: 0.2)) { showAll.toggle() }
+        let settled = snapshot.settledAlerts
+        let kept = settled.filter { !$0.outcome.kind.isTriagedOut }
+        let triagedOut = settled.filter(\.outcome.kind.isTriagedOut)
+        let shown = (showAll ? kept : Array(kept.prefix(Self.limit))) + (showTriagedOut ? triagedOut : [])
+        let hidden = kept.count - min(kept.count, showAll ? kept.count : Self.limit)
+        if !settled.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                SectionHeader(title: "Recent")
+                if !shown.isEmpty {
+                    RowList(data: shown) { alert in
+                        AlertRow(alert: alert, session: snapshot.session(id: alert.sessionId), now: now)
+                    }
                 }
-                .buttonStyle(.stage(.secondary, compact: true))
-                .frame(maxWidth: .infinity)
+                HStack(spacing: 12) {
+                    if hidden > 0 || showAll {
+                        toggle(showAll ? "Show less" : "Show \(hidden) more", $showAll)
+                    }
+                    if !triagedOut.isEmpty {
+                        toggle(showTriagedOut ? "Hide filtered" : "\(triagedOut.count) filtered out", $showTriagedOut)
+                            .help("Alerts a rule or Jev set aside. Open one to say whether that was the right call.")
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 2)
             }
         }
+    }
+
+    private func toggle(_ title: String, _ flag: Binding<Bool>) -> some View {
+        Button(title) {
+            withAnimation(.snappy(duration: 0.2)) { flag.wrappedValue.toggle() }
+        }
+        .buttonStyle(.plain)
+        .font(.geist(11))
+        .foregroundStyle(.secondary)
+        .hoverHighlight(radius: 4)
     }
 }
 
@@ -137,21 +176,5 @@ struct ConnectingState: View {
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 24)
         .padding(.vertical, 32)
-    }
-}
-
-struct FooterView: View {
-    var body: some View {
-        HStack {
-            Button("Open logs") { SystemActions.openLogs() }
-            Spacer()
-            Button("Quit Bridgetown") { NSApp.terminate(nil) }
-                .keyboardShortcut("q")
-        }
-        .buttonStyle(.plain)
-        .font(.geist(11))
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
     }
 }

@@ -5,10 +5,24 @@ struct AlertRow: View {
     let alert: AlertView
     let session: Session?
     let now: Date
+    @ViewState private var hovering = false
+
+    /// Jev's call can be labelled right here, as in the detail: the thumbs take the time's
+    /// place while the pointer is on the row. Rule decisions had no call to judge.
+    private var offersFeedback: Bool { alert.triage.jev != nil }
 
     var body: some View {
         Button { store.show(.alert(alert.id)) } label: { content }
             .buttonStyle(RowButtonStyle())
+            .overlay(alignment: .trailing) {
+                if offersFeedback && hovering {
+                    FeedbackThumbs(alert: alert)
+                        .padding(.trailing, 8)
+                        .transition(.opacity)
+                }
+            }
+            .onHover { hovering = $0 }
+            .animation(Easing.quick, value: hovering)
             .help(tooltip)
             .accessibilityElement(children: .combine)
             .accessibilityHint("Shows how this alert was triaged and how it ended")
@@ -50,6 +64,9 @@ struct AlertRow: View {
                     .font(Typo.time)
                     .foregroundStyle(.tertiary)
             }
+            .opacity(offersFeedback && hovering ? 0 : 1)
+            // Room for the thumbs, so the title truncates before them rather than under them.
+            .frame(minWidth: offersFeedback && hovering ? 52 : 0, alignment: .trailing)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

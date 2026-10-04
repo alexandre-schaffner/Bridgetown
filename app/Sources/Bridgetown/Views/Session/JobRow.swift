@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// A session in the overview's Agents list, in two lines: status dot, title and elapsed
-/// time; then channel, what it's doing, and the six steps without labels. The full card
+/// time; then what it's doing, and the six steps without labels. The full card
 /// (`SessionRow`) is in the session and alert details.
 struct JobRow: View {
     @Environment(Store.self) private var store
@@ -55,10 +55,10 @@ struct JobRow: View {
         .contentShape(Rectangle())
     }
 
-    /// "#alert-dev · Running · Bash bun test…": where it came from, the daemon's headline,
-    /// then what the agent is doing if that adds anything.
+    /// "Running · Bash bun test…": the daemon's headline, then what the agent is doing if
+    /// that adds anything. The channel is in the detail.
     private var subtitle: String {
-        var parts = [Format.channel(session.channelName), session.headline]
+        var parts = [session.headline]
         let detail = Markdown.plain(session.statusDetail)
         if !detail.isEmpty, !session.headline.localizedCaseInsensitiveContains(detail) { parts.append(detail) }
         return parts.joined(separator: " · ")

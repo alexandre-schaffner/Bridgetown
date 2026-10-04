@@ -8,15 +8,19 @@ struct ActionCard: View {
     var expanded = true
     /// Tapping the row; nil where the card can't collapse.
     var onToggle: (() -> Void)?
+    /// For the collapsed row's age.
+    var now: Date
     @ViewState private var reply = ""
     /// Editable copy of a `reply` action's draft.
     @ViewState private var draft: String
     @ViewState private var confirmingClose = false
     @FocusState private var replyFocused: Bool
+    @ViewState private var hovering = false
 
-    init(action: Action, expanded: Bool = true, onToggle: (() -> Void)? = nil) {
+    init(action: Action, expanded: Bool = true, now: Date = .now, onToggle: (() -> Void)? = nil) {
         self.action = action
         self.expanded = expanded
+        self.now = now
         self.onToggle = onToggle
         _draft = ViewState(initialValue: action.detail)
     }
@@ -28,6 +32,13 @@ struct ActionCard: View {
         default: action.options.isEmpty
         }
     }
+
+    /// An agent's question with quick replies: answered from the row itself, one click,
+    /// as nothing needs typing.
+    private var answersInline: Bool { action.kind == .answer && !action.options.isEmpty && !action.inFlight }
+
+    /// Merge and release: the detail is the evidence the click rests on, so it gets room.
+    private var isGate: Bool { action.kind == .merge || action.kind == .release }
 
     /// For `reply` the detail is the draft itself, edited below rather than shown as text.
     private var showsDetail: Bool { !action.detail.isEmpty && action.kind != .reply }
@@ -76,49 +87,94 @@ struct ActionCard: View {
         }
     }
 
-    /// One row: icon, title over a line of detail, then the primary button, progress, or a
-    /// disclosure chevron for the kinds that need input.
+    /// One row: icon, title over a line of detail, then how long it has waited. The primary
+    /// button takes the age's place under the pointer, so a list of cards isn't a wall of
+    /// buttons; progress shows throughout. A question with quick replies shows them under
+    /// its title instead.
     private var compact: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: answersInline ? .top : .center, spacing: 12) {
             icon
+                .padding(.top, answersInline ? 1 : 0)
             VStack(alignment: .leading, spacing: 2) {
                 Text(action.title)
                     .font(.geist(12.5, .medium))
-                    .lineLimit(1)
+                    .lineLimit(answersInline ? 2 : 1)
                     .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: answersInline)
                 if !action.detail.isEmpty {
                     Text(Markdown.line(action.detail, size: 11))
                         .font(.geist(11))
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(isGate ? 2 : 1)
                         .truncationMode(.tail)
+                        .fixedSize(horizontal: false, vertical: isGate)
+                }
+                if answersInline {
+                    OptionChips(options: action.options) { store.resolve(action, response: $0) }
+                        .padding(.top, 6)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if action.inFlight {
                 ProgressView().controlSize(.mini)
                     .help(action.kind.progressLabel)
-            } else if oneClick {
-                Button(action.primaryLabel) { store.resolve(action) }
-                    .buttonStyle(.stage(.secondary, compact: true))
-                    .lineLimit(1)
+            } else if !answersInline {
+                Text(Format.relative(action.createdAt, now: now))
+                    .font(Typo.time)
+                    .foregroundStyle(.tertiary)
                     .fixedSize()
-            } else {
-                // Needs input: the button opens the card where it's typed or chosen.
-                Button(action.kind == .reply ? "Review reply" : "Answer") { onToggle?() }
-                    .buttonStyle(.stage(.secondary, compact: true))
-                    .lineLimit(1)
-                    .fixedSize()
+                    .accessibilityHidden(true)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .contentShape(Rectangle())
         .rowHighlight()
+        .overlay(alignment: .trailing) {
+            if hovering && !action.inFlight && !answersInline {
+                rowButton
+                    .padding(.leading, 28)
+                    .padding(.trailing, 12)
+                    .frame(maxHeight: .infinity)
+                    .background {
+                        // The row under the pointer, fading in from the left so the
+                        // button lies over the text's end rather than cutting it.
+                        Ink.surface.overlay(Ink.hover)
+                            .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.3)], startPoint: .leading, endPoint: .trailing))
+                            .allowsHitTesting(false)
+                    }
+                    .transition(.opacity)
+            }
+        }
+        .onHover { hovering = $0 }
+        .animation(Easing.quick, value: hovering)
         .onTapGesture { onToggle?() }
         .help(action.detail.isEmpty ? action.title : "\(action.title)\n\(Markdown.plain(action.detail))")
         .accessibilityElement(children: .contain)
         .accessibilityAction(named: "Expand") { onToggle?() }
+        .accessibilityActions {
+            // The button only draws under the pointer; VoiceOver gets it as an action.
+            if oneClick && !action.inFlight {
+                Button(action.primaryLabel) { store.resolve(action) }
+            }
+        }
+    }
+
+    /// The one-click action, or for the kinds that need input the button that opens the
+    /// card where it's typed or chosen.
+    @ViewBuilder
+    private var rowButton: some View {
+        if oneClick {
+            Button(action.primaryLabel) { store.resolve(action) }
+                .buttonStyle(.stage(.secondary, compact: true))
+                .lineLimit(1)
+                .fixedSize()
+        } else {
+            Button(action.kind == .reply ? "Review reply" : "Answer") { onToggle?() }
+                .buttonStyle(.stage(.secondary, compact: true))
+                .lineLimit(1)
+                .fixedSize()
+        }
     }
 
     private var full: some View {

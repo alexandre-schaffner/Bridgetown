@@ -39,8 +39,17 @@ enum Keychain {
 
     // MARK: Storage
 
+    #if DEBUG
+    /// Snapshot runs (PreviewHarness) attach to a mock daemon and never need the tokens. A
+    /// rebuilt debug binary is a new signature, so reading would put up a Keychain prompt.
+    @MainActor static var disabledForSnapshots = false
+    #endif
+
     @MainActor
     private static func credentials() -> [String: String] {
+        #if DEBUG
+        if disabledForSnapshots { return [:] }
+        #endif
         if let cache { return cache }
         let loaded = loadCombined() ?? migrateLegacyItems()
         cache = loaded

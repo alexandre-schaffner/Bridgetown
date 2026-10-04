@@ -8,7 +8,8 @@ struct SessionDetailView: View {
     @ViewState private var message = ""
     @ViewState private var confirmingStop = false
 
-    private var alert: AlertView? { store.snapshot?.alert(id: session.alertId) }
+    /// The card this session has in "Needs you": its next step, offered here too.
+    private var action: Action? { store.snapshot?.actions.first { $0.sessionId == session.id } }
 
     /// "Codex", "CI": one column, so their values line up.
     private static let keyWidth: CGFloat = 40
@@ -23,16 +24,10 @@ struct SessionDetailView: View {
                         origin
                         summary
                     }
-                    GrafanaSection(alertId: session.alertId)
-                    if let jev = alert?.triage.jev {
-                        DetailSection(title: "Jev verdict") { JevScores(jev: jev) }
-                    } else if let alert {
-                        DetailSection(title: "Triage") {
-                            Text(alert.triage.reason)
-                                .font(.geist(12))
-                                .foregroundStyle(.secondary)
-                        }
+                    if let action {
+                        ActionCard(action: action)
                     }
+                    GrafanaSection(alertId: session.alertId)
                     let diagnosis = session.diagnosis.flatMap { $0.isEmpty ? nil : $0 }
                     if diagnosis != nil || session.rootCauseFound == false {
                         DetailSection(title: "Diagnosis") {
@@ -45,7 +40,7 @@ struct SessionDetailView: View {
                             }
                         }
                     }
-                    if session.prUrl != nil || session.ciRounds > 0 || session.slackThreadUrl != nil {
+                    if session.prUrl != nil || session.ciRounds > 0 {
                         links
                     }
                     transcriptBlock
@@ -96,7 +91,7 @@ struct SessionDetailView: View {
         }
     }
 
-    /// "From #alert-releases · View alert": the way back to what started it.
+    /// "From #alert-releases · View alert · Slack thread": the way back to what started it.
     private var origin: some View {
         HStack(spacing: 4) {
             Text("From \(Format.channel(session.channelName))")
@@ -108,6 +103,13 @@ struct SessionDetailView: View {
                 .buttonStyle(.link)
                 .foregroundStyle(Ink.blue)
                 .help("How Jev triaged it, the original message and its history")
+            if let thread = session.slackThreadUrl {
+                Text("·").foregroundStyle(.tertiary)
+                Button("Slack thread") { SystemActions.open(thread) }
+                    .buttonStyle(.link)
+                    .foregroundStyle(Ink.blue)
+                    .help("Open the session's Slack thread")
+            }
             Spacer(minLength: 0)
         }
         .font(.geist(11))
@@ -126,9 +128,6 @@ struct SessionDetailView: View {
                     }
                     if let revv = session.revvUrl {
                         LinkButton(title: "Open in Revv", systemImage: "text.magnifyingglass", url: revv, help: "Open the PR walkthrough in Revv")
-                    }
-                    if let thread = session.slackThreadUrl {
-                        LinkButton(title: "Slack thread", systemImage: "bubble.left", url: thread, help: "Open Slack thread")
                     }
                     Spacer(minLength: 0)
                 }

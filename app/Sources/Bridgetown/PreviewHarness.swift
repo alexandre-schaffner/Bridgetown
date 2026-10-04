@@ -10,6 +10,7 @@ import SwiftUI
 /// - `--appearance dark|light`, `--preview-height <pt>`: for long content.
 /// - `--island-demo`: the notch island cycles hover, banner, open and close, for
 ///   screen recordings of its motion.
+/// - `--preview-island`: the island open, at its full size, in a window (for `--snapshot`).
 @MainActor
 final class PreviewHarness {
     struct Arguments {
@@ -22,6 +23,7 @@ final class PreviewHarness {
         var snapshotQuit = false
         var previewHeight: CGFloat?
         var islandDemo = false
+        var previewIsland = false
 
         init(_ argv: [String]) {
             var it = argv.dropFirst().makeIterator()
@@ -34,6 +36,7 @@ final class PreviewHarness {
                 case "--snapshot": snapshotPath = it.next()
                 case "--snapshot-quit": snapshotQuit = true
                 case "--island-demo": islandDemo = true
+                case "--preview-island": previewIsland = true
                 case "--preview-height": previewHeight = it.next().flatMap(Double.init).map { CGFloat($0) }
                 case "--appearance":
                     switch it.next() {
@@ -52,6 +55,7 @@ final class PreviewHarness {
 
     init(arguments: [String]) {
         args = Arguments(arguments)
+        if args.snapshotPath != nil { Keychain.disabledForSnapshots = true }
     }
 
     var popoverHeight: CGFloat? { args.previewHeight }
@@ -60,7 +64,24 @@ final class PreviewHarness {
         if let appearance = args.appearance { NSApp.appearance = appearance }
         if args.islandDemo { islandDemo(island, store: store) }
 
-        if let tab = args.previewSettings {
+        if args.previewIsland {
+            let geometry = NotchGeometry(
+                top: 0, centerX: 0, notch: CGSize(width: 185, height: 32), hardware: true,
+                openWidth: NotchGeometry.maxOpenWidth, openHeight: NotchGeometry.maxOpenHeight
+            )
+            let model = IslandModel(geometry: geometry)
+            model.presentation = .open
+            openWindow(
+                title: "Bridgetown · Island",
+                IslandOpenView(model: model)
+                    .environment(store)
+                    .environment(daemon)
+                    .font(.geist(12))
+                    .foregroundStyle(Ink.text, Ink.dim, Ink.faint)
+                    .background(.black)
+                    .environment(\.colorScheme, .dark)
+            )
+        } else if let tab = args.previewSettings {
             openWindow(title: "Settings", SettingsView(initialTab: tab).environment(store).environment(daemon))
         } else if args.previewWindow || args.previewDetail != nil || args.previewAlert != nil {
             if let id = args.previewDetail {

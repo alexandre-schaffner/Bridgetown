@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// A session as a card: channel, title, the six steps and the status line. Used in
-/// Running and, for the alert it belongs to, in the alert detail.
+/// A session as a card under its alert, in the alert detail: where it stands, the six
+/// steps, and what it's doing. The alert above already names it and its channel.
 struct SessionRow: View {
     @Environment(Store.self) private var store
     let session: Session
@@ -63,31 +63,23 @@ struct SessionRow: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    ChannelChip(name: session.channelName)
-                    Spacer(minLength: 0)
-                    Text(Format.duration(from: session.startedAt, to: session.isActive ? now : session.updatedAt))
-                        .font(Typo.time)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                StatusLine(session: session, size: 12, lineLimit: session.isActive ? 1 : 2)
+                Spacer(minLength: 0)
+                Text(Format.duration(from: session.startedAt, to: session.isActive ? now : session.updatedAt))
+                    .font(Typo.time)
+                    .foregroundStyle(.tertiary)
+                if onOpen != nil {
+                    Image(systemName: "chevron.right")
+                        .font(.geist(10, .semibold))
                         .foregroundStyle(.tertiary)
-                    if onOpen != nil {
-                        Image(systemName: "chevron.right")
-                            .font(.geist(10, .semibold))
-                            .foregroundStyle(.tertiary)
-                            .opacity(hovering ? 1 : 0.6)
-                    }
+                        .opacity(hovering ? 1 : 0.6)
                 }
-                Text(session.title)
-                    .font(.geist(13, .semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
             }
 
             PhaseStepper(session: session)
 
             VStack(alignment: .leading, spacing: 3) {
-                StatusLine(session: session, size: 11, lineLimit: session.isActive ? 1 : 2)
                 Group {
                     if let channel = session.reviewChannel, session.status == .ci {
                         ReviewRequestedChip(channel: channel)
@@ -99,7 +91,6 @@ struct SessionRow: View {
                             .truncationMode(.tail)
                     }
                 }
-                .padding(.leading, 12)  // under the headline, past the dot
             }
         }
         .padding(Metrics.inset)

@@ -107,31 +107,25 @@ extension View {
 
 // MARK: Section header
 
+/// A title and, past one, how many rows follow. The count stays grey: the rows carry
+/// the colour where it means something.
 struct SectionHeader: View {
     let title: String
     var count: Int?
-    /// Colours the count when the section is worth attention (orange for Needs you).
-    var tint: Color?
-    var trailing: String?
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(title)
                 .font(Typo.title)
                 .tracking(Typo.titleTracking)
                 .foregroundStyle(.primary)
             if let count, count > 1 {
-                Badge(text: "\(count)", tint: tint)
+                Text("\(count)")
+                    .font(.geist(12).monospacedDigit())
+                    .foregroundStyle(.tertiary)
+                    .contentTransition(.numericText())
             }
             Spacer(minLength: 0)
-            if let trailing {
-                Text(trailing)
-                    .font(.geist(11))
-                    .monospacedDigit()
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-                    .truncationMode(.head)
-            }
         }
         .frame(height: 20)
         .accessibilityAddTraits(.isHeader)
@@ -342,6 +336,40 @@ struct Pulse: ViewModifier {
 }
 
 // MARK: Icon button
+
+/// 👍 / 👎 on Jev's call for an alert: labels the verdict for calibration. The chosen one
+/// is filled; choosing again changes the label.
+struct FeedbackThumbs: View {
+    @Environment(Store.self) private var store
+    let alert: AlertView
+
+    var body: some View {
+        HStack(spacing: 4) {
+            thumb(.good, symbol: "hand.thumbsup", help: "Good call")
+            thumb(.bad, symbol: "hand.thumbsdown", help: "Bad call")
+        }
+        .disabled(store.isBusy(alert.id))
+    }
+
+    private func thumb(_ label: AlertView.Feedback, symbol: String, help: String) -> some View {
+        let selected = alert.feedback == label
+        return Button {
+            store.feedback(alert, label)
+        } label: {
+            Image(systemName: selected ? symbol + ".fill" : symbol)
+                .font(.geist(12))
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 24, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+        .hoverHighlight(radius: 5)
+        .help(help)
+        .accessibilityLabel(help)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
 
 /// Borderless SF Symbol button used in headers (pause, gear, dismiss).
 struct IconButton: View {

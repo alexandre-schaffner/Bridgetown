@@ -226,24 +226,6 @@ struct SectionLabel: View {
     }
 }
 
-// MARK: Badge
-
-/// A count or short tag: outlined grey, or tinted when it carries a state.
-struct Badge: View {
-    let text: String
-    var tint: Color?
-
-    var body: some View {
-        Text(text)
-            .font(.geist(10.5, .medium).monospacedDigit())
-            .foregroundStyle(tint.map(AnyShapeStyle.init) ?? AnyShapeStyle(.secondary))
-            .padding(.horizontal, 6)
-            .frame(height: 18)
-            .background((tint ?? .white).opacity(tint == nil ? 0.06 : 0.14), in: RoundedRectangle(cornerRadius: Ink.tagRadius))
-            .contentTransition(.numericText())
-    }
-}
-
 // MARK: Buttons
 
 /// Three buttons, as in Geist: white primary (the one next step), outlined secondary,

@@ -98,7 +98,10 @@ struct AlertDetailView: View {
 
     private func summary(_ alert: AlertView, now: Date) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            StatusLine(headline: alert.outcome.headline, tone: alert.outcome.tone, size: 13)
+            // With a session, "How it ended" says where it stands.
+            if session == nil {
+                StatusLine(headline: alert.outcome.headline, tone: alert.outcome.tone, size: 13)
+            }
             if !alert.summary.isEmpty {
                 Text(alert.summary)
                     .font(.geist(12))
@@ -152,13 +155,14 @@ struct AlertDetailView: View {
         // `jev` is null both when a rule decided and when Jev was unavailable.
         let byRule = triage.jev == nil && triage.decision == .filtered
         // Shown under "How it ended" already when the daemon's sentence is the reason.
-        let showsReason = !triage.reason.isEmpty && alert.outcome.sentence != triage.reason
+        let reason = triage.jev == nil ? triage.reason : Self.withoutScores(triage.reason)
+        let showsReason = !reason.isEmpty && alert.outcome.sentence != triage.reason
         return VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(byRule ? "Decided by a rule, no model call" : triage.decision.callLabel)
                     .font(.geist(12, .medium))
                 if showsReason {
-                    Text(triage.reason)
+                    Text(reason)
                         .font(.geist(12))
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
@@ -178,6 +182,26 @@ struct AlertDetailView: View {
             }
             FeedbackRow(alert: alert)
         }
+    }
+
+    /// "Borderline runtime_error (actionable 62% · agent 55%)" → "Borderline runtime_error":
+    /// the scores are drawn right below, so the reason doesn't repeat them.
+    static func withoutScores(_ reason: String) -> String {
+        guard reason.hasSuffix(")") else { return reason }
+        var depth = 0
+        for index in reason.indices.reversed() {
+            switch reason[index] {
+            case ")": depth += 1
+            case "(":
+                depth -= 1
+                if depth == 0 {
+                    guard reason[index...].contains("%") else { return reason }
+                    return reason[..<index].trimmingCharacters(in: .whitespaces)
+                }
+            default: break
+            }
+        }
+        return reason
     }
 
     // MARK: Bottom bar
@@ -252,28 +276,8 @@ private struct FeedbackRow: View {
                 .font(.geist(11))
                 .foregroundStyle(alert.feedback == nil ? .tertiary : .secondary)
             Spacer(minLength: 0)
-            thumb(.good, symbol: "hand.thumbsup", help: "Good call")
-            thumb(.bad, symbol: "hand.thumbsdown", help: "Bad call")
+            FeedbackThumbs(alert: alert)
         }
-        .disabled(store.isBusy(alert.id))
-    }
-
-    private func thumb(_ label: AlertView.Feedback, symbol: String, help: String) -> some View {
-        let selected = alert.feedback == label
-        return Button {
-            store.feedback(alert, label)
-        } label: {
-            Image(systemName: selected ? symbol + ".fill" : symbol)
-                .font(.geist(12))
-                .frame(width: 24, height: 22)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-        .hoverHighlight(radius: 5)
-        .help(help)
-        .accessibilityLabel(help)
-        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
