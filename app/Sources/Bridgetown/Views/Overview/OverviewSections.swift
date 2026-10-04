@@ -1,6 +1,6 @@
 import SwiftUI
 
-// The overview's parts, shared by its two layouts: one column in the menu bar window
+// The overview's parts, shared by its two layouts: one column in the preview window
 // (`PopoverView`), side by side in the open island (`IslandOpenView`).
 
 extension Snapshot {

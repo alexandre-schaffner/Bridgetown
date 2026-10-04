@@ -5,17 +5,8 @@ import SwiftUI
 struct BridgetownApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var app
 
+    // No menu bar item: the island in the notch is the app.
     var body: some Scene {
-        MenuBarExtra {
-            PopoverView()
-                .environment(app.store)
-                .environment(app.daemon)
-                .environment(\.popoverHeight, app.popoverHeight)
-        } label: {
-            MenuBarLabel(store: app.store)
-        }
-        .menuBarExtraStyle(.window)
-
         SwiftUI.Settings {
             SettingsView()
                 .environment(app.store)
@@ -38,23 +29,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var signalSources: [DispatchSourceSignal] = []
     private var newActions = NewActions()
 
-    var popoverHeight: CGFloat {
-        #if DEBUG
-        preview.popoverHeight ?? Metrics.height
-        #else
-        Metrics.height
-        #endif
-    }
-
     func applicationDidFinishLaunching(_ notification: Notification) {
         Geist.register()
         NSApp.setActivationPolicy(.accessory)
         installSignalHandlers()
 
         notifier.start()
-        notifier.onOpen = { [weak self] in
-            if IslandController.isEnabled { self?.island.open() } else { StatusItemOpener.openPopover() }
-        }
+        notifier.onOpen = { [weak self] in self?.island.open() }
         // Each new "Needs you" is both a notification and a banner under the notch.
         store.onSnapshot = { [weak self] _, next in
             guard let self else { return }
@@ -71,7 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         #if DEBUG
-        preview.start(store: store, daemon: daemon, island: island, popoverHeight: popoverHeight)
+        preview.start(store: store, daemon: daemon, island: island, popoverHeight: preview.popoverHeight ?? Metrics.height)
         #endif
     }
 

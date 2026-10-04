@@ -2,7 +2,7 @@ import AppKit
 import Observation
 import SwiftUI
 
-/// Bridgetown in the notch, alongside the menu bar item.
+/// Bridgetown in the notch: the app's only way in, there is no menu bar item.
 ///
 /// A transparent panel above the menu bar holds the island (`IslandView`). It lets the
 /// pointer through everywhere but the island itself, so it never blocks the menu bar or
@@ -12,12 +12,8 @@ import SwiftUI
 /// - A new "Needs you" drops a banner under the notch for a few seconds.
 /// - Open, it takes keyboard focus without activating the app, like Spotlight; Esc, a
 ///   click outside, or opening another of the app's windows closes it.
-/// - Settings → Behaviour turns it off; the menu bar item stays either way.
 @MainActor
 final class IslandController {
-    static let enabledKey = "islandEnabled"
-    static var isEnabled: Bool { UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true }
-
     let model: IslandModel
     private let store: Store
     private let daemon: DaemonProcess
@@ -57,7 +53,7 @@ final class IslandController {
         panel.contentView = host
         self.panel = panel
         place()
-        if Self.isEnabled { panel.orderFrontRegardless() }
+        panel.orderFrontRegardless()
 
         installMonitors()
         observers.append(NotificationCenter.default.addObserver(
@@ -75,29 +71,7 @@ final class IslandController {
                 self.close()
             }
         })
-        observers.append(NotificationCenter.default.addObserver(
-            forName: UserDefaults.didChangeNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.applyEnabled() }
-        })
         observeGlance()
-    }
-
-    /// Shows or hides the panel to match Settings.
-    private func applyEnabled() {
-        guard let panel else { return }
-        if Self.isEnabled, !panel.isVisible {
-            place()
-            panel.orderFrontRegardless()
-        } else if !Self.isEnabled, panel.isVisible {
-            bannerTask?.cancel()
-            resignTask?.cancel()
-            model.presentation = .resting
-            model.hovering = false
-            panel.keyable = false
-            panel.ignoresMouseEvents = true
-            panel.orderOut(nil)
-        }
     }
 
     // MARK: Presentation
@@ -132,9 +106,9 @@ final class IslandController {
         model.presentation == .open ? close() : open()
     }
 
-    /// A new "Needs you" drops a banner, unless the island is open already or turned off.
+    /// A new "Needs you" drops a banner, unless the island is open already.
     func announce(_ action: Action) {
-        guard Self.isEnabled, model.presentation != .open else { return }
+        guard model.presentation != .open else { return }
         showBanner(action)
     }
 
@@ -192,7 +166,7 @@ final class IslandController {
         resignTask?.cancel()
         resignTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(450))
-            guard !Task.isCancelled, let self, let panel = self.panel, self.model.presentation != .open, Self.isEnabled else { return }
+            guard !Task.isCancelled, let self, let panel = self.panel, self.model.presentation != .open else { return }
             panel.orderOut(nil)
             panel.orderFrontRegardless()
         }

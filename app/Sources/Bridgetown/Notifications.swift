@@ -10,7 +10,7 @@ final class Notifier: NSObject {
     static var isAvailable: Bool { Bundle.main.bundleIdentifier != nil }
 
     private var authorized = false
-    /// Clicking a notification shows the app: the island, or the menu bar window with it off.
+    /// Clicking a notification opens the island.
     var onOpen: (() -> Void)?
 
     func start() {
@@ -82,29 +82,5 @@ enum QuietHours {
         let parts = hhmm.split(separator: ":").compactMap { Int($0) }
         guard parts.count == 2, (0..<24).contains(parts[0]), (0..<60).contains(parts[1]) else { return nil }
         return parts[0] * 60 + parts[1]
-    }
-}
-
-/// Best-effort: MenuBarExtra has no public "open" API, so find the status item's button
-/// and click it. Falls back to activating the app.
-@MainActor
-enum StatusItemOpener {
-    static func openPopover() {
-        NSApp.activate()
-        for window in NSApp.windows where window.className.contains("NSStatusBarWindow") {
-            if let button = findButton(in: window.contentView) {
-                // Already open? A second click would close it.
-                let popoverVisible = NSApp.windows.contains { $0.isVisible && $0.className.contains("MenuBarExtraWindow") }
-                if !popoverVisible { button.performClick(nil) }
-                return
-            }
-        }
-    }
-
-    private static func findButton(in view: NSView?) -> NSStatusBarButton? {
-        guard let view else { return nil }
-        if let b = view as? NSStatusBarButton { return b }
-        for sub in view.subviews { if let b = findButton(in: sub) { return b } }
-        return nil
     }
 }

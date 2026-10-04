@@ -296,7 +296,6 @@ private struct ReposTab: View {
 
 private struct BehaviourTab: View {
     let settings: SettingsBinding
-    @AppStorage(IslandController.enabledKey) private var island = true
 
     var body: some View {
         Form {
@@ -318,13 +317,6 @@ private struct BehaviourTab: View {
                 Toggle("Watch prod", isOn: settings.binding(\.watchProd))
             } footer: {
                 Text("Every 5 minutes, Bridgetown checks the overview's prod signals in Grafana for rises and spikes; every 10, it sweeps prod's error and warning logs for new, surging or risky patterns and has Jev judge them in one batch. Each anomaly no Slack alert covers gets an investigation, started the way Auto-start starts one for an alert; paused or with Auto-start off, it waits in Needs you. One Jev sees nothing in is only suggested.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-
-            Section {
-                Toggle("Show in the notch", isOn: $island)
-            } footer: {
-                Text("Wings beside the notch for running agents and what needs you, a banner when something new lands, and the whole app a click away. The menu bar item stays either way.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
