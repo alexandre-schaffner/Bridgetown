@@ -119,9 +119,9 @@ private struct EmptyState: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            Image(systemName: "bolt.shield")
-                .font(.geist(26, .light))
-                .foregroundStyle(.tertiary)
+            ArchShape(joint: 1.5)
+                .stroke(.tertiary, style: StrokeStyle(lineWidth: 1, lineJoin: .round))
+                .frame(width: 26, height: 26 / ArchMark.aspect)
                 .padding(.bottom, 4)
             Text("Nothing has fired yet")
                 .font(.geist(14, .semibold))
