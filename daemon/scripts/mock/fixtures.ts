@@ -5,6 +5,9 @@ import { newSession } from "../../src/sessions/new-session.ts"
 import { sessionEndEvent } from "../../src/sessions/repo.ts"
 import type { FakePr } from "./fakes.ts"
 
+/** The log finding's fingerprint: the Goldsky pattern in the mock's log sweep (grafana.ts) points at it. */
+export const LOG_FINDING_FINGERPRINT = "watch:log:1234567890"
+
 /**
  * The world the mock starts in, typed by the daemon's own model. Every session
  * is a state the real daemon reaches (its stepper and headline come from
@@ -175,7 +178,7 @@ export const buildFixtures = (paths: { readonly repoPath: string; readonly workt
       }),
       id: `watch:log:1234567890:${tsAgo(24)}`,
       permalink: "https://grafana.internal.merkl.xyz/explore",
-      fingerprint: "watch:log:1234567890",
+      fingerprint: LOG_FINDING_FINGERPRINT,
     },
     investigate: alert({ channel: UPTIME, minutesAgo: 7, title: "Incident started on api.merkl.xyz/v4/roots/delay", summary: "Better Stack: 3 of 5 regions failing, HTTP 504 after 30s", source: "uptime", fields: { _tag: "uptime", target: "api.merkl.xyz/v4/roots/delay", state: "incident" }, triage: { decision: "suggest", reason: "Borderline uptime_incident (actionable 71% · agent 46%)", jev: jev("uptime_incident", 0.71, 0.46, 0.18, "standard", 2.4) } }),
     escalated: alert({ channel: DM_HUGO, minutesAgo: 1, title: "Hugo Lextrait · DM: should we prioritise the sparkline work over the studio revamp?", summary: "Direct message asking for a prioritisation call", raw: "should we prioritise the sparkline work over the studio revamp?", source: "inbox", fields: inbox("U04HUGO", "Hugo Lextrait", "dm"), triage: { decision: "escalate", reason: "A decision only you can make (needs you 90% · agent 4%)", jev: jev("decision_or_approval", 0.9, 0.04, 0, "quick", 1.6) } }),

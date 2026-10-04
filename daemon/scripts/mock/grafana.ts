@@ -1,5 +1,7 @@
 import { Effect } from "effect"
 import { checkRange, type GrafanaShape, type Range, type Series } from "../../src/grafana/client.ts"
+import type { LogPatternVerdict } from "../../src/watch/judge.ts"
+import { type Sweep, sweepQuery } from "../../src/watch/logs.ts"
 
 /**
  * Grafana for the mock: deterministic series shaped like Merkl's prod (a daily
@@ -74,17 +76,62 @@ const DEPLOYS: ReadonlyArray<Record<string, string>> = [
   { _time: minutesAgo(2900), image: "merkl-api", version: "v1.35.8", stage: "build", status: "failure" },
 ]
 
+/** One row of a log sweep as VictoriaLogs answers it, and what the mock's Jev said about its pattern (null: not asked). */
+interface SweepRow {
+  readonly sweep: Sweep
+  readonly fields: Readonly<Record<string, string>>
+  readonly sample: string
+  readonly recent: number
+  readonly total: number
+  readonly verdict: LogPatternVerdict | null
+}
+
+const GOLDSKY =
+  "Error fetching batch <N>/<N>: Error: Max retries (<N>) exceeded for request: Rate limited: the preview community blocks subgraphs are being retired, and this shared endpoint is now throttled and will be removed without further notice."
+
+/**
+ * The log sweep's patterns: a new error, an RPC surge, the day's steady noise, and risky warnings, among them the
+ * Goldsky retirement the mock's log finding is about. Every one the sweep would ask about has a verdict already
+ * (main.ts stores them), so starting the mock never starts an agent on them.
+ */
+export const SWEEP_ROWS: ReadonlyArray<SweepRow> = [
+  { sweep: "errors", fields: { "merkl.job": "merkl-compute-<N>", _msg: "Campaign <N> has no reward token on chain <N>, skipping" }, sample: "Campaign 48213 has no reward token on chain 59144, skipping", recent: 18, total: 18, verdict: { problem: 0.31, agent: 0.62, users: 0.12 } },
+  { sweep: "errors", fields: { "merkl.job": "merkl-compute-<N>", _msg: "RPC call eth_getLogs to https://rpc.ankr.com/base failed with status <N> after <N> attempts" }, sample: "RPC call eth_getLogs to https://rpc.ankr.com/base failed with status 429 after 3 attempts", recent: 220, total: 600, verdict: { problem: 0.46, agent: 0.38, users: 0.21 } },
+  { sweep: "errors", fields: { "merkl.job": "merkl-compute-<N>", _msg: "Fetched Campaign: undefined" }, sample: "Fetched Campaign: undefined", recent: 114, total: 5_472, verdict: null },
+  { sweep: "errors", fields: { "k8s.deployment.name": "api", _msg: "PrismaClientKnownRequestError: Unique constraint failed on the fields: (`id`)" }, sample: "PrismaClientKnownRequestError: Unique constraint failed on the fields: (`id`)", recent: 40, total: 3_800, verdict: null },
+  { sweep: "errors", fields: { "k8s.container.name": "envoy", _msg: "upstream connect error or disconnect/reset before headers. reset reason: connection termination" }, sample: "upstream connect error or disconnect/reset before headers. reset reason: connection termination", recent: 12, total: 1_100, verdict: null },
+  { sweep: "warnings", fields: { "merkl.job": "merkl-precompute-<N>", _msg: GOLDSKY }, sample: GOLDSKY.replace("<N>/<N>", "1/1").replace("(<N>)", "(2)"), recent: 953, total: 7_500, verdict: { problem: 0.94, agent: 0.58, users: 0.43 } },
+  { sweep: "warnings", fields: { "merkl.job": "merkl-compute-<N>", _msg: GOLDSKY }, sample: GOLDSKY.replace("<N>/<N>", "1/1").replace("(<N>)", "(2)"), recent: 860, total: 7_000, verdict: { problem: 0.94, agent: 0.58, users: 0.43 } },
+  { sweep: "warnings", fields: { "k8s.deployment.name": "tx-executor", _msg: "Nonce too low for signer <N>x<N>, resubmitting with nonce <N>" }, sample: "Nonce too low for signer 0x7a3f…c21d, resubmitting with nonce 48212", recent: 31, total: 260, verdict: { problem: 0.35, agent: 0.41, users: 0.08 } },
+]
+
+/** A sweep row in VictoriaLogs' shape: every value a string, `sample` and `versions` JSON-encoded. */
+export const victoriaRow = (row: SweepRow): Record<string, string> => ({
+  ...row.fields,
+  recent: String(row.recent),
+  total: String(row.total),
+  sample: JSON.stringify({ sample: row.sample }),
+  versions: JSON.stringify(["v1.62.35"]),
+})
+
+/** The rows of the sweep `query` is, or undefined for any other query. */
+const sweepRows = (query: string) => {
+  const sweep = (["errors", "warnings"] as const).find((s) => query === sweepQuery(s))
+  return sweep === undefined ? undefined : SWEEP_ROWS.filter((row) => row.sweep === sweep).map(victoriaRow)
+}
+
 export const fakeGrafana = (): GrafanaShape => {
   return {
     prom: (expr, range) => checkRange(range).pipe(Effect.as(series(expr, range))),
     logStats: (query, range) => checkRange(range).pipe(Effect.as(series(query, range))),
     logRows: (query, range) =>
       Effect.succeed(
-        DEPLOYS.filter((row) => {
-          const image = /image:="([^"]+)"/.exec(query)?.[1]
-          const at = Date.parse(row._time ?? "")
-          return (image === undefined || row.image === image) && at >= range.start.getTime() && at <= range.end.getTime()
-        }),
+        sweepRows(query) ??
+          DEPLOYS.filter((row) => {
+            const image = /image:="([^"]+)"/.exec(query)?.[1]
+            const at = Date.parse(row._time ?? "")
+            return (image === undefined || row.image === image) && at >= range.start.getTime() && at <= range.end.getTime()
+          }),
       ),
   }
 }

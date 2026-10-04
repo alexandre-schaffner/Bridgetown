@@ -1,4 +1,5 @@
 import { type NoulQuestion, noul } from "@typesafe-ai/sdk"
+import { Schema } from "effect"
 
 /**
  * Jev's side of the log sweep: one batched call over every candidate pattern,
@@ -21,14 +22,15 @@ export interface LogPatternInput {
   readonly versions: ReadonlyArray<string>
 }
 
-export interface LogPatternVerdict {
+export const LogPatternVerdict = Schema.Struct({
   /** Something in prod is broken, degrading or about to break. */
-  readonly problem: number
+  problem: Schema.Number,
   /** An agent could find the cause and fix it in code, or recommend the fix. */
-  readonly agent: number
+  agent: Schema.Number,
   /** Users, rewards or claims are affected now. */
-  readonly users: number
-}
+  users: Schema.Number,
+})
+export type LogPatternVerdict = typeof LogPatternVerdict.Type
 
 const LOG_CONTEXT = [
   "Merkl is a DeFi incentives platform: an API, an engine and many jobs that compute rewards and publish merkle roots on many chains.",

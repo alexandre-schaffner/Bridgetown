@@ -29,6 +29,7 @@ All timestamps are ISO-8601 strings. Every nullable field is always present, set
 | GET | `/events` | | SSE stream. Every change sends `event: snapshot` with `data: <Snapshot JSON>` (at most one per 150ms: a burst shares snapshots, and the last one is always read after the last change). The first message arrives on connect. A `: ping` comment is sent every 15s. |
 | GET | `/sessions/:id/transcript` | | `TranscriptEntry[]` (last 200) |
 | GET | `/boards/:view` | | `Board`: `incidents` (API 5xx and p99, engine and job errors), `infra` (RPC errors, failed job pods, OOM kills, Postgres backends waiting) or `database` (prod Postgres connections by state, backends waiting on locks, longest transaction, replication lag), over the last hour. |
+| GET | `/logs` | | `LogSweep`: the last sweep of prod's logs (every 10 minutes, with `watchProd`), its patterns most telling first. Read from the store: never queries Grafana. |
 | GET | `/alerts/:id/board` | | `Board` picked from what the alert is about (an API route, a release image, a chain, its kind), 6h either side of it; `null` when nothing in Grafana tracks it (a DM). |
 | GET | `/alerts/:id` | | `AlertDetail` — the full message, its history, its session (if any) and open actions. `:id` is URL-encoded (`C0AUKD42N3U%3A1790933006.433649`). |
 | POST | `/actions/:id/resolve` | `{ "response": string \| null }` | `Snapshot`. `409` while the same action is already being resolved (`inFlight`). Merge and release are idempotent per session: a repeat never merges or tags twice. |
@@ -98,6 +99,31 @@ type Deploy = {
   version: string        // "v1.35.11"
   stage: string          // "engine", "front-production", or where it failed
   status: "deployed" | "failed"   // deployed = a prod stage succeeded; a green build alone is not a deploy
+}
+
+// The log sweep (`GET /logs`): prod's error lines over the last day and risky warnings over the last 2 hours,
+// grouped into patterns (one message, numbers collapsed, merged across the jobs that log it).
+type LogSweep = {
+  sweptAt: string | null // the last sweep; null before the first (2½ minutes after the daemon starts)
+  link: string           // Grafana Explore: prod's error lines over the last 3 hours
+  error: string | null   // why no sweep runs ("Prod watching is off…", Grafana MCP down), else a query of the last sweep that failed
+  patterns: LogPattern[] // suspicious first (new, then surging, then risky warnings), then steady errors; busiest first within each
+}
+
+type LogPattern = {
+  key: string
+  level: "error" | "warning"
+  behaviour: "new" | "surging" | "steady"   // new = no line in the window before the last 15 minutes · surging = ≥ 5× its usual rate
+  suspicious: boolean    // what the sweep asks Jev about: a new or surging error, or any risky warning. Steady errors are the day's noise
+  sources: string[]      // jobs or services that logged it, busiest first: "merkl-compute-*", "api"
+  message: string        // numbers collapsed to <N>
+  example: string        // one real line
+  versions: string[]     // image tags that logged it, up to 3
+  recent: number         // lines in the last 15 minutes
+  usual: number          // lines per 15 minutes over the rest of the window
+  jev: { problem: number; agent: number; users: number; at: string } | null   // Jev's verdict (0..1 each), asked at most once a day; null when not asked
+  alertId: string | null // the finding it raised (Jev called it a problem): GET /alerts/:id
+  link: string           // Grafana Explore on its lines, from 3 hours before the sweep to now
 }
 
 type Status = {

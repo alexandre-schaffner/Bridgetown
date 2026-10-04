@@ -7,6 +7,8 @@ import { Hub } from "../hub.ts"
 import { metricsOf, windowStart } from "./metrics.ts"
 import { revvLink } from "../ship/review.ts"
 import { Store } from "../store/store.ts"
+import { byConcern, errorsLink, levelOf, type LogPattern, patternLink, shownUsual, suspicious } from "../watch/logs.ts"
+import { type Judged, loadJudged, loadSweep, type SweepRecord, watchBlocked } from "../watch/sweep-store.ts"
 
 /** The wire shapes of docs/API.md, built from the store. */
 
@@ -142,3 +144,36 @@ export const alertDetail = (id: string) =>
       actions: actions.map((action) => actionView(action, action.sessionId === null ? undefined : sessions.get(action.sessionId), inFlight)),
     }
   })
+
+/**
+ * `LogSweep`: the last sweep's patterns, most telling first, each with Jev's verdict, its finding and its lines in
+ * Grafana. `blocked` says why no sweep runs (watching off, Grafana MCP down), and comes before a failed query.
+ */
+export const sweepView = (record: SweepRecord | undefined, judged: Readonly<Record<string, Judged>>, now: Date, blocked: string | null) => ({
+  sweptAt: record?.at ?? null,
+  link: errorsLink(now),
+  error: blocked ?? (record === undefined || record.failures.length === 0 ? null : record.failures.join(" · ")),
+  patterns: record === undefined ? [] : [...record.patterns].sort(byConcern).map((p) => patternView(p, judged[p.key], new Date(record.at), now)),
+})
+
+const patternView = (p: LogPattern, seen: Judged | undefined, sweptAt: Date, now: Date) => ({
+  key: p.key,
+  level: levelOf(p.sweep),
+  behaviour: p.behaviour,
+  suspicious: suspicious(p),
+  sources: p.sources,
+  message: p.message,
+  example: p.example,
+  versions: p.versions,
+  recent: p.recent,
+  usual: shownUsual(p),
+  jev: seen === undefined || seen.verdict === null ? null : { ...seen.verdict, at: seen.at },
+  alertId: seen?.alertId ?? null,
+  link: patternLink(p, sweptAt, now),
+})
+
+export const logSweep = Effect.gen(function* () {
+  const store = yield* Store
+  const now = new Date()
+  return sweepView(yield* loadSweep(store), yield* loadJudged(store, now), now, yield* watchBlocked(yield* Hub))
+})

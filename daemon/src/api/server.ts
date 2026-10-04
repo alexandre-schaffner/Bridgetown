@@ -11,7 +11,7 @@ import { SessionRunner } from "../sessions/runner.ts"
 import { Store } from "../store/store.ts"
 import { FeedbackBody, mergeSettings, MessageBody, pathId, PauseBody, readBody, ResolveBody, SettingsPatch } from "./requests.ts"
 import { snapshotEvents, SSE_TIMING, type SseTiming } from "./sse.ts"
-import { alertDetail, snapshot } from "./views.ts"
+import { alertDetail, logSweep, snapshot } from "./views.ts"
 
 type Services = Store | Hub | Actions | AlertPipeline | SessionRunner | Boards
 
@@ -92,6 +92,7 @@ const getRoute = (path: string, options: ServerOptions) =>
   Effect.gen(function* () {
     if (path === "/state") return json(yield* snapshot)
     if (path === "/events") return yield* events(options.sse ?? SSE_TIMING)
+    if (path === "/logs") return json(yield* logSweep)
     const detail = /^\/alerts\/([^/]+)$/.exec(path)
     if (detail !== null) {
       const found = yield* alertDetail(yield* pathId(detail[1]))

@@ -3,7 +3,8 @@ import SwiftUI
 /// The top of the overview: three numbers, then prod as Grafana sees it over the last
 /// hour: incidents (API errors and latency, engine and job errors), infra (RPC, jobs,
 /// memory kills, Postgres) or database (prod Postgres connections, lock waits, longest
-/// transaction, replication lag), with deploys marked.
+/// transaction, replication lag), with deploys marked; or its logs, as the last sweep
+/// grouped them, suspicious patterns first.
 struct TelemetryPanel: View {
     @Environment(Store.self) private var store
     let snapshot: Snapshot
@@ -13,8 +14,8 @@ struct TelemetryPanel: View {
         case incidents = "Incidents"
         case infra = "Infra"
         case database = "Database"
+        case logs = "Logs"
         var id: Self { self }
-        var view: String { rawValue.lowercased() }
     }
 
     @AppStorage("telemetryMode") private var mode: Mode = .incidents
@@ -25,15 +26,25 @@ struct TelemetryPanel: View {
                 .outlined()
             VStack(alignment: .leading, spacing: 8) {
                 header
-                BoardLoader(key: mode.view, fetch: { try await store.board(view: mode.view) }) { loaded in
-                    if let board = loaded.value ?? nil {
-                        BoardView(board: board)
-                    } else if let error = loaded.error {
-                        BoardMessage(symbol: "exclamationmark.triangle", text: "Couldn't load the \(mode.view) board · \(error)")
-                    } else {
-                        BoardSkeleton()
-                    }
+                switch mode {
+                case .incidents: board("incidents")
+                case .infra: board("infra")
+                case .database: board("database")
+                case .logs: LogSweepView(now: now)
                 }
+            }
+        }
+    }
+
+    /// A board view of `GET /boards/:view`.
+    private func board(_ view: String) -> some View {
+        PollingLoader(key: view, fetch: { try await store.board(view: view) }) { loaded in
+            if let board = loaded.value ?? nil {
+                BoardView(board: board)
+            } else if let error = loaded.error {
+                BoardMessage(symbol: "exclamationmark.triangle", text: "Couldn't load the \(view) board · \(error)")
+            } else {
+                BoardSkeleton()
             }
         }
     }

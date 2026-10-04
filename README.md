@@ -123,6 +123,7 @@ agents that open a PR, which then goes green and gets approved on its own. Workt
   survives restarts. A pattern Jev calls a problem (above the suggest threshold) becomes a finding linked to its lines in Grafana
   Explore, and gets an investigation like a metric anomaly; it is handed to the agent already on it if one is running, and past
   two starts in one sweep (a bad deploy logs many patterns at once) the rest are suggested. The queries are constants: nothing from a log line goes into a query Bridgetown runs.
+  Every pattern of the last sweep shows under **Prod → Logs**, suspicious ones first with Jev's verdict and their finding, each opening its lines in Grafana Explore (`GET /logs`).
 
 ## Safety model
 

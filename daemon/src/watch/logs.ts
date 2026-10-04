@@ -1,5 +1,7 @@
+import { Schema } from "effect"
 import type { ParsedAlert } from "../domain/alert.ts"
 import { type Decision, type Triage, WATCH_CHANNEL } from "../domain/model.ts"
+import { exploreLogsLink } from "../grafana/boards.ts"
 import { clock, watchFingerprint } from "./detect.ts"
 import type { LogPatternInput, LogPatternVerdict } from "./judge.ts"
 
@@ -26,7 +28,8 @@ const SURGE_FACTOR = 5
 /** Patterns per Jev call: three questions each. */
 export const BATCH = 12
 
-export type Sweep = "errors" | "warnings"
+export const Sweep = Schema.Literals(["errors", "warnings"])
+export type Sweep = typeof Sweep.Type
 
 interface SweepSpec {
   readonly windowMinutes: number
@@ -59,25 +62,34 @@ export const sweepQuery = (sweep: Sweep): string =>
     `| filter recent:>=${MIN_RECENT} | sort by (recent desc) | limit 50`,
   ].join(" ")
 
-export type Behaviour = "new" | "surging" | "steady"
+export const Behaviour = Schema.Literals(["new", "surging", "steady"])
+export type Behaviour = typeof Behaviour.Type
 
-/** One message pattern, merged across every job that logs it: one cause, one card. */
-export interface LogPattern {
-  readonly sweep: Sweep
-  /** Stable across sweeps: the sweep and the collapsed message. */
-  readonly key: string
+/** One message pattern, merged across every job that logs it: one cause, one card. Kept across restarts (sweep-store.ts). */
+export const LogPattern = Schema.Struct({
+  sweep: Sweep,
+  /** Stable across sweeps: the sweep and the collapsed message (`patternKey`). */
+  key: Schema.String,
   /** The jobs or services that logged it, busiest first, e.g. "merkl-compute-*". */
-  readonly sources: ReadonlyArray<string>
+  sources: Schema.Array(Schema.String),
   /** A LogsQL filter matching those sources, or null when one of them cannot be written safely. */
-  readonly sourceFilter: string | null
-  readonly message: string
-  readonly example: string
-  readonly versions: ReadonlyArray<string>
+  sourceFilter: Schema.NullOr(Schema.String),
+  message: Schema.String,
+  example: Schema.String,
+  versions: Schema.Array(Schema.String),
   /** Lines in the last 15 minutes, and the usual per 15 minutes over the rest of the window. */
-  readonly recent: number
-  readonly usual: number
-  readonly behaviour: Behaviour
-}
+  recent: Schema.Number,
+  usual: Schema.Number,
+  behaviour: Behaviour,
+})
+export type LogPattern = typeof LogPattern.Type
+
+export const patternKey = (sweep: Sweep, message: string): string => `${sweep}:${String(Bun.hash(message))}`
+
+export const levelOf = (sweep: Sweep) => (sweep === "errors" ? ("error" as const) : ("warning" as const))
+
+/** `usual` to one decimal, as findings and the app show it. */
+export const shownUsual = (p: LogPattern): number => Math.round(p.usual * 10) / 10
 
 /** One row of a sweep: a pattern from one source. */
 export interface PatternRow {
@@ -144,7 +156,7 @@ export const behaviourOf = (sweep: Sweep, recent: number, total: number): { read
 export const mergeRows = (rows: ReadonlyArray<PatternRow>): ReadonlyArray<LogPattern> => {
   const groups = new Map<string, Array<PatternRow>>()
   for (const row of rows) {
-    const key = `${row.sweep}:${String(Bun.hash(row.message))}`
+    const key = patternKey(row.sweep, row.message)
     groups.set(key, [...(groups.get(key) ?? []), row])
   }
   return [...groups.entries()].flatMap(([key, group]) => {
@@ -173,15 +185,18 @@ export const mergeRows = (rows: ReadonlyArray<PatternRow>): ReadonlyArray<LogPat
 
 const RANK: Readonly<Record<Behaviour, number>> = { new: 0, surging: 1, steady: 2 }
 
-/**
- * The patterns worth asking Jev about, most telling first: new errors, then
- * surges, then risky warnings. Steady errors are the day's normal noise, and a
- * pattern judged in the last day is not asked about again.
- */
+/** New or surging errors, and any risky warning: steady errors are the day's normal noise. */
+export const suspicious = (p: LogPattern): boolean => p.recent >= MIN_RECENT && (p.sweep === "warnings" || p.behaviour !== "steady")
+
+/** Most telling first: new errors, then surges, then risky warnings, then the steady noise; busiest first within each. */
+export const byConcern = (a: LogPattern, b: LogPattern) =>
+  Number(suspicious(b)) - Number(suspicious(a)) || RANK[a.behaviour] - RANK[b.behaviour] || b.recent - a.recent
+
+/** The patterns worth asking Jev about, most telling first. A pattern judged in the last day is not asked about again. */
 export const candidates = (patterns: ReadonlyArray<LogPattern>, judged: ReadonlySet<string>): ReadonlyArray<LogPattern> =>
   patterns
-    .filter((p) => !judged.has(p.key) && p.recent >= MIN_RECENT && (p.sweep === "warnings" || p.behaviour !== "steady"))
-    .sort((a, b) => RANK[a.behaviour] - RANK[b.behaviour] || b.recent - a.recent)
+    .filter((p) => !judged.has(p.key) && suspicious(p))
+    .sort(byConcern)
     .slice(0, BATCH)
 
 /** "merkl-compute-*", or "merkl-compute-* and 2 more". */
@@ -207,7 +222,7 @@ export const judgeInput = (p: LogPattern): LogPatternInput => ({
   source: p.sources.join(", "),
   message: p.message,
   example: p.example,
-  level: p.sweep === "errors" ? "error" : "warning",
+  level: levelOf(p.sweep),
   behaviour: behaviourText(p),
   versions: p.versions,
 })
@@ -227,15 +242,25 @@ export const linesQuery = (p: LogPattern): string => {
   return [SWEEPS[p.sweep].levels, p.sourceFilter, phrase === null ? null : `"${phrase}"`].filter((part) => part !== null).join(" ")
 }
 
+/** How far before a sweep its Grafana links look. */
+const LINK_HOURS = 3
+
+/** The pattern's lines in Grafana Explore, from 3 hours before the sweep that saw it to `to`. */
+export const patternLink = (p: LogPattern, sweptAt: Date, to: Date = sweptAt): string =>
+  exploreLogsLink(linesQuery(p), new Date(sweptAt.getTime() - LINK_HOURS * 3_600_000), to)
+
+/** Prod's error lines in Grafana Explore over the 3 hours to `now`. */
+export const errorsLink = (now: Date): string => exploreLogsLink(SWEEPS.errors.levels, new Date(now.getTime() - LINK_HOURS * 3_600_000), now)
+
 const oneLine = (text: string, max: number) => {
   const flat = text.replace(/\s+/g, " ").trim()
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
 }
 
 /** A judged pattern as an alert Bridgetown raised itself, in channel "Grafana" like the metric findings. */
-export const logFinding = (p: LogPattern, verdict: LogPatternVerdict, now: Date, link: string): ParsedAlert => {
+export const logFinding = (p: LogPattern, verdict: LogPatternVerdict, now: Date): ParsedAlert => {
   const since = new Date(now.getTime() - RECENT_MINUTES * 60_000)
-  const kind = p.sweep === "errors" ? "error" : "warning"
+  const kind = levelOf(p.sweep)
   const title = oneLine(`${sourcesText(p)}: ${p.behaviour === "steady" ? "" : `${p.behaviour} ${kind} · `}${oneLine(p.example, 200)}`, 110)
   const summary = [
     `${behaviourText(p)} Logged by ${p.sources.join(", ")}${p.versions.length === 0 ? "" : ` (${p.versions.join(", ")})`} at ${kind} level since ${clock(since)}.`,
@@ -258,11 +283,11 @@ export const logFinding = (p: LogPattern, verdict: LogPatternVerdict, now: Date,
       `Example line: ${oneLine(p.example, 600)}`,
       `Find its lines (VictoriaLogs, LogsQL): ${query}`,
       `Jev: problem ${Math.round(verdict.problem * 100)}% · agent ${Math.round(verdict.agent * 100)}% · users affected ${Math.round(verdict.users * 100)}%`,
-      `Dashboard: ${link}`,
+      `Dashboard: ${patternLink(p, now)}`,
     ].join("\n"),
     source: "watch",
     fingerprint: watchFingerprint(`log:${id}`),
-    fields: { _tag: "watch", signal: `log:${id}`, query, datasource: "logs", level: p.recent, usual: Math.round(p.usual * 10) / 10, since: since.toISOString(), shape: "rise" },
+    fields: { _tag: "watch", signal: `log:${id}`, query, datasource: "logs", level: p.recent, usual: shownUsual(p), since: since.toISOString(), shape: "rise" },
     mentionsMe: false,
     fromHuman: false,
   }

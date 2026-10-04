@@ -102,6 +102,57 @@ struct Board: Codable, Sendable, Equatable {
     var error: String?
 }
 
+// MARK: - Log sweep
+
+/// The last sweep of prod's logs (`GET /logs`): error lines over the last day and risky
+/// warnings over the last 2 hours, grouped into patterns, most telling first.
+struct LogSweep: Codable, Sendable, Equatable {
+    struct Pattern: Codable, Sendable, Equatable, Identifiable {
+        enum Level: String, LenientStringEnum { case error, warning, unknown }
+        /// `new`: no line before the last 15 minutes. `surging`: at least 5× its usual rate.
+        enum Behaviour: String, LenientStringEnum { case new, surging, steady, unknown }
+
+        struct Verdict: Codable, Sendable, Equatable {
+            var problem: Double
+            var agent: Double
+            var users: Double
+            var at: Date
+        }
+
+        var key: String
+        var level: Level
+        var behaviour: Behaviour
+        /// What the sweep asks Jev about: a new or surging error, or any risky warning.
+        var suspicious: Bool
+        /// Busiest first: "merkl-compute-*", "api".
+        var sources: [String]
+        /// Numbers collapsed to `<N>`.
+        var message: String
+        /// One real line.
+        var example: String
+        var versions: [String]
+        /// Lines in the last 15 minutes, and per 15 minutes before.
+        var recent: Double
+        var usual: Double
+        /// Nil when Jev wasn't asked (steady errors, or Jev was down).
+        var jev: Verdict?
+        /// The finding it raised, when Jev called it a problem.
+        var alertId: String?
+        /// Grafana Explore on its lines, opened in the browser.
+        var link: String
+
+        var id: String { key }
+    }
+
+    /// Nil before the first sweep.
+    var sweptAt: Date?
+    /// Grafana Explore on prod's error lines over the last 3 hours.
+    var link: String
+    /// Why no sweep runs (watching off, Grafana MCP down), or a query that failed.
+    var error: String?
+    var patterns: [Pattern]
+}
+
 struct Status: Codable, Sendable, Equatable {
     enum Slack: String, LenientStringEnum { case ok, error, missing_token, unknown }
     enum JevHealth: String, LenientStringEnum { case ok, error, missing_key, unknown }

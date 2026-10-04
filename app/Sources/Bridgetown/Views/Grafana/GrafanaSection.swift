@@ -8,7 +8,7 @@ struct GrafanaSection: View {
     let alertId: String
 
     var body: some View {
-        BoardLoader(key: alertId, fetch: { try await store.alertBoard(alertId: alertId) }) { loaded in
+        PollingLoader(key: alertId, fetch: { try await store.alertBoard(alertId: alertId) }) { loaded in
             if let found = loaded.value {
                 if let board = found {
                     DetailSection(title: "Grafana", detail: board.title) { BoardView(board: board, maxDeploys: 4) }

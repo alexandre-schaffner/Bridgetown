@@ -230,6 +230,11 @@ final class Store {
         return try await client.alertBoard(id: alertId)
     }
 
+    func logSweep() async throws -> LogSweep {
+        guard let client else { throw DaemonError.notConnected }
+        return try await client.logs()
+    }
+
     func transcript(for session: Session) async throws -> [TranscriptEntry] {
         guard let client else { throw DaemonError.notConnected }
         return try await client.transcript(sessionId: session.id)

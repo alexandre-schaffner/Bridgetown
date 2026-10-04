@@ -113,6 +113,11 @@ describe("contract shape", () => {
     expect(text).not.toContain('"phase"')
     expect(text).not.toContain('"payload"')
   })
+  test("logs before the first sweep: no patterns, and why none run", async () => {
+    const logs: unknown = await (await call("/logs")).json()
+    expect(logs).toMatchObject({ sweptAt: null, patterns: [], error: expect.stringContaining("Grafana MCP is down") })
+    expect(logs).toMatchObject({ link: expect.stringMatching(/^https:\/\/grafana\.internal\.merkl\.xyz\/explore\?/) })
+  })
   test("alert detail is flat", async () => {
     const detail: unknown = await (await call(`/alerts/${encodeURIComponent(alert.id)}`)).json()
     expect(typeof detail === "object" && detail !== null ? Object.keys(detail).sort() : []).toEqual(["actions", "alert", "events", "raw", "session"])

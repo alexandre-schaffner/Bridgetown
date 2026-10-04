@@ -87,6 +87,11 @@ struct DaemonClient: Sendable {
         try await get("/boards/\(escape(view))", session: Self.boards)
     }
 
+    /// Read from the daemon's store, never from Grafana: as quick as `/state`.
+    func logs() async throws -> LogSweep {
+        try await get("/logs")
+    }
+
     /// Nil when nothing in Grafana tracks what the alert is about.
     func alertBoard(id: String) async throws -> Board? {
         try await get("/alerts/\(escape(id))/board", session: Self.boards)

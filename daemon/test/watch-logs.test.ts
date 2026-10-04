@@ -8,7 +8,9 @@ import type { Alert } from "../src/domain/model.ts"
 import { Store } from "../src/store/store.ts"
 import type { JevShape } from "../src/triage/jev.ts"
 import { logPatternQuestions, type LogPatternInput } from "../src/watch/judge.ts"
+import { logSweep, sweepView } from "../src/api/views.ts"
 import { BATCH, behaviourOf, behaviourText, candidates, linesQuery, logFinding, mergeRows, type PatternRow, rowOf, sweepQuery } from "../src/watch/logs.ts"
+import { JUDGED_KEY, loadJudged } from "../src/watch/sweep-store.ts"
 import { Watcher } from "../src/watch/watcher.ts"
 import { makeSession } from "./fixtures/records.ts"
 import { makeWorld, noGrafana } from "./fixtures/world.ts"
@@ -119,12 +121,49 @@ describe("what Jev and the agent read", () => {
   })
 
   test("the finding", () => {
-    const finding = logFinding(pattern, { problem: 0.9, agent: 0.6, users: 0.4 }, new Date("2026-10-04T12:00:00Z"), "https://grafana/explore")
+    const finding = logFinding(pattern, { problem: 0.9, agent: 0.6, users: 0.4 }, new Date("2026-10-04T12:00:00Z"))
     expect(finding).toMatchObject({ channelName: "Grafana", source: "watch", fields: { _tag: "watch", datasource: "logs", level: 900 } })
     expect(finding.fingerprint).toStartWith("watch:log:")
     expect(finding.title).toStartWith("merkl-fetch-nodes: Error fetching batch 1/1")
     expect(finding.summary).toContain("since 11:45 UTC")
     expect(finding.raw).toContain("Jev: problem 90% · agent 60% · users affected 40%")
+  })
+})
+
+describe("the sweep as the app shows it", () => {
+  const now = new Date("2026-10-04T12:00:00Z")
+  const patterns = mergeRows([
+    row({ message: "steady error", recent: 114, total: 5_472 }),
+    row({ sweep: "warnings", message: GOLDSKY, recent: 900, total: 7_000 }),
+    row({ message: "new error", recent: 15, total: 15 }),
+    row({ message: "surging error", recent: 40, total: 60 }),
+  ])
+  const record = { at: "2026-10-04T11:55:00.000Z", patterns, failures: ["The warnings query failed: VictoriaLogs answered 503"] }
+
+  test("most telling first, the steady noise last and not suspicious", () => {
+    const view = sweepView(record, {}, now, null)
+    expect(view.patterns.map((p) => [p.message, p.suspicious])).toEqual([
+      ["new error", true],
+      ["surging error", true],
+      [GOLDSKY, true],
+      ["steady error", false],
+    ])
+    expect(view).toMatchObject({ sweptAt: record.at, error: "The warnings query failed: VictoriaLogs answered 503" })
+    expect(view.patterns[2]).toMatchObject({ level: "warning", behaviour: "steady", sources: ["merkl-fetch-nodes"], recent: 900, jev: null, alertId: null })
+  })
+
+  test("Jev's verdict and the finding it raised, and each pattern's lines in Grafana", () => {
+    const key = patterns.find((p) => p.message === "new error")?.key ?? ""
+    const view = sweepView(record, { [key]: { at: record.at, verdict: { problem: 0.9, agent: 0.6, users: 0.2 }, alertId: "watch:log:1:2" } }, now, null)
+    expect(view.patterns[0]).toMatchObject({ jev: { problem: 0.9, agent: 0.6, users: 0.2, at: record.at }, alertId: "watch:log:1:2" })
+    const panes = JSON.parse(decodeURIComponent(new URL(view.patterns[0]?.link ?? "").searchParams.get("panes") ?? "{}"))
+    expect(panes.a.queries[0].expr).toBe(linesQuery(patterns.find((p) => p.key === key) ?? patterns[0]!))
+    expect(panes.a.range).toEqual({ from: String(Date.parse("2026-10-04T08:55:00Z")), to: String(now.getTime()) })
+  })
+
+  test("why no sweep runs comes before a failed query; nothing swept yet is an empty list", () => {
+    expect(sweepView(record, {}, now, "Prod watching is off").error).toBe("Prod watching is off")
+    expect(sweepView(undefined, {}, now, null)).toMatchObject({ sweptAt: null, error: null, patterns: [] })
   })
 })
 
@@ -166,12 +205,14 @@ describe("Watcher.sweepLogs", () => {
     expect(sweeps).toBe(0)
   })
 
-  test("Jev down: nothing raised, nothing remembered", async () => {
+  test("Jev down: nothing raised or judged, the sweep kept with no verdicts", async () => {
     await world.runPromise(Hub.use((hub) => hub.patchStatus({ grafanaMcp: "up" })))
     await sweep()
     expect(sweeps).toBe(2)
     expect(await findings()).toHaveLength(0)
     expect((await world.runPromise(Hub.use((hub) => hub.status))).jev).toBe("error")
+    const view = await world.runPromise(logSweep)
+    expect(view.patterns.map((p) => [p.suspicious, p.jev])).toEqual([[true, null], [true, null], [false, null]])
   })
 
   test("one batch for the candidates; each of Jev's problems gets an investigation", async () => {
@@ -188,10 +229,23 @@ describe("Watcher.sweepLogs", () => {
     expect(await world.runPromise(ActionQueue.use((queue) => queue.list))).toEqual([])
   })
 
-  test("judged patterns are not asked about again", async () => {
+  test("the sweep is kept for the app: every pattern, Jev's verdicts, the finding", async () => {
+    const view = await world.runPromise(logSweep)
+    const [finding] = await findings()
+    expect(view.error).toBeNull()
+    expect(view.patterns.map((p) => [p.level, p.behaviour, p.jev?.problem ?? null, p.alertId])).toEqual([
+      ["error", "new", 0.88, finding?.id ?? "no finding"],
+      ["warning", "steady", 0.2, null],
+      ["error", "steady", null, null],
+    ])
+  })
+
+  test("judged patterns are not asked about again, and keep their verdicts", async () => {
     await sweep()
     expect(batches).toHaveLength(1)
     expect(await findings()).toHaveLength(1)
+    const view = await world.runPromise(logSweep)
+    expect(view.patterns[0]?.jev?.problem).toBe(0.88)
   })
 
   test("off in settings: no queries", async () => {
@@ -199,6 +253,22 @@ describe("Watcher.sweepLogs", () => {
     await world.runPromise(Hub.use((hub) => hub.settings.pipe(Effect.flatMap((s) => hub.updateSettings({ ...s, watchProd: false })))))
     await sweep()
     expect(sweeps).toBe(before)
+    const view = await world.runPromise(logSweep)
+    expect(view).toMatchObject({ error: "Prod watching is off in Settings → Behaviour." })
+    expect(view.patterns).toHaveLength(3)
+  })
+
+  test("stored verdicts: one from before verdicts were kept reads as judged, an unreadable one is dropped alone", async () => {
+    const now = new Date()
+    const at = new Date(now.getTime() - 3_600_000).toISOString()
+    const stored = { old: at, fresh: { at, verdict: { problem: 0.7, agent: 0.5, users: 0.1 }, alertId: null }, broken: { at: 12 }, stale: "2020-01-01T00:00:00.000Z" }
+    const judged = await world.runPromise(
+      Store.use((store) => store.setKv(JUDGED_KEY, JSON.stringify(stored)).pipe(Effect.andThen(loadJudged(store, now)))),
+    )
+    expect(judged).toEqual({
+      old: { at, verdict: null, alertId: null },
+      fresh: { at, verdict: { problem: 0.7, agent: 0.5, users: 0.1 }, alertId: null },
+    })
   })
 })
 
@@ -221,7 +291,7 @@ describe("Watcher.sweepLogs after a bad deploy", () => {
     const [redis] = mergeRows([rowOf("errors", rows[2] ?? {})].filter((r) => r !== undefined))
     if (redis === undefined) throw new Error("no pattern")
     const earlier: Alert = {
-      ...logFinding(redis, problem, new Date(Date.now() - 3 * 86_400_000), ""),
+      ...logFinding(redis, problem, new Date(Date.now() - 3 * 86_400_000)),
       permalink: null, receivedAt: new Date(Date.now() - 3 * 86_400_000).toISOString(), triage: { decision: "auto", reason: "", jev: null },
       sessionId: "s_redis", feedback: null, events: [], disposition: null, claimedBy: [],
     }

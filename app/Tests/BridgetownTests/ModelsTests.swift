@@ -181,3 +181,42 @@ import Testing
         #expect(Board.Panel.Unit.bytes.format(567 * 1_048_576) == "567 MB")
     }
 }
+
+@Suite struct LogSweepDecoding {
+    private let json = """
+    {"sweptAt":"2026-10-04T11:55:00.000Z","link":"https://grafana.internal.merkl.xyz/explore?x","error":null,
+     "patterns":[
+       {"key":"errors:1","level":"error","behaviour":"surging","suspicious":true,"sources":["merkl-compute-*"],
+        "message":"RPC call failed with status <N>","example":"RPC call failed with status 429","versions":["v1.62.35"],
+        "recent":220,"usual":4,"jev":{"problem":0.46,"agent":0.38,"users":0.21,"at":"2026-10-04T11:55:00.000Z"},
+        "alertId":null,"link":"https://grafana.internal.merkl.xyz/explore?y"},
+       {"key":"warnings:2","level":"warning","behaviour":"steady","suspicious":true,"sources":["merkl-precompute-*","merkl-compute-*"],
+        "message":"Rate limited","example":"Rate limited","versions":[],"recent":1813,"usual":1812.4,"jev":null,
+        "alertId":"watch:log:1:2","link":"https://grafana.internal.merkl.xyz/explore?z"},
+       {"key":"errors:3","level":"fatal","behaviour":"quiet","suspicious":false,"sources":[],"message":"m","example":"e",
+        "versions":[],"recent":12,"usual":11.5,"jev":null,"alertId":null,"link":"x"}]}
+    """
+
+    @Test func decodesTheContract() throws {
+        let sweep = try JSON.decoder().decode(LogSweep.self, from: Data(json.utf8))
+        #expect(sweep.sweptAt != nil)
+        #expect(sweep.patterns.count == 3)
+        #expect(sweep.patterns[0].jev?.problem == 0.46)
+        #expect(sweep.patterns[1].alertId == "watch:log:1:2")
+        // A level or behaviour from a newer daemon doesn't blank the list.
+        #expect(sweep.patterns[2].level == .unknown)
+        #expect(sweep.patterns[2].behaviour == .unknown)
+    }
+
+    @Test func labelsSayWhatThePatternDid() throws {
+        let p = try JSON.decoder().decode(LogSweep.self, from: Data(json.utf8)).patterns
+        #expect(p[0].headline == "Surging error · 55×")
+        #expect(p[0].verdictLine == "Jev · problem 46% · agent 38% · users 21%")
+        #expect(p[1].headline == "Risky warning")
+        #expect(p[1].sourcesLabel == "merkl-precompute-* +1")
+        #expect(p[1].verdictLine == "Not asked yet")
+        #expect(p[2].headline == "Steady error")
+        #expect(p[2].sourcesLabel == "unknown")
+        #expect(p[2].verdictLine == nil)
+    }
+}

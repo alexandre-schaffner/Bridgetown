@@ -5,7 +5,7 @@ import type { AdapterError } from "../domain/errors.ts"
 import { daysAgo, now as nowIso } from "../domain/ids.ts"
 import { type Alert, type AlertKind, type Triage, triageEvent } from "../domain/model.ts"
 import { type Board, Boards } from "../grafana/board.ts"
-import { alertBoard, exploreLogsLink, type PanelSpec, watchBoard } from "../grafana/boards.ts"
+import { alertBoard, type PanelSpec, watchBoard } from "../grafana/boards.ts"
 import { Grafana } from "../grafana/client.ts"
 import { Hub } from "../hub.ts"
 import { AlertPipeline } from "../pipeline/alerts.ts"
@@ -15,8 +15,10 @@ import { alertKind } from "../triage/kind.ts"
 import { decideAnomaly } from "../triage/policy.ts"
 import { applyRules } from "../triage/rules.ts"
 import { reportJev, triageWith } from "../triage/verdict.ts"
+import type { LogPatternVerdict } from "./judge.ts"
 import { type Anomaly, anomalyOf, backToUsual, clock, findingOf, formatValue, type Measure, measure, WORSE_FACTOR, watchFingerprint } from "./detect.ts"
-import { candidates, judgeInput, linesQuery, logFinding, logTriage, mergeRows, type PatternRow, rowOf, SWEEPS, type Sweep, sweepQuery } from "./logs.ts"
+import { candidates, judgeInput, type LogPattern, logFinding, logTriage, mergeRows, type PatternRow, patternLink, rowOf, SWEEPS, type Sweep, sweepQuery } from "./logs.ts"
+import { type Judged, loadJudged, saveJudged, saveSweep, watchBlocked } from "./sweep-store.ts"
 
 /**
  * Bridgetown's own eyes on prod: every few minutes it reads the overview
@@ -43,12 +45,15 @@ const COOLDOWN_HOURS = 6
 /** A Slack alert this recent about the same signal already told you. */
 const COVERED_HOURS = 2
 
+/** One sweep's rows, or why its query failed. */
+interface SweepResult {
+  readonly rows: ReadonlyArray<PatternRow>
+  readonly failure: string | null
+}
+
 /** Investigations one log sweep may start; the rest of its findings are suggested. */
 const MAX_LOG_STARTS = 2
 
-/** Log patterns Jev has judged, so the same one is asked about once a day: `{ [key]: ISO time }`, kept across restarts. */
-const JUDGED_KEY = "watch_log_judged"
-const JUDGED_MS = 24 * 3_600_000
 
 /** Kinds whose board leads with a general signal (API 5xx for any runtime error), not one the alert is about. */
 const VAGUE_KINDS: ReadonlySet<AlertKind> = new Set(["runtime_error", "informational", "build_failure"])
@@ -169,7 +174,7 @@ export const WatcherLive = Layer.effect(Watcher)(
       })
 
     const tick = Effect.gen(function* () {
-      if (!(yield* hub.settings).watchProd || (yield* hub.status).grafanaMcp === "down") return
+      if ((yield* watchBlocked(hub)) !== null) return
       const now = new Date()
       const spec = watchBoard(now)
       const board = yield* boards.latest(spec)
@@ -189,57 +194,68 @@ export const WatcherLive = Layer.effect(Watcher)(
       }
     })
 
-    const loadJudged = (now: Date) =>
-      store.getKv(JUDGED_KEY).pipe(
-        Effect.map((raw): Record<string, string> => {
-          try {
-            const parsed: unknown = JSON.parse(raw ?? "{}")
-            if (typeof parsed !== "object" || parsed === null) return {}
-            return Object.fromEntries(
-              Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string" && now.getTime() - Date.parse(entry[1]) < JUDGED_MS),
-            )
-          } catch {
-            return {}
-          }
-        }),
+    /** One sweep's patterns; a failed query (VictoriaLogs busy) is logged and leaves the other sweep. */
+    const patternsOf = (sweep: Sweep, now: Date): Effect.Effect<SweepResult> =>
+      grafana.logRows(sweepQuery(sweep), { start: new Date(now.getTime() - SWEEPS[sweep].windowMinutes * 60_000), end: now, stepSeconds: 60 }, 50).pipe(
+        Effect.map((rows): SweepResult => ({ rows: rows.flatMap((row) => rowOf(sweep, row) ?? []), failure: null })),
+        Effect.catch((error) =>
+          Effect.logWarning(`watch: ${sweep} sweep failed: ${error.message}`).pipe(Effect.as<SweepResult>({ rows: [], failure: `The ${sweep} query failed: ${error.message}` })),
+        ),
       )
 
-    /** One sweep's patterns; a failed query (VictoriaLogs busy) is logged and leaves the other sweep. */
-    const patternsOf = (sweep: Sweep, now: Date) =>
-      grafana.logRows(sweepQuery(sweep), { start: new Date(now.getTime() - SWEEPS[sweep].windowMinutes * 60_000), end: now, stepSeconds: 60 }, 50).pipe(
-        Effect.map((rows) => rows.flatMap((row) => rowOf(sweep, row) ?? [])),
-        Effect.catch((error) => Effect.logWarning(`watch: ${sweep} sweep failed: ${error.message}`).pipe(Effect.as<ReadonlyArray<PatternRow>>([]))),
+    /** A pattern Jev called a problem, filed as a finding; its id, or null when it could not be filed. */
+    const raiseLog = (pattern: LogPattern, verdict: LogPatternVerdict, triage: Triage, now: Date) => {
+      const finding = logFinding(pattern, verdict, now)
+      const link = patternLink(pattern, now)
+      return store.alertsByFingerprint(finding.fingerprint, daysAgo(7)).pipe(
+        Effect.flatMap((history) => file(finding, link, [`Found by Bridgetown in the logs: ${finding.title}`], history, Effect.succeed(triage))),
+        Effect.map((acted) => ({ acted, alertId: finding.id })),
+        Effect.catch((error) => Effect.logWarning(`watch: log pattern ${pattern.key} not raised: ${error.message}`).pipe(Effect.as({ acted: false, alertId: null }))),
       )
+    }
+
+    /**
+     * Jev's verdicts on the candidates, and an investigation on each one it calls a problem. Returns the judged
+     * patterns with this sweep's added; unchanged when Jev is down, so the next sweep asks again.
+     */
+    const judgeAndRaise = (patterns: ReadonlyArray<LogPattern>, judged: Readonly<Record<string, Judged>>, now: Date) =>
+      Effect.gen(function* () {
+        const picked = candidates(patterns, new Set(Object.keys(judged)))
+        if (picked.length === 0) return judged
+        const result = yield* jev.judgeLogPatterns(picked.map(judgeInput)).pipe(Effect.result)
+        yield* reportJev(hub, result._tag === "Failure" ? result.failure : null)
+        if (result._tag === "Failure") return judged
+        const at = nowIso()
+        const next: Record<string, Judged> = { ...judged }
+        for (const [i, pattern] of picked.entries()) next[pattern.key] = { at, verdict: result.success[i] ?? null, alertId: null }
+        // Saved before raising: a restart midway never asks Jev about the same patterns twice.
+        yield* saveJudged(store, next)
+        const threshold = (yield* hub.settings).thresholds.suggestActionable
+        let started = 0
+        for (const [i, pattern] of picked.entries()) {
+          const verdict = result.success[i]
+          if (verdict === undefined || verdict.problem < threshold) continue
+          // A bad deploy logs many patterns at once: past the first few, they wait in Needs you rather than each start an agent.
+          const triage = logTriage(verdict, started < MAX_LOG_STARTS ? "auto" : "suggest")
+          const raised = yield* raiseLog(pattern, verdict, triage, now)
+          next[pattern.key] = { at, verdict, alertId: raised.alertId }
+          if (raised.acted && triage.decision === "auto") started++
+        }
+        yield* saveJudged(store, next)
+        return next
+      })
 
     const sweepLogs = Effect.gen(function* () {
-      if (!(yield* hub.settings).watchProd || (yield* hub.status).grafanaMcp === "down") return
+      if ((yield* watchBlocked(hub)) !== null) return
       const now = new Date()
-      const judged = yield* loadJudged(now)
+      const judged = yield* loadJudged(store, now)
       // One after the other: each is a heavy query, and VictoriaLogs is shared with everyone.
       const errors = yield* patternsOf("errors", now)
       const warnings = yield* patternsOf("warnings", now)
-      const picked = candidates(mergeRows([...errors, ...warnings]), new Set(Object.keys(judged)))
-      if (picked.length === 0) return
-      const result = yield* jev.judgeLogPatterns(picked.map(judgeInput)).pipe(Effect.result)
-      yield* reportJev(hub, result._tag === "Failure" ? result.failure : null)
-      // Not marked judged: the next sweep asks again.
-      if (result._tag === "Failure") return
-      yield* store.setKv(JUDGED_KEY, JSON.stringify({ ...judged, ...Object.fromEntries(picked.map((p) => [p.key, nowIso()])) }))
-      const threshold = (yield* hub.settings).thresholds.suggestActionable
-      let started = 0
-      for (const [i, pattern] of picked.entries()) {
-        const verdict = result.success[i]
-        if (verdict === undefined || verdict.problem < threshold) continue
-        const link = exploreLogsLink(linesQuery(pattern), new Date(now.getTime() - 3 * 3_600_000), now)
-        const finding = logFinding(pattern, verdict, now, link)
-        // A bad deploy logs many patterns at once: past the first few, they wait in Needs you rather than each start an agent.
-        const triage = logTriage(verdict, started < MAX_LOG_STARTS ? "auto" : "suggest")
-        const acted = yield* store.alertsByFingerprint(finding.fingerprint, daysAgo(7)).pipe(
-          Effect.flatMap((history) => file(finding, link, [`Found by Bridgetown in the logs: ${finding.title}`], history, Effect.succeed(triage))),
-          Effect.catch((error) => Effect.logWarning(`watch: log pattern ${pattern.key} not raised: ${error.message}`).pipe(Effect.as(false))),
-        )
-        if (acted && triage.decision === "auto") started++
-      }
+      const patterns = mergeRows([...errors.rows, ...warnings.rows])
+      yield* judgeAndRaise(patterns, judged, now)
+      const failures = [errors.failure, warnings.failure].filter((failure) => failure !== null)
+      yield* saveSweep(store, { at: now.toISOString(), patterns, failures })
     })
 
     return { tick, sweepLogs }

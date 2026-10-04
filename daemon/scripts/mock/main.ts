@@ -40,10 +40,13 @@ import { Shipper } from "../../src/ship/shipper.ts"
 import { SlackClient } from "../../src/slack/client.ts"
 import { Store, StoreLive } from "../../src/store/store.ts"
 import { Jev } from "../../src/triage/jev.ts"
+import { patternKey } from "../../src/watch/logs.ts"
+import { type Judged, saveJudged } from "../../src/watch/sweep-store.ts"
+import { Watcher } from "../../src/watch/watcher.ts"
 import { scriptedAgent } from "./agent.ts"
 import { fakeJev, fakeReviewer, fakeSlack, makeFakeGitHub } from "./fakes.ts"
-import { fakeGrafana } from "./grafana.ts"
-import { buildFixtures, IN_FLIGHT_TAG } from "./fixtures.ts"
+import { fakeGrafana, SWEEP_ROWS } from "./grafana.ts"
+import { buildFixtures, IN_FLIGHT_TAG, LOG_FINDING_FINGERPRINT } from "./fixtures.ts"
 import { scriptFor } from "./scripts.ts"
 
 const port = Number(process.env.BRIDGETOWN_PORT ?? 47621)
@@ -79,6 +82,18 @@ const fake = makeFakeGitHub({
   blocked: process.env.MOCK_GITHUB === "blocked",
   onRelease: (tag) => released.push({ tag, at: Date.now() }),
 })
+
+/** What the mock's Jev said about each sweep pattern, keyed as the sweep keys them. */
+const mockVerdicts = (): Record<string, Judged> => {
+  const finding = fixtures.alerts.find((a) => a.fingerprint === LOG_FINDING_FINGERPRINT)
+  return Object.fromEntries(
+    SWEEP_ROWS.flatMap((row) => {
+      if (row.verdict === null) return []
+      const alertId = row.verdict.problem >= fixtures.settings.thresholds.suggestActionable ? (finding?.id ?? null) : null
+      return [[patternKey(row.sweep, row.fields._msg ?? ""), { at: new Date(Date.now() - 24 * 60_000).toISOString(), verdict: row.verdict, alertId }]]
+    }),
+  )
+}
 
 const agent = scriptedAgent(scriptFor({ extra: process.env.MOCK_EXTRA === "1", prs: new Map(fixtures.sessions.map((s) => [s.id, s.prUrl])) }))
 
@@ -134,6 +149,7 @@ const program = Effect.gen(function* () {
   const health = yield* Health
   const actions = yield* Actions
   const pipeline = yield* AlertPipeline
+  const watcher = yield* Watcher
 
   yield* hub.updateSettings(fixtures.settings)
   for (const alert of fixtures.alerts) yield* store.putAlert(alert, "mock")
@@ -162,6 +178,9 @@ const program = Effect.gen(function* () {
   yield* every("ship", "10 seconds", shipper.tick)
   yield* every("critique", "3 seconds", critic.tick)
   yield* every("poll", "30 seconds", pipeline.pollOnce)
+  // The log sweep, with Jev's verdicts on its patterns already stored: the Goldsky one is the fixtures' log finding.
+  if (process.env.MOCK_GRAFANA !== "live") yield* saveJudged(store, mockVerdicts())
+  yield* every("logs", "600 seconds", watcher.sweepLogs)
   // The SDK reports cost only when a turn ends; ticking it shows the app's cost label update live.
   yield* every(
     "cost",

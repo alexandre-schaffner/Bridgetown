@@ -337,6 +337,37 @@ extension TranscriptEntry.Kind {
     }
 }
 
+// MARK: - Log sweep
+
+extension LogSweep.Pattern {
+    /// "New error", "Surging error · 55×", "Risky warning", "Steady error".
+    var headline: String {
+        let noun = level == .warning ? "warning" : "error"
+        switch behaviour {
+        case .new: return "New \(noun)"
+        case .surging:
+            let times = usual > 0 ? Int((recent / usual).rounded()) : 0
+            return times > 1 ? "Surging \(noun) · \(times)×" : "Surging \(noun)"
+        case .steady, .unknown: return level == .warning ? "Risky warning" : "Steady error"
+        }
+    }
+
+    /// "merkl-compute-*", or "merkl-precompute-* +1".
+    var sourcesLabel: String {
+        guard let first = sources.first else { return "unknown" }
+        return sources.count > 1 ? "\(first) +\(sources.count - 1)" : first
+    }
+
+    /// Jev's verdict in one line; "Not asked yet" for a suspicious pattern Jev hasn't
+    /// judged, nil for the steady noise it is never asked about.
+    var verdictLine: String? {
+        if let jev {
+            return "Jev · problem \(Format.percent(jev.problem)) · agent \(Format.percent(jev.agent)) · users \(Format.percent(jev.users))"
+        }
+        return suspicious ? "Not asked yet" : nil
+    }
+}
+
 // MARK: - Formatting
 
 enum Format {

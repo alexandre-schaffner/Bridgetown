@@ -339,3 +339,33 @@ struct Loadable<Value> {
         }
     }
 }
+
+/// Loads a value from the daemon and keeps it fresh: refetched every minute while on
+/// screen. Reopening the popover keeps the value it had; only a different key starts
+/// over. A failed refetch keeps the last value.
+struct PollingLoader<Value, Content: View>: View {
+    let key: String
+    let fetch: () async throws -> Value
+    @ViewBuilder let content: (Loadable<Value>) -> Content
+
+    @ViewState private var loaded = Loadable<Value>()
+    @ViewState private var loadedKey: String?
+
+    var body: some View {
+        content(loaded)
+            .task(id: key) {
+                if loadedKey != key {
+                    loaded = Loadable()
+                    loadedKey = key
+                }
+                while !Task.isCancelled {
+                    let next = await loaded.reloaded(fetch)
+                    // Switching tabs cancels this task after the next one has reset the value:
+                    // writing now would put this key's value (or error) under the other tab.
+                    guard !Task.isCancelled else { return }
+                    loaded = next
+                    try? await Task.sleep(for: .seconds(60))
+                }
+            }
+    }
+}
