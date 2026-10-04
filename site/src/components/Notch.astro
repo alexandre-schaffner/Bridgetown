@@ -1,0 +1,168 @@
+---
+// Day. On the other side of the arch: the top of a MacBook, and Bridgetown living in its
+// notch. Pinned while the island plays through its states (scripts/island.ts): wings, a
+// banner, the whole app, one click on Merge, folded away.
+import MacScreen from "./MacScreen.astro";
+
+const steps = [
+  {
+    id: "wings",
+    title: "Wings",
+    text: "Either side of the notch: the arch glows blue while agents work, and the count says how many.",
+  },
+  {
+    id: "banner",
+    title: "A banner",
+    text: "When something becomes yours, it drops out of the notch for a few seconds, then tucks back in.",
+  },
+  {
+    id: "open",
+    title: "The whole app",
+    text: "Click, and Bridgetown unfolds underneath: prod and status, what needs you, what the agents are doing.",
+  },
+  {
+    id: "merge",
+    title: "One click",
+    text: "Settle it there. Merge, cut a release, send a reply, and the island folds away.",
+  },
+];
+---
+
+<section class="notch day" id="notch" data-notch aria-labelledby="notch-title">
+  <div class="pin">
+    <MacScreen />
+
+    <div class="copy">
+      <h2 id="notch-title" class="display">It lives in the notch.</h2>
+      <ol class="steps" data-notch-steps>
+        {
+          steps.map((s, i) => (
+            <li data-step={s.id} class:list={[i === 0 && "on"]}>
+              <span class="s-title">{s.title}</span>
+              <span class="s-text">{s.text}</span>
+            </li>
+          ))
+        }
+      </ol>
+      <p class="try" hidden data-try>Your turn: hover the notch, click it open, and settle what's there.</p>
+    </div>
+  </div>
+</section>
+
+<style>
+  .notch {
+    padding-block: 5rem 4rem;
+  }
+
+  .pin {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: clamp(1.5rem, 3vh, 2.5rem);
+  }
+
+  .copy {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.6fr);
+    gap: 1.25rem 4rem;
+    align-items: start;
+    width: min(100% - 2 * var(--gutter), 92rem);
+    margin-inline: auto;
+  }
+
+  .copy .display {
+    font-size: clamp(2.25rem, 2.6vw + 1rem, 3.75rem);
+    max-width: 9ch;
+  }
+
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .steps li {
+    position: relative;
+    display: grid;
+    gap: 0.375rem;
+    align-content: start;
+    padding-top: 1rem;
+    font-size: var(--t-small);
+    line-height: 1.5;
+  }
+
+  /* Each step's line fills while it is the one playing. */
+  .steps li::before,
+  .steps li::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--line);
+  }
+
+  .steps li::after {
+    background: var(--ink);
+    transform-origin: 0 50%;
+    transform: scaleX(var(--fill, 1));
+  }
+
+  :global(html.js) .steps li::after {
+    transform: scaleX(var(--fill, 0));
+  }
+
+  .s-title {
+    font-weight: 560;
+  }
+
+  .s-text {
+    color: var(--ink-dim);
+  }
+
+  .try {
+    grid-column: 2;
+    font-size: var(--t-small);
+    color: var(--ink-faint);
+  }
+
+  :global(html.js) .steps li {
+    transition: opacity 400ms var(--ease-out);
+    opacity: 0.45;
+  }
+
+  :global(html.js) .steps li.on {
+    opacity: 1;
+  }
+
+  /* With script: one viewport, pinned, while the island plays. */
+  :global(html.js) .notch {
+    height: 520svh;
+    padding: 0;
+  }
+
+  :global(html.js) .pin {
+    position: sticky;
+    top: 0;
+    height: 100svh;
+    align-content: center;
+    padding-top: 3.5rem;
+    overflow: hidden;
+  }
+
+  @media (max-width: 900px) {
+    .copy {
+      grid-template-columns: 1fr;
+    }
+    .try {
+      grid-column: 1;
+    }
+    .steps {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+</style>

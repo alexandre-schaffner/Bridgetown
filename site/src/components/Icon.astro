@@ -1,0 +1,33 @@
+---
+// One icon set, Lucide, inlined so it takes the text colour.
+interface Props {
+  name: string;
+  size?: number;
+  stroke?: number;
+  class?: string;
+}
+const { name, size = 16, stroke = 1.75, class: className } = Astro.props;
+const files = import.meta.glob<string>("/node_modules/lucide-static/icons/*.svg", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+});
+const raw = files[`/node_modules/lucide-static/icons/${name}.svg`];
+if (!raw) throw new Error(`No Lucide icon named ${name}`);
+const inner = raw.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "");
+---
+
+<svg
+  class={className}
+  xmlns="http://www.w3.org/2000/svg"
+  width={size}
+  height={size}
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width={stroke}
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  aria-hidden="true"
+  set:html={inner}
+/>

@@ -1,0 +1,355 @@
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+/* Bridgetown, on the web. The app's identity (PRODUCT.md): Geist for words, Geist Mono for
+   machine text, structure in one-pixel lines, colour only where it means something. The
+   page alternates two stages: night, where the arch stands lit from behind, and day, the
+   light on the other side of it. */
+
+:root {
+  /* Night: the stage behind the arch. */
+  --night: oklch(0.12 0.006 255);
+  --night-raised: oklch(0.165 0.006 255);
+  --night-ink: oklch(0.96 0.003 255);
+  --night-dim: oklch(0.76 0.008 255);
+  --night-faint: oklch(0.64 0.01 255);
+  --night-line: oklch(1 0 0 / 0.14);
+
+  /* Day: the light on the other side. Kept in step with DAY in scripts/scene.ts. */
+  --day: oklch(0.982 0.003 255);
+  --day-sunk: oklch(0.955 0.004 255);
+  --ink: oklch(0.19 0.008 255);
+  --ink-dim: oklch(0.42 0.01 255);
+  --ink-faint: oklch(0.52 0.012 255);
+  --line: oklch(0.19 0.008 255 / 0.12);
+  --line-strong: oklch(0.19 0.008 255 / 0.22);
+  --link: oklch(0.5 0.19 256);
+
+  --theme-ease: 0ms;
+
+  /* The app's popover, always dark (app/Sources/Bridgetown/Views/Theme.swift). */
+  --ui-stage: #000;
+  --ui-surface: #0a0a0a;
+  --ui-hairline: rgb(255 255 255 / 0.17);
+  --ui-outline: rgb(255 255 255 / 0.26);
+  --ui-track: rgb(255 255 255 / 0.08);
+  --ui-mark: rgb(255 255 255 / 0.62);
+  --ui-text: #ededed;
+  --ui-dim: #a1a1a1;
+  --ui-faint: #878787;
+
+  /* Status marks only: blue live work, amber needs you, green verified, red failure. */
+  --blue: oklch(0.63 0.19 252);
+  --amber: oklch(0.8 0.15 74);
+  --green: oklch(0.62 0.12 158);
+  --red: oklch(0.6 0.19 22);
+
+  --sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --mono: "Geist Mono Variable", ui-monospace, "SF Mono", monospace;
+
+  /* Type scale, 1.333 apart; display steps fluid. */
+  --t-mono: 0.8125rem;
+  --t-small: 0.875rem;
+  --t-body: 1.0625rem;
+  --t-lead: clamp(1.1875rem, 0.6vw + 1rem, 1.4375rem);
+  --t-h3: clamp(1.375rem, 1vw + 1rem, 1.75rem);
+  --t-h2: clamp(2.25rem, 3.2vw + 1rem, 4rem);
+  --t-h1: clamp(3rem, 6vw + 1rem, 6rem);
+
+  --gutter: clamp(1.25rem, 4vw, 3.5rem);
+  --measure: 34rem;
+  --max: 84rem;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* Layers. */
+  --z-scene: 0;
+  --z-content: 1;
+  --z-veil: 2;
+  --z-nav: 10;
+}
+
+/* Dark theme: the day sections take the night's palette; the arch's chapters don't change. */
+html.theme-dark {
+  --day: oklch(0.135 0.006 255);
+  --day-sunk: oklch(0.165 0.006 255);
+  --ink: oklch(0.95 0.004 255);
+  --ink-dim: oklch(0.76 0.008 255);
+  --ink-faint: oklch(0.64 0.01 255);
+  --line: oklch(1 0 0 / 0.12);
+  --line-strong: oklch(1 0 0 / 0.22);
+  --link: oklch(0.74 0.14 252);
+  color-scheme: dark;
+}
+
+/* Black panels need an edge on a dark page. */
+html.theme-dark :is(.panel, .finding, .claim, .pop, .thread) {
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.14) !important;
+}
+
+/* Switching theme: a circle of the new one opens from the switch (scripts/main.ts). */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--night);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "ss01", "cv11";
+}
+
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+
+body {
+  margin: 0;
+  font-size: var(--t-body);
+  line-height: 1.55;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+  font-weight: 560;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+img,
+svg,
+canvas {
+  display: block;
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: oklch(0.63 0.19 252 / 0.3);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.skip {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: var(--z-nav);
+  padding: 0.5rem 0.875rem;
+  border-radius: 999px;
+  background: var(--day);
+  color: var(--ink);
+  font-size: var(--t-small);
+  transform: translateY(-200%);
+}
+
+.skip:focus-visible {
+  transform: none;
+}
+
+/* The two stages. Night is see-through so the scene shows; day is opaque and covers it. */
+.night {
+  position: relative;
+  z-index: var(--z-content);
+  color: var(--night-ink);
+}
+
+@media (pointer: fine) {
+  html.js .night {
+    cursor: grab;
+  }
+
+  html.orbiting,
+  html.orbiting * {
+    cursor: grabbing !important;
+    user-select: none;
+  }
+}
+
+.day {
+  position: relative;
+  z-index: var(--z-content);
+  background: var(--day);
+  color: var(--ink);
+}
+
+.wrap {
+  width: min(100% - 2 * var(--gutter), var(--max));
+  margin-inline: auto;
+}
+
+/* Headings and the paragraph under them. */
+.display {
+  font-size: var(--t-h2);
+  line-height: 1.04;
+  letter-spacing: -0.032em;
+}
+
+.lead {
+  font-size: var(--t-lead);
+  line-height: 1.5;
+  letter-spacing: -0.008em;
+  max-width: var(--measure);
+  color: var(--ink-dim);
+}
+
+.night .lead {
+  color: var(--night-dim);
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: var(--t-mono);
+  letter-spacing: 0;
+}
+
+/* Buttons: the app's white "one next step", a pill on the web. */
+.button {
+  --h: 2.875rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  height: var(--h);
+  padding-inline: 1.375rem;
+  border: 0;
+  border-radius: 999px;
+  font-size: 0.9375rem;
+  font-weight: 520;
+  letter-spacing: -0.005em;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color 200ms var(--ease-out),
+    transform 400ms var(--ease-out),
+    box-shadow 200ms var(--ease-out);
+}
+
+.button:active {
+  transform: scale(0.97);
+}
+
+.button-light {
+  background: var(--night-ink);
+  color: var(--night);
+}
+
+.button-light:hover {
+  background: #fff;
+  box-shadow: 0 0 0 6px oklch(1 0 0 / 0.08);
+}
+
+.button-dark {
+  background: var(--ink);
+  color: var(--day);
+}
+
+.button-dark:hover {
+  background: oklch(0.1 0.008 255);
+  box-shadow: 0 0 0 6px oklch(0.19 0.008 255 / 0.08);
+}
+
+.textlink {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--link);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.night .textlink {
+  color: var(--night-ink);
+}
+
+.textlink:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  text-decoration-thickness: 1px;
+}
+
+.dot {
+  display: inline-block;
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border-radius: 50%;
+  flex: none;
+  background: currentColor;
+}
+
+.dot-blue {
+  color: var(--blue);
+}
+.dot-amber {
+  color: var(--amber);
+}
+.dot-green {
+  color: var(--green);
+}
+.dot-red {
+  color: var(--red);
+}
+.dot-grey {
+  color: var(--ui-faint);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}

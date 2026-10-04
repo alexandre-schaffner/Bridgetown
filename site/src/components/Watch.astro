@@ -1,0 +1,281 @@
+---
+// Day, sunk. Bridgetown watching prod on its own: three hours of a signal in five-minute
+// steps, its usual level, and a rise no alert covers. The line draws as you scroll; when it
+// reaches the rise, the finding and its investigation appear.
+import { linePath, areaPath, series } from "../lib/spark";
+
+const W = 1200;
+const H = 300;
+const PAD = 24;
+const steady = series(33, 11, 2.6, 3);
+const values = [...steady, 38, 64, 71];
+const max = 80;
+const usual = [...steady].sort((a, b) => a - b)[Math.floor(steady.length * 0.9)]!;
+const y = (v: number) => PAD + (1 - v / max) * (H - 2 * PAD);
+const x = (i: number) => (i / (values.length - 1)) * W;
+const riseFrom = x(values.length - 3) - 14;
+const median = [...values.slice(-3)].sort((a, b) => a - b)[1]!;
+const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
+---
+
+<section class="watch day" id="watch" data-watch aria-labelledby="watch-title">
+  <div class="wrap">
+    <div class="intro">
+      <h2 id="watch-title" class="display">It watches production, too.</h2>
+      <p class="lead">
+        Every five minutes Bridgetown reads your dashboards. When a signal rises well above its usual level and no
+        alert covers it, Bridgetown opens an investigation of its own.
+      </p>
+    </div>
+
+    <figure class="chart" data-chart>
+      <figcaption class="chart-head">
+        <span>API 5xx <span class="faint">· per 5 minutes · last 3 hours</span></span>
+        <span class="mono faint">Grafana</span>
+      </figcaption>
+      <div class="plot">
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={`API 5xx per five minutes over three hours: steady around ${Math.round(usual)}, then a rise to ${values.at(-1)!.toFixed(0)} in the last fifteen minutes.`}>
+          <rect x={riseFrom} y="0" width={W - riseFrom} height={H} class="rise" data-rise></rect>
+          <line x1="0" x2={W} y1={y(usual)} y2={y(usual)} class="usual"></line>
+          <path d={areaPath(values, W, H, PAD, max, 0)} class="area" data-area></path>
+          <path d={linePath(values, W, H, PAD, max, 0)} class="line" pathLength="1" data-line></path>
+          <circle cx={x(values.length - 1)} cy={y(values.at(-1)!)} r="5" class="head" data-head></circle>
+        </svg>
+        <span class="usual-label" style={`top:${(y(usual) / H) * 100}%`}>usual · {Math.round(usual)}</span>
+        <div class="finding" data-finding>
+          <p class="f-kind"><i class="dot dot-amber" aria-hidden="true"></i> Rise</p>
+          <p class="f-text">Median of the last 3 steps is {(median / usual).toFixed(1)}× usual. No Slack alert covers it.</p>
+          <p class="f-session"><i class="dot dot-blue live" aria-hidden="true"></i> Investigation started</p>
+        </div>
+      </div>
+      <div class="axis mono" aria-hidden="true">{times.map((t) => <span>{t}</span>)}</div>
+    </figure>
+
+    <div class="notes">
+      <p>
+        <b>Rises and spikes.</b> A rise is three steps well above the usual level; a spike is one step far above it.
+        A one-step blip never counts, and each signal raises at most one finding every six hours unless it gets three
+        times worse.
+      </p>
+      <p>
+        <b>Log patterns.</b> Every ten minutes it groups your logs into patterns, and looks for errors that are new or
+        surging and warnings that name a risk: deadlocks, rate limits, retirements.
+      </p>
+    </div>
+  </div>
+</section>
+
+<style>
+  .watch {
+    padding-block: clamp(7rem, 16vh, 11rem);
+    background: var(--day-sunk);
+  }
+
+  .intro {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 2rem 4rem;
+    align-items: end;
+    margin-bottom: clamp(3rem, 7vh, 5rem);
+  }
+
+  .intro .display {
+    max-width: 11ch;
+  }
+
+  .chart {
+    margin: 0;
+    padding: clamp(1.25rem, 2.5vw, 2rem);
+    border-radius: 16px;
+    background: var(--day);
+    box-shadow:
+      0 0 0 1px var(--line),
+      0 24px 48px -32px oklch(0.19 0.008 255 / 0.3);
+  }
+
+  .chart-head {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 1.25rem;
+    font-size: var(--t-small);
+    font-weight: 500;
+  }
+
+  .faint {
+    color: var(--ink-faint);
+    font-weight: 400;
+  }
+
+  .plot {
+    position: relative;
+  }
+
+  svg {
+    width: 100%;
+    height: clamp(12rem, 30vh, 18rem);
+    overflow: visible;
+  }
+
+  .rise {
+    fill: oklch(0.8 0.15 74 / 0.12);
+  }
+
+  .usual {
+    stroke: var(--ink-faint);
+    stroke-width: 1;
+    stroke-dasharray: 3 5;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .area {
+    fill: oklch(0.19 0.008 255 / 0.05);
+  }
+
+  .line {
+    fill: none;
+    stroke: var(--ink);
+    stroke-width: 1.75;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+    stroke-dasharray: 1;
+    stroke-dashoffset: var(--draw, 0);
+  }
+
+  .head {
+    fill: var(--ink);
+    vector-effect: non-scaling-stroke;
+  }
+
+  .usual-label {
+    position: absolute;
+    left: 0;
+    translate: 0 -140%;
+    font-size: 0.75rem;
+    color: var(--ink-faint);
+  }
+
+  .finding {
+    position: absolute;
+    top: 0;
+    right: clamp(4.5rem, 9vw, 8rem);
+    display: grid;
+    gap: 0.375rem;
+    width: min(17rem, 60%);
+    padding: 0.875rem 1rem;
+    border-radius: 12px;
+    background: #000;
+    color: var(--ui-text);
+    font-size: 0.8125rem;
+    box-shadow: 0 16px 32px -16px oklch(0.19 0.008 255 / 0.5);
+  }
+
+  .f-kind,
+  .f-session {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 560;
+  }
+
+  .f-text {
+    color: var(--ui-dim);
+    line-height: 1.45;
+  }
+
+  .f-session {
+    margin-top: 0.25rem;
+    padding-top: 0.625rem;
+    border-top: 0.5px solid var(--ui-hairline);
+  }
+
+  .live {
+    animation: breathe 2.4s var(--ease-in-out) infinite;
+  }
+
+  @keyframes breathe {
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  .axis {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 0.75rem;
+    color: var(--ink-faint);
+    font-size: 0.75rem;
+  }
+
+  .notes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem 4rem;
+    margin-top: clamp(2.5rem, 6vh, 4rem);
+  }
+
+  .notes p {
+    max-width: 34rem;
+    color: var(--ink-dim);
+  }
+
+  .notes b {
+    color: var(--ink);
+    font-weight: 560;
+  }
+
+  /* With script, the line draws as you scroll and the finding waits for the rise. */
+  :global(html.js) .watch .line {
+    --draw: 1;
+  }
+
+  :global(html.js) .watch [data-rise],
+  :global(html.js) .watch [data-head] {
+    opacity: 0;
+    transition: opacity 500ms var(--ease-out);
+  }
+
+  :global(html.js) .watch .finding {
+    opacity: 0;
+    translate: 0 0.75rem;
+    filter: blur(6px);
+    transition:
+      opacity 600ms var(--ease-out),
+      translate 700ms var(--ease-out),
+      filter 600ms var(--ease-out);
+  }
+
+  :global(html.js) .watch .f-session {
+    opacity: 0;
+    transition: opacity 500ms var(--ease-out) 700ms;
+  }
+
+  .watch:global(.risen) [data-rise],
+  .watch:global(.risen) [data-head] {
+    opacity: 1 !important;
+  }
+
+  .watch:global(.risen) .finding,
+  .watch:global(.risen) .f-session {
+    opacity: 1 !important;
+    translate: 0 0 !important;
+    filter: none !important;
+  }
+
+  @media (max-width: 900px) {
+    .intro,
+    .notes {
+      grid-template-columns: 1fr;
+    }
+    .finding {
+      position: static;
+      width: auto;
+      margin-top: 1rem;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .live {
+      animation: none;
+    }
+  }
+</style>

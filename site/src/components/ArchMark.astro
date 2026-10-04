@@ -1,0 +1,23 @@
+---
+// The menu bar mark (app/Sources/Bridgetown/Views/ArchMark.swift), flat, in the text colour.
+import { archHeight, archWidth, markPath } from "../lib/arch";
+
+interface Props {
+  size?: number;
+  class?: string;
+  label?: string;
+}
+const { size = 18, class: className, label } = Astro.props;
+const d = markPath();
+---
+
+<svg
+  class={className}
+  viewBox={`0 0 ${archWidth} ${archHeight}`}
+  width={(size * archWidth) / archHeight}
+  height={size}
+  fill="currentColor"
+  role={label ? "img" : undefined}
+  aria-label={label}
+  aria-hidden={label ? undefined : "true"}><path d={d}></path></svg
+>

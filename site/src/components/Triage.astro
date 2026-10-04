@@ -1,0 +1,442 @@
+---
+// Day. What happens to each message: rules first, then Jev's answers as probabilities, then
+// a route. Rows play in as you reach them; the bars fill to their numbers.
+
+type Route = { label: string; dot: "blue" | "amber" | "grey" };
+interface Row {
+  /** What the policy does with it (scripts/main.ts re-routes as the threshold moves). */
+  kind: "alert" | "inbox" | "rule";
+  from: string;
+  who: string;
+  text: string;
+  answers: [string, number][] | null;
+  note?: string;
+  route: Route;
+}
+
+const rows: Row[] = [
+  {
+    kind: "alert",
+    from: "#alerts-api",
+    who: "Monitor",
+    text: "5xx rate 3.1% on /v4/orders over 5 minutes",
+    answers: [
+      ["Needs action now", 93],
+      ["An agent can fix it", 86],
+      ["A teammate is on it", 5],
+    ],
+    route: { label: "Agent starts", dot: "blue" },
+  },
+  {
+    kind: "inbox",
+    from: "Direct message",
+    who: "Priya",
+    text: "Should we ship the pricing change today, or hold it for Monday?",
+    answers: [
+      ["Waiting on you", 96],
+      ["An agent can do it", 4],
+      ["Already answered", 2],
+    ],
+    route: { label: "Needs you", dot: "amber" },
+  },
+  {
+    kind: "inbox",
+    from: "#eng-api",
+    who: "Jonas",
+    text: "@you the orders page 500s when region is empty, can you take a look?",
+    answers: [
+      ["Waiting on you", 91],
+      ["An agent can do it", 78],
+      ["Already answered", 3],
+    ],
+    route: { label: "Agent drafts, you send", dot: "blue" },
+  },
+  {
+    kind: "alert",
+    from: "#alerts-billing",
+    who: "Monitor",
+    text: "Invoice job failed 3 times in a row",
+    answers: [
+      ["Needs action now", 88],
+      ["An agent can fix it", 71],
+      ["A teammate is on it", 82],
+    ],
+    route: { label: "Sam is on it", dot: "grey" },
+  },
+  {
+    kind: "rule",
+    from: "#alerts-releases",
+    who: "Deploy bot",
+    text: "web v2.15.0 deployed to production",
+    answers: null,
+    note: "Matched a rule: a successful deploy. No model call.",
+    route: { label: "Filtered", dot: "grey" },
+  },
+];
+---
+
+<section class="triage day" id="triage" aria-labelledby="triage-title">
+  <div class="wrap">
+    <div class="intro">
+      <h2 id="triage-title" class="display">One question for every message.</h2>
+      <p class="lead">
+        Rules clear the noise first: successful deploys, recoveries, anything already marked resolved. The rest
+        goes to Jev, TypeSafe's judgment model, which answers in probabilities you can read. Bridgetown's policy
+        turns them into a route, with thresholds you set.
+      </p>
+    </div>
+
+    <div class="policy" data-policy>
+      <label for="threshold">
+        <span class="p-title">Your threshold</span>
+        <span class="p-text">Start an agent when Jev is at least this sure it can finish the job.</span>
+      </label>
+      <div class="p-control">
+        <input id="threshold" type="range" min="50" max="95" step="1" value="75" data-threshold />
+        <output for="threshold" data-threshold-out>75%</output>
+      </div>
+    </div>
+
+    <ol class="log" data-triage>
+      <li class="log-head" aria-hidden="true">
+        <span>Message</span>
+        <span>Jev's answers</span>
+        <span>Route</span>
+      </li>
+      {
+        rows.map((row) => (
+          <li
+            class="row"
+            data-row
+            data-kind={row.kind}
+            data-agent={row.answers?.[1]?.[1]}
+            data-other={row.answers?.[2]?.[1]}
+          >
+            <div class="msg">
+              <p class="meta">
+                <span class="from">{row.from}</span>
+                <span class="who">{row.who}</span>
+              </p>
+              <p class="text">{row.text}</p>
+            </div>
+            <div class="answers">
+              {row.answers ? (
+                <dl>
+                  {row.answers.map(([q, p], i) => (
+                    <div class:list={["answer", i === 1 && "gated"]} style={`--p:${p / 100}`}>
+                      <dt>{q}</dt>
+                      <dd>
+                        <span class="bar" aria-hidden="true">
+                          <i />
+                          {i === 1 && <b class="tick" />}
+                        </span>
+                        <span class="pct">{p}%</span>
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : (
+                <p class="note">{row.note}</p>
+              )}
+            </div>
+            <p class="route" data-route>
+              <i class:list={["dot", `dot-${row.route.dot}`]} aria-hidden="true" />
+              <span>{row.route.label}</span>
+            </p>
+          </li>
+        ))
+      }
+    </ol>
+  </div>
+</section>
+
+<style>
+  .triage {
+    padding-block: clamp(6rem, 14vh, 10rem);
+    background: var(--day-sunk);
+  }
+
+  .intro {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 2rem 4rem;
+    align-items: end;
+    margin-bottom: clamp(3rem, 7vh, 5rem);
+  }
+
+  .intro .display {
+    max-width: 12ch;
+  }
+
+  .log {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-top: 1px solid var(--line-strong);
+  }
+
+  .log-head,
+  .row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(10rem, 0.42fr);
+    gap: 2.5rem;
+  }
+
+  .log-head {
+    padding: 0.75rem 0;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--ink-faint);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .row {
+    padding: 1.5rem 0;
+    border-bottom: 1px solid var(--line);
+    align-items: start;
+  }
+
+  .meta {
+    display: flex;
+    gap: 0.625rem;
+    margin-bottom: 0.375rem;
+    font-size: 0.8125rem;
+  }
+
+  .from {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--ink-dim);
+  }
+
+  .who {
+    color: var(--ink-faint);
+  }
+
+  .text {
+    font-size: 1.125rem;
+    line-height: 1.4;
+    letter-spacing: -0.01em;
+    font-weight: 450;
+  }
+
+  dl {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+  }
+
+  .answer {
+    display: grid;
+    grid-template-columns: 9.5rem minmax(0, 1fr);
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.8125rem;
+  }
+
+  dt {
+    color: var(--ink-dim);
+  }
+
+  dd {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 2.75rem;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 0;
+  }
+
+  .bar {
+    height: 3px;
+    border-radius: 2px;
+    background: var(--line);
+  }
+
+  .bar i {
+    display: block;
+    height: 100%;
+    width: 100%;
+    background: var(--ink);
+    transform-origin: 0 50%;
+    transform: scaleX(var(--p));
+    transition: transform 1100ms var(--ease-out);
+  }
+
+  .pct {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+  }
+
+  .note {
+    font-size: 0.875rem;
+    color: var(--ink-faint);
+  }
+
+  .route {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 540;
+    font-size: 0.9375rem;
+  }
+
+  .dot-grey {
+    color: var(--ink-faint);
+  }
+
+  /* Rows wait, then play: the message, the bars filling, the route. */
+  :global(html.js) .row:not(.in) .bar i {
+    transform: scaleX(0);
+  }
+
+  :global(html.js) .row .route {
+    transition:
+      opacity 500ms var(--ease-out) 700ms,
+      translate 700ms var(--ease-out) 700ms;
+  }
+
+  :global(html.js) .row:not(.in) .route {
+    opacity: 0;
+    translate: -0.5rem 0;
+  }
+
+  @media (max-width: 900px) {
+    .intro {
+      grid-template-columns: 1fr;
+    }
+    .log-head {
+      display: none;
+    }
+    .row {
+      grid-template-columns: 1fr;
+      gap: 1rem;
+    }
+  }
+
+  /* The policy control: one threshold, the routes follow it. */
+  .policy {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(16rem, 0.9fr);
+    gap: 1rem 3rem;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding: 1.25rem 1.5rem;
+    border-radius: 14px;
+    background: var(--day);
+    box-shadow: 0 0 0 1px var(--line);
+  }
+
+  .policy label {
+    display: grid;
+    gap: 0.25rem;
+  }
+
+  .p-title {
+    font-weight: 560;
+  }
+
+  .p-text {
+    color: var(--ink-dim);
+    font-size: var(--t-small);
+  }
+
+  .p-control {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 3.5rem;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  output {
+    font-size: 1.375rem;
+    font-weight: 560;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  input[type="range"] {
+    --fill: 55.5%;
+    appearance: none;
+    -webkit-appearance: none;
+    height: 1.5rem;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--ink) var(--fill), var(--line-strong) var(--fill));
+  }
+
+  input[type="range"]::-moz-range-track {
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--ink) var(--fill), var(--line-strong) var(--fill));
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 1.375rem;
+    height: 1.375rem;
+    margin-top: -0.5625rem;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow:
+      0 0 0 1px var(--line-strong),
+      0 2px 6px oklch(0.19 0.008 255 / 0.25);
+    transition: transform 200ms var(--ease-out);
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 1.375rem;
+    height: 1.375rem;
+    border: 0;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow:
+      0 0 0 1px var(--line-strong),
+      0 2px 6px oklch(0.19 0.008 255 / 0.25);
+  }
+
+  input[type="range"]:active::-webkit-slider-thumb {
+    transform: scale(1.15);
+  }
+
+  /* The threshold, marked on the bar it gates. */
+  .bar {
+    position: relative;
+  }
+
+  .tick {
+    position: absolute;
+    top: -4px;
+    bottom: -4px;
+    left: var(--threshold, 75%);
+    width: 2px;
+    margin-left: -1px;
+    border-radius: 1px;
+    background: var(--blue);
+    transition: left 160ms var(--ease-out);
+  }
+
+  .gated .bar {
+    overflow: visible;
+  }
+
+  .gated .bar i {
+    border-radius: 2px;
+  }
+
+  .route span {
+    display: inline-block;
+  }
+
+  @media (max-width: 900px) {
+    .policy {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

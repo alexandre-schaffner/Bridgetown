@@ -1,0 +1,236 @@
+---
+// Day. Two things a team needs to trust it: one owner per alert, and agents that can't
+// reach anything they shouldn't. The second is a spec sheet, rules drawn in as it arrives.
+const rules = [
+  {
+    title: "No secrets in reach",
+    text: "Your tokens stay in the Keychain. Agent processes start with an environment that doesn't have them.",
+  },
+  {
+    title: "Every shell command checked",
+    text: "Commands are parsed through pipes, subshells and wrappers. Force pushes, tag pushes, merges, deploy tools and production hosts are refused, with a reason the agent can act on.",
+  },
+  {
+    title: "Writes stay in the worktree",
+    text: "Each session edits only its own git worktree, on its own branch. Reads stay open.",
+  },
+  {
+    title: "A second vendor reviews every fix",
+    text: "Before CI, a model from another company reviews the diff in a read-only sandbox, for up to four rounds.",
+  },
+  {
+    title: "Three clicks stay yours",
+    text: "Merging, cutting a release and replying to a teammate always wait for you.",
+  },
+  {
+    title: "Slack is data",
+    text: "Message text reaches agents marked as data, never as instructions.",
+  },
+  {
+    title: "Dry run",
+    text: "One switch stops every post to Slack while you try it out.",
+  },
+];
+---
+
+<section class="team day" id="team" aria-labelledby="team-title">
+  <div class="wrap split">
+    <div>
+      <h2 id="team-title" class="display">One owner per alert, across the team.</h2>
+      <p class="lead">
+        When several people run Bridgetown, the alert's thread records who has it. The first claim wins, so no alert
+        gets two agents, and you see who is on it without opening Slack.
+      </p>
+    </div>
+    <div class="thread" aria-label="An alert thread in Slack, claimed by a teammate's Bridgetown">
+      <div class="msg">
+        <span class="av bot" aria-hidden="true">M</span>
+        <div>
+          <p><b>Monitor</b> <span class="faint">#alerts-api · 10:02</span></p>
+          <p>5xx rate 3.1% on /v4/orders over 5 minutes</p>
+        </div>
+      </div>
+      <div class="msg reply">
+        <span class="av" aria-hidden="true">M</span>
+        <div>
+          <p><b>Maya</b> <span class="faint">via Bridgetown · 10:02</span></p>
+          <p>🤖 Investigating with Bridgetown…</p>
+        </div>
+      </div>
+      <div class="yours">
+        <span class="faint">In your notch</span>
+        <span class="claim"><i class="dot dot-blue" aria-hidden="true"></i> Maya's agent is on it</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="safety day" id="safety" aria-labelledby="safety-title">
+  <div class="wrap">
+    <h2 id="safety-title" class="display">Agents get a worktree, never the keys.</h2>
+    <dl class="sheet">
+      {
+        rules.map((r) => (
+          <div class="rule" data-rule>
+            <dt>{r.title}</dt>
+            <dd>{r.text}</dd>
+          </div>
+        ))
+      }
+    </dl>
+  </div>
+</section>
+
+<style>
+  .team {
+    padding-block: clamp(7rem, 16vh, 11rem) clamp(3rem, 8vh, 5rem);
+  }
+
+  .split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 3rem clamp(3rem, 6vw, 6rem);
+    align-items: center;
+  }
+
+  .split .display {
+    max-width: 12ch;
+    margin-bottom: 1.5rem;
+  }
+
+  .thread {
+    display: grid;
+    gap: 1.125rem;
+    padding: 1.5rem;
+    border-radius: 16px;
+    background: var(--day);
+    box-shadow:
+      0 0 0 1px var(--line),
+      0 24px 48px -32px oklch(0.19 0.008 255 / 0.3);
+    font-size: 0.9375rem;
+  }
+
+  .msg {
+    display: grid;
+    grid-template-columns: 2.25rem minmax(0, 1fr);
+    gap: 0.75rem;
+    line-height: 1.45;
+  }
+
+  .msg.reply {
+    margin-left: 3rem;
+    padding-left: 1rem;
+    border-left: 1px solid var(--line-strong);
+  }
+
+  .av {
+    display: grid;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 8px;
+    background: oklch(0.55 0.1 160);
+    color: #fff;
+    font-weight: 600;
+  }
+
+  .av.bot {
+    background: var(--ink);
+    color: var(--day);
+  }
+
+  .faint {
+    color: var(--ink-faint);
+    font-size: 0.8125rem;
+  }
+
+  .yours {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 1.125rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .claim {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.875rem;
+    border-radius: 999px;
+    background: #000;
+    color: var(--ui-text);
+    font-size: 0.8125rem;
+    font-weight: 500;
+  }
+
+  .safety {
+    padding-block: clamp(4rem, 10vh, 7rem) clamp(7rem, 16vh, 11rem);
+  }
+
+  .safety .display {
+    max-width: 14ch;
+    margin-bottom: clamp(2.5rem, 6vh, 4rem);
+  }
+
+  .sheet {
+    margin: 0;
+  }
+
+  .rule {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    gap: 1rem 3rem;
+    padding: 1.375rem 0;
+  }
+
+  /* The rule above each row draws in from the left as the row arrives. */
+  .rule::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: var(--line-strong);
+    transform-origin: 0 50%;
+    transition: transform 1100ms var(--ease-out);
+  }
+
+  dt {
+    font-weight: 560;
+    font-size: 1.125rem;
+    letter-spacing: -0.01em;
+  }
+
+  dd {
+    margin: 0;
+    max-width: 36rem;
+    color: var(--ink-dim);
+  }
+
+  .rule dt,
+  .rule dd {
+    transition:
+      opacity 700ms var(--ease-out) 150ms,
+      translate 900ms var(--ease-out) 150ms;
+  }
+
+  :global(html.js) .rule:not(.in)::before {
+    transform: scaleX(0);
+  }
+
+  :global(html.js) .rule:not(.in) dt,
+  :global(html.js) .rule:not(.in) dd {
+    opacity: 0;
+    translate: 0 0.5rem;
+  }
+
+  @media (max-width: 900px) {
+    .split,
+    .rule {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

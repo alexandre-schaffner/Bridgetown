@@ -1,0 +1,851 @@
+---
+// Bridgetown in the notch (app/Sources/Bridgetown/Island/): one black shape that hangs from
+// the notch and morphs between hidden, wings, a banner and the whole app. Every layer is laid
+// out at its final size and revealed by the shape as it grows. scripts/island.ts drives it.
+// The team and its services are made up.
+import ArchMark from "./ArchMark.astro";
+import Icon from "./Icon.astro";
+import { areaPath, linePath, series } from "../lib/spark";
+
+const BW = 150;
+const BH = 40;
+const boards = [
+  { title: "API 5xx", value: "33", values: [...series(24, 10, 3, 1), 11, 30, 44, 43, 12, 10] },
+  { title: "API p99 latency", value: "332 ms", values: series(30, 30, 4, 4) },
+  { title: "Job errors", value: "12", values: series(30, 12, 5, 7) },
+  { title: "Queue depth", value: "184", values: series(30, 180, 30, 2) },
+];
+
+const actions = [
+  {
+    id: "merge",
+    icon: "git-merge",
+    tint: "green",
+    title: "Merge fix(api): reject an empty region",
+    detail: "#3352 · Second review passed, CI green",
+    verb: "Merge",
+    primary: true,
+  },
+  {
+    id: "reply",
+    icon: "reply",
+    tint: "",
+    title: "Reply to Jonas",
+    detail: "Reproduced: /orders 500s when region is empty. Fix in #3352.",
+    verb: "Review reply",
+  },
+  {
+    id: "investigate",
+    icon: "search",
+    tint: "amber",
+    title: "API p99 at 2.3s on /v2/search",
+    detail: "#alerts-api · Borderline: someone may be on it",
+    verb: "Investigate",
+  },
+];
+
+const sessions = [
+  { dot: "blue", live: true, title: "api · 5xx rate 3.1% on /v4/orders", age: "8m", detail: "Diagnosing · Edit src/routes/orders.ts", step: 1 },
+  { dot: "grey", title: "web v2.15.0 · Build failed", age: "37m", detail: "In review · #approvals", step: 4 },
+  { dot: "amber", title: "billing · invoice job timed out", age: "23m", detail: "Asked: retry in smaller batches?", step: 2, ask: true },
+  { dot: "blue", live: true, title: "api v1.35.12 · Deploying", age: "3m", detail: "Deploying to production", step: 6 },
+];
+
+const recent = [
+  { icon: "zap", title: "api · 5xx rate 3.1% on /v4/orders", detail: "#alerts-api · Agent started", age: "8m" },
+  { icon: "hand", title: "Priya · DM: ship the pricing change today?", detail: "Waiting on you", age: "12m" },
+];
+---
+
+<div class="island" data-island aria-hidden="true">
+  <svg class="shape" width="1128" height="512" viewBox="0 0 1128 512" aria-hidden="true">
+    <defs>
+      <linearGradient id="island-edge" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#fff" stop-opacity="0"></stop>
+        <stop offset="0.5" stop-color="#fff" stop-opacity="0.07"></stop>
+        <stop offset="1" stop-color="#fff" stop-opacity="0.16"></stop>
+      </linearGradient>
+    </defs>
+    <path class="fill" data-island-fill></path>
+  </svg>
+
+  <div class="clip" data-island-clip>
+    <!-- The wings, either side of the notch: the arch for agents at work, a count for what needs you. -->
+    <div class="layer wings" data-layer="wings">
+      <span class="wing left"><span class="glyph" data-wing-glyph><ArchMark size={14} /></span></span>
+      <span class="wing right" data-wing-count>
+        <i class="dot" data-wing-dot></i>
+        <b data-wing-number>2</b>
+      </span>
+      <span class="band-foot" data-layer="band-foot">
+        <span>Open logs</span>
+        <span>Settings</span>
+      </span>
+    </div>
+
+    <!-- A new "Needs you", for a few seconds. -->
+    <div class="layer banner" data-layer="banner">
+      <span class="b-glyph"><Icon name="git-merge" size={14} stroke={2} /></span>
+      <span class="b-text">
+        <span class="b-kind">Needs you</span>
+        <span class="b-title">Merge fix(api): reject an empty region</span>
+      </span>
+      <Icon name="chevron-down" size={12} stroke={2.4} class="b-chev" />
+    </div>
+
+    <!-- Open: the whole app, wide, in three columns read left to right. -->
+    <div class="layer open" data-layer="open">
+      <div class="col status">
+        <header class="head">
+          <p class="title"><ArchMark size={15} /> Bridgetown</p>
+          <p class="services">
+            <span><i class="dot"></i>Slack</span>
+            <span><i class="dot"></i>Jev</span>
+            <span><i class="dot"></i>GitHub</span>
+            <span><i class="dot"></i>Grafana</span>
+            <span class="faint">· polled now</span>
+          </p>
+        </header>
+        <div class="pad">
+          <div class="tiles box">
+            <div class="tile">
+              <p>Needs you <i class="dot dot-amber"></i></p>
+              <p><b data-needs-count>3</b> oldest 2h</p>
+            </div>
+            <div class="tile">
+              <p>Agents <i class="dot dot-blue"></i></p>
+              <p><b>4</b> 2 working</p>
+            </div>
+            <div class="tile">
+              <p>Resolved <i class="dot dot-green"></i></p>
+              <p><b>6</b> of 9 · 24h</p>
+            </div>
+          </div>
+          <div class="sec-head">
+            <h4>Prod</h4>
+            <span class="tabs"><span class="on">Incidents</span><span>Infra</span></span>
+          </div>
+          <div class="boards box">
+            {
+              boards.map((b) => (
+                <div class="board">
+                  <p>
+                    <span>{b.title}</span>
+                    <b>{b.value}</b>
+                  </p>
+                  <svg viewBox={`0 0 ${BW} ${BH}`} preserveAspectRatio="none">
+                    <path d={areaPath(b.values, BW, BH, 4)} class="area" />
+                    <path d={linePath(b.values, BW, BH, 4)} class="line" />
+                  </svg>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+      </div>
+
+      <div class="col needs">
+        <div class="sec-head">
+          <h4>Needs you <span class="badge badge-amber" data-needs-badge>3</span></h4>
+        </div>
+        <ul class="box rows">
+          {
+            actions.map((a) => (
+              <li class="action" data-action={a.id}>
+                <div class="action-inner">
+                  <span class:list={["a-glyph", a.tint && `tint-${a.tint}`]}>
+                    <Icon name={a.icon} size={15} stroke={1.6} />
+                  </span>
+                  <span class="text">
+                    <span class="t">{a.title}</span>
+                    <span class="d">{a.detail}</span>
+                  </span>
+                  <span class:list={["btn", a.primary && "btn-primary"]} data-btn={a.id}>
+                    {a.verb}
+                  </span>
+                </div>
+              </li>
+            ))
+          }
+        </ul>
+      </div>
+
+      <div class="col agents">
+        <div class="sec-head">
+          <h4>Agents <span class="badge badge-blue">4</span></h4>
+          <span class="faint small">2 working · 1 on you</span>
+        </div>
+        <ul class="box rows">
+          {
+            sessions.map((s) => (
+              <li class="session">
+                <i class:list={["dot", `dot-${s.dot}`, s.live && "live"]} />
+                <span class="text">
+                  <span class="t">{s.title}</span>
+                  <span class="d">{s.detail}</span>
+                </span>
+                <span class="age">{s.age}</span>
+                <span class="steps">
+                  {[1, 2, 3, 4, 5, 6].map((n) => (
+                    <i
+                      class:list={[
+                        n < s.step && "done",
+                        n === s.step && (s.ask ? "now-amber" : s.dot === "grey" ? "now" : "now-blue"),
+                      ]}
+                    />
+                  ))}
+                </span>
+              </li>
+            ))
+          }
+        </ul>
+        <div class="sec-head recent-head">
+          <h4>Recent</h4>
+        </div>
+        <ul class="box rows">
+          {
+            recent.map((r) => (
+              <li class="recent">
+                <Icon name={r.icon} size={14} stroke={1.7} class="r-glyph" />
+                <span class="text">
+                  <span class="t">{r.title}</span>
+                  <span class="d">{r.detail}</span>
+                </span>
+                <span class="age">{r.age}</span>
+              </li>
+            ))
+          }
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <svg class="edge-svg" width="1128" height="512" viewBox="0 0 1128 512" aria-hidden="true">
+    <path class="edge" data-island-edge stroke="url(#island-edge)"></path>
+  </svg>
+</div>
+
+<style>
+  .island {
+    --box-w: 1128px;
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: var(--box-w);
+    height: 512px;
+    margin-left: calc(var(--box-w) / -2);
+    color: var(--ui-text);
+    font-size: 12px;
+    line-height: 1.35;
+    pointer-events: none;
+    z-index: 5;
+  }
+
+  .shape,
+  .edge-svg {
+    position: absolute;
+    inset: 0;
+    overflow: visible;
+  }
+
+  .fill {
+    fill: #000;
+    filter: drop-shadow(0 14px 26px rgb(0 0 0 / var(--lift, 0))) drop-shadow(0 2px 4px rgb(0 0 0 / calc(var(--lift, 0) * 0.55)));
+  }
+
+  .edge {
+    fill: none;
+    stroke-width: 1;
+    opacity: var(--lift-edge, 0);
+  }
+
+  .clip {
+    position: absolute;
+    inset: 0;
+  }
+
+  .layer {
+    position: absolute;
+    opacity: 0;
+    filter: blur(10px);
+    transform: scale(0.96);
+    transform-origin: 50% 0;
+    will-change: opacity, filter, transform;
+  }
+
+  p,
+  h4,
+  ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .faint {
+    color: var(--ui-faint);
+  }
+
+  .small {
+    font-size: 11px;
+  }
+
+  .dot {
+    width: 6px;
+    height: 6px;
+  }
+
+  /* Wings. */
+  .wings {
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 32px;
+  }
+
+  .wing {
+    position: absolute;
+    top: 0;
+    height: 32px;
+    width: 38px;
+    display: grid;
+    place-items: center;
+  }
+
+  .wing.left {
+    left: calc(564px - 95px - 38px);
+  }
+
+  .wing.right {
+    left: calc(564px + 95px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .wing.right b {
+    font-size: 12.5px;
+    font-weight: 620;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .wing.right .dot {
+    width: 5px;
+    height: 5px;
+    color: var(--blue);
+  }
+
+  .glyph {
+    display: grid;
+    color: var(--ui-text);
+    transition: filter 600ms var(--ease-out);
+  }
+
+  .glyph:global(.working) {
+    animation: glow 2.4s ease-in-out infinite;
+  }
+
+  @keyframes glow {
+    0%,
+    100% {
+      filter: drop-shadow(0 0 3px oklch(0.63 0.19 252 / 0.35));
+    }
+    50% {
+      filter: drop-shadow(0 0 7px oklch(0.63 0.19 252 / 0.9)) drop-shadow(0 0 10px oklch(0.63 0.19 252 / 0.3));
+    }
+  }
+
+  .band-foot {
+    position: absolute;
+    top: 0;
+    right: 32px;
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    height: 32px;
+    color: var(--ui-dim);
+    font-size: 11.5px;
+    opacity: 0;
+    transition: opacity 300ms var(--ease-out);
+  }
+
+  .band-foot:global(.on) {
+    opacity: 1;
+  }
+
+  /* Banner. */
+  .banner {
+    top: 32px;
+    left: calc(564px - 180px);
+    width: 360px;
+    height: 64px;
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 11px;
+    padding: 0 16px;
+  }
+
+  .b-glyph {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    color: var(--amber);
+    background: oklch(0.8 0.15 74 / 0.14);
+  }
+
+  .b-text {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .b-kind {
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--amber);
+  }
+
+  .b-title {
+    font-size: 13px;
+    font-weight: 620;
+    letter-spacing: -0.015em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .banner :global(.b-chev) {
+    color: var(--ui-faint);
+  }
+
+  /* Open. */
+  .open {
+    top: 32px;
+    left: 14px;
+    width: 1100px;
+    height: 480px;
+    display: grid;
+    grid-template-columns: 372px minmax(0, 1fr) minmax(0, 1fr);
+    border-top: 0.5px solid var(--ui-hairline);
+    text-align: left;
+  }
+
+  .col {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .col + .col {
+    border-left: 0.5px solid var(--ui-hairline);
+  }
+
+  .needs,
+  .agents {
+    padding: 14px;
+  }
+
+  .head {
+    padding: 12px 14px 11px;
+    border-bottom: 0.5px solid var(--ui-hairline);
+  }
+
+  .title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 15px;
+    font-weight: 620;
+    letter-spacing: -0.02em;
+  }
+
+  .services {
+    display: flex;
+    gap: 8px;
+    margin-top: 5px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--ui-dim);
+  }
+
+  .services span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .services .dot {
+    width: 5px;
+    height: 5px;
+    color: var(--ui-dim);
+  }
+
+  .pad {
+    display: grid;
+    gap: 12px;
+    padding: 12px 14px;
+  }
+
+  .box {
+    background: var(--ui-surface);
+    border-radius: 8px;
+    box-shadow: 0 0 0 0.5px var(--ui-hairline) inset;
+  }
+
+  .tiles {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .tile {
+    padding: 8px 10px 9px;
+  }
+
+  .tile + .tile {
+    border-left: 0.5px solid var(--ui-hairline);
+  }
+
+  .tile p:first-child {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--ui-dim);
+    font-weight: 500;
+  }
+
+  .tile p:last-child {
+    margin-top: 3px;
+    color: var(--ui-faint);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .tile b {
+    display: inline-block;
+    margin-right: 4px;
+    color: var(--ui-text);
+    font-size: 19px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .sec-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 7px;
+  }
+
+  .pad .sec-head {
+    margin: 4px 0 -5px;
+  }
+
+  .recent-head {
+    margin-top: 18px;
+  }
+
+  h4 {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    font-weight: 620;
+    letter-spacing: -0.02em;
+  }
+
+  .badge {
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 10.5px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .badge-amber {
+    color: var(--amber);
+    background: oklch(0.8 0.15 74 / 0.14);
+  }
+
+  .badge-blue {
+    color: var(--blue);
+    background: oklch(0.63 0.19 252 / 0.16);
+  }
+
+  .tabs {
+    display: inline-flex;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 6px;
+    box-shadow: 0 0 0 0.5px var(--ui-outline) inset;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--ui-dim);
+  }
+
+  .tabs span {
+    padding: 1px 8px;
+    border-radius: 4px;
+  }
+
+  .tabs .on {
+    background: rgb(255 255 255 / 0.09);
+    color: var(--ui-text);
+  }
+
+  .boards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .board {
+    padding: 8px 10px 7px;
+  }
+
+  .board:nth-child(even) {
+    border-left: 0.5px solid var(--ui-hairline);
+  }
+
+  .board:nth-child(n + 3) {
+    border-top: 0.5px solid var(--ui-hairline);
+  }
+
+  .board p {
+    display: flex;
+    justify-content: space-between;
+    color: var(--ui-dim);
+    font-weight: 500;
+    font-size: 11px;
+  }
+
+  .board b {
+    color: var(--ui-text);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .board svg {
+    width: 100%;
+    height: 40px;
+    margin-top: 5px;
+  }
+
+  .board .line {
+    fill: none;
+    stroke: rgb(255 255 255 / 0.85);
+    stroke-width: 1.2;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .board .area {
+    fill: rgb(255 255 255 / 0.06);
+  }
+
+  .rows li + li {
+    border-top: 0.5px solid var(--ui-hairline);
+  }
+
+  .text {
+    display: grid;
+    min-width: 0;
+  }
+
+  .t,
+  .d {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .t {
+    font-weight: 500;
+  }
+
+  .d {
+    margin-top: 2px;
+    color: var(--ui-faint);
+    font-size: 11px;
+  }
+
+  /* An action row collapses when it is settled: a grid row from 1fr to 0fr. */
+  .action {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition:
+      grid-template-rows 520ms var(--ease-out) 260ms,
+      opacity 300ms var(--ease-out);
+  }
+
+  .action:global(.settled) {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    border-top-color: transparent;
+  }
+
+  .action-inner {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    min-height: 0;
+    overflow: hidden;
+    padding: 10px 11px;
+  }
+
+  .action:global(.settled) .action-inner {
+    padding-block: 0;
+    transition: padding 520ms var(--ease-out) 260ms;
+  }
+
+  .a-glyph {
+    color: var(--ui-dim);
+  }
+
+  .tint-amber {
+    color: var(--amber);
+  }
+
+  .tint-green {
+    color: var(--green);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    height: 24px;
+    padding: 0 9px;
+    border-radius: 6px;
+    box-shadow: 0 0 0 0.5px var(--ui-outline) inset;
+    font-size: 11.5px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition:
+      transform 160ms var(--ease-out),
+      background-color 160ms var(--ease-out);
+  }
+
+  .island:global(.is-open) .btn {
+    pointer-events: auto;
+    cursor: pointer;
+  }
+
+  .island:global(.is-open) .btn:hover {
+    background: rgb(255 255 255 / 0.08);
+  }
+
+  .island:global(.is-open) .btn-primary:hover {
+    background: #fff;
+  }
+
+  .btn-primary {
+    background: #ededed;
+    color: #000;
+    box-shadow: none;
+  }
+
+  .btn:global(.hover) {
+    background: #fff;
+  }
+
+  .btn:global(.press) {
+    transform: scale(0.94);
+    background: #d4d4d4;
+  }
+
+  .session {
+    display: grid;
+    grid-template-columns: 10px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "dot text age"
+      "dot text steps";
+    column-gap: 9px;
+    row-gap: 4px;
+    padding: 9px 11px;
+  }
+
+  .session .dot {
+    grid-area: dot;
+    align-self: start;
+    margin-top: 5px;
+  }
+
+  .session .text {
+    grid-area: text;
+  }
+
+  .age {
+    grid-area: age;
+    justify-self: end;
+    color: var(--ui-faint);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .steps {
+    grid-area: steps;
+    display: flex;
+    gap: 2px;
+    align-self: end;
+  }
+
+  .steps i {
+    width: 9px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--ui-track);
+    box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.12) inset;
+  }
+
+  .steps .done {
+    background: var(--ui-mark);
+    box-shadow: none;
+  }
+
+  .steps .now {
+    background: rgb(255 255 255 / 0.35);
+  }
+
+  .steps .now-blue {
+    background: var(--blue);
+    box-shadow: none;
+  }
+
+  .steps .now-amber {
+    background: var(--amber);
+    box-shadow: none;
+  }
+
+  .recent {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 11px;
+  }
+
+  .recent :global(.r-glyph) {
+    color: var(--ui-dim);
+  }
+
+  .recent .age {
+    align-self: start;
+  }
+
+  .live {
+    animation: breathe 2.4s var(--ease-in-out) infinite;
+  }
+
+  @keyframes breathe {
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .live,
+    .glyph:global(.working) {
+      animation: none;
+    }
+  }
+</style>
