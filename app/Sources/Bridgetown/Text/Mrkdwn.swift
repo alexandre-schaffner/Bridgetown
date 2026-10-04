@@ -4,7 +4,7 @@ enum Mrkdwn {
     /// Slack mrkdwn as Markdown, for `Markdown.blocks`: `*bold*` → `**bold**`, `_italic_` →
     /// `*italic*`, `~strike~` → `~~strike~~`, ```` ``` ```` fences on their own lines,
     /// `<url|label>` → `[label](url)`, `<#C…|name>` → #name, `<!here>` → @here, and a
-    /// leading `&gt;` → a quote. Entities are left for the Markdown parser to decode, except
+    /// leading `&gt;` → a quote, and common `:shortcodes:` → emoji. Entities are left for the Markdown parser to decode, except
     /// inside code, which it reads verbatim. A `<` with no closing `>` is kept as written.
     static func markdown(_ s: String) -> String {
         let parts = s.components(separatedBy: "```")
@@ -53,6 +53,7 @@ enum Mrkdwn {
             masked = pattern.stringByReplacingMatches(in: masked, range: NSRange(masked.startIndex..., in: masked), withTemplate: template)
         }
         masked = quoteMark.stringByReplacingMatches(in: masked, range: NSRange(masked.startIndex..., in: masked), withTemplate: ">")
+        masked = emoji(masked)
 
         var out = ""
         for scalar in masked.unicodeScalars {
@@ -80,6 +81,50 @@ enum Mrkdwn {
         (#"(?<![\p{L}\p{N}_\\])_(?=\S)([^_\n]+?)(?<=\S)_(?![\p{L}\p{N}_])"#, "*$1*"),
         (#"(?<![\p{L}\p{N}~\\])~(?=\S)([^~\n]+?)(?<=\S)~(?![\p{L}\p{N}~])"#, "~~$1~~"),
     ].map { (try! NSRegularExpression(pattern: $0.0), $0.1) }
+
+    private static let shortcode = try! NSRegularExpression(pattern: ":([a-z0-9_+-]+):")
+
+    /// Known shortcodes become emoji; skin tones are dropped; anything else stays as written.
+    private static func emoji(_ s: String) -> String {
+        var out = ""
+        var last = s.startIndex
+        for match in shortcode.matches(in: s, range: NSRange(s.startIndex..., in: s)) {
+            guard let range = Range(match.range, in: s), let name = Range(match.range(at: 1), in: s).map({ String(s[$0]) }),
+                  range.lowerBound >= last
+            else { continue }
+            let replacement = name.hasPrefix("skin-tone-") ? "" : emojis[name]
+            guard let replacement else { continue }
+            out += s[last..<range.lowerBound] + replacement
+            last = range.upperBound
+        }
+        return out + s[last...]
+    }
+
+    /// Slack's names for the emoji alerts and teammates actually use.
+    private static let emojis: [String: String] = [
+        "rotating_light": "🚨", "warning": "⚠️", "fire": "🔥", "boom": "💥", "x": "❌", "no_entry": "⛔",
+        "no_entry_sign": "🚫", "bangbang": "‼️", "exclamation": "❗", "heavy_exclamation_mark": "❗", "question": "❓",
+        "white_check_mark": "✅", "heavy_check_mark": "✔️", "ballot_box_with_check": "☑️", "red_circle": "🔴",
+        "large_red_circle": "🔴", "large_green_circle": "🟢", "green_circle": "🟢", "large_yellow_circle": "🟡",
+        "yellow_circle": "🟡", "large_orange_circle": "🟠", "large_blue_circle": "🔵", "white_circle": "⚪",
+        "black_circle": "⚫", "red_square": "🟥", "green_square": "🟩", "yellow_square": "🟨",
+        "information_source": "ℹ️", "bell": "🔔", "no_bell": "🔕", "mag": "🔍", "eyes": "👀", "robot_face": "🤖",
+        "rocket": "🚀", "ship": "🚢", "package": "📦", "hourglass": "⌛", "hourglass_flowing_sand": "⏳",
+        "stopwatch": "⏱️", "alarm_clock": "⏰", "clock1": "🕐", "chart_with_upwards_trend": "📈",
+        "chart_with_downwards_trend": "📉", "bar_chart": "📊", "memo": "📝", "pencil": "📝", "link": "🔗",
+        "lock": "🔒", "unlock": "🔓", "key": "🔑", "wrench": "🔧", "hammer_and_wrench": "🛠️", "gear": "⚙️",
+        "construction": "🚧", "bug": "🐛", "zap": "⚡", "sos": "🆘", "new": "🆕", "recycle": "♻️",
+        "arrows_counterclockwise": "🔄", "repeat": "🔁", "arrow_right": "➡️", "arrow_up": "⬆️", "arrow_down": "⬇️",
+        "point_right": "👉", "point_up": "☝️", "+1": "👍", "thumbsup": "👍", "-1": "👎", "thumbsdown": "👎",
+        "pray": "🙏", "raised_hands": "🙌", "clap": "👏", "wave": "👋", "ok_hand": "👌", "muscle": "💪",
+        "tada": "🎉", "sparkles": "✨", "star": "⭐", "100": "💯", "heart": "❤️", "thinking_face": "🤔",
+        "sweat_smile": "😅", "smile": "😄", "slightly_smiling_face": "🙂", "joy": "😂", "sob": "😭",
+        "scream": "😱", "skull": "💀", "money_with_wings": "💸", "moneybag": "💰", "gem": "💎",
+        "calendar": "📆", "date": "📅", "pushpin": "📌", "round_pushpin": "📍", "speech_balloon": "💬",
+        "loudspeaker": "📢", "mega": "📣", "satellite_antenna": "📡", "computer": "💻", "globe_with_meridians": "🌐",
+        "heavy_plus_sign": "➕", "heavy_minus_sign": "➖", "heavy_multiplication_x": "✖️", "large_blue_diamond": "🔷",
+        "small_red_triangle": "🔺", "small_red_triangle_down": "🔻", "white_large_square": "⬜", "black_large_square": "⬛",
+    ]
 
     private static let quoteMark = try! NSRegularExpression(pattern: "^&gt; ?", options: .anchorsMatchLines)
 

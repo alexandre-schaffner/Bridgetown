@@ -50,6 +50,12 @@ import Testing
         ])
     }
 
+    @Test func emoji() {
+        #expect(Mrkdwn.markdown(":rotating_light: *TX Executor* :+1::skin-tone-3:") == "🚨 **TX Executor** 👍")
+        #expect(Mrkdwn.markdown(":merkl-logo: at 10:42:07") == ":merkl-logo: at 10:42:07")
+        #expect(Mrkdwn.markdown("`:fire:`") == "`:fire:`")
+    }
+
     @Test func unclosedFenceStaysText() {
         #expect(shown("a ``` b") == "a ``` b")
     }
