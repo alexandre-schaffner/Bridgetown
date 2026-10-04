@@ -8,6 +8,8 @@ import SwiftUI
 ///   `--preview-settings <tab>`: the UI in a normal window, for screenshots and design work.
 /// - `--snapshot <png>` (+ `--snapshot-quit`): render that window to a PNG once data arrives.
 /// - `--appearance dark|light`, `--preview-height <pt>`: for long content.
+/// - `--island-demo`: the notch island cycles hover, banner, open and close, for
+///   screen recordings of its motion.
 @MainActor
 final class PreviewHarness {
     struct Arguments {
@@ -19,6 +21,7 @@ final class PreviewHarness {
         var snapshotPath: String?
         var snapshotQuit = false
         var previewHeight: CGFloat?
+        var islandDemo = false
 
         init(_ argv: [String]) {
             var it = argv.dropFirst().makeIterator()
@@ -30,6 +33,7 @@ final class PreviewHarness {
                 case "--preview-settings": previewSettings = it.next().flatMap(SettingsView.Tab.init(rawValue:)) ?? .accounts
                 case "--snapshot": snapshotPath = it.next()
                 case "--snapshot-quit": snapshotQuit = true
+                case "--island-demo": islandDemo = true
                 case "--preview-height": previewHeight = it.next().flatMap(Double.init).map { CGFloat($0) }
                 case "--appearance":
                     switch it.next() {
@@ -52,8 +56,9 @@ final class PreviewHarness {
 
     var popoverHeight: CGFloat? { args.previewHeight }
 
-    func start(store: Store, daemon: DaemonProcess, popoverHeight: CGFloat) {
+    func start(store: Store, daemon: DaemonProcess, island: IslandController, popoverHeight: CGFloat) {
         if let appearance = args.appearance { NSApp.appearance = appearance }
+        if args.islandDemo { islandDemo(island, store: store) }
 
         if let tab = args.previewSettings {
             openWindow(title: "Settings", SettingsView(initialTab: tab).environment(store).environment(daemon))
@@ -76,6 +81,25 @@ final class PreviewHarness {
         }
         if let path = args.snapshotPath, window != nil {
             snapshot(to: path, store: store, quit: args.snapshotQuit)
+        }
+    }
+
+    /// Rest, hover, rest, banner, open, close, on a loop.
+    private func islandDemo(_ island: IslandController, store: Store) {
+        Task { @MainActor in
+            for _ in 0..<100 where store.snapshot == nil { try? await Task.sleep(for: .milliseconds(100)) }
+            while true {
+                try? await Task.sleep(for: .seconds(2))
+                island.previewHover(true)
+                try? await Task.sleep(for: .seconds(1.5))
+                island.previewHover(false)
+                try? await Task.sleep(for: .seconds(1.5))
+                if let action = store.snapshot?.sortedActions.first { island.showBanner(action) }
+                try? await Task.sleep(for: .seconds(3))
+                island.open()
+                try? await Task.sleep(for: .seconds(3.5))
+                island.close()
+            }
         }
     }
 

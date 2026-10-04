@@ -10,6 +10,7 @@ struct DetailTopBar: View {
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
             IconButton(systemName: "chevron.left", help: "Back", size: 13, weight: .semibold) {
+                Haptics.perform(.generic, "detail.back")
                 store.back()
             }
             .keyboardShortcut(.cancelAction)

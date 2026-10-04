@@ -105,32 +105,6 @@ extension Session {
         }
         return ciRounds > 0 ? "\(state) · \(rounds)" : state
     }
-
-    /// Who reviews the agent's fix: the other vendor's model.
-    var reviewerName: String {
-        switch critique?.reviewer {
-        case .unknown?: "Reviewer"
-        default: "Codex"
-        }
-    }
-
-    /// From the daemon's review step and the last review. The step stays current for the
-    /// whole loop, so only a `critiquing` session is being reviewed right now.
-    var critiqueText: String {
-        if status == .critiquing { return "Reviewing · round \(critiqueRounds + 1)" }
-        let dropped = (critique?.dropped ?? 0) > 0 ? "\(critique?.dropped ?? 0) dropped by Jev" : nil
-        let parts: [String?]
-        switch steps.first(where: { $0.key == .critique })?.state {
-        case .done?:
-            parts = ["Passed", critiqueRounds == 1 ? "1 round of fixes" : critiqueRounds > 1 ? "\(critiqueRounds) rounds of fixes" : nil, dropped]
-        case .skipped?:
-            return "Not run"
-        default:
-            guard let critique, !critique.passed else { return "Not run" }
-            parts = [critique.blocking == 1 ? "1 blocking finding" : "\(critique.blocking) blocking findings", dropped, status == .running ? "agent fixing" : nil]
-        }
-        return parts.compactMap { $0 }.joined(separator: " · ")
-    }
 }
 
 // MARK: - Who has the next move
@@ -139,11 +113,12 @@ extension Session {
     /// Who an active session is waiting on. The tone can't tell: "In review" is live
     /// (in flight, not on you) yet no agent is working on it.
     enum Holder: CaseIterable {
-        case agent, you, reviewers, ci, deploy, queue
+        case agent, critic, you, reviewers, ci, deploy, queue
 
         var label: String {
             switch self {
             case .agent: "working"
+            case .critic: "in adversarial review"
             case .you: "on you"
             case .reviewers: "in review"
             case .ci: "on CI"
@@ -152,14 +127,15 @@ extension Session {
             }
         }
 
-        /// Something is progressing with no person involved: the agent, CI or a deploy.
-        var isMoving: Bool { self == .agent || self == .ci || self == .deploy }
+        /// Something is progressing with no person involved: the agent, the adversarial review, CI or a deploy.
+        var isMoving: Bool { self == .agent || self == .critic || self == .ci || self == .deploy }
     }
 
     /// Nil once the session is finished.
     var holder: Holder? {
         switch status {
-        case .preparing, .running, .critiquing: .agent
+        case .preparing, .running: .agent
+        case .critiquing: .critic
         case .waiting, .awaiting_merge, .awaiting_release: .you
         // CI green but the review request didn't go out: the daemon hands that to you.
         case .ci: reviewChannel != nil ? .reviewers : tone == .waiting ? .you : .ci
@@ -263,6 +239,7 @@ struct OutcomeGlyph {
         case .waiting: self.init("hand.raised.fill", Ink.amber)
         case .dismissed: self.init("xmark.circle", .tertiary, dimmed: true)
         case .opened: self.init("arrow.up.right.circle", .secondary)
+        case .withdrawn: self.init("arrow.uturn.backward.circle", .tertiary, dimmed: true)
         // Someone else owns it: worth reading, not yours to act on.
         case .teammate: self.init("person.fill", .secondary)
         case .session: self.init(session: session, tone: outcome.tone)

@@ -162,7 +162,7 @@ private struct ChannelsTab: View {
                 Text("Jev hands each mention or DM to an agent, or escalates it to you under Needs you.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section("Alert channels") {
+            Section {
                 if settings.value.channels.isEmpty {
                     Text("No #alert-* channels found yet.").foregroundStyle(.secondary)
                 }
@@ -171,6 +171,11 @@ private struct ChannelsTab: View {
                         Text("#\(channel.name)")
                     }
                 }
+            } header: {
+                Text("Alert channels")
+            } footer: {
+                Text("Bot posts in these channels are triaged as alerts. A channel added in an update starts off.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -291,6 +296,7 @@ private struct ReposTab: View {
 
 private struct BehaviourTab: View {
     let settings: SettingsBinding
+    @AppStorage(IslandController.enabledKey) private var island = true
 
     var body: some View {
         Form {
@@ -311,7 +317,14 @@ private struct BehaviourTab: View {
             Section {
                 Toggle("Watch prod", isOn: settings.binding(\.watchProd))
             } footer: {
-                Text("Every 5 minutes, Bridgetown checks the overview's prod signals in Grafana; every 10, it sweeps prod's error and warning logs for new, surging or risky patterns and has Jev judge them in one batch. When something looks like a real problem and no Slack alert covers it, you get a suggestion to investigate. It never starts an agent on its own.")
+                Text("Every 5 minutes, Bridgetown checks the overview's prod signals in Grafana for rises and spikes; every 10, it sweeps prod's error and warning logs for new, surging or risky patterns and has Jev judge them in one batch. Each anomaly no Slack alert covers gets an investigation, started the way Auto-start starts one for an alert; paused or with Auto-start off, it waits in Needs you. One Jev sees nothing in is only suggested.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("Show in the notch", isOn: $island)
+            } footer: {
+                Text("Wings beside the notch for running agents and what needs you, a banner when something new lands, and the whole app a click away. The menu bar item stays either way.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 

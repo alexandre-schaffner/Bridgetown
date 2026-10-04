@@ -2,6 +2,8 @@
 
 A macOS menu bar app that handles Merkl's Slack alerts and requests so you don't have to context-switch.
 
+It lives in the notch too: wings either side of it show running agents and what needs you, a banner drops out of it when something new lands, and clicking (or `make dev-app ARGS=--island-demo` for design review) unfolds the whole app wide under it. On a screen without a notch it hangs from the top centre and only shows when it has something to say. Turn it off in **Settings → Behaviour**; the menu bar item stays.
+
 It watches the `#alert-*` channels plus every mention, team mention and DM addressed to you. For each item it asks
 **Jev** (TypeSafe System One) one question: hand this to a Claude agent, or put it in front of you? Agents take
 alerts all the way. They diagnose, fix, open a PR, get it green, request review in the approvals channel with a Revv
@@ -101,14 +103,17 @@ agents that open a PR, which then goes green and gets approved on its own. Workt
   drops the nitpicks. Blocking findings go back to the same agent conversation; it fixes them or rebuts them with evidence, and the
   new head is reviewed again, up to 4 rounds before it is handed to you. Once a review passes, Bridgetown takes the PR out of draft
   and the ship flow (CI, review request, merge) carries on. Toggle it in **Settings → Behaviour**.
-- **Bridgetown also watches prod itself.** Every 5 minutes it reads the overview's signals (API 5xx and p99, engine and job errors,
-  eRPC errors, failed job pods, OOM kills, DB waits) over the last 3 hours from the Grafana MCP (`daemon/src/watch/`). A signal has
-  risen when the median of its last three 5-minute steps is above an absolute floor and above a multiple of the 90th percentile of
-  the steps before. A one-step burst never counts, and the floors come from a day of real data. If no Slack alert from the last 2 hours
-  covers the same signal, the rise becomes a finding in channel "Grafana", with the dashboard as its link and recent deploys in its
-  summary. Jev judges it like any alert, but a finding is at most suggested, never auto-started, and it is raised at most once per
-  signal every 6 hours. Its agent is told there is no Slack thread, and that a rise with no cause is closed with no action, not a code change.
-  Toggle it in **Settings → Behaviour**.
+- **Bridgetown also watches prod itself, and investigates what it finds.** Every 5 minutes it reads the overview's signals (API 5xx
+  and p99, engine and job errors, eRPC errors, failed job pods, OOM kills, DB waits) over the last 3 hours from the Grafana MCP
+  (`daemon/src/watch/`), against each signal's 90th percentile before the last 15 minutes. Two kinds of anomaly count: a **rise**,
+  the median of the last three 5-minute steps above a floor and a multiple of that usual level, and a **spike**, one step alone far
+  above it (API 5xx: at least 100 and 4× usual). Engine and job errors swing 10–600 as jobs run, so their floors sit above a normal
+  day's peaks: their job cycles start nothing. If no Slack alert from the last 2 hours covers the same signal, the anomaly becomes a
+  finding in channel "Grafana", with the dashboard as its link and recent deploys in its summary, and **an investigation starts on
+  it**, the way Auto-start starts one for an alert (paused, or with Auto-start off, it waits in Needs you). Jev judges it for the
+  agent's depth; one Jev sees nothing in (most one-step spikes on a normal day), or with Jev unavailable, is only suggested. A signal raises at most one finding every 6 hours unless it gets 3× worse; a rise whose
+  card is still waiting is withdrawn once the signal is back to usual, a spike's is not. The agent is told there is no Slack thread,
+  and that a rise or spike with no cause is closed with no action, not a code change. Toggle it in **Settings → Behaviour**.
 - **And it sweeps prod's logs.** Every 10 minutes it groups prod's log lines into patterns (one message with numbers collapsed,
   merged across the jobs that log it; `daemon/src/watch/logs.ts`): errors over the last day, and warnings that name a risk
   (deadlock, rate limited, retired, reverted…) over the last 2 hours. An error pattern is a candidate when it is new or at least 5×
@@ -116,7 +121,8 @@ agents that open a PR, which then goes green and gets approved on its own. Workt
   one call, three yes/no questions each (`daemon/src/watch/judge.ts`): is it a real problem, is it agent work, are users affected.
   Counts and rates are worked out in code and given to Jev as a sentence. Each pattern is judged at most once a day, and that memory
   survives restarts. A pattern Jev calls a problem (above the suggest threshold) becomes a finding linked to its lines in Grafana
-  Explore, again only ever suggested. The queries are constants: nothing from a log line goes into a query Bridgetown runs.
+  Explore, and gets an investigation like a metric anomaly; it is handed to the agent already on it if one is running, and past
+  two starts in one sweep (a bad deploy logs many patterns at once) the rest are suggested. The queries are constants: nothing from a log line goes into a query Bridgetown runs.
 
 ## Safety model
 

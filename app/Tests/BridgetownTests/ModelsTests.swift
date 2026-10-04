@@ -32,9 +32,15 @@ import Testing
         #expect(running.status == .awaiting_merge)
         #expect(running.tone == .waiting)
         #expect(running.steps.map(\.key) == [.diagnose, .fix, .pr, .critique, .ci, .deploy])
-        #expect(running.critique == Critique(reviewer: .codex, passed: true, blocking: 0, dropped: 2))
+        #expect(running.critiqueLine == "Passed · 1 round of fixes · 2 dropped by Jev")
         #expect(snap.settings.adversarialReview && snap.settings.thresholds.findingReal == 0.6)
         #expect(snap.settings.watchProd)
+        #expect(!snap.isQuiet)
+        var quiet = snap
+        quiet.actions = []
+        quiet.alerts = []
+        quiet.sessions = quiet.sessions.filter { !$0.isActive }
+        #expect(quiet.isQuiet)
         #expect(running.revvUrl != nil && running.reviewChannel == "product-approvals")
         let closed = try #require(snap.session(id: "ses_closed"))
         #expect(!closed.acceptsMessages)

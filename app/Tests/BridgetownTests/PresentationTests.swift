@@ -49,23 +49,10 @@ import Testing
         #expect(s.ciText == "Not needed")
     }
 
-    @Test func critiqueTextComesFromTheStepAndTheLastReview() throws {
-        var s = try session(.critiquing)
-        s.steps[3].state = .current
-        s.critiqueRounds = 1
-        #expect(s.critiqueText == "Reviewing · round 2")
-        #expect(s.holder == .agent)
-        s.status = .ci
-        s.steps[3].state = .done
-        s.critique = Critique(reviewer: .codex, passed: true, blocking: 0, dropped: 2)
-        #expect(s.critiqueText == "Passed · 1 round of fixes · 2 dropped by Jev")
-        // Sent back: the step is still current, but nobody is reviewing.
-        s.status = .running
-        s.steps[3].state = .current
-        s.critique = Critique(reviewer: .codex, passed: false, blocking: 1, dropped: 1)
-        #expect(s.critiqueText == "1 blocking finding · 1 dropped by Jev · agent fixing")
-        s.steps[3].state = .skipped
-        #expect(s.critiqueText == "Not run")
+    @Test func aSessionInAdversarialReviewIsMovingButNotTheAgent() throws {
+        let s = try session(.critiquing)
+        #expect(s.holder == .critic)
+        #expect(s.holder?.isMoving == true)
     }
 }
 

@@ -149,16 +149,18 @@ struct SessionDetailView: View {
                     .font(.geist(11))
                 }
 
-                HStack(spacing: 6) {
-                    Text(session.reviewerName)
-                        .foregroundStyle(.tertiary)
-                        .frame(width: Self.keyWidth, alignment: .leading)
-                    Text(session.critiqueText)
-                        .foregroundStyle(.secondary)
+                if let reviewer = session.reviewerName, let line = session.critiqueLine {
+                    HStack(spacing: 6) {
+                        Text(reviewer)
+                            .foregroundStyle(.tertiary)
+                            .frame(width: Self.keyWidth, alignment: .leading)
+                        Text(line)
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.geist(11))
+                    .monospacedDigit()
+                    .help("Another vendor's model reviews each fix the agent pushes; Jev drops the nitpicks. The PR leaves draft once it passes.")
                 }
-                .font(.geist(11))
-                .monospacedDigit()
-                .help("Another vendor's model reviews each fix the agent pushes; Jev drops the nitpicks. The PR leaves draft once it passes.")
 
                 HStack(spacing: 6) {
                     Text("CI")

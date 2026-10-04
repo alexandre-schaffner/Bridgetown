@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// The top of the overview: three numbers, then prod as Grafana sees it over the last
-/// hour: incidents (API errors and latency, engine and job errors) or infra (RPC, jobs,
-/// memory kills, Postgres), with deploys marked.
+/// hour: incidents (API errors and latency, engine and job errors), infra (RPC, jobs,
+/// memory kills, Postgres) or database (prod Postgres connections, lock waits, longest
+/// transaction, replication lag), with deploys marked.
 struct TelemetryPanel: View {
     @Environment(Store.self) private var store
     let snapshot: Snapshot
@@ -11,6 +12,7 @@ struct TelemetryPanel: View {
     enum Mode: String, CaseIterable, Identifiable {
         case incidents = "Incidents"
         case infra = "Infra"
+        case database = "Database"
         var id: Self { self }
         var view: String { rawValue.lowercased() }
     }

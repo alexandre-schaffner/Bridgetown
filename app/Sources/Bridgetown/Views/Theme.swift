@@ -108,7 +108,7 @@ struct StageBackground: ViewModifier {
             .font(.geist(12))
             .foregroundStyle(Ink.text, Ink.dim, Ink.faint)
             .tint(Ink.blue)
-            .background { StoneFill(base: Ink.stage, strength: 0.5).ignoresSafeArea() }
+            .background { Ink.stage.ignoresSafeArea() }
             .environment(\.colorScheme, .dark)
     }
 }
@@ -126,7 +126,7 @@ extension View {
 
     /// An outlined block on the stage. Rows inside are separated by `Hairline`s, not gaps.
     func outlined(radius: CGFloat = Ink.panelRadius, fill: Color = Ink.surface) -> some View {
-        background { StoneFill(base: fill) }
+        background(fill)
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
             .overlay(PixelStroke(radius: radius, style: Ink.edge))
     }
@@ -256,13 +256,6 @@ struct StageButtonStyle: ButtonStyle {
                 .frame(height: compact ? 24 : 28)
                 .background(background, in: RoundedRectangle(cornerRadius: Ink.controlRadius, style: .continuous))
                 .overlay {
-                    if kind == .primary {
-                        // Polished stone: light from above, a lit top edge.
-                        RoundedRectangle(cornerRadius: Ink.controlRadius, style: .continuous)
-                            .fill(LinearGradient(colors: [.white.opacity(0.5), .clear, .black.opacity(0.08)], startPoint: .top, endPoint: .bottom))
-                            .allowsHitTesting(false)
-                        PixelStroke(radius: Ink.controlRadius, style: LinearGradient(colors: [.white, .white.opacity(0)], startPoint: .top, endPoint: .center))
-                    }
                     if kind == .secondary {
                         PixelStroke(radius: Ink.controlRadius, style: Ink.outline)
                     }
@@ -284,7 +277,7 @@ struct StageButtonStyle: ButtonStyle {
         private var background: Color {
             let lift = configuration.isPressed ? 2.0 : hovering && isEnabled ? 1.0 : 0
             switch kind {
-            case .primary: return Color(white: 0.88 - lift * 0.05)
+            case .primary: return Color(white: 0.93 - lift * 0.06)
             case .secondary: return Color.white.opacity(lift * 0.05)
             case .danger: return Ink.red.opacity(1 - lift * 0.1)
             }
@@ -313,7 +306,11 @@ struct TabSwitch<Option: Hashable & Identifiable>: View {
         HStack(spacing: 2) {
             ForEach(options) { option in
                 let selected = option == selection
-                Button { selection = option } label: {
+                Button {
+                    guard option != selection else { return }
+                    Haptics.perform(.alignment, "tabSwitch")
+                    selection = option
+                } label: {
                     Text(title(option))
                         .font(.geist(11.5, .medium))
                         .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))

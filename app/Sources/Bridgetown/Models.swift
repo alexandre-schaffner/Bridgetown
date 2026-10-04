@@ -151,11 +151,12 @@ extension AlertView {
 
 struct AlertOutcome: Codable, Sendable, Equatable {
     /// waiting = an open card is in "Needs you" · dismissed = the user dismissed its card
-    /// and no agent ran · opened = the user opened it from an escalation · teammate = someone
+    /// and no agent ran · opened = the user opened it from an escalation · withdrawn = a
+    /// Bridgetown finding whose signal went back to normal before anyone acted · teammate = someone
     /// else's Bridgetown claimed it in Slack, or they reacted 👀 ("Alice's agent is on it") ·
     /// session = an agent session owns it; headline and tone are the session's own.
     enum Kind: String, LenientStringEnum {
-        case pending, filtered, ignored, suggested, escalated, waiting, dismissed, opened, teammate, session, unknown
+        case pending, filtered, ignored, suggested, escalated, waiting, dismissed, opened, withdrawn, teammate, session, unknown
     }
 
     var kind: Kind
@@ -231,6 +232,10 @@ struct Session: Codable, Sendable, Equatable, Identifiable {
     /// Status line, e.g. "Running", "Closed · root cause not found".
     var headline: String
     var tone: Tone
+    /// The review row, rendered as is: who reviews the agent's fixes, and where it stands.
+    /// Optional so an older daemon, which sends neither, still decodes; the row is left out.
+    var reviewerName: String?
+    var critiqueLine: String?
     /// For finished sessions: the honest one-line outcome.
     var resolution: String?
     var rootCauseFound: Bool?
@@ -243,10 +248,6 @@ struct Session: Codable, Sendable, Equatable, Identifiable {
     var claudeSessionId: String?
     var model: String
     var ciRounds: Int
-    /// Times the adversarial review sent the agent back on this PR.
-    var critiqueRounds: Int
-    /// The last adversarial review of the pushed head; nil before the first one.
-    var critique: Critique?
     var costUsd: Double
     var slackThreadUrl: String?
     /// `POST /sessions/:id/message` is allowed: live, or finished and handed back with
@@ -260,18 +261,6 @@ struct Session: Codable, Sendable, Equatable, Identifiable {
     var reviewUrl: String?
     var startedAt: Date
     var updatedAt: Date
-}
-
-/// What another vendor's model found in the agent's fix, after Jev dropped the nitpicks.
-struct Critique: Codable, Sendable, Equatable {
-    enum Reviewer: String, LenientStringEnum { case codex, unknown }
-
-    var reviewer: Reviewer
-    var passed: Bool
-    /// Findings sent back to the agent.
-    var blocking: Int
-    /// Findings Jev judged not worth a round (style, speculation, already answered).
-    var dropped: Int
 }
 
 struct Step: Codable, Sendable, Equatable {

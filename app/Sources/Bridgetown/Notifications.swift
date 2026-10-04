@@ -1,7 +1,7 @@
 import AppKit
 import UserNotifications
 
-/// Posts a user notification for every new "Needs you" action.
+/// Posts a user notification for each new "Needs you" action (`NewActions`).
 ///
 /// UNUserNotificationCenter traps when the process has no bundle identifier (e.g. under
 /// `swift run`), so everything is gated on `isAvailable`.
@@ -9,8 +9,9 @@ import UserNotifications
 final class Notifier: NSObject {
     static var isAvailable: Bool { Bundle.main.bundleIdentifier != nil }
 
-    private var seenActionIds: Set<String>?
     private var authorized = false
+    /// Clicking a notification shows the app: the island, or the menu bar window with it off.
+    var onOpen: (() -> Void)?
 
     func start() {
         guard Self.isAvailable else { return }
@@ -21,16 +22,9 @@ final class Notifier: NSObject {
         }
     }
 
-    /// Diff on action ids. The first snapshot only establishes the baseline, so a relaunch
-    /// doesn't replay everything already waiting.
-    func snapshotChanged(_ snap: Snapshot) {
-        let ids = Set(snap.actions.map(\.id))
-        defer { seenActionIds = (seenActionIds ?? []).union(ids) }
-        guard let seen = seenActionIds else { return }
-        let fresh = snap.actions.filter { !seen.contains($0.id) }
-        guard !fresh.isEmpty, Self.isAvailable, authorized else { return }
-        guard !QuietHours.isActive(snap.settings.quietHours) else { return }
-        for action in fresh.prefix(3) { post(action) }
+    func post(_ actions: [Action]) {
+        guard Self.isAvailable, authorized else { return }
+        for action in actions.prefix(3) { post(action) }
     }
 
     private func post(_ action: Action) {
@@ -57,7 +51,21 @@ extension Notifier: UNUserNotificationCenterDelegate {
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
-        await MainActor.run { StatusItemOpener.openPopover() }
+        await MainActor.run { onOpen?() }
+    }
+}
+
+/// New "Needs you" actions, snapshot to snapshot, diffed on ids. The first snapshot is the
+/// baseline, so a relaunch doesn't replay everything already waiting.
+struct NewActions {
+    private var seen: Set<String>?
+
+    /// The actions not seen before, in "Needs you" order; none during quiet hours.
+    mutating func update(_ snap: Snapshot, now: Date = .now) -> [Action] {
+        let ids = Set(snap.actions.map(\.id))
+        defer { seen = (seen ?? []).union(ids) }
+        guard let seen, !QuietHours.isActive(snap.settings.quietHours, at: now) else { return [] }
+        return snap.sortedActions.filter { !seen.contains($0.id) }
     }
 }
 

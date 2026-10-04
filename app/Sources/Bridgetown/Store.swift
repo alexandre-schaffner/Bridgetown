@@ -101,7 +101,11 @@ final class Store {
 
     // MARK: Navigation
 
+    /// Navigation you asked for (a row, a link). `back()` is also called when a session
+    /// disappears from under you, so only this one taps the trackpad.
     func show(_ route: Route) {
+        guard route != self.route else { return }
+        Haptics.perform(.generic, "store.show")
         self.route = route
     }
 

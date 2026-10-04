@@ -156,6 +156,35 @@ import Testing
     }
 }
 
+@Suite struct NewActionsTests {
+    @Test func theFirstSnapshotIsTheBaselineThenOnlyNewIdsCount() throws {
+        var snap = try Fixture.snapshot()
+        snap.settings.quietHours.enabled = false
+        var new = NewActions()
+        #expect(new.update(snap).isEmpty)
+        #expect(new.update(snap).isEmpty)
+
+        var fresh = try #require(snap.actions.first)
+        fresh.id = "act_fresh"
+        snap.actions.append(fresh)
+        #expect(new.update(snap).map(\.id) == ["act_fresh"])
+        #expect(new.update(snap).isEmpty)
+    }
+
+    @Test func quietHoursHoldThemBackButStillCountThemSeen() throws {
+        var snap = try Fixture.snapshot()
+        snap.settings.quietHours = .init(enabled: true, start: "00:00", end: "23:59")
+        var new = NewActions()
+        _ = new.update(snap)
+        var fresh = try #require(snap.actions.first)
+        fresh.id = "act_quiet"
+        snap.actions.append(fresh)
+        #expect(new.update(snap, now: Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: .now)!).isEmpty)
+        snap.settings.quietHours.enabled = false
+        #expect(new.update(snap).isEmpty)
+    }
+}
+
 @Suite struct QuietHoursTests {
     private func at(_ hour: Int, _ minute: Int) -> Date {
         var c = DateComponents()

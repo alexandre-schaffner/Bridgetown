@@ -82,7 +82,7 @@ struct DaemonClient: Sendable {
         try await get("/alerts/\(escape(id))")
     }
 
-    /// `incidents` or `infra`.
+    /// `incidents`, `infra` or `database`.
     func board(view: String) async throws -> Board {
         try await get("/boards/\(escape(view))", session: Self.boards)
     }

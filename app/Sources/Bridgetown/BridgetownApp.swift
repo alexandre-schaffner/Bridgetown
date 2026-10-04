@@ -29,12 +29,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = Store()
     let daemon = DaemonProcess()
     let notifier = Notifier()
+    private(set) lazy var island = IslandController(store: store, daemon: daemon)
 
     #if DEBUG
     let preview = PreviewHarness(arguments: ProcessInfo.processInfo.arguments)
     #endif
 
     private var signalSources: [DispatchSourceSignal] = []
+    private var newActions = NewActions()
 
     var popoverHeight: CGFloat {
         #if DEBUG
@@ -50,7 +52,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installSignalHandlers()
 
         notifier.start()
-        store.onSnapshot = { [weak notifier] _, next in notifier?.snapshotChanged(next) }
+        notifier.onOpen = { [weak self] in
+            if IslandController.isEnabled { self?.island.open() } else { StatusItemOpener.openPopover() }
+        }
+        // Each new "Needs you" is both a notification and a banner under the notch.
+        store.onSnapshot = { [weak self] _, next in
+            guard let self else { return }
+            let fresh = newActions.update(next)
+            guard let first = fresh.first else { return }
+            notifier.post(fresh)
+            island.announce(first)
+        }
+        island.start()
 
         daemon.start()
         if daemon.mode != .missing {
@@ -58,7 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         #if DEBUG
-        preview.start(store: store, daemon: daemon, popoverHeight: popoverHeight)
+        preview.start(store: store, daemon: daemon, island: island, popoverHeight: popoverHeight)
         #endif
     }
 
