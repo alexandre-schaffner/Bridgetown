@@ -35,6 +35,20 @@ export const describeTool = (name: string, input: unknown): string => {
   return truncate(`${name.replace(/^mcp__/, "")} ${detail}`.trim(), 160)
 }
 
+const MCP_PROBLEM_MARK = "MCP · sessions:"
+
+/**
+ * What to tell the user about an MCP server sessions couldn't use. merkl and grafana
+ * come from the monorepo's `.mcp.json`, so `claude mcp login` only finds them there.
+ */
+export const mcpProblem = (name: string, status: string): string => {
+  if (name === "grafana") return `grafana ${MCP_PROBLEM_MARK} not reachable. Run \`bun grafana:mcp\` in the monorepo.`
+  if (status === "needs-auth") return `${name} ${MCP_PROBLEM_MARK} needs a login. Run \`claude mcp login ${name}\` in the monorepo.`
+  return `${name} ${MCP_PROBLEM_MARK} ${status}. Check \`claude mcp get ${name}\` in the monorepo.`
+}
+
+export const isMcpProblem = (error: string | null): boolean => error?.includes(MCP_PROBLEM_MARK) === true
+
 /** How a turn ended: a structured result to act on, or a reason it cannot be trusted. */
 export type TurnEnd =
   | { readonly _tag: "Result"; readonly result: SessionResult }
@@ -63,14 +77,9 @@ export const handleMessage = (id: string, message: SDKMessage, sink: EventSink):
             down.length === 0 ? "status" : "error",
             `MCP: ${servers.map((server) => `${server.name} ${server.status}`).join(", ") || "none configured"}`,
           )
-          for (const server of down) {
-            yield* hub.patchStatus({
-              error:
-                server.name === "grafana"
-                  ? "grafana MCP is not reachable from sessions — run `bun grafana:mcp` in the monorepo"
-                  : `${server.name} MCP is ${server.status} in sessions — run \`claude mcp login ${server.name}\` once in a terminal`,
-            })
-          }
+          for (const server of down) yield* hub.patchStatus({ error: mcpProblem(server.name, server.status) })
+          // Every server connected: a problem an earlier session reported is fixed now.
+          if (down.length === 0 && isMcpProblem((yield* hub.status).error)) yield* hub.patchStatus({ error: null })
         }
         return
       case "assistant":
