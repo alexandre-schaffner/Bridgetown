@@ -147,6 +147,7 @@ describe("re-triage never overwrites a session you just started (M4)", () => {
     judge: () => Deferred.succeed(judging, undefined).pipe(Effect.andThen(Deferred.await(answer)), Effect.as(verdict())),
     judgeInbox: () => Effect.succeed(verdict()),
     judgeFinding: () => Effect.die("unused"),
+    judgeLogPatterns: () => Effect.die("unused"),
   }
   const world = makeWorld({ jev, slack: fakeSlack((channel) => (channel === "C0AUKD42N3U" ? [{ ts, text: "API 5xx spike on /v4/opportunities", bot_id: "B1" }] : [])) })
   afterAll(() => world.dispose())

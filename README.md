@@ -109,6 +109,14 @@ agents that open a PR, which then goes green and gets approved on its own. Workt
   summary. Jev judges it like any alert, but a finding is at most suggested, never auto-started, and it is raised at most once per
   signal every 6 hours. Its agent is told there is no Slack thread, and that a rise with no cause is closed with no action, not a code change.
   Toggle it in **Settings → Behaviour**.
+- **And it sweeps prod's logs.** Every 10 minutes it groups prod's log lines into patterns (one message with numbers collapsed,
+  merged across the jobs that log it; `daemon/src/watch/logs.ts`): errors over the last day, and warnings that name a risk
+  (deadlock, rate limited, retired, reverted…) over the last 2 hours. An error pattern is a candidate when it is new or at least 5×
+  its usual rate; a risky warning is one even when steady, since a retirement notice never spikes. Up to 12 candidates go to Jev in
+  one call, three yes/no questions each (`daemon/src/watch/judge.ts`): is it a real problem, is it agent work, are users affected.
+  Counts and rates are worked out in code and given to Jev as a sentence. Each pattern is judged at most once a day, and that memory
+  survives restarts. A pattern Jev calls a problem (above the suggest threshold) becomes a finding linked to its lines in Grafana
+  Explore, again only ever suggested. The queries are constants: nothing from a log line goes into a query Bridgetown runs.
 
 ## Safety model
 

@@ -35,6 +35,7 @@ const noJev: JevShape = {
   judge: () => Effect.fail(new MissingCredential({ service: "jev", message: "no TypeSafe API key" })),
   judgeInbox: () => Effect.fail(new MissingCredential({ service: "jev", message: "no TypeSafe API key" })),
   judgeFinding: () => Effect.fail(new MissingCredential({ service: "jev", message: "no TypeSafe API key" })),
+  judgeLogPatterns: () => Effect.fail(new MissingCredential({ service: "jev", message: "no TypeSafe API key" })),
 }
 
 /** Grafana with no data: every query answers with no series and no rows. */

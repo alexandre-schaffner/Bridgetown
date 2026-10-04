@@ -4,7 +4,8 @@ import type { AdapterError } from "../domain/errors.ts"
 import { daysAgo, now as nowIso } from "../domain/ids.ts"
 import { type Alert, type AlertKind, type Triage, triageEvent } from "../domain/model.ts"
 import { type Board, Boards } from "../grafana/board.ts"
-import { alertBoard, type PanelSpec, watchBoard } from "../grafana/boards.ts"
+import { alertBoard, exploreLogsLink, type PanelSpec, watchBoard } from "../grafana/boards.ts"
+import { Grafana } from "../grafana/client.ts"
 import { Hub } from "../hub.ts"
 import { AlertPipeline } from "../pipeline/alerts.ts"
 import { Store } from "../store/store.ts"
@@ -13,6 +14,7 @@ import { alertKind } from "../triage/kind.ts"
 import { decide } from "../triage/policy.ts"
 import { applyRules } from "../triage/rules.ts"
 import { type Anomaly, detect, findingOf } from "./detect.ts"
+import { candidates, judgeInput, linesQuery, logFinding, mergeRows, type PatternRow, rowOf, SWEEPS, type Sweep, sweepQuery } from "./logs.ts"
 
 /**
  * Bridgetown's own eyes on prod: every few minutes it reads the overview
@@ -22,6 +24,12 @@ import { type Anomaly, detect, findingOf } from "./detect.ts"
  */
 export interface WatcherShape {
   readonly tick: Effect.Effect<void, AdapterError>
+  /**
+   * Sweeps prod's error and warning logs for patterns that are new, surging or
+   * name a risk, asks Jev about the new candidates in one batch, and suggests
+   * an investigation for each one Jev calls a real problem.
+   */
+  readonly sweepLogs: Effect.Effect<void, AdapterError>
 }
 
 export class Watcher extends Context.Service<Watcher, WatcherShape>()("Watcher") {}
@@ -32,6 +40,10 @@ const COOLDOWN_HOURS = 6
 const COVERED_HOURS = 2
 
 const hoursAgo = (hours: number) => daysAgo(hours / 24)
+
+/** Log patterns Jev has judged, so the same one is asked about once a day: `{ [key]: ISO time }`, kept across restarts. */
+const JUDGED_KEY = "watch_log_judged"
+const JUDGED_MS = 24 * 3_600_000
 
 /** Kinds whose board leads with a general signal (API 5xx for any runtime error), not one the alert is about. */
 const VAGUE_KINDS: ReadonlySet<AlertKind> = new Set(["runtime_error", "informational", "build_failure"])
@@ -65,6 +77,7 @@ export const WatcherLive = Layer.effect(Watcher)(
     const boards = yield* Boards
     const jev = yield* Jev
     const pipeline = yield* AlertPipeline
+    const grafana = yield* Grafana
 
     const triage = Effect.fn("Watcher.triage")(function* (finding: ParsedAlert, history: ReadonlyArray<Alert>) {
       const verdict = yield* jev.judge({ alert: finding, thread: [], reactions: [], history }).pipe(Effect.result)
@@ -130,6 +143,75 @@ export const WatcherLive = Layer.effect(Watcher)(
       }
     })
 
-    return { tick }
+    const loadJudged = (now: Date) =>
+      store.getKv(JUDGED_KEY).pipe(
+        Effect.map((raw): Record<string, string> => {
+          try {
+            const parsed: unknown = JSON.parse(raw ?? "{}")
+            if (typeof parsed !== "object" || parsed === null) return {}
+            return Object.fromEntries(
+              Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string" && now.getTime() - Date.parse(entry[1]) < JUDGED_MS),
+            )
+          } catch {
+            return {}
+          }
+        }),
+      )
+
+    /** One sweep's patterns; a failed query (VictoriaLogs busy) is logged and leaves the other sweep. */
+    const patternsOf = (sweep: Sweep, now: Date) =>
+      grafana.logRows(sweepQuery(sweep), { start: new Date(now.getTime() - SWEEPS[sweep].windowMinutes * 60_000), end: now, stepSeconds: 60 }, 50).pipe(
+        Effect.map((rows) => rows.flatMap((row) => rowOf(sweep, row) ?? [])),
+        Effect.catch((error) => Effect.logWarning(`watch: ${sweep} sweep failed: ${error.message}`).pipe(Effect.as<ReadonlyArray<PatternRow>>([]))),
+      )
+
+    const sweepLogs = Effect.gen(function* () {
+      if (!(yield* hub.settings).watchProd || (yield* hub.status).grafanaMcp === "down") return
+      const now = new Date()
+      const judged = yield* loadJudged(now)
+      // One after the other: each is a heavy query, and VictoriaLogs is shared with everyone.
+      const errors = yield* patternsOf("errors", now)
+      const warnings = yield* patternsOf("warnings", now)
+      const picked = candidates(mergeRows([...errors, ...warnings]), new Set(Object.keys(judged)))
+      if (picked.length === 0) return
+      const result = yield* jev.judgeLogPatterns(picked.map(judgeInput)).pipe(Effect.result)
+      if (result._tag === "Failure") {
+        // Not marked judged: the next sweep asks again.
+        return yield* hub.patchStatus({ jev: result.failure._tag === "MissingCredential" ? "missing_key" : "error", error: `Jev: ${result.failure.message}` })
+      }
+      yield* hub.patchStatus({ jev: "ok" })
+      yield* store.setKv(JUDGED_KEY, JSON.stringify({ ...judged, ...Object.fromEntries(picked.map((p) => [p.key, nowIso()])) }))
+      const threshold = (yield* hub.settings).thresholds.suggestActionable
+      for (const [i, pattern] of picked.entries()) {
+        const verdict = result.success[i]
+        if (verdict === undefined || verdict.problem < threshold) continue
+        const link = exploreLogsLink(linesQuery(pattern), new Date(now.getTime() - 3 * 3_600_000), now)
+        const finding = logFinding(pattern, verdict, now, link)
+        const pct = (value: number) => `${Math.round(value * 100)}%`
+        // Like every finding, at most a suggestion: an agent starts when you press Investigate.
+        const triage: Triage = {
+          decision: "suggest",
+          reason: `Jev: likely a real problem (problem ${pct(verdict.problem)} · agent ${pct(verdict.agent)} · users ${pct(verdict.users)})`,
+          jev: { actionable: verdict.problem, agentResolvable: verdict.agent, humanOnIt: 0, kind: "runtime_error", kindConfidence: 0, depth: "standard", urgency: 3 * verdict.users },
+        }
+        const alert = alertFromParsed(finding, {
+          permalink: link,
+          receivedAt: nowIso(),
+          triage,
+          sessionId: null,
+          events: [
+            { at: nowIso(), text: `Found by Bridgetown in the logs: ${finding.title}` },
+            { at: nowIso(), text: triageEvent(triage) },
+          ],
+        })
+        yield* store.putAlert(alert).pipe(
+          Effect.andThen(hub.notify),
+          Effect.andThen(pipeline.act(alert)),
+          Effect.catch((error) => Effect.logWarning(`watch: log pattern ${pattern.key} not raised: ${error.message}`)),
+        )
+      }
+    })
+
+    return { tick, sweepLogs }
   }),
 )

@@ -51,6 +51,7 @@ describe("teammates running Bridgetown", () => {
     judge: () => Effect.sync(() => void judged++).pipe(Effect.as(answer)),
     judgeInbox: () => Effect.succeed(verdict()),
     judgeFinding: () => Effect.die("unused"),
+    judgeLogPatterns: () => Effect.die("unused"),
   }
   const slack = {
     ...fakeSlack((channel) => (channel === CHANNEL ? [message] : [])),

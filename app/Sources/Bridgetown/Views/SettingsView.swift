@@ -311,7 +311,7 @@ private struct BehaviourTab: View {
             Section {
                 Toggle("Watch prod", isOn: settings.binding(\.watchProd))
             } footer: {
-                Text("Every 5 minutes, Bridgetown checks the overview's prod signals in Grafana. When one stays well above its usual level and no Slack alert covers it, you get a suggestion to investigate. It never starts an agent on its own.")
+                Text("Every 5 minutes, Bridgetown checks the overview's prod signals in Grafana; every 10, it sweeps prod's error and warning logs for new, surging or risky patterns and has Jev judge them in one batch. When something looks like a real problem and no Slack alert covers it, you get a suggestion to investigate. It never starts an agent on its own.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 

@@ -66,6 +66,7 @@ const jev: JevShape = {
         ? { realDefect: 0.1, blocking: 0.05, rebutted: null }
         : { realDefect: 0.92, blocking: 0.86, rebutted: null },
     ),
+  judgeLogPatterns: () => Effect.die("unused"),
 }
 
 const reviewing = (overrides: Partial<Session> = {}): Session =>

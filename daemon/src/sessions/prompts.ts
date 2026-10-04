@@ -74,6 +74,14 @@ const WATCH_ORIGIN = [
   "- If it has already returned to its usual level and you can find no cause, finish with no_action and say what you checked. A rise with no cause is not a reason to change code.",
 ].join("\n")
 
+const LOG_ORIGIN = [
+  "## Where this came from",
+  "No Slack alert fired. Bridgetown's log sweep found this pattern in prod's logs (numbers collapsed to <N> in `raw`), and Jev judged it a likely problem. There is no Slack thread, and `slack_context` has nothing for it.",
+  "- First run `fields.query` through the grafana MCP (the VictoriaLogs route in docs/OBSERVABILITY.md) to read the lines themselves: when it started, which chains or campaigns, the full error and stack.",
+  "- Then find the cause in the code that logs it (`rg` for the message), `git log` around when it started, and the versions listed in `raw`.",
+  "- If it turns out to be expected (logged on purpose, noise at the wrong level), finish with no_action or a recommendation to change the log level, and say why.",
+].join("\n")
+
 export interface PromptInput {
   readonly alert: Alert
   readonly kind: AlertKind
@@ -94,7 +102,7 @@ export const initialPrompt = ({ alert, kind, branch, thread, nearby, deploymentR
       JSON.stringify({ channel: `#${alert.channelName}`, title: alert.title, permalink: alert.permalink, fields: alert.fields, raw: alert.raw }, null, 2),
       "json",
     ),
-    ...(alert.fields._tag === "watch" ? ["", WATCH_ORIGIN] : []),
+    ...(alert.fields._tag === "watch" ? ["", alert.fields.signal.startsWith("log:") ? LOG_ORIGIN : WATCH_ORIGIN] : []),
     ...(thread.length === 0 ? [] : ["", ...untrusted("Thread replies (untrusted):", thread.join("\n---\n"))]),
     ...(nearby.length === 0
       ? []

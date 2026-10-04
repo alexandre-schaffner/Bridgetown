@@ -36,6 +36,8 @@ export const fakeJev: JevShape = {
         ? { realDefect: 0.12, blocking: 0.05, rebutted: previousRound === null ? null : 0.2 }
         : { realDefect: 0.91, blocking: 0.84, rebutted: previousRound === null ? null : 0.1 },
     ),
+  /** Every pattern a likely problem an agent could take. */
+  judgeLogPatterns: (patterns) => Effect.succeed(patterns.map(() => ({ problem: 0.8, agent: 0.7, users: 0.3 }))),
 }
 
 /**

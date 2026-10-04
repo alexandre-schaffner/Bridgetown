@@ -18,6 +18,7 @@ describe("ingest: dedupe by content hash, and the horizon", () => {
     judge: () => Effect.sync(() => void judged++).pipe(Effect.as(verdict({ actionable: 0.1, agentResolvable: 0.1 }))),
     judgeInbox: () => Effect.succeed(verdict()),
     judgeFinding: () => Effect.die("unused"),
+    judgeLogPatterns: () => Effect.die("unused"),
   }
   const world = makeWorld({ jev, slack: fakeSlack((channel) => (channel === CHANNEL ? messages : [])) })
   afterAll(() => world.dispose())

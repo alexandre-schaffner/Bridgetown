@@ -142,6 +142,7 @@ describe("Watcher.tick", () => {
     judge: () => Effect.sync(() => void judged++).pipe(Effect.as(verdict({ kind: "runtime_error", actionable: 0.95, agentResolvable: 0.9 }))),
     judgeInbox: () => Effect.die("unused"),
     judgeFinding: () => Effect.die("unused"),
+    judgeLogPatterns: () => Effect.die("unused"),
   }
   const world = makeWorld({ jev, grafana: rising })
   afterAll(() => world.dispose())
@@ -185,6 +186,7 @@ describe("Watcher.tick with a session already on the signal", () => {
     judge: () => Effect.sync(() => void judged++).pipe(Effect.as(verdict())),
     judgeInbox: () => Effect.die("unused"),
     judgeFinding: () => Effect.die("unused"),
+    judgeLogPatterns: () => Effect.die("unused"),
   }
   const world = makeWorld({ jev, grafana: risingApi5xx() })
   afterAll(() => world.dispose())

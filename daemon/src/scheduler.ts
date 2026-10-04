@@ -66,6 +66,7 @@ export const SchedulerLive = Layer.effect(Scheduler)(
           yield* loop("grafana", health.probeGrafana, Schedule.spaced("60 seconds"), "60 seconds")
           yield* loop("boards", boards.warm, Schedule.spaced("300 seconds"))
           yield* loop("watch", watcher.tick, Schedule.spaced("300 seconds"), "90 seconds")
+          yield* loop("logs", watcher.sweepLogs, Schedule.spaced("600 seconds"), "150 seconds")
           return yield* Effect.never
         }),
       ),

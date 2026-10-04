@@ -1,5 +1,6 @@
 import type { Alert } from "../domain/model.ts"
 import { alertKind } from "../triage/kind.ts"
+import { LOGS_DATASOURCE } from "./client.ts"
 
 /**
  * Panel titles leave out the route, image or chain: the board's title names it.
@@ -339,3 +340,10 @@ export const alertBoard = (alert: Alert, now: Date): BoardSpec | null => {
 /** "Open in Grafana" for a panel's dashboard over the board's window. Opened in the browser, never fetched. */
 export const dashboardLink = (dashboard: string, from: Date, to: Date): string =>
   `${GRAFANA_BASE_URL}/d/${dashboard}?from=${from.getTime()}&to=${to.getTime()}`
+
+/** "Open in Grafana" for a LogsQL query: Explore on VictoriaLogs over the window. Opened in the browser, never fetched. */
+export const exploreLogsLink = (query: string, from: Date, to: Date): string => {
+  const datasource = { type: "victoriametrics-logs-datasource", uid: LOGS_DATASOURCE }
+  const panes = { a: { datasource: datasource.uid, queries: [{ refId: "A", expr: query, datasource }], range: { from: String(from.getTime()), to: String(to.getTime()) } } }
+  return `${GRAFANA_BASE_URL}/explore?schemaVersion=1&panes=${encodeURIComponent(JSON.stringify(panes))}`
+}

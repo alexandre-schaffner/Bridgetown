@@ -4,6 +4,7 @@ import { type AdapterError, attempt, MissingCredential } from "../domain/errors.
 import type { Alert, FindingVerdict, JevVerdict } from "../domain/model.ts"
 import type { ParsedAlert, ThreadReply } from "../domain/alert.ts"
 import { type FindingJudgeInput, findingQuestions, findingState } from "../critique/judge.ts"
+import { type LogPatternInput, type LogPatternVerdict, logPatternQuestions, logPatternState } from "../watch/judge.ts"
 
 export interface JudgeInput {
   readonly alert: ParsedAlert
@@ -24,6 +25,8 @@ export interface JevShape {
   readonly judgeInbox: (input: InboxJudgeInput) => Effect.Effect<JevVerdict, MissingCredential | AdapterError>
   /** Whether a reviewer finding is a real, blocking defect, not a nitpick or an argument already settled. */
   readonly judgeFinding: (input: FindingJudgeInput) => Effect.Effect<FindingVerdict, MissingCredential | AdapterError>
+  /** One call for a batch of log patterns: whether each is a real problem, agent work, and hurting users. In input order. */
+  readonly judgeLogPatterns: (patterns: ReadonlyArray<LogPatternInput>) => Effect.Effect<ReadonlyArray<LogPatternVerdict>, MissingCredential | AdapterError>
 }
 
 export class Jev extends Context.Service<Jev, JevShape>()("Jev") {}
@@ -254,6 +257,12 @@ export const makeJev = (apiKey: string | undefined, model: string): JevShape => 
       }
       const answers = yield* ask(state, later)
       return { realDefect: answers.real_defect.noul, blocking: answers.blocking.noul, rebutted: answers.rebutted.noul }
+    }),
+    judgeLogPatterns: Effect.fn("Jev.judgeLogPatterns")(function* (patterns: ReadonlyArray<LogPatternInput>) {
+      if (patterns.length === 0) return []
+      const answers = yield* ask(logPatternState(patterns), logPatternQuestions(patterns.length))
+      const yes = (key: string) => answers[key]?.noul ?? 0
+      return patterns.map((_, i) => ({ problem: yes(`p${i}_problem`), agent: yes(`p${i}_agent`), users: yes(`p${i}_users`) }))
     }),
   }
 }
