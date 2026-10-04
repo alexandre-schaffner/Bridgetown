@@ -42,7 +42,7 @@ const fence = (value: string): string => value.replaceAll("```", "ʼʼʼ")
  * Slack-sourced text, fenced and labelled as data. Every prompt puts outside
  * content through here, so none of it can close the fence or pass for rules.
  */
-const untrusted = (label: string, body: string, lang = ""): ReadonlyArray<string> => [label, "```" + lang, fence(body), "```"]
+export const untrusted = (label: string, body: string, lang = ""): ReadonlyArray<string> => [label, "```" + lang, fence(body), "```"]
 
 /** The rules every automated turn starts with, alert or inbox. */
 const sharedRules = (branch: string): ReadonlyArray<string> => [
@@ -52,6 +52,7 @@ const sharedRules = (branch: string): ReadonlyArray<string> => [
   `- Use \`GH_HOST=${GH_HOST}\` for every \`gh\` command.`,
   `- You are in a fresh worktree on branch \`${branch}\` (from origin/main). Commit there and push with \`git push -u origin ${branch}\`.`,
   "- Pull request titles match `^(fix|clean|chore|feat|docs)(\\(.+\\))?!?:` (lowercase, imperative, no trailing period, e.g. `fix(app-admin): pin vite to 6.3`).",
+  "- Open pull requests as drafts (`gh pr create --draft`). An independent reviewer (a model from another vendor) checks every fix you push, and Bridgetown takes the PR out of draft once the review passes; `gh pr ready` is not yours to run.",
   "- Call the `report` tool at each phase change so the user can follow along. Use `ask` only when truly blocked.",
 ]
 
@@ -63,6 +64,14 @@ const RIGOR = [
   "- An unavailable MCP server is one blocked avenue, not a reason to stop. Say it was unavailable and keep going with the rest.",
   "- Monitoring alerts are often split across several messages (a summary plus a details message). Call `slack_context` early to read the neighbours.",
   "- Hand off with needs_human only after you have tried every avenue that applies. Record each one in `tried`. Set rootCauseFound honestly; it decides what the user sees.",
+].join("\n")
+
+const WATCH_ORIGIN = [
+  "## Where this came from",
+  "No Slack alert fired. Bridgetown's prod watcher saw this signal rise in Grafana: the median of its last few steps since `fields.since` (`fields.level`) against the 90th percentile of the hours before (`fields.usual`). There is no Slack thread, and `slack_context` has nothing for it.",
+  "- First run `fields.query` again through the grafana MCP (`query_prometheus` for `prom`; for `logs`, the VictoriaLogs route in docs/OBSERVABILITY.md) over the last few hours, to confirm it is real and see whether it is still going.",
+  "- Then find what changed: a deploy listed in `raw`, `git log` on the code behind the signal, the error lines themselves in the logs.",
+  "- If it has already returned to its usual level and you can find no cause, finish with no_action and say what you checked. A rise with no cause is not a reason to change code.",
 ].join("\n")
 
 export interface PromptInput {
@@ -85,6 +94,7 @@ export const initialPrompt = ({ alert, kind, branch, thread, nearby, deploymentR
       JSON.stringify({ channel: `#${alert.channelName}`, title: alert.title, permalink: alert.permalink, fields: alert.fields, raw: alert.raw }, null, 2),
       "json",
     ),
+    ...(alert.fields._tag === "watch" ? ["", WATCH_ORIGIN] : []),
     ...(thread.length === 0 ? [] : ["", ...untrusted("Thread replies (untrusted):", thread.join("\n---\n"))]),
     ...(nearby.length === 0
       ? []
@@ -96,7 +106,7 @@ export const initialPrompt = ({ alert, kind, branch, thread, nearby, deploymentR
     RIGOR,
     "",
     ...sharedRules(branch),
-    "- Pull request: `gh pr create --base main`.",
+    "- Pull request: `gh pr create --draft --base main`.",
     `  Body: the diagnosis, the evidence, how you verified it, and a line "Opened by Bridgetown from ${alert.permalink ?? `#${alert.channelName}`}".`,
     "- Keep the fix minimal and follow the repository's standards (CLAUDE.md, Biome, comment-light). Run `bun type` / the relevant tests before pushing.",
     "- Don't wait for CI. Once the PR is open and pushed, finish with the structured result: Bridgetown watches the checks and sends you back with the failing logs if one goes red.",

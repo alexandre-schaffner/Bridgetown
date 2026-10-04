@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { Actions } from "../actions/actions.ts"
-import { acceptsMessages, type Action, type Alert, dismissCloses, openableUrl, type Session, triageEvent } from "../domain/model.ts"
+import { acceptsMessages, type Action, type Alert, critiquePassed, dismissCloses, openableUrl, type Session, triageEvent } from "../domain/model.ts"
 import { alertOutcome } from "../domain/outcome.ts"
 import { progressOf } from "../domain/progress.ts"
 import { Hub } from "../hub.ts"
@@ -26,6 +26,7 @@ const alertView = (alert: Alert, session: Session | undefined, openCards: number
   triage: alert.triage,
   sessionId: alert.sessionId,
   feedback: alert.feedback,
+  claimedBy: alert.claimedBy,
   outcome: alertOutcome(alert, session, openCards),
 })
 
@@ -44,6 +45,16 @@ export const sessionView = (session: Session) => ({
   claudeSessionId: session.claudeSessionId,
   model: session.model,
   ciRounds: session.ciRounds,
+  critiqueRounds: session.critiqueRounds,
+  critique:
+    session.critique === null
+      ? null
+      : {
+          reviewer: session.critique.reviewer,
+          passed: critiquePassed(session.critique),
+          blocking: session.critique.findings.filter((f) => f.blocks).length,
+          dropped: session.critique.findings.filter((f) => !f.blocks).length,
+        },
   costUsd: session.costUsd,
   slackThreadUrl: session.slackThreadUrl,
   ...progressOf(session),

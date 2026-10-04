@@ -8,7 +8,7 @@ import * as m from "./fixtures/messages.ts"
 
 const releases = { channelId: "C0AUKD42N3U", channelName: "alert-releases", myUserId: "U07ALEX" }
 const uptime = { channelId: "C0B001L8UQ1", channelName: "alert-uptime", myUserId: "U07ALEX" }
-const empty = { activeSessions: [], sameFingerprint: [] }
+const empty = { activeSessions: [], sameFingerprint: [], claimedBy: [] }
 
 describe("rules", () => {
   test("judge failures, filter the rest", () => {

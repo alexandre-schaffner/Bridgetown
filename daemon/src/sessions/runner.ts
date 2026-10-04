@@ -1,11 +1,11 @@
 import { Context, Effect, FiberMap, FiberSet, Layer, Queue, SynchronizedRef } from "effect"
 import { ActionQueue } from "../actions/queue.ts"
+import { MAX_CRITIQUE_ROUNDS } from "../critique/transitions.ts"
 import { type AdapterError, Conflict, errorMessage, NotFound } from "../domain/errors.ts"
 import { newId, now } from "../domain/ids.ts"
 import { acceptsMessages, type Alert, holdsSlot, isActive, isFinished, type Session } from "../domain/model.ts"
 import { Hub } from "../hub.ts"
 import { GitHub } from "../ship/github.ts"
-import * as Messages from "../ship/messages.ts"
 import { SlackThread } from "../slack/thread.ts"
 import { Store } from "../store/store.ts"
 import { alertKind } from "../triage/kind.ts"
@@ -132,7 +132,7 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
         return settings.maxConcurrent - (yield* store.activeSessions()).filter((s) => holdsSlot(s, live)).length
       })
 
-    const { finishFailed, finalize } = makeFinish({ store, thread, repo, queue, github, sendBack: (id, prompt) => deliver(id, prompt, {}, false) })
+    const { finishFailed, finalize } = makeFinish({ store, thread, repo, queue, github, hub, sendBack: (id, prompt) => deliver(id, prompt, {}, false) })
 
     const { runTurn } = makeTurns({
       store,
@@ -240,7 +240,7 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
         Effect.ignore,
       )
 
-    /** A retried session picks its conversation back up; a new one gets the alert (and posts that it is on it). */
+    /** A retried session picks its conversation back up; a new one gets the alert. Its claim in Slack went out before it was queued (`Claims`). */
     const firstPrompt = (ready: Session, warnings: ReadonlyArray<string>) =>
       Effect.gen(function* () {
         if (ready.claudeSessionId !== null) return { text: `${RETRY_PROMPT}${setupNotes(warnings)}`, resume: true }
@@ -263,7 +263,6 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
                 deploymentRepoPath: (yield* hub.settings).deploymentRepoPath,
               })
         if ((yield* repo.get(ready.id))?.status !== "preparing") return undefined
-        if (alert.fields._tag !== "inbox") yield* thread.post(alert, Messages.investigating)
         return { text: `${prompt}${setupNotes(warnings)}`, resume: false }
       })
 
@@ -354,6 +353,8 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
         yield* repo.log(sessionId, "text", `You: ${text}`)
         // An agent blocked on `ask` is waiting for exactly this.
         if (yield* asks.answerSession(sessionId, text)) return
+        // Review rounds spent: your message is the call to keep going, so the review gets a fresh budget.
+        if (session.critiqueRounds >= MAX_CRITIQUE_ROUNDS) yield* repo.patch(sessionId, { critiqueRounds: 0 })
         const delivery = yield* deliver(sessionId, text, {}, true)
         if (delivery === "refused") return yield* new Conflict({ message: "The session no longer takes messages" })
         if (delivery === "sent") yield* repo.patch(sessionId, { activity: "Read your message" })

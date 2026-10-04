@@ -66,7 +66,7 @@ const program = Effect.gen(function* () {
   for (const item of [...items].reverse()) {
     const parsed = parseMessage(item.message, { channelId: item.channel, channelName: item.channel, myUserId: undefined })
     const history = seen.filter((a) => a.fingerprint === parsed.fingerprint)
-    const rule = applyRules(parsed, { activeSessions: new Array<Session>(), sameFingerprint: history })
+    const rule = applyRules(parsed, { activeSessions: new Array<Session>(), sameFingerprint: history, claimedBy: [] })
     let line: string
     let decision: Decision
     if (rule._tag !== "Judge") {

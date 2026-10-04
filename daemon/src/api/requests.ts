@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Effect, Record, Schema } from "effect"
 import { attempt, errorMessage, InvalidInput } from "../domain/errors.ts"
 import { Settings } from "../domain/model.ts"
 
@@ -13,17 +13,14 @@ export const MessageBody = Schema.Struct({ text: Schema.String })
 export const PauseBody = Schema.Struct({ paused: Schema.Boolean })
 export const SettingsPatch = Schema.Struct({
   channels: Schema.optional(Settings.fields.channels),
-  thresholds: Schema.optional(Schema.Struct({
-    autoActionable: Schema.optional(Fraction),
-    autoResolvable: Schema.optional(Fraction),
-    autoHumanOnItMax: Schema.optional(Fraction),
-    suggestActionable: Schema.optional(Fraction),
-    suggestResolvable: Schema.optional(Fraction),
-  })),
+  // Every threshold, each a fraction: a new one is patchable without listing it here.
+  thresholds: Schema.optional(Schema.Struct(Record.map(Settings.fields.thresholds.fields, () => Schema.optional(Fraction)))),
   autoStart: Schema.optional(Schema.Boolean),
   inbox: Schema.optional(Schema.Boolean),
   maxConcurrent: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
   dryRun: Schema.optional(Schema.Boolean),
+  adversarialReview: Schema.optional(Schema.Boolean),
+  watchProd: Schema.optional(Schema.Boolean),
   pollSeconds: Schema.optional(Schema.Number.check(Schema.isGreaterThan(0))),
   monorepoPath: Schema.optional(Schema.String),
   deploymentRepoPath: Schema.optional(Schema.String),

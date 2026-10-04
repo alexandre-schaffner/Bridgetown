@@ -16,6 +16,8 @@ export const REASONS = {
   apiWrite: "Write calls to the GitHub API are not allowed from Bridgetown sessions. Use `gh pr create` / `gh pr comment` for your own pull request.",
   graphql: "GraphQL mutations are not allowed from Bridgetown sessions.",
   review: "Reviews and PR state changes are the user's call.",
+  draft:
+    "Open the pull request as a draft (`gh pr create --draft`). An independent review checks every pushed fix; Bridgetown takes the PR out of draft once it passes.",
   alias: "Aliases could run a refused command under another name. Run the command itself.",
   cluster: "Cluster access is not allowed. Read logs through the grafana MCP and describe any cluster action in your recommendation.",
   gcp: "GCP access is not allowed from automated sessions (prod safety hard rule).",

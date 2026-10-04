@@ -18,7 +18,7 @@ const alert: Alert = {
   title: "merkl-admin v0.6.0 · Build failed", summary: "", raw: "raw text", source: "releases", fingerprint: "f",
   fields: { _tag: "generic" }, mentionsMe: false, receivedAt: "2026-10-01T00:00:00.000Z",
   triage: { decision: "ignore", reason: "noise", jev: null }, sessionId: "s_queued", feedback: null,
-  events: [{ at: "2026-10-01T00:00:00.000Z", text: "Ignored by Jev: noise" }], disposition: null,
+  events: [{ at: "2026-10-01T00:00:00.000Z", text: "Ignored by Jev: noise" }], disposition: null, claimedBy: [],
 }
 
 const queued: Session = {
@@ -26,7 +26,7 @@ const queued: Session = {
   activity: "Queued", diagnosis: null, outcome: null, recommendation: null, prUrl: null, branch: "fix-bt-x", worktree: null,
   repoPath: "/r", claudeSessionId: null, model: "m", effort: "high", ciRounds: 0, costUsd: 0, slackThreadUrl: null,
   release: null, milestones: NO_MILESTONES, rootCauseFound: null, resolution: null, pushbacks: 0, component: null,
-  review: null, mergeRequestedAt: null, releaseTag: null, deployStage: null, startedAt: "2026-10-01T00:00:00.000Z", updatedAt: "2026-10-01T00:00:00.000Z",
+  review: null, critiqueRounds: 0, critique: null, mergeRequestedAt: null, releaseTag: null, deployStage: null, startedAt: "2026-10-01T00:00:00.000Z", updatedAt: "2026-10-01T00:00:00.000Z",
 }
 
 let server: BoundServer

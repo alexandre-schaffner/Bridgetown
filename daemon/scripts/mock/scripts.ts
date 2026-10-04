@@ -53,7 +53,9 @@ const asking: Script = {
   ],
 }
 
-let nextPr = 3350
+let nextPr = 3360
+/** PRs the scripted agents opened this run, so a resumed turn keeps its session's PR. */
+const opened = new Map<string, string>()
 
 /** A fix in a PR: the real finalize moves it to CI, and the fake GitHub takes it through checks, review, merge and release. */
 const fixed = (prUrl: string, summary: string): Step => ({
@@ -73,8 +75,9 @@ const fixed = (prUrl: string, summary: string): Step => ({
 })
 
 /** A new session (Investigate, a retry from scratch): a short investigation that ends with a PR. */
-const investigation = (): Script => {
+const investigation = (sessionId: string): Script => {
   const prUrl = pr(nextPr++)
+  opened.set(sessionId, prUrl)
   return {
     paceMs: 3_000,
     steps: [
@@ -85,7 +88,7 @@ const investigation = (): Script => {
       { kind: "report", phase: "fix", note: "Adding the missing index on roots(chain_id, epoch)" },
       edit("packages/db/migrations/0142_roots_index.sql"),
       bash("bun test packages/api --filter roots"),
-      bash(`gh pr create --title "fix(api): index roots by chain and epoch"`),
+      bash(`gh pr create --draft --title "fix(api): index roots by chain and epoch"`),
       fixed(prUrl, "A missing index made /v4/roots/delay scan the whole table; added it."),
     ],
   }
@@ -102,11 +105,28 @@ const resumed = (turn: Turn, prUrl: string | null): Script => ({
   ],
 })
 
+/** Sent back with the adversarial review's findings: checks them, fixes the real one, pushes to the same PR. */
+const addressed = (prUrl: string): Script => ({
+  paceMs: 3_000,
+  steps: [
+    { kind: "report", phase: "fix", note: "Addressing the review findings" },
+    text("Checking the reviewer's finding against the code: `pendingOf` does still call `Number(amount)`. It's real."),
+    read("packages/api/src/services/reward.ts"),
+    edit("packages/api/src/services/reward.ts"),
+    edit("packages/api/src/services/reward.test.ts"),
+    bash("bun test packages/api --filter reward"),
+    bash("git commit -am 'fix(api): parse pending rewards as BigInt' && git push"),
+    fixed(prUrl, "Fixed the finding: `pendingOf` parsed pending amounts with Number(); it now uses BigInt, with a regression test for a 2^60 wei amount."),
+  ],
+})
+
 /** The scripted agent's turns, by session. `prs` are the fixture sessions' PRs, so a resumed one keeps its own. */
 export const scriptFor =
   (options: { readonly extra: boolean; readonly prs: ReadonlyMap<string, string | null> }) =>
   (turn: Turn): Script => {
     if (turn.sessionId === SESSION.running && !turn.resume) return running(options.extra)
     if (turn.sessionId === SESSION.ask && !turn.resume) return asking
-    return turn.resume ? resumed(turn, options.prs.get(turn.sessionId) ?? null) : investigation()
+    const prUrl = options.prs.get(turn.sessionId) ?? opened.get(turn.sessionId) ?? null
+    if (turn.resume && prUrl !== null && turn.prompt.startsWith("An independent reviewer")) return addressed(prUrl)
+    return turn.resume ? resumed(turn, prUrl) : investigation(turn.sessionId)
   }

@@ -112,25 +112,35 @@ type Status = {
 }
 
 type AlertView = {
-  id: string             // "<channelId>:<ts>"
+  id: string             // "<channelId>:<ts>", or "watch:<signal>:<since>" for a prod finding
   channelId: string
   channelName: string    // e.g. "alert-releases"
-  ts: string
+  ts: string             // Slack message ts; for a watch finding, the start of the rise in unix seconds
   permalink: string | null
   title: string          // "merkl-admin v0.6.0 · Build failed"
-  summary: string        // one line
-  source: "releases" | "uptime" | "engine" | "inbox" | "generic"   // inbox = a mention / group mention / DM anywhere in Slack, including a person's message in an alert channel
+  summary: string        // one line; a watch finding's is a few sentences (the rise, deploys around it)
+  source: "releases" | "uptime" | "engine" | "inbox" | "generic" | "watch"   // inbox = a mention / group mention / DM anywhere in Slack, including a person's message in an alert channel
+                                                                           // watch = a prod signal Bridgetown saw rise in Grafana itself: channelName "Grafana", permalink = the Grafana dashboard, no Slack thread
   receivedAt: string
   triage: Triage
   sessionId: string | null
   feedback: "good" | "bad" | null
+  claimedBy: Claimant[]  // teammates on it per Slack, first claim first; never you. [] for inbox items
   outcome: AlertOutcome  // what happened to it, computed by the daemon. Render this, never infer from triage or history text.
 }
 
+type Claimant = {
+  userId: string
+  name: string           // Slack display name
+  via: "agent" | "eyes"  // agent = their Bridgetown posted "🤖 Investigating with Bridgetown…" in the thread · eyes = they reacted 👀
+  latest: string | null  // their Bridgetown's latest thread post, without the 🤖 ("Fix PR: https://…")
+}
+
 type AlertOutcome = {
-  kind: "pending" | "filtered" | "ignored" | "suggested" | "escalated" | "waiting" | "dismissed" | "opened" | "session"
+  kind: "pending" | "filtered" | "ignored" | "suggested" | "escalated" | "waiting" | "dismissed" | "opened" | "teammate" | "session"
   // waiting   = an open card for this alert is in "Needs you"
   // dismissed = you dismissed its card and no agent ran · opened = you opened it in Slack/Revv from an escalation
+  // teammate  = no session of yours, and a teammate is on it (`claimedBy`): "Julien's agent is on it", "Baptiste is on it (+1)"
   // session   = an agent session owns it; headline and tone are the session's own
   headline: string       // "Filtered by a rule", "Ignored by Jev", "Waiting on you", "Dismissed by you", "Resolved · deployed admin-v0.6.1"
   sentence: string | null  // one longer line for the detail view: what happened when no agent ran ("No agent ran. Jev ignored it."); null for a session, whose steps say it
@@ -170,10 +180,11 @@ type Session = {
   alertId: string
   title: string
   channelName: string
-  status: "queued" | "preparing" | "running" | "waiting" | "ci" | "awaiting_merge" | "awaiting_release" | "deploying" | "resolved" | "closed" | "failed" | "stopped"
+  status: "queued" | "preparing" | "running" | "waiting" | "critiquing" | "ci" | "awaiting_merge" | "awaiting_release" | "deploying" | "resolved" | "closed" | "failed" | "stopped"
   // resolved = a verified outcome (deployed, merged with nothing to ship, or confirmed no-op).
   // closed   = the user closed it without a fix. Never rendered as success.
-  steps: Step[]            // always 5, in order; computed from evidence by the daemon. Render these, never infer.
+  // critiquing = another vendor's model is reviewing the pushed fix; the PR is a draft until it passes.
+  steps: Step[]            // always 6, in order; computed from evidence by the daemon. Render these, never infer.
   headline: string         // status line, e.g. "Running", "Waiting on you", "Resolved · deployed admin-v0.6.1", "Closed · root cause not found"
   tone: "live" | "waiting" | "success" | "neutral" | "failure"   // color of the status dot and headline. success only for verified outcomes
   resolution: string | null  // for finished sessions: the honest one-line outcome
@@ -187,6 +198,13 @@ type Session = {
   claudeSessionId: string | null
   model: string
   ciRounds: number
+  critiqueRounds: number   // times the adversarial review sent the agent back on this PR
+  critique: {              // the last adversarial review of the pushed head; null before the first
+    reviewer: "codex"
+    passed: boolean
+    blocking: number       // findings sent back to the agent
+    dropped: number        // findings Jev judged nitpicks (style, speculation, already answered)
+  } | null
   costUsd: number
   slackThreadUrl: string | null
   acceptsMessages: boolean // POST /sessions/:id/message is allowed: live, or finished and handed back with its worktree intact
@@ -198,8 +216,8 @@ type Session = {
 }
 
 type Step = {
-  key: "diagnose" | "fix" | "pr" | "ci" | "deploy"
-  label: string            // "Diagnose", "Fix", "PR", "CI", "Deploy" (may read "Root cause?", "No PR", "Merged" when that is the truth)
+  key: "diagnose" | "fix" | "pr" | "critique" | "ci" | "deploy"
+  label: string            // "Diagnose", "Fix", "PR", "Review", "CI", "Deploy" (may read "Root cause?", "No PR", "No review", "Merged" when that is the truth)
   state: "done" | "current" | "pending" | "failed" | "skipped"
   // done = evidence it happened · current = in progress now · pending = not reached (hollow)
   // failed = this is where it stopped or broke · skipped = not applicable (e.g. no release needed)
@@ -232,11 +250,16 @@ type Settings = {
     autoHumanOnItMax: number    // 0.3
     suggestActionable: number   // 0.5
     suggestResolvable: number   // 0.4
+    findingReal: number         // 0.6 — a review finding goes back to the agent only if Jev judges it a real defect ≥ this,
+    findingBlocking: number     // 0.5 —   blocking ≥ this,
+    findingRebutted: number     // 0.6 —   and not already answered by the agent (rebutted < this)
   }
   autoStart: boolean            // false → every candidate becomes "suggest"
   inbox: boolean                // watch mentions, group mentions and DMs across all of Slack
   maxConcurrent: number         // 2
   dryRun: boolean               // never post to Slack
+  adversarialReview: boolean    // true — another vendor's model reviews each pushed fix before the PR leaves draft
+  watchProd: boolean            // true — every 5 min, check the overview's prod signals in Grafana and suggest (never auto-start) an investigation when one rises with no Slack alert covering it
   pollSeconds: number           // 30
   monorepoPath: string
   deploymentRepoPath: string

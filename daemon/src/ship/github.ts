@@ -39,6 +39,7 @@ const PullRequest = Schema.Struct({
   title: Schema.String,
   state: Schema.String,
   mergedAt: Schema.NullOr(Schema.String),
+  isDraft: Schema.optional(Schema.Boolean),
   url: Schema.String,
   reviewDecision: Schema.NullOr(Schema.String),
   latestReviews: Schema.Array(Review),
@@ -67,7 +68,7 @@ export const ciState = (pr: PullRequest): CiState => {
 }
 
 const viewPr = (prUrl: string) =>
-  gh(["pr", "view", prUrl, "--json", "number,title,state,mergedAt,url,reviewDecision,latestReviews,statusCheckRollup"]).pipe(
+  gh(["pr", "view", prUrl, "--json", "number,title,state,mergedAt,isDraft,url,reviewDecision,latestReviews,statusCheckRollup"]).pipe(
     Effect.flatMap((out) => decodeOr("gh", "pr view", Schema.fromJsonString(PullRequest))(out)),
   )
 
@@ -113,12 +114,20 @@ const tagExists = (repoPath: string, tag: string) =>
 const createRelease = (tag: string, notes: string) =>
   gh(["release", "create", tag, "--target", "main", "--title", tag, "--notes", notes, "-R", GHE_REPO]).pipe(Effect.asVoid)
 
-/** Evidence that the agent pushed its branch: the ref exists on origin. Unknown (no answer) counts as not pushed. */
-const branchPushed = (repoPath: string, branch: string) =>
+/** Evidence that the agent pushed its branch: the commit its ref points at on origin. Unknown (no answer) counts as not pushed. */
+const branchHead = (repoPath: string, branch: string) =>
   run(["git", "ls-remote", "--heads", "origin", branch], { cwd: repoPath, timeoutMs: 30_000 }).pipe(
-    Effect.map((result) => result.exitCode === 0 && result.stdout.trim() !== ""),
-    Effect.orElseSucceed(() => false),
+    Effect.map((result) => (result.exitCode === 0 ? (result.stdout.trim().split(/\s+/)[0] ?? "") : "")),
+    Effect.map((sha) => (sha === "" ? null : sha)),
+    Effect.orElseSucceed(() => null),
   )
+
+/** The commit a PR's head points at: what the adversarial review reads, whichever branch the PR is on. */
+const prHead = (prUrl: string) =>
+  gh(["pr", "view", prUrl, "--json", "headRefOid", "-q", ".headRefOid"]).pipe(Effect.map((out) => (out.trim() === "" ? null : out.trim())))
+
+/** Takes a draft PR out of draft once the adversarial review passed. Idempotent: an already ready PR stays ready. */
+const markReady = (prUrl: string) => gh(["pr", "ready", prUrl]).pipe(Effect.asVoid)
 
 export type Reachability = "ok" | "blocked" | "unknown"
 
@@ -141,7 +150,10 @@ export interface GitHubShape {
   /** Whether `tag` exists on origin; a release that may or may not have been cut is checked here, never re-cut. */
   readonly tagExists: (repoPath: string, tag: string) => Effect.Effect<boolean, GitHubError>
   readonly createRelease: (tag: string, notes: string) => Effect.Effect<void, GitHubError>
-  readonly branchPushed: (repoPath: string, branch: string) => Effect.Effect<boolean>
+  /** The commit `branch` points at on origin, `null` when it was not pushed. */
+  readonly branchHead: (repoPath: string, branch: string) => Effect.Effect<string | null>
+  readonly prHead: (prUrl: string) => Effect.Effect<string | null, GitHubError>
+  readonly markReady: (prUrl: string) => Effect.Effect<void, GitHubError>
   /** `blocked`: the Merkl org's IP allow list refuses this network. */
   readonly reachability: Effect.Effect<Reachability>
 }
@@ -155,6 +167,8 @@ export const GitHubLive = Layer.succeed(GitHub)({
   nextPatchTag,
   tagExists,
   createRelease,
-  branchPushed,
+  branchHead,
+  prHead,
+  markReady,
   reachability,
 })

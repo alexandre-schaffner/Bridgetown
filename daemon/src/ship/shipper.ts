@@ -182,7 +182,9 @@ export const ShipperLive = Layer.effect(Shipper)(
           yield* requestReview(before, pr)
         }
         const session = yield* repo.get(sessionId)
-        if (session === undefined || (session.status !== "ci" && session.status !== "awaiting_merge")) return
+        if (session === undefined || session.prUrl === null || (session.status !== "ci" && session.status !== "awaiting_merge")) return
+        // Past the review (or with it off) but still a draft: an earlier `gh pr ready` failed, and GitHub won't merge a draft.
+        if (pr.isDraft === true && pr.state === "OPEN") yield* github.markReady(session.prUrl)
         const step = ciTransition(session, pr, ci)
         switch (step._tag) {
           case "Merged":

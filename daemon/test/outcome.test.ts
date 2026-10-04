@@ -10,6 +10,7 @@ const alert = (decision: Decision, disposition: Disposition["kind"] | null = nul
   // History text must not matter: only `disposition` does.
   events: [{ at: "", text: "Dismissed by you, no agent started" }],
   disposition: disposition === null ? null : { kind: disposition, at: "" },
+  claimedBy: [],
 })
 
 const session = makeSession

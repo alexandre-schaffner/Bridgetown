@@ -1,5 +1,5 @@
 import type { NewAction } from "../actions/queue.ts"
-import type { Alert, Session, SessionStatus } from "../domain/model.ts"
+import { type Alert, passedAt, type Session, type SessionStatus } from "../domain/model.ts"
 import * as Messages from "../ship/messages.ts"
 import type { SessionResult } from "./output.ts"
 import { pushBackPrompt } from "./prompts.ts"
@@ -32,6 +32,10 @@ export interface FinalizeInput {
   readonly alert: Alert | undefined
   /** Evidence that the agent pushed its branch. */
   readonly pushed: boolean
+  /** The commit the PR's head points at, which the review reads; `null` with no PR or no answer. */
+  readonly head: string | null
+  /** Whether pushed fixes go through the adversarial review (the setting). */
+  readonly critique: boolean
 }
 
 export interface Finalized {
@@ -45,6 +49,8 @@ export interface Finalized {
   readonly fail: string | null
   /** Status lines for the transcript. */
   readonly notes: ReadonlyArray<string>
+  /** A draft PR that goes on to CI without a review: take it out of draft. */
+  readonly markReady: string | null
 }
 
 /**
@@ -53,9 +59,10 @@ export interface Finalized {
  * on evidence; an agent that hands off without a confirmed root cause is sent
  * back once first; a session with a PR in flight goes back to shipping whatever a
  * side turn concludes, so a "no action" answer to a teammate never resolves an
- * open PR.
+ * open PR. A pushed head that no review has passed yet goes to the adversarial
+ * review before CI.
  */
-export const decideOutcome = ({ session, result, alert, pushed }: FinalizeInput): Finalized => {
+export const decideOutcome = ({ session, result, alert, pushed, head, critique }: FinalizeInput): Finalized => {
   const milestones = {
     ...session.milestones,
     diagnosed: session.milestones.diagnosed || result.rootCauseFound,
@@ -70,8 +77,13 @@ export const decideOutcome = ({ session, result, alert, pushed }: FinalizeInput)
     milestones,
   }
   const notes = result.tried.length > 0 ? [`Tried:\n${result.tried.map((t) => `· ${t}`).join("\n")}`] : []
-  const none = { cards: [], post: null, sendBack: null, fail: null, notes }
+  const none = { cards: [], post: null, sendBack: null, fail: null, notes, markReady: null }
   const shipping = shipStatus(session)
+  /** This head already passed the adversarial review. */
+  const passed = passedAt(session.critique, head)
+  /** Only the first turn after a round's findings answers them: a later side turn (a teammate's follow-up) must not replace that reply. */
+  const replyTo = (last: Session["critique"]): Partial<Session> =>
+    last === null || last.response !== null ? {} : { critique: { ...last, response: result.summary } }
   const inbox = alert?.fields._tag === "inbox" ? alert.fields : undefined
   const forAlert = (text: string): string | null => (alert === undefined || inbox !== undefined ? null : text)
   const card = (action: Omit<NewAction, "sessionId" | "alertId" | "options">): CardRequest => ({
@@ -99,9 +111,11 @@ export const decideOutcome = ({ session, result, alert, pushed }: FinalizeInput)
     const newPr = prUrl !== session.prUrl
     // A follow-up PR (after a failed deploy) ships on its own: its own CI, merge and release.
     const restart = newPr && session.prUrl !== null
-    const status: SessionStatus = !newPr && shipping !== undefined ? shipping : "ci"
+    const shipTo: SessionStatus = !newPr && shipping !== undefined ? shipping : "ci"
+    const review = shipTo === "ci" && critique && (restart || !passed)
+    const status: SessionStatus = review ? "critiquing" : shipTo
     const release =
-      status !== "ci"
+      shipTo !== "ci"
         ? session.release
         : result.releasePrefix !== null
           ? { image: alert?.fields._tag === "release" ? alert.fields.image : "", tag: result.releasePrefix, version: "" }
@@ -117,22 +131,42 @@ export const decideOutcome = ({ session, result, alert, pushed }: FinalizeInput)
         milestones: {
           ...milestones,
           prOpened: true,
-          ...(restart ? { ciGreen: false, merged: false, released: false, deployed: false } : {}),
+          ...(restart ? { critiqued: false, ciGreen: false, merged: false, released: false, deployed: false } : {}),
+          ...(review ? { critiqued: false } : {}),
         },
-        ...(restart ? { mergeRequestedAt: null, releaseTag: null, review: null, deployStage: null } : {}),
+        ...(restart ? { mergeRequestedAt: null, releaseTag: null, review: null, deployStage: null, critiqueRounds: 0, critique: null } : {}),
+        // The agent's summary is its reply to the last findings; the next round reads it.
+        ...(review && !restart ? replyTo(session.critique) : {}),
         prUrl,
         status,
-        phase: status === "ci" ? "ci" : session.phase,
-        activity: status === "ci" ? "Waiting for CI" : result.summary,
-        component: status === "ci" ? (result.releasePrefix ?? session.component) : session.component,
+        phase: review ? "critique" : status === "ci" ? "ci" : session.phase,
+        activity: review ? "Waiting for review" : status === "ci" ? "Waiting for CI" : result.summary,
+        component: shipTo === "ci" ? (result.releasePrefix ?? session.component) : session.component,
         release,
       },
+      markReady: status === "ci" ? prUrl : null,
     }
   }
 
   if (shipping !== undefined) {
-    // A side turn: the PR's own outcome still stands, so the verdict is left alone.
-    return { ...none, cards: reply, patch: { milestones, status: shipping, activity: result.summary } }
+    // A side turn: the PR's own outcome still stands, so the verdict is left alone. A head no
+    // review passed (handed back mid-review, or pushed to without a fix result) is reviewed first.
+    // A PR through CI before any review ran (the setting was off) is not pulled back into one by a follow-up.
+    if (shipping === "ci" && critique && !passed && !(session.critique === null && milestones.ciGreen)) {
+      return {
+        ...none,
+        cards: reply,
+        patch: {
+          milestones: { ...milestones, critiqued: false },
+          status: "critiquing",
+          phase: "critique",
+          activity: "Waiting for review",
+          // A rebuttal without a push is still the agent's reply to the last findings.
+          ...replyTo(session.critique),
+        },
+      }
+    }
+    return { ...none, cards: reply, patch: { milestones, status: shipping, activity: result.summary }, markReady: shipping === "ci" ? session.prUrl : null }
   }
 
   const waiting = { ...verdict, status: "waiting" as const, activity: result.summary }

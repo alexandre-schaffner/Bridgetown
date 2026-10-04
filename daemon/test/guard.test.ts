@@ -17,6 +17,10 @@ const context: GuardContext = { branch, cwd: worktree, daemonPort: 47621, readFi
 describe("guard", () => {
   const denied = [
     "GH_HOST=nocturlab.ghe.com gh pr merge 1234 --squash",
+    "gh pr -R Merkl/monorepo merge 1",
+    "gh pr --repo Merkl/monorepo ready 1",
+    "gh pr -R Merkl/monorepo create --title t",
+    "gh pr create --title fix --body --draft",
     "gh run rerun 291250187 --failed",
     "gh release create admin-v0.6.1",
     "git tag admin-v0.6.1",
@@ -47,6 +51,10 @@ describe("guard", () => {
     "gh pr checks 1234 --watch",
     "gh pr checks 1234 -w --interval 30",
     "gh run watch 291250187",
+    "gh pr ready 3352",
+    "gh pr create --base main --title 'fix(api): parse as BigInt'",
+    "gh pr create --draft=false --base main --title 'fix(api): parse as BigInt'",
+    "gh pr create --draft --draft=false --base main --title 'fix(api): parse as BigInt'",
   ]
   for (const command of denied) {
     test(`denies: ${command}`, () => expect(refusal(command, context)).toBeDefined())
@@ -56,7 +64,9 @@ describe("guard", () => {
     `git push -u origin ${branch}`,
     `git add -A && git commit -m "fix" && git push -u origin ${branch}`,
     "GH_HOST=nocturlab.ghe.com gh run view 291250187 --log-failed",
-    "GH_HOST=nocturlab.ghe.com gh pr create --base main --title 'fix(app-admin): pin vite'",
+    "GH_HOST=nocturlab.ghe.com gh pr create --draft --base main --title 'fix(app-admin): pin vite'",
+    "gh pr create -d --base main --title 'fix(app-admin): pin vite'",
+    "gh pr create -df --base main",
     "gh pr checks 1234",
     "git tag --list 'admin-v*'",
     "bun type",
@@ -144,7 +154,7 @@ describe("guard", () => {
     "git -C . push -u origin " + branch,
     "git --no-pager log --oneline -5",
     "cat <<'EOF' > notes.md\nwe should not run kubectl or git push origin main here\nEOF",
-    `gh pr create --title "fix" --body "$(cat <<'EOF'\n## Summary\nit's fixed; don't kubectl anything\nEOF\n)"`,
+    `gh pr create --draft --title "fix" --body "$(cat <<'EOF'\n## Summary\nit's fixed; don't kubectl anything\nEOF\n)"`,
     "bun test 2>&1 | tail -20",
     "ls *.ts > /dev/null 2>&1 && echo ok",
     "for f in a b; do echo $f; done",

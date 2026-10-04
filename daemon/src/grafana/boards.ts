@@ -240,9 +240,12 @@ const literal = (value: string) => value.replaceAll(".", "[.]")
 
 // MARK: Boards
 
+const overviewPanels = (view: OverviewView): ReadonlyArray<PanelSpec> =>
+  view === "incidents" ? [api5xx, apiP99, engineErrors(null), jobErrors(null)] : [rpcErrors(null), failedJobPods, oomKills, dbWaiting]
+
 export const overviewBoard = (view: OverviewView, now: Date): BoardSpec => {
   const from = new Date(now.getTime() - OVERVIEW_HOURS * HOUR)
-  const panels = view === "incidents" ? [api5xx, apiP99, engineErrors(null), jobErrors(null)] : [rpcErrors(null), failedJobPods, oomKills, dbWaiting]
+  const panels = overviewPanels(view)
   return {
     key: `overview:${view}`,
     title: view === "incidents" ? "Incidents" : "Infra",
@@ -253,6 +256,26 @@ export const overviewBoard = (view: OverviewView, now: Date): BoardSpec => {
     panels,
     deployImage: null,
     deploysFrom: from,
+  }
+}
+
+/** How far back the prod watcher looks: the last 15 minutes against the 3 hours before. */
+export const WATCH_HOURS = 3
+export const WATCH_STEP_SECONDS = 300
+
+/** Every overview panel over the watch window, read by the prod watcher (src/watch/). */
+export const watchBoard = (now: Date): BoardSpec => {
+  const from = new Date(now.getTime() - WATCH_HOURS * HOUR)
+  return {
+    key: "watch",
+    title: "Prod watch",
+    from,
+    to: now,
+    stepSeconds: WATCH_STEP_SECONDS,
+    marker: null,
+    panels: OVERVIEW_VIEWS.flatMap(overviewPanels),
+    deployImage: null,
+    deploysFrom: new Date(from.getTime() - HOUR),
   }
 }
 
@@ -272,6 +295,13 @@ export const alertBoard = (alert: Alert, now: Date): BoardSpec | null => {
     if (route !== null) return { title: `API · ${route}`, panels: [route5xx(route), routeP99(route), api5xx, apiP99] }
     if (image !== null) return { title: image, panels: [podsByVersion(image), imageMemory(image), imageCpu(image), api5xx] }
     if (alert.fields._tag === "inbox") return null
+    if (alert.fields._tag === "watch") {
+      // The overview board the signal is on, with the signal first.
+      const signal = alert.fields.signal
+      const view = OVERVIEW_VIEWS.find((v) => overviewPanels(v).some((p) => p.id === signal)) ?? "incidents"
+      const panels = overviewPanels(view)
+      return { title: view === "incidents" ? "Incidents" : "Infra", panels: [...panels.filter((p) => p.id === signal), ...panels.filter((p) => p.id !== signal)] }
+    }
     switch (kind) {
       case "onchain_or_keeper":
         return chain !== null

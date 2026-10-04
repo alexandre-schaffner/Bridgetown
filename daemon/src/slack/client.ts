@@ -6,6 +6,7 @@ export const SlackReaction = Schema.Struct({
   count: Schema.Number,
   users: Schema.optional(Schema.Array(Schema.String)),
 })
+export type SlackReaction = typeof SlackReaction.Type
 
 export const SlackMessage = Schema.Struct({
   ts: Schema.String,
@@ -79,6 +80,8 @@ export interface SlackClientShape {
   readonly groupsOf: (userId: string) => Effect.Effect<ReadonlyArray<{ readonly id: string; readonly handle: string }>, SlackError>
   readonly userName: (userId: string) => Effect.Effect<string, SlackError>
   readonly post: (channel: string, threadTs: string | undefined, text: string) => Effect.Effect<string, SlackError>
+  /** `chat.delete` of one of your own messages. */
+  readonly remove: (channel: string, ts: string) => Effect.Effect<void, SlackError>
 }
 
 export class SlackClient extends Context.Service<SlackClient, SlackClientShape>()("SlackClient") {}
@@ -185,6 +188,7 @@ export const makeSlackClient = (token: string | undefined, fetchImpl: Fetch = fe
         Effect.flatMap(decodeOr("slack", "chat.postMessage", Posted)),
         Effect.map((p) => p.ts),
       ),
+    remove: (channel, ts) => call("chat.delete", { channel, ts }, true).pipe(Effect.asVoid),
   }
 }
 

@@ -1,7 +1,7 @@
-import type { Alert, Session } from "./model.ts"
+import { type Alert, claimHeadline, type Session } from "./model.ts"
 import { progressOf, type Tone } from "./progress.ts"
 
-export type OutcomeKind = "pending" | "filtered" | "ignored" | "suggested" | "escalated" | "waiting" | "dismissed" | "opened" | "session"
+export type OutcomeKind = "pending" | "filtered" | "ignored" | "suggested" | "escalated" | "waiting" | "dismissed" | "opened" | "teammate" | "session"
 
 export interface AlertOutcome {
   readonly kind: OutcomeKind
@@ -18,10 +18,19 @@ const outcome = (kind: OutcomeKind, headline: string, sentence: string | null, t
   tone,
 })
 
+/** Everyone on it, and the latest their Bridgetown said in the thread. */
+const teammateSentence = (alert: Alert): string => {
+  const who = alert.claimedBy.map((c) => (c.via === "agent" ? `${c.name} (Bridgetown)` : `${c.name} (👀)`)).join(", ")
+  const latest = alert.claimedBy.find((c) => c.latest !== null)
+  const base = `No agent of yours ran. In Slack: ${who}.`
+  return latest === undefined ? base : `${base} Latest from ${latest.name}'s agent: ${latest.latest}`
+}
+
 /**
  * What happened to an alert, in one honest phrase. A session that owns it wins
  * whatever its status: its headline and tone are the truth, and a running one
- * never reads "Ignored". Without one: an open card, then what you did to the
+ * never reads "Ignored". Without one: a teammate on it per Slack (they own it
+ * now, whatever Jev thought), then an open card, then what you did to the
  * last card (stored as data, never read back from history text), then the triage
  * decision. Only a session the daemon verified is ever green.
  */
@@ -30,6 +39,8 @@ export const alertOutcome = (alert: Alert, session: Session | undefined, openCar
     const { headline, tone } = progressOf(session)
     return outcome("session", headline, null, tone)
   }
+  const claimed = claimHeadline(alert.claimedBy)
+  if (claimed !== null) return outcome("teammate", claimed, teammateSentence(alert), "neutral")
   const decision = alert.triage.decision
   switch (decision) {
     case "pending":

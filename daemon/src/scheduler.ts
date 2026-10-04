@@ -1,4 +1,5 @@
 import { Context, Duration, Effect, Layer, Schedule } from "effect"
+import { Critic } from "./critique/critic.ts"
 import { Health } from "./health.ts"
 import { Boards } from "./grafana/board.ts"
 import { Hub } from "./hub.ts"
@@ -6,9 +7,10 @@ import { AlertPipeline } from "./pipeline/alerts.ts"
 import { Inbox } from "./pipeline/inbox.ts"
 import { SessionRunner } from "./sessions/runner.ts"
 import { Shipper } from "./ship/shipper.ts"
+import { Watcher } from "./watch/watcher.ts"
 
 export interface SchedulerShape {
-  /** Runs the poll, inbox, ship, scheduling and health loops until interrupted. */
+  /** Runs the poll, inbox, ship, scheduling, health and prod watch loops until interrupted. */
   readonly run: Effect.Effect<never>
 }
 
@@ -36,8 +38,10 @@ export const SchedulerLive = Layer.effect(Scheduler)(
     const alerts = yield* AlertPipeline
     const inbox = yield* Inbox
     const shipper = yield* Shipper
+    const critic = yield* Critic
     const runner = yield* SessionRunner
     const boards = yield* Boards
+    const watcher = yield* Watcher
 
     // Sessions cannot fetch or push while GHE refuses this network, so they wait in the queue.
     const scheduleTick = Effect.gen(function* () {
@@ -56,10 +60,12 @@ export const SchedulerLive = Layer.effect(Scheduler)(
           yield* loop("github", health.probeGithub, Schedule.spaced("120 seconds"), "120 seconds")
           yield* loop("poll", alerts.pollOnce, spacedBy(seconds((poll) => Math.max(10, poll))))
           yield* loop("ship", shipper.tick, Schedule.spaced("60 seconds"))
+          yield* loop("critique", critic.tick, Schedule.spaced("10 seconds"))
           yield* loop("inbox", inbox.poll, spacedBy(seconds((poll) => Math.max(30, poll * 2))))
           yield* loop("schedule", scheduleTick, Schedule.spaced("3 seconds"))
           yield* loop("grafana", health.probeGrafana, Schedule.spaced("60 seconds"), "60 seconds")
           yield* loop("boards", boards.warm, Schedule.spaced("300 seconds"))
+          yield* loop("watch", watcher.tick, Schedule.spaced("300 seconds"), "90 seconds")
           return yield* Effect.never
         }),
       ),

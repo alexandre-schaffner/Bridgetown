@@ -28,11 +28,11 @@ export interface Failure {
   readonly exhausted: { readonly activity: string; readonly title: string; readonly detail: string }
 }
 
-/** The CI-round budget, shared by red CI, requested changes and failed deploys. */
-export const sendBackOrHandOff = (ciRounds: number, failure: Failure): Escalation =>
-  ciRounds >= MAX_CI_ROUNDS
+/** A round budget: by default the CI one, shared by red CI, requested changes and failed deploys. */
+export const sendBackOrHandOff = (rounds: number, failure: Failure, max: number = MAX_CI_ROUNDS): Escalation =>
+  rounds >= max
     ? { _tag: "HandOff", ...failure.exhausted }
-    : { _tag: "SendBack", round: ciRounds + 1, phase: failure.phase, activity: failure.working(ciRounds + 1) }
+    : { _tag: "SendBack", round: rounds + 1, phase: failure.phase, activity: failure.working(rounds + 1) }
 
 type Review = PullRequest["latestReviews"][number]
 

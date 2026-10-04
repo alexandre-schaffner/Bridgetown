@@ -1,4 +1,5 @@
 import { Duration, Effect } from "effect"
+import type { ReviewerShape } from "../../src/critique/reviewer.ts"
 import { GheBlocked, type GitHubError } from "../../src/domain/errors.ts"
 import type { JevVerdict } from "../../src/domain/model.ts"
 import { type GitHubShape, nextTagFrom, type PullRequest } from "../../src/ship/github.ts"
@@ -15,14 +16,59 @@ export const fakeSlack: SlackClientShape = {
   groupsOf: () => Effect.succeed([]),
   userName: (id) => Effect.succeed(id),
   post: () => Effect.sync(() => (Date.now() / 1000).toFixed(6)),
+  remove: () => Effect.void,
 }
 
 const verdict: JevVerdict = {
   actionable: 0.9, agentResolvable: 0.8, humanOnIt: 0.05, kind: "runtime_error", kindConfidence: 0.85, depth: "standard", urgency: 1.5,
 }
 
-/** Jev without TypeSafe; only consulted if something new is ingested (`POST /poll` finds nothing). */
-export const fakeJev: JevShape = { judge: () => Effect.succeed(verdict), judgeInbox: () => Effect.succeed({ ...verdict, kind: "investigation" }) }
+/** Matches the mock reviewer's nitpick, so Jev drops it and the real finding goes back to the agent. */
+const NITPICK = /\b(rename|naming|comment|style)\b/i
+
+/** Jev without TypeSafe; only consulted if something new is ingested (`POST /poll` finds nothing) or a mock review reports findings. */
+export const fakeJev: JevShape = {
+  judge: () => Effect.succeed(verdict),
+  judgeInbox: () => Effect.succeed({ ...verdict, kind: "investigation" }),
+  judgeFinding: ({ finding, previousRound }) =>
+    Effect.succeed(
+      NITPICK.test(finding.title)
+        ? { realDefect: 0.12, blocking: 0.05, rebutted: previousRound === null ? null : 0.2 }
+        : { realDefect: 0.91, blocking: 0.84, rebutted: previousRound === null ? null : 0.1 },
+    ),
+}
+
+/**
+ * Codex without Codex: the first review of a PR finds a real defect and a
+ * nitpick, later rounds only the nitpick again. With `fakeJev` dropping the
+ * nitpick, round 1 sends the agent back and round 2 passes.
+ */
+export const fakeReviewer = (delayMs = 6_000): ReviewerShape => ({
+  review: ({ prompt }) =>
+    Effect.sleep(Duration.millis(delayMs)).pipe(
+      Effect.as({
+        summary: prompt.includes("## Round") ? "The overflow is fixed and covered by a test." : "Parses amounts with BigInt, but misses one path.",
+        findings: [
+          ...(prompt.includes("## Round")
+            ? []
+            : [
+                {
+                  file: "packages/api/src/services/reward.ts",
+                  line: 88,
+                  title: "`formatUnits` still receives a Number for pending rewards",
+                  failureScenario: "A Linea campaign with pending rewards above 2^53 wei still goes through `Number(amount)` in `pendingOf`, so /v4/rewards keeps returning 502 for those users.",
+                },
+              ]),
+          {
+            file: "packages/api/src/services/reward.ts",
+            line: 41,
+            title: "Rename `amt` to `amount` for naming consistency",
+            failureScenario: "Readers may not understand the abbreviation.",
+          },
+        ],
+      }),
+    ),
+})
 
 /** How a pull request looks to the fake. `script` PRs move on their own: checks go green, then a reviewer approves. */
 export interface FakePr {
@@ -130,7 +176,9 @@ export const makeFakeGitHub = (options: FakeGitHubOptions) => {
           ),
         ),
       ),
-    branchPushed: () => Effect.succeed(true),
+    branchHead: (_repoPath, branch) => Effect.succeed(new Bun.CryptoHasher("sha1").update(branch).digest("hex")),
+    prHead: (url) => Effect.succeed(new Bun.CryptoHasher("sha1").update(url).digest("hex")),
+    markReady: () => ghe("pr ready", slow(options.latencyMs / 3)),
     reachability: Effect.sync(() => (blocked ? "blocked" : "ok")),
   }
 

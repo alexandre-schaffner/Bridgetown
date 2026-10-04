@@ -1,4 +1,4 @@
-import { firstPositional, flags, REASONS } from "./guard-reasons.ts"
+import { flags, REASONS } from "./guard-reasons.ts"
 import type { Word } from "./shell.ts"
 
 /** `gh` and `git`: merges, reruns, releases, API writes, tags, force pushes and pushes to anything but the session's branch. */
@@ -6,16 +6,28 @@ import type { Word } from "./shell.ts"
 const GH_API_VALUE_FLAGS = flags("-H", "--header", "-q", "--jq", "-t", "--template", "--hostname", "-p", "--preview", "--cache")
 const GH_API_FIELD_FLAGS = flags("-f", "-F", "--field", "--raw-field", "--input")
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"])
+/** Flags that may sit between `gh`, the group and the sub-command (`gh pr -R o/r merge`), whose value is not a positional. */
+const GH_VALUE_FLAGS = flags("-R", "--repo", "--hostname")
 
 export const ghRefusal = (args: ReadonlyArray<Word>): string | undefined => {
-  const positional = args.filter((arg) => !arg.text.startsWith("-")).map((arg) => arg.text)
+  const positional: Array<string> = []
+  for (let i = 0; i < args.length && positional.length < 2; i++) {
+    const text = args[i]?.text ?? ""
+    if (GH_VALUE_FLAGS.has(text)) i++
+    else if (!text.startsWith("-")) positional.push(text)
+  }
   const [group, sub] = positional
   const has = (flag: string) => args.some((arg) => arg.text === flag || arg.text.startsWith(`${flag}=`))
   switch (group) {
     case "pr":
       if (sub === "merge") return REASONS.merge
       if (sub === "review" || sub === "close" || sub === "reopen") return REASONS.review
-      if (sub === "ready" && has("--undo")) return REASONS.review
+      if (sub === "ready") return has("--undo") ? REASONS.review : REASONS.draft
+      if (sub === "create") {
+        // gh takes the last occurrence, so any `=false` may win over a bare `--draft`.
+        const drafts = draftFlags(args)
+        if (drafts.length === 0 || drafts.some((flag) => !["--draft", "-d", "--draft=true", "-d=true"].includes(flag))) return REASONS.draft
+      }
       if (sub === "edit" && has("--add-reviewer")) return REASONS.review
       if (sub === "checks" && (has("--watch") || has("-w"))) return REASONS.watch
       return undefined
@@ -33,6 +45,24 @@ export const ghRefusal = (args: ReadonlyArray<Word>): string | undefined => {
     default:
       return undefined
   }
+}
+
+/** `gh pr create` options whose value is the next word: `--body --draft` sets the body, not the draft. */
+const PR_CREATE_VALUE_FLAGS = flags(
+  ...["-t", "--title", "-b", "--body", "-F", "--body-file", "-B", "--base", "-H", "--head", "-a", "--assignee", "-l", "--label"],
+  ...["-m", "--milestone", "-p", "--project", "-r", "--reviewer", "-T", "--template", "-R", "--repo", "--recover"],
+)
+
+/** Every draft flag `gh pr create` will read, combined boolean shorthands (`-dw`) included. */
+const draftFlags = (args: ReadonlyArray<Word>): ReadonlyArray<string> => {
+  const found: Array<string> = []
+  for (let i = 0; i < args.length; i++) {
+    const text = args[i]?.text ?? ""
+    if (PR_CREATE_VALUE_FLAGS.has(text)) i++
+    else if (/^(--draft|-d)(=|$)/.test(text)) found.push(text)
+    else if (/^-[dfw]{2,}$/.test(text) && text.includes("d")) found.push("-d")
+  }
+  return found
 }
 
 const ghApiRefusal = (args: ReadonlyArray<Word>): string | undefined => {
@@ -67,6 +97,7 @@ const ghApiRefusal = (args: ReadonlyArray<Word>): string | undefined => {
 }
 
 const GIT_VALUE_OPTIONS = flags("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--super-prefix", "--attr-source")
+const explicitPush = (branch: string) => `Push only your own branch, explicitly: git push -u origin ${branch}`
 const isAliasConfig = (word: Word | undefined): boolean => word !== undefined && (word.dynamic || /^alias\./i.test(word.text.replace(/^--config-env=/, "")))
 
 export const gitRefusal = (args: ReadonlyArray<Word>, branch: string): string | undefined => {
@@ -86,7 +117,7 @@ export const gitRefusal = (args: ReadonlyArray<Word>, branch: string): string | 
     case "push":
       return pushRefusal(rest, branch)
     case "send-pack":
-      return `Push only your own branch, explicitly: git push -u origin ${branch}`
+      return explicitPush(branch)
     case "tag":
       return tagRefusal(rest)
     case "config": {
@@ -139,7 +170,7 @@ const pushRefusal = (args: ReadonlyArray<Word>, branch: string): string | undefi
     return name === branch || new RegExp(`^${branch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-\\d+$`).test(name)
   }
   const refspecs = positional.slice(1)
-  const explicit = `Push only your own branch, explicitly: git push -u origin ${branch}`
+  const explicit = explicitPush(branch)
   if (refspecs.length === 0) return explicit
   for (const spec of refspecs) {
     if (spec.text.startsWith("+")) return REASONS.force

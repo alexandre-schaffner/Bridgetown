@@ -53,7 +53,7 @@ export const run = (command: ReadonlyArray<string>, options: RunOptions = {}): E
     Effect.timeoutOrElse({
       duration: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       orElse: () =>
-        Effect.fail(new AdapterError({ adapter: "subprocess", operation: operationOf(command), message: `Timed out: ${command.join(" ")}`, cause: null })),
+        Effect.fail(new AdapterError({ adapter: "subprocess", operation: operationOf(command), message: `Timed out: ${operationOf(command)}`, cause: null })),
     }),
   )
 

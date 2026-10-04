@@ -1,4 +1,4 @@
-import type { Decision, Depth, JevVerdict, Thresholds } from "../domain/model.ts"
+import type { Decision, Depth, FindingVerdict, JevVerdict, ReviewerVendor, Thresholds } from "../domain/model.ts"
 
 const pct = (value: number): string => `${Math.round(value * 100)}%`
 
@@ -36,6 +36,19 @@ export const decideInbox = (jev: JevVerdict, t: Thresholds): { readonly decision
   return { decision: "escalate", reason: `Needs you: ${jev.kind.replaceAll("_", " ")} (${scores})` }
 }
 
+/**
+ * A reviewer finding goes back to the agent only when Jev judges it a real
+ * defect that would block the PR and the agent's earlier reply does not already
+ * answer it. Everything else (style, speculation, settled arguments) is dropped.
+ */
+export const decideFinding = (jev: FindingVerdict, t: Thresholds): { readonly blocks: boolean; readonly reason: string } => {
+  const scores = `real ${pct(jev.realDefect)} · blocking ${pct(jev.blocking)}${jev.rebutted === null ? "" : ` · rebutted ${pct(jev.rebutted)}`}`
+  if (jev.realDefect < t.findingReal) return { blocks: false, reason: `Not a real defect (${scores})` }
+  if (jev.blocking < t.findingBlocking) return { blocks: false, reason: `Not worth blocking on (${scores})` }
+  if (jev.rebutted !== null && jev.rebutted >= t.findingRebutted) return { blocks: false, reason: `Answered by the agent (${scores})` }
+  return { blocks: true, reason: `Blocking (${scores})` }
+}
+
 export interface LaunchProfile {
   readonly model: string
   readonly effort: "low" | "medium" | "high" | "xhigh" | "max"
@@ -47,3 +60,21 @@ export const PROFILES: Readonly<Record<Depth, LaunchProfile>> = {
   standard: { model: "claude-opus-5-5", effort: "high" },
   deep: { model: "claude-opus-5-5", effort: "max" },
 }
+
+export interface ReviewerProfile {
+  readonly vendor: ReviewerVendor
+  readonly model: string
+  readonly effort: "low" | "medium" | "high" | "xhigh"
+}
+
+/**
+ * The adversarial reviewer per triage depth, like `PROFILES` for the coder. Never the coder's vendor (every
+ * profile above is Claude): a different model has different blind spots.
+ */
+export const REVIEWERS: Readonly<Record<Depth, ReviewerProfile>> = {
+  quick: { vendor: "codex", model: "gpt-5.6-sol", effort: "medium" },
+  standard: { vendor: "codex", model: "gpt-5.6-sol", effort: "high" },
+  deep: { vendor: "codex", model: "gpt-5.6-sol", effort: "xhigh" },
+}
+
+export const reviewerFor = (depth: Depth): ReviewerProfile => REVIEWERS[depth]

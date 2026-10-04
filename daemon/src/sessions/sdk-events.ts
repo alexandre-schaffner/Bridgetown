@@ -1,19 +1,21 @@
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { Effect, Schema } from "effect"
 import type { AdapterError } from "../domain/errors.ts"
-import { openableUrl, type Phase } from "../domain/model.ts"
+import { openableUrl, Phase } from "../domain/model.ts"
 import type { HubShape } from "../hub.ts"
 import { truncate } from "../slack/text.ts"
+import { WRITE_TOOLS } from "./confine.ts"
 import { commandOf } from "./guard.ts"
 import { SessionResult } from "./output.ts"
 import type { SessionRepoShape } from "./repo.ts"
 import { TOOL_SERVER } from "./tools.ts"
 
-const PHASE_ORDER: ReadonlyArray<Phase> = ["diagnose", "fix", "pr", "ci", "deploy", "done"]
+/** The schema lists phases in flow order. */
+const PHASE_ORDER: ReadonlyArray<Phase> = Phase.literals
 
 /** The phase a tool call implies, for agents that forget to call `report`. Phases only move forward. */
 export const impliedPhase = (name: string, input: unknown): Phase | undefined => {
-  if (["Edit", "Write", "MultiEdit", "NotebookEdit"].includes(name)) return "fix"
+  if (WRITE_TOOLS.includes(name)) return "fix"
   if (name !== "Bash") return undefined
   const command = commandOf(input) ?? ""
   if (/\bgh\s+pr\s+checks\b/.test(command)) return "ci"

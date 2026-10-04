@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import type { ActionQueueShape } from "../actions/queue.ts"
 import type { AdapterError } from "../domain/errors.ts"
 import { isFinished, type Session } from "../domain/model.ts"
+import type { HubShape } from "../hub.ts"
 import type { GitHubShape } from "../ship/github.ts"
 import type { SlackThreadShape } from "../slack/thread.ts"
 import { truncate } from "../slack/text.ts"
@@ -16,14 +17,18 @@ export interface FinishDeps {
   readonly repo: SessionRepoShape
   readonly queue: ActionQueueShape
   readonly github: GitHubShape
+  readonly hub: HubShape
   /** Another turn with this prompt (CI-round budget left after a red PR, etc.). */
   readonly sendBack: (id: string, prompt: string) => Effect.Effect<unknown, AdapterError>
 }
 
 /** How a turn's end is applied: `decideOutcome` interpreted onto the session, its cards, Slack and a send-back. */
-export const makeFinish = ({ store, thread, repo, queue, github, sendBack }: FinishDeps) => {
+export const makeFinish = ({ store, thread, repo, queue, github, hub, sendBack }: FinishDeps) => {
   /** Evidence that the agent pushed its branch: the ref exists on origin. */
-  const branchPushed = (session: Session) => (session.branch === null ? Effect.succeed(false) : github.branchPushed(session.repoPath, session.branch))
+  const branchPushed = (session: Session) =>
+    session.branch === null ? Effect.succeed(false) : github.branchHead(session.repoPath, session.branch).pipe(Effect.map((sha) => sha !== null))
+  /** The PR's head commit, whichever branch it is on (a follow-up PR after a failed deploy is on `<branch>-2`). */
+  const prHead = (prUrl: string | null) => (prUrl === null ? Effect.succeed(null) : github.prHead(prUrl).pipe(Effect.orElseSucceed(() => null)))
 
   /** Fails the session with a retry card. A stopped or already finished session is left as it is. */
   const finishFailed = (id: string, reason: string) =>
@@ -53,10 +58,12 @@ export const makeFinish = ({ store, thread, repo, queue, github, sendBack }: Fin
       if (before === undefined || isFinished(before)) return
       const alert = yield* store.getAlert(before.alertId)
       const pushed = yield* branchPushed(before)
+      const head = yield* prHead(result.prUrl ?? before.prUrl)
+      const critique = (yield* hub.settings).adversarialReview
       // Decided on the row as it is when written, not on the one read before the slow `git ls-remote`.
       const decided: { value?: Finalized } = {}
       const session = yield* repo.modify(id, (current) => {
-        const decision = decideOutcome({ session: current, result, alert, pushed })
+        const decision = decideOutcome({ session: current, result, alert, pushed, head, critique })
         decided.value = decision
         return withPatch(current, decision.patch)
       })
@@ -65,6 +72,11 @@ export const makeFinish = ({ store, thread, repo, queue, github, sendBack }: Fin
       for (const note of decision.notes) yield* repo.log(id, "status", note)
       yield* applyCards(session, decision)
       if (decision.fail !== null) return yield* finishFailed(id, decision.fail)
+      if (decision.markReady !== null) {
+        yield* github.markReady(decision.markReady).pipe(
+          Effect.catch((error) => repo.log(id, "error", `Could not take the PR out of draft: ${error.message}`).pipe(Effect.ignore)),
+        )
+      }
       if (decision.sendBack !== null) yield* sendBack(id, decision.sendBack)
       if (decision.post !== null && alert !== undefined) yield* thread.post(alert, decision.post)
     })

@@ -23,6 +23,8 @@ import { Duration, Effect, Layer, Runtime, Schedule } from "effect"
 import { Actions } from "../../src/actions/actions.ts"
 import { bind, serve } from "../../src/api/server.ts"
 import type { Env } from "../../src/config.ts"
+import { Critic } from "../../src/critique/critic.ts"
+import { Reviewer } from "../../src/critique/reviewer.ts"
 import { now } from "../../src/domain/ids.ts"
 import type { Alert, Stage } from "../../src/domain/model.ts"
 import { Health } from "../../src/health.ts"
@@ -39,7 +41,7 @@ import { SlackClient } from "../../src/slack/client.ts"
 import { Store, StoreLive } from "../../src/store/store.ts"
 import { Jev } from "../../src/triage/jev.ts"
 import { scriptedAgent } from "./agent.ts"
-import { fakeJev, fakeSlack, makeFakeGitHub } from "./fakes.ts"
+import { fakeJev, fakeReviewer, fakeSlack, makeFakeGitHub } from "./fakes.ts"
 import { fakeGrafana } from "./grafana.ts"
 import { buildFixtures, IN_FLIGHT_TAG } from "./fixtures.ts"
 import { scriptFor } from "./scripts.ts"
@@ -88,6 +90,7 @@ const layer = appLayerWith(
     Layer.succeed(SlackClient)(fakeSlack),
     Layer.succeed(Jev)(fakeJev),
     Layer.succeed(Agent)(agent),
+    Layer.succeed(Reviewer)(fakeReviewer()),
     Layer.succeed(GitHub)(fake.github),
     // MOCK_GRAFANA=live reads real prod charts through the local grafana MCP (read-only).
     process.env.MOCK_GRAFANA === "live" ? GrafanaLive : Layer.succeed(Grafana)(fakeGrafana()),
@@ -107,7 +110,7 @@ const trackerAlert = (tag: string, stages: ReadonlyArray<Stage>): Alert => {
   const ts = (Date.now() / 1000).toFixed(6)
   return {
     id: `C0AUKD42N3U:${ts}`, channelId: "C0AUKD42N3U", channelName: "alert-releases", ts, permalink: null, title: `Deployment ${tag}`, summary: "", raw: "",
-    source: "releases", fingerprint: `release:${tag}`, mentionsMe: false, receivedAt: now(), sessionId: null, feedback: null, events: [], disposition: null,
+    source: "releases", fingerprint: `release:${tag}`, mentionsMe: false, receivedAt: now(), sessionId: null, feedback: null, events: [], disposition: null, claimedBy: [],
     fields: { _tag: "release", image: tag.replace(/-v\d.*$/, ""), version: tag.slice(tag.lastIndexOf("-v") + 1), actor: "alex", runId: null, runUrl: null, tag, stages },
     triage: { decision: "filtered", reason: "Release tracker", jev: null },
   }
@@ -127,6 +130,7 @@ const program = Effect.gen(function* () {
   const repo = yield* SessionRepo
   const runner = yield* SessionRunner
   const shipper = yield* Shipper
+  const critic = yield* Critic
   const health = yield* Health
   const actions = yield* Actions
   const pipeline = yield* AlertPipeline
@@ -156,6 +160,7 @@ const program = Effect.gen(function* () {
   // The daemon's loops, faster: sessions start (unless GHE is blocked), CI and merges move, Slack is "polled".
   yield* every("schedule", "1 second", hub.status.pipe(Effect.flatMap((status) => (status.github === "blocked" ? Effect.void : runner.tick))))
   yield* every("ship", "10 seconds", shipper.tick)
+  yield* every("critique", "3 seconds", critic.tick)
   yield* every("poll", "30 seconds", pipeline.pollOnce)
   // The SDK reports cost only when a turn ends; ticking it shows the app's cost label update live.
   yield* every(

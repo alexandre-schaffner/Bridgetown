@@ -19,7 +19,7 @@ describe("GHE probe", () => {
     const github: GitHubShape = {
       viewPr: () => Effect.die("unused"), mergePr: () => Effect.die("unused"), rerunFailedJobs: () => Effect.die("unused"),
       nextPatchTag: () => Effect.die("unused"), tagExists: () => Effect.die("unused"), createRelease: () => Effect.die("unused"),
-      branchPushed: () => Effect.succeed(false), reachability: Effect.sync(() => reachable),
+      branchHead: () => Effect.succeed(null), prHead: () => Effect.die("unused"), markReady: () => Effect.die("unused"), reachability: Effect.sync(() => reachable),
     }
     const world = makeWorld({ github })
     try {

@@ -8,7 +8,7 @@ alerts all the way. They diagnose, fix, open a PR, get it green, request review 
 walkthrough link, then ship the release and watch the deploy. You only click the human gates: **Merge**, **Cut release**, **Send reply**.
 
 ```
-Slack (poll) ──► parse ──► rules ──► Jev ──► policy ──┬─► auto ──► Claude session (worktree) ──► PR ──► CI ──► review ──► merge* ──► release* ──► deploy ✓
+Slack (poll) ──► parse ──► rules ──► Jev ──► policy ──┬─► auto ──► Claude session (worktree) ──► draft PR ⇄ Codex review ──► CI ──► review ──► merge* ──► release* ──► deploy ✓
                                                      ├─► suggest / escalate ──► "Needs you" in the menu bar (+ notification)
                                                      └─► ignore / filtered ──► Recent
                                                                                        * one click from you
@@ -27,7 +27,8 @@ Slack (poll) ──► parse ──► rules ──► Jev ──► policy ─�
 
 1. **Slack:** create an app from `slack-app-manifest.yml`, install it to yourself, and copy the `xoxp-…` user token.
 2. **TypeSafe:** get an API key for Jev.
-3. **Claude and GitHub:** `claude` must be logged in, and so must `gh auth status` for `nocturlab.ghe.com`. Sessions reuse both logins.
+3. **Claude, Codex and GitHub:** `claude` must be logged in, and so must `gh auth status` for `nocturlab.ghe.com`. Sessions reuse both logins.
+   The adversarial review runs your own `codex` (`codex login` once; `BRIDGETOWN_CODEX_PATH` if it is not on the app's PATH).
 4. **MCP:** run `claude mcp login merkl` once. Sessions that need prod logs need `bun grafana:mcp` running in the monorepo; the menu bar tells you when it is down.
 5. Build and run:
 
@@ -84,9 +85,30 @@ agents that open a PR, which then goes green and gets approved on its own. Workt
   - `kind`, `depth` and `urgency`.
 
   PR reviews and decisions always escalate to you.
+- **One owner per alert, across the team** (`daemon/src/slack/claims.ts`). When several people run Bridgetown, the alert's Slack
+  thread records who has it. Before an agent starts, Bridgetown posts `🤖 Investigating with Bridgetown…` there. That post is the
+  claim, and the earliest one wins. If two copies post at once, each reads the thread back, and the later one deletes its post and
+  does not start. A teammate's claim, or their 👀 on the alert, means you don't get an agent or a card for it. Instead it shows as
+  "Julien's agent is on it" or "Baptiste is on it", with the last thing their Bridgetown posted. If someone claims an alert after
+  Jev suggested it to you, your card goes. **Investigate anyway** still starts your own agent. Inbox items are yours alone, so
+  they are never claimed.
 - **Policy** (`daemon/src/triage/policy.ts`) turns probabilities into a decision: auto, suggest, escalate, ignore or filtered. You can tune the
   thresholds in Settings. Each verdict is stored with its numbers, and 👍/👎 in the menu labels it for calibration.
 - **Depth picks the model.** `quick` runs Sonnet at medium effort, `standard` runs Opus at high, `deep` runs Opus at max. Only that local table names models.
+- **Another vendor reviews every fix.** Agents open PRs as drafts. Before a pushed fix goes to CI, Codex (never the coder's own vendor:
+  `REVIEWER_FOR` in `daemon/src/triage/policy.ts`) reviews the diff adversarially in a read-only sandbox (`daemon/src/critique/`). Jev
+  judges each finding (`real_defect`, `blocking`, and from round 2 whether the agent's reply already `rebutted` it) and the policy
+  drops the nitpicks. Blocking findings go back to the same agent conversation; it fixes them or rebuts them with evidence, and the
+  new head is reviewed again, up to 4 rounds before it is handed to you. Once a review passes, Bridgetown takes the PR out of draft
+  and the ship flow (CI, review request, merge) carries on. Toggle it in **Settings → Behaviour**.
+- **Bridgetown also watches prod itself.** Every 5 minutes it reads the overview's signals (API 5xx and p99, engine and job errors,
+  eRPC errors, failed job pods, OOM kills, DB waits) over the last 3 hours from the Grafana MCP (`daemon/src/watch/`). A signal has
+  risen when the median of its last three 5-minute steps is above an absolute floor and above a multiple of the 90th percentile of
+  the steps before. A one-step burst never counts, and the floors come from a day of real data. If no Slack alert from the last 2 hours
+  covers the same signal, the rise becomes a finding in channel "Grafana", with the dashboard as its link and recent deploys in its
+  summary. Jev judges it like any alert, but a finding is at most suggested, never auto-started, and it is raised at most once per
+  signal every 6 hours. Its agent is told there is no Slack thread, and that a rise with no cause is closed with no action, not a code change.
+  Toggle it in **Settings → Behaviour**.
 
 ## Safety model
 
@@ -118,7 +140,7 @@ Sessions are headless, so `monorepo/AGENTS.md`'s prod-safety hard rule applies i
 
 ## What gets posted as you (🤖-prefixed)
 
-- **In the alert thread:** "Investigating…", the PR link, a recommendation if there is one, "Released vX", and "Deployed vX ✓".
+- **In the alert thread:** "Investigating…" (also your claim on the alert, see above), the PR link, a recommendation if there is one, "Released vX", and "Deployed vX ✓".
 - **In the approvals channel:** once CI is green, a review request. Product apps go to `#product-approvals` and ping `@dev-product`;
   everything else goes to `#general-approvals` with the owning team. The request includes the PR link and the Revv walkthrough deep link
   (`revv://pr?host=nocturlab.ghe.com&repo=Merkl%2Fmonorepo&number=N`).

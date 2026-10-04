@@ -1,4 +1,4 @@
-import type { Alert, Session } from "../domain/model.ts"
+import { type Alert, type Claimant, claimHeadline, type Session } from "../domain/model.ts"
 import type { ParsedAlert } from "../domain/alert.ts"
 import { releaseState } from "../domain/release.ts"
 
@@ -12,14 +12,16 @@ export interface RuleContext {
   readonly activeSessions: ReadonlyArray<Session>
   /** Earlier alerts sharing this fingerprint. */
   readonly sameFingerprint: ReadonlyArray<Alert>
+  /** Teammates already on this alert, per Slack (`Claims`). */
+  readonly claimedBy: ReadonlyArray<Claimant>
 }
 
 const filtered = (reason: string): RuleOutcome => ({ _tag: "Filtered", reason })
 
 /**
  * Decisions that need no judgment: success notices, recoveries, pipelines that
- * are still moving, and repeats of something a session already owns. Everything
- * else goes to Jev.
+ * are still moving, repeats of something a session already owns, and alerts a
+ * teammate is on. Everything else goes to Jev.
  */
 export const applyRules = (alert: ParsedAlert, ctx: RuleContext): RuleOutcome => {
   if (alert.fromHuman) return filtered("Posted by a person, not an alert")
@@ -30,6 +32,9 @@ export const applyRules = (alert: ParsedAlert, ctx: RuleContext): RuleOutcome =>
   if (owner !== undefined) {
     return { _tag: "Attach", sessionId: owner.id, reason: "Same alert as a running session" }
   }
+
+  const claimed = claimHeadline(ctx.claimedBy)
+  if (claimed !== null) return filtered(claimed)
 
   const fields = alert.fields
   switch (fields._tag) {
@@ -55,6 +60,7 @@ export const applyRules = (alert: ParsedAlert, ctx: RuleContext): RuleOutcome =>
       return { _tag: "Judge" }
     }
     case "inbox":
+    case "watch":
       return { _tag: "Judge" }
     case "uptime": {
       if (fields.state === "resolved" || fields.state === "recovered") return filtered("Recovery notice")

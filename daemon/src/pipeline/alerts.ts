@@ -3,10 +3,11 @@ import { ActionQueue } from "../actions/queue.ts"
 import { alertFromParsed, type ParsedAlert } from "../domain/alert.ts"
 import { type AdapterError, NotFound } from "../domain/errors.ts"
 import { daysAgo, now, tsToIso } from "../domain/ids.ts"
-import { type Alert, type Channel, isActive, type Triage, triageEvent } from "../domain/model.ts"
+import { type Alert, type Channel, type Claimant, claimHeadline, isActive, type Triage, triageEvent } from "../domain/model.ts"
 import { Hub } from "../hub.ts"
 import { SessionRunner } from "../sessions/runner.ts"
 import { Shipper } from "../ship/shipper.ts"
+import { Claims } from "../slack/claims.ts"
 import { SlackClient, type SlackError, type SlackMessage } from "../slack/client.ts"
 import { SlackMe } from "../slack/me.ts"
 import { isHumanMessage, parseMessage } from "../slack/parse.ts"
@@ -68,6 +69,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
     const runner = yield* SessionRunner
     const shipper = yield* Shipper
     const queue = yield* ActionQueue
+    const claims = yield* Claims
     /** Held by the poll loop and `POST /poll`, so two polls never ingest the same messages at once. */
     const polling = yield* Semaphore.make(1)
 
@@ -77,15 +79,14 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
         return `:${r.name}: ×${r.count}${mine ? " (incl. me)" : ""}`
       })
 
-    const triage = Effect.fn("AlertPipeline.triage")(function* (parsed: ParsedAlert, message: SlackMessage, history: ReadonlyArray<Alert>) {
+    const triage = Effect.fn("AlertPipeline.triage")(function* (
+      parsed: ParsedAlert,
+      message: SlackMessage,
+      thread: ReadonlyArray<SlackMessage>,
+      history: ReadonlyArray<Alert>,
+    ) {
       const identity = yield* me.known
-      const replies =
-        (message.reply_count ?? 0) === 0
-          ? []
-          : toThreadReplies(
-              yield* slack.replies(parsed.channelId, parsed.ts).pipe(Effect.orElseSucceed((): ReadonlyArray<SlackMessage> => [])),
-              identity?.user_id,
-            )
+      const replies = toThreadReplies(thread, identity?.user_id)
       const mentioned = parsed.mentionsMe || replies.some((r) => identity !== undefined && r.text.includes(identity.user))
       const verdict = yield* jev
         .judge({ alert: { ...parsed, mentionsMe: mentioned }, thread: replies, reactions: reactionsOf(message, identity?.user_id), history })
@@ -107,7 +108,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
         yield* queue.put({
           kind: "investigate",
           title: alert.title,
-          detail: `#${alert.channelName} · ${alert.triage.reason}`,
+          detail: `${alert.source === "watch" ? "Grafana" : `#${alert.channelName}`} · ${alert.triage.reason}`,
           primaryLabel: "Investigate",
           options: [],
           sessionId: null,
@@ -116,11 +117,25 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
         })
       })
 
+    /** A teammate got there first: their claim goes on the alert, and your card for it goes. */
+    const yieldTo = (alert: Alert, claimedBy: ReadonlyArray<Claimant>) =>
+      Effect.gen(function* () {
+        yield* queue.removeWhere((a) => a.kind === "investigate" && a.alertId === alert.id)
+        yield* store.modifyAlert(alert.id, (current) =>
+          current === undefined
+            ? undefined
+            : { ...current, claimedBy, events: [...current.events, { at: now(), text: `Left to a teammate: ${claimHeadline(claimedBy) ?? ""}` }] },
+        )
+        yield* hub.notify
+      })
+
     const act = (alert: Alert) =>
       Effect.gen(function* () {
         const status = yield* hub.status
         const settings = yield* hub.settings
         if (alert.triage.decision === "auto" && !status.paused && settings.autoStart) {
+          const take = yield* claims.take(alert, { yieldTo: true })
+          if (take._tag === "TakenBy") return yield* yieldTo(alert, take.claimedBy)
           yield* runner.enqueue(alert)
           return
         }
@@ -142,6 +157,11 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
        * Every write re-reads the row: a session you started while Jev was
        * thinking keeps its `sessionId`, and history is appended to, never replaced.
        */
+      const thread =
+        (message.reply_count ?? 0) === 0
+          ? []
+          : yield* slack.replies(channel.id, message.ts).pipe(Effect.orElseSucceed((): ReadonlyArray<SlackMessage> => []))
+      const claimedBy = yield* claims.read(message.reactions, thread)
       const write = (triage: (current: Alert | undefined) => Triage, event: string | null, attachTo: string | null = null) =>
         store.modifyAlert(
           id,
@@ -154,6 +174,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
               events: [...(current?.events ?? []), ...(event === null ? [] : [{ at: now(), text: event }])],
               feedback: current?.feedback ?? null,
               disposition: current?.disposition ?? null,
+              claimedBy,
             }),
           hash,
         )
@@ -166,7 +187,17 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
       // A known alert whose headline did not change (a reaction, a reply count) keeps its verdict.
       if (existing !== undefined && (existing.title === parsed.title || existing.sessionId !== null)) {
         const keep = (current: Alert | undefined) => current?.triage ?? existing.triage
-        return yield* finish(yield* write(keep, existing.title === parsed.title ? null : `Updated in Slack: ${parsed.title}`))
+        const newcomers = claimedBy.filter((c) => !existing.claimedBy.some((e) => e.userId === c.userId))
+        const event = existing.title === parsed.title ? null : `Updated in Slack: ${parsed.title}`
+        const alert = yield* write(keep, event)
+        if (alert !== undefined && newcomers.length > 0) {
+          // A card asking you to start an agent is stale once someone else is on it.
+          if (alert.sessionId === null) yield* queue.removeWhere((a) => a.kind === "investigate" && a.alertId === id)
+          yield* store.modifyAlert(id, (current) =>
+            current === undefined ? undefined : { ...current, events: [...current.events, { at: now(), text: `In Slack: ${claimHeadline(newcomers)}` }] },
+          )
+        }
+        return yield* finish(alert)
       }
 
       const history = (yield* store.alertsByFingerprint(parsed.fingerprint, daysAgo(7))).filter((a) => a.id !== id)
@@ -176,7 +207,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
       const outcome =
         shipping !== undefined
           ? { _tag: "Attach" as const, sessionId: shipping.id, reason: `Release cut by session ${shipping.id}` }
-          : applyRules(parsed, { activeSessions: active, sameFingerprint: history })
+          : applyRules(parsed, { activeSessions: active, sameFingerprint: history, claimedBy })
       if (outcome._tag === "Filtered" || outcome._tag === "Attach") {
         const attached = outcome._tag === "Attach"
         const alert = yield* write(
@@ -188,7 +219,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
         return yield* finish(alert)
       }
 
-      const verdict = yield* triage(parsed, message, history)
+      const verdict = yield* triage(parsed, message, thread, history)
       const alert = yield* write(() => verdict, triageEvent(verdict))
       yield* finish(alert)
       if (alert !== undefined && alert.sessionId === null) yield* act(alert)
@@ -229,6 +260,8 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
         if (session !== undefined && isActive(session)) return
       }
       yield* queue.removeWhere((a) => a.alertId === alertId && a.kind === "investigate")
+      // You asked for it: claimed even if a teammate is on it too.
+      yield* claims.take(alert, { yieldTo: false })
       yield* runner.enqueue(alert)
     })
 

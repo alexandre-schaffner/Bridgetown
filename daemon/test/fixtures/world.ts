@@ -7,6 +7,7 @@ import { MissingCredential } from "../../src/domain/errors.ts"
 import type { JevVerdict } from "../../src/domain/model.ts"
 import { Grafana, type GrafanaShape } from "../../src/grafana/client.ts"
 import { appLayerWith } from "../../src/layers.ts"
+import { Reviewer, ReviewerLive, type ReviewerShape } from "../../src/critique/reviewer.ts"
 import { Agent, AgentLive, type AgentShape } from "../../src/sessions/agent.ts"
 import { GitHub, GitHubLive, type GitHubShape } from "../../src/ship/github.ts"
 import { SlackClient, type SlackClientShape, type SlackMessage } from "../../src/slack/client.ts"
@@ -27,11 +28,13 @@ export const fakeSlack = (messages: (channel: string) => ReadonlyArray<SlackMess
   groupsOf: () => Effect.succeed([]),
   userName: (id) => Effect.succeed(id),
   post: () => Effect.succeed("1.000001"),
+  remove: () => Effect.void,
 })
 
 const noJev: JevShape = {
   judge: () => Effect.fail(new MissingCredential({ service: "jev", message: "no TypeSafe API key" })),
   judgeInbox: () => Effect.fail(new MissingCredential({ service: "jev", message: "no TypeSafe API key" })),
+  judgeFinding: () => Effect.fail(new MissingCredential({ service: "jev", message: "no TypeSafe API key" })),
 }
 
 /** Grafana with no data: every query answers with no series and no rows. */
@@ -46,6 +49,7 @@ export interface WorldOptions {
   readonly jev?: JevShape
   readonly dryRun?: boolean
   readonly agent?: AgentShape
+  readonly reviewer?: ReviewerShape
   readonly github?: GitHubShape
   readonly grafana?: GrafanaShape
   /** An existing `BRIDGETOWN_HOME` (a store an older daemon wrote); a fresh temp dir otherwise. */
@@ -62,6 +66,7 @@ export const makeWorld = (options: WorldOptions = {}) => {
     Layer.succeed(SlackClient)(options.slack ?? fakeSlack(() => [])),
     Layer.succeed(Jev)(options.jev ?? noJev),
     options.agent === undefined ? AgentLive : Layer.succeed(Agent)(options.agent),
+    options.reviewer === undefined ? ReviewerLive : Layer.succeed(Reviewer)(options.reviewer),
     options.github === undefined ? GitHubLive : Layer.succeed(GitHub)(options.github),
     Layer.succeed(Grafana)(options.grafana ?? noGrafana),
   )

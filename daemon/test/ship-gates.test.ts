@@ -32,7 +32,9 @@ const slowGitHub = (release: Deferred.Deferred<void>, options: { readonly create
             : Effect.sync(() => void state.tags.push(tag)),
         ),
       ),
-    branchPushed: () => Effect.succeed(true),
+    branchHead: () => Effect.succeed("0000000000000000000000000000000000000001"),
+    prHead: () => Effect.succeed("0000000000000000000000000000000000000001"),
+    markReady: () => Effect.void,
     reachability: Effect.succeed("ok"),
   }
   return { github, calls }
@@ -41,7 +43,7 @@ const slowGitHub = (release: Deferred.Deferred<void>, options: { readonly create
 const releasable: Session = makeSession("awaiting_release", {
   id: "s_rel", alertId: "C1:rel", prUrl: "https://ghe/pull/3338", activity: "Merged, ready to cut dispute-v0.4.3",
   release: { image: "merkl-dispute", tag: "dispute", version: "" },
-  milestones: { diagnosed: true, fixed: true, prOpened: true, ciGreen: true, merged: true, released: false, deployed: false },
+  milestones: { diagnosed: true, fixed: true, prOpened: true, critiqued: true, ciGreen: true, merged: true, released: false, deployed: false },
 })
 const releaseCard: Action = {
   id: "a_rel", kind: "release", title: "Ship", detail: "", primaryLabel: "Cut dispute-v0.4.3", options: [], sessionId: "s_rel", alertId: "C1:rel",
@@ -125,7 +127,7 @@ describe("the release gate through the real shipper", () => {
     const mergeable = makeSession("awaiting_merge", {
       id: "s_rel", alertId: "C1:rel", prUrl: "https://ghe/pull/3338", activity: "#3338 approved and green, ready to merge",
       release: { image: "merkl-dispute", tag: "dispute", version: "" },
-      milestones: { diagnosed: true, fixed: true, prOpened: true, ciGreen: true, merged: false, released: false, deployed: false },
+      milestones: { diagnosed: true, fixed: true, prOpened: true, critiqued: true, ciGreen: true, merged: false, released: false, deployed: false },
     })
     try {
       const out = await world.runPromise(

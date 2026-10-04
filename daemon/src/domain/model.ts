@@ -59,10 +59,25 @@ export type InboxFields = typeof InboxFields.Type
 export const GenericFields = Schema.TaggedStruct("generic", {})
 export type GenericFields = typeof GenericFields.Type
 
-export const AlertFields = Schema.Union([ReleaseFields, UptimeFields, EngineFields, InboxFields, GenericFields])
+/** A prod signal Bridgetown saw rise in Grafana on its own, with no Slack message behind it. */
+export const WatchFields = Schema.TaggedStruct("watch", {
+  /** The overview panel's id, e.g. `api_5xx`. */
+  signal: Schema.String,
+  /** The query that showed it, for the agent to run again through the grafana MCP. */
+  query: Schema.String,
+  datasource: Schema.Literals(["prom", "logs"]),
+  /** Median of the last 15 minutes, and the 90th percentile of the 3 hours before. */
+  level: Schema.Number,
+  usual: Schema.Number,
+  since: Schema.String,
+})
+export type WatchFields = typeof WatchFields.Type
+
+export const AlertFields = Schema.Union([ReleaseFields, UptimeFields, EngineFields, InboxFields, GenericFields, WatchFields])
 export type AlertFields = typeof AlertFields.Type
 
-export const AlertSource = Schema.Literals(["releases", "uptime", "engine", "inbox", "generic"])
+/** `watch`: found by Bridgetown in Grafana, not posted in Slack. */
+export const AlertSource = Schema.Literals(["releases", "uptime", "engine", "inbox", "generic", "watch"])
 export type AlertSource = typeof AlertSource.Type
 
 export const Decision = Schema.Literals(["pending", "filtered", "ignore", "suggest", "auto", "escalate"])
@@ -144,6 +159,28 @@ export const triageEvent = (triage: Triage): string => {
 export const Disposition = Schema.Struct({ kind: Schema.Literals(["dismissed", "opened"]), at: Schema.String })
 export type Disposition = typeof Disposition.Type
 
+/**
+ * A teammate on an alert, as its Slack message says: their Bridgetown posted
+ * that it is investigating (`agent`), or they reacted 👀 (`eyes`).
+ */
+export const Claimant = Schema.Struct({
+  userId: Schema.String,
+  name: Schema.String,
+  via: Schema.Literals(["agent", "eyes"]),
+  /** Their Bridgetown's latest post in the thread, without the 🤖. */
+  latest: Schema.NullOr(Schema.String),
+})
+export type Claimant = typeof Claimant.Type
+
+/** "Alice's agent is on it", "Bob is on it": the first claimant, who got there first. */
+export const claimHeadline = (claimedBy: ReadonlyArray<Claimant>): string | null => {
+  const [first] = claimedBy
+  if (first === undefined) return null
+  const others = claimedBy.length - 1
+  const who = first.via === "agent" ? `${first.name}'s agent` : first.name
+  return `${who} is on it${others === 0 ? "" : ` (+${others})`}`
+}
+
 export const Alert = Schema.Struct({
   id: Schema.String,
   channelId: Schema.String,
@@ -165,6 +202,8 @@ export const Alert = Schema.Struct({
   events: Schema.Array(AlertEvent).pipe(Schema.withDecodingDefaultKey(Effect.succeed([]))),
   /** What you last did to its card when no agent ran: dismissed it, or opened it in Slack or Revv. */
   disposition: nullByDefault(Disposition),
+  /** Teammates on it per Slack, first claim first; never you. Read again whenever the message or its thread changes. */
+  claimedBy: Schema.Array(Claimant).pipe(Schema.withDecodingDefaultKey(Effect.succeed([]))),
 })
 export type Alert = typeof Alert.Type
 
@@ -173,6 +212,7 @@ export const SessionStatus = Schema.Literals([
   "preparing",
   "running",
   "waiting",
+  "critiquing",
   "ci",
   "awaiting_merge",
   "awaiting_release",
@@ -184,7 +224,7 @@ export const SessionStatus = Schema.Literals([
 ])
 export type SessionStatus = typeof SessionStatus.Type
 
-export const Phase = Schema.Literals(["diagnose", "fix", "pr", "ci", "deploy", "done"])
+export const Phase = Schema.Literals(["diagnose", "fix", "pr", "critique", "ci", "deploy", "done"])
 export type Phase = typeof Phase.Type
 
 export const Outcome = Schema.Literals(["fix_pr", "recommendation", "no_action", "needs_human"])
@@ -193,10 +233,63 @@ export type Outcome = typeof Outcome.Type
 export const Recommendation = Schema.Literals(["rerun_failed_jobs", "revert", "no_code_change"])
 export type Recommendation = typeof Recommendation.Type
 
+/** What the adversarial reviewer reports: where, what, and how it fails. */
+export const ReviewFinding = Schema.Struct({
+  file: Schema.String,
+  line: Schema.NullOr(Schema.Number),
+  title: Schema.String,
+  failureScenario: Schema.String,
+})
+export type ReviewFinding = typeof ReviewFinding.Type
+
+/** Only the reviewer's fields, for anything (Jev, a prompt) that must not see Bridgetown's verdict on them. */
+export const reviewFindingOf = ({ file, line, title, failureScenario }: ReviewFinding): ReviewFinding => ({ file, line, title, failureScenario })
+
+/** Jev's judgment of one reviewer finding: is it a real defect, would it block the PR, does the author's reply answer it. */
+export const FindingVerdict = Schema.Struct({
+  realDefect: Schema.Number,
+  blocking: Schema.Number,
+  /** Only from the second round, when the author has replied. */
+  rebutted: Schema.NullOr(Schema.Number),
+})
+export type FindingVerdict = typeof FindingVerdict.Type
+
+export const Finding = Schema.Struct({
+  ...ReviewFinding.fields,
+  /** `null` when Jev could not judge it; it then blocks. */
+  jev: Schema.NullOr(FindingVerdict),
+  blocks: Schema.Boolean,
+})
+export type Finding = typeof Finding.Type
+
+export const ReviewerVendor = Schema.Literals(["codex"])
+export type ReviewerVendor = typeof ReviewerVendor.Type
+
+/** How the reviewer is named in the transcript and status line. */
+export const REVIEWER_NAMES: Readonly<Record<ReviewerVendor, string>> = { codex: "Codex" }
+
+export const Critique = Schema.Struct({
+  reviewer: ReviewerVendor,
+  /** The head the review read. */
+  sha: Schema.String,
+  findings: Schema.Array(Finding),
+  /** The agent's summary after its last fix: its reply to these findings, read by the next round. */
+  response: Schema.NullOr(Schema.String),
+})
+export type Critique = typeof Critique.Type
+
+/** A review passes when nothing it found blocks. */
+export const critiquePassed = (critique: Critique): boolean => critique.findings.every((f) => !f.blocks)
+
+/** The last review passed, and on this head. */
+export const passedAt = (critique: Critique | null, head: string | null): boolean =>
+  critique !== null && head !== null && critique.sha === head && critiquePassed(critique)
+
 export const NO_MILESTONES = {
   diagnosed: false,
   fixed: false,
   prOpened: false,
+  critiqued: false,
   ciGreen: false,
   merged: false,
   released: false,
@@ -230,6 +323,8 @@ export const Session = Schema.Struct({
     diagnosed: Schema.Boolean,
     fixed: Schema.Boolean,
     prOpened: Schema.Boolean,
+    /** The current head passed the adversarial review. Added later: old rows decode as not reviewed. */
+    critiqued: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
     ciGreen: Schema.Boolean,
     merged: Schema.Boolean,
     released: Schema.Boolean,
@@ -254,6 +349,10 @@ export const Session = Schema.Struct({
   ),
   /** When Bridgetown asked GitHub to merge. Set before `gh pr merge`, so a repeat asks GitHub what happened instead of merging again. */
   mergeRequestedAt: nullByDefault(Schema.String),
+  /** Adversarial reviews that sent the agent back on this PR. */
+  critiqueRounds: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0))),
+  /** The last adversarial review of the pushed head, and the agent's reply to it. */
+  critique: nullByDefault(Critique),
   /** The tag Bridgetown is cutting or cut. Set before `gh release create`, so a repeat reuses it and never cuts a second one. */
   releaseTag: nullByDefault(Schema.String),
   /** The release tracker's last state seen for this session's deploy. Only a change moves the session. */
@@ -311,6 +410,10 @@ export const Thresholds = Schema.Struct({
   autoHumanOnItMax: Schema.Number,
   suggestActionable: Schema.Number,
   suggestResolvable: Schema.Number,
+  /** A reviewer finding blocks the PR only above these (and below `findingRebutted`). Added later, so defaulted. */
+  findingReal: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0.6))),
+  findingBlocking: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0.5))),
+  findingRebutted: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0.6))),
 })
 export type Thresholds = typeof Thresholds.Type
 
@@ -322,6 +425,10 @@ export const Settings = Schema.Struct({
   inbox: Schema.Boolean,
   maxConcurrent: Schema.Number,
   dryRun: Schema.Boolean,
+  /** A different model reviews each pushed fix before the PR leaves draft. */
+  adversarialReview: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(true))),
+  /** Watch prod signals in Grafana and suggest an investigation when one rises before any alert fires. */
+  watchProd: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(true))),
   pollSeconds: Schema.Number,
   monorepoPath: Schema.String,
   deploymentRepoPath: Schema.String,
@@ -334,6 +441,7 @@ export const ACTIVE_STATUSES: ReadonlyArray<SessionStatus> = [
   "preparing",
   "running",
   "waiting",
+  "critiquing",
   "ci",
   "awaiting_merge",
   "awaiting_release",

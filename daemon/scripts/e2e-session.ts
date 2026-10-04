@@ -58,6 +58,7 @@ const alert: Alert = {
   feedback: null,
   events: [],
   disposition: null,
+  claimedBy: [],
 }
 
 const program = Effect.gen(function* () {

@@ -17,7 +17,7 @@ export interface SlackThreadShape {
 
 export class SlackThread extends Context.Service<SlackThread, SlackThreadShape>()("SlackThread") {}
 
-export type ThreadPost = { readonly _tag: "Posted" } | { readonly _tag: "NotPosted"; readonly reason: "dry_run" | "error" }
+export type ThreadPost = { readonly _tag: "Posted"; readonly ts: string } | { readonly _tag: "NotPosted"; readonly reason: "dry_run" | "error" | "no_thread" }
 
 export type ChannelPost =
   | { readonly _tag: "Posted"; readonly permalink: string | null }
@@ -30,13 +30,15 @@ export const SlackThreadLive = Layer.effect(SlackThread)(
     return {
       post: (alert, text) =>
         Effect.gen(function* () {
+          // The prod watcher's findings have no Slack message to reply under.
+          if (alert.source === "watch") return { _tag: "NotPosted", reason: "no_thread" } satisfies ThreadPost
           if (yield* hub.dryRun) {
             yield* Effect.logInfo(`[dry-run] would post in ${alert.channelName}/${alert.ts}: ${text}`)
             const skipped: ThreadPost = { _tag: "NotPosted", reason: "dry_run" }
             return skipped
           }
-          yield* slack.post(alert.channelId, threadTsOf(alert), `${BOT_PREFIX} ${text}`)
-          const posted: ThreadPost = { _tag: "Posted" }
+          const ts = yield* slack.post(alert.channelId, threadTsOf(alert), `${BOT_PREFIX} ${text}`)
+          const posted: ThreadPost = { _tag: "Posted", ts }
           return posted
         }).pipe(
           Effect.catch((error) =>
@@ -64,6 +66,7 @@ export const SlackThreadLive = Layer.effect(SlackThread)(
           ),
         ),
       nearby: (alert, minutes) => {
+        if (alert.source === "watch") return Effect.succeed([])
         const at = Number(alert.ts)
         return slack.latest(alert.channelId, 30, String(at - minutes * 60), String(at + minutes * 60)).pipe(
           Effect.map((messages) =>
@@ -79,10 +82,12 @@ export const SlackThreadLive = Layer.effect(SlackThread)(
         )
       },
       replies: (alert) =>
-        slack.replies(alert.channelId, threadTsOf(alert)).pipe(
-          Effect.map((messages) => messages.map((m) => plain(flattenMessage(m)))),
-          Effect.orElseSucceed((): ReadonlyArray<string> => []),
-        ),
+        alert.source === "watch"
+          ? Effect.succeed([])
+          : slack.replies(alert.channelId, threadTsOf(alert)).pipe(
+              Effect.map((messages) => messages.map((m) => plain(flattenMessage(m)))),
+              Effect.orElseSucceed((): ReadonlyArray<string> => []),
+            ),
     }
   }),
 )

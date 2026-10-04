@@ -47,6 +47,7 @@ interface AlertSpec {
   /** History after the triage line (dismissals, feedback…). */
   readonly events?: ReadonlyArray<{ readonly minutesAgo: number; readonly text: string }>
   readonly disposition?: { readonly kind: Disposition["kind"]; readonly minutesAgo: number }
+  readonly claimedBy?: Alert["claimedBy"]
 }
 
 const alert = (spec: AlertSpec): Alert => {
@@ -73,6 +74,7 @@ const alert = (spec: AlertSpec): Alert => {
       ...(spec.events ?? []).map((e) => ({ at: ago(e.minutesAgo), text: e.text })),
     ],
     disposition: spec.disposition === undefined ? null : { kind: spec.disposition.kind, at: ago(spec.disposition.minutesAgo) },
+    claimedBy: spec.claimedBy ?? [],
   }
 }
 
@@ -105,6 +107,7 @@ export const SESSION = {
   stopped: "s_mock_stopped",
   reply: "s_mock_reply",
   review: "s_mock_review",
+  critique: "s_mock_critique",
 } as const
 
 /** The release whose `gh release create` is still running at startup: its card shows `inFlight`. */
@@ -127,7 +130,7 @@ export const buildFixtures = (paths: { readonly repoPath: string; readonly workt
       ...overrides,
     }
   }
-  const shipped = (milestones: Partial<Session["milestones"]>) => ({ ...NO_MILESTONES, diagnosed: true, fixed: true, prOpened: true, ...milestones })
+  const shipped = (milestones: Partial<Session["milestones"]>) => ({ ...NO_MILESTONES, diagnosed: true, fixed: true, prOpened: true, critiqued: true, ...milestones })
   const reviewed = { channelName: "product-approvals", permalink: slack("C05APPROVALS", tsAgo(20)), handledReviewId: null, posted: true }
 
   const A = {
@@ -150,12 +153,26 @@ export const buildFixtures = (paths: { readonly repoPath: string; readonly workt
     stopped: alert({ channel: DEV, minutesAgo: 250, title: "merkl-api · p99 latency 2.3s on /v4/campaigns", summary: "Grafana: p99 above 2s for 15 minutes", source: "generic", sessionId: SESSION.stopped, triage: auto("Agent-resolvable runtime_error (actionable 82% · agent 77%)", jev("runtime_error", 0.82, 0.77, 0.18, "standard", 1.5)) }),
     reply: alert({ channel: ENG_API, minutesAgo: 6, title: "Pierre · #eng-api: opportunities page 500s with an empty chainId?", summary: "\"@alex can you check why /opportunities 500s when chainId is empty?\"", raw: "<@U03ALEX> can you check why /opportunities 500s when chainId is empty?", source: "inbox", fields: inbox("U03PIERRE", "Pierre", "mention"), sessionId: SESSION.reply, triage: auto("Delegable investigation (needs you 84% · agent 79%)", jev("investigation", 0.84, 0.79, 0.12, "standard", 1.1)) }),
     review: alert({ channel: ENGINE, minutesAgo: 24, title: "Engine · reward computation timed out for campaign 0x4f1c…a9e2", summary: "merkl-engine: computeRewards exceeded 900s on Ethereum, epoch 18,402", source: "engine", fields: { _tag: "engine", subject: "merkl-engine", error: "computeRewards timeout", txHash: null }, sessionId: SESSION.review, triage: auto("Agent-resolvable runtime_error (actionable 82% · agent 61%)", jev("runtime_error", 0.82, 0.81, 0.1, "deep", 1.9)) }),
+    critique: alert({ channel: DEV, minutesAgo: 16, title: "merkl-api · 502s on /v4/rewards for Linea", summary: "Grafana: 502 rate 4.8% on /v4/rewards?chainId=59144 for 12 minutes", source: "generic", sessionId: SESSION.critique, triage: auto("Agent-resolvable runtime_error (actionable 89% · agent 82%)", jev("runtime_error", 0.89, 0.82, 0.06, "standard", 2.0)) }),
+    watch: {
+      ...alert({
+        channel: { id: "grafana", name: "Grafana", enabled: true }, minutesAgo: 3, title: "API 5xx at 640 per 5 min, usually up to 43",
+        summary: "Since 11:45 UTC, API 5xx has been 15× its usual level for the past 3 hours. Deploys around it: merkl-api v1.35.11 deployed at 11:41 UTC. Bridgetown saw this in Grafana; no Slack alert has fired for it.",
+        source: "watch", fields: { _tag: "watch", signal: "api_5xx", query: `k8s.container.name:="envoy" envoy.response_code:>=500 | stats count() n`, datasource: "logs", level: 640, usual: 43, since: ago(18) },
+        triage: { decision: "suggest", reason: "Agent-resolvable runtime_error (actionable 88% · agent 81%)", jev: jev("runtime_error", 0.88, 0.81, 0.02, "standard", 2.1) },
+      }),
+      id: `watch:api_5xx:${tsAgo(18)}`,
+      permalink: "https://grafana.internal.merkl.xyz/d/pihjbxm",
+      fingerprint: "watch:api_5xx",
+    },
     investigate: alert({ channel: UPTIME, minutesAgo: 7, title: "Incident started on api.merkl.xyz/v4/roots/delay", summary: "Better Stack: 3 of 5 regions failing, HTTP 504 after 30s", source: "uptime", fields: { _tag: "uptime", target: "api.merkl.xyz/v4/roots/delay", state: "incident" }, triage: { decision: "suggest", reason: "Borderline uptime_incident (actionable 71% · agent 46%)", jev: jev("uptime_incident", 0.71, 0.46, 0.18, "standard", 2.4) } }),
     escalated: alert({ channel: DM_HUGO, minutesAgo: 1, title: "Hugo Lextrait · DM: should we prioritise the sparkline work over the studio revamp?", summary: "Direct message asking for a prioritisation call", raw: "should we prioritise the sparkline work over the studio revamp?", source: "inbox", fields: inbox("U04HUGO", "Hugo Lextrait", "dm"), triage: { decision: "escalate", reason: "A decision only you can make (needs you 90% · agent 4%)", jev: jev("decision_or_approval", 0.9, 0.04, 0, "quick", 1.6) } }),
     opened: alert({ channel: PRODUCT, minutesAgo: 45, title: "Baptiste · #product: review #3336 when you get a chance?", summary: "PR review request", raw: "<@U03ALEX> review https://nocturlab.ghe.com/Merkl/monorepo/pull/3336 when you get a chance?", source: "inbox", fields: inbox("U04BAPTISTE", "Baptiste", "mention", pr(3336)), triage: { decision: "escalate", reason: "PR reviews always go to you", jev: jev("pr_review", 0.95, 0.1, 0.02, "quick", 1.2) }, events: [{ minutesAgo: 40, text: "Opened by you in Slack or Revv" }], disposition: { kind: "opened", minutesAgo: 40 } }),
     dismissed: alert({ channel: DEV, minutesAgo: 131, title: "merkl-api · p95 latency 1.4s on /v4/campaigns", summary: "Grafana: p95 above 1.2s for 10 minutes, error rate normal", raw: "*[FIRING:1] merkl-api p95 latency*\n*Summary:* p95 latency 1.41s on /v4/campaigns (threshold 1.2s) for 10m\n*Error rate:* 0.2% (normal)", source: "generic", triage: { decision: "suggest", reason: "Borderline runtime_error (actionable 58% · agent 44%)", jev: jev("runtime_error", 0.58, 0.44, 0.22, "standard", 1.3) }, events: [{ minutesAgo: 118, text: "Dismissed by you, no agent started" }], disposition: { kind: "dismissed", minutesAgo: 118 } }),
     ignored: alert({ channel: RELEASES, minutesAgo: 63, title: "merkl-api v1.35.9 · Deployed", summary: "Approval ✓ · Build ✓ · Production ✓", source: "releases", triage: { decision: "ignore", reason: "Not actionable (actionable 3%)", jev: jev("informational", 0.03, 0.02, 0, "quick", 0.1) }, feedback: "good", events: [{ minutesAgo: 60, text: "You marked Jev's call as right" }] }),
     filtered: alert({ channel: INFRA, minutesAgo: 172, title: "SSL certificate for merkl.xyz expires in 7 days", summary: "cert-manager will renew automatically at 30 days remaining", source: "uptime", fields: { _tag: "uptime", target: "merkl.xyz", state: "ssl_expiry" }, triage: { decision: "filtered", reason: "Certificate notices are handled by cert-manager", jev: null } }),
+    teammate: alert({ channel: DEV, minutesAgo: 33, title: "merkl-api · 504s on /v4/campaigns/leaderboard", summary: "Grafana: 504 rate 2.2% for 8 minutes", source: "generic", triage: { decision: "filtered", reason: "Julien's agent is on it", jev: null }, claimedBy: [{ userId: "U04JULIEN", name: "Julien", via: "agent", latest: "Fix PR: https://nocturlab.ghe.com/Merkl/monorepo/pull/3351" }, { userId: "U04HUGO", name: "Hugo Lextrait", via: "eyes", latest: null }] }),
+    teammateEyes: alert({ channel: ENGINE, minutesAgo: 52, title: "Keeper gas balance low on Gnosis", summary: "merkl-keeper: 0.8 xDAI left (threshold 2)", source: "engine", fields: { _tag: "engine", subject: "merkl-keeper", error: "gas balance low", txHash: null }, triage: { decision: "filtered", reason: "Baptiste is on it", jev: null }, claimedBy: [{ userId: "U04BAPTISTE", name: "Baptiste", via: "eyes", latest: null }] }),
     filteredDeploy: alert({ channel: RELEASES, minutesAgo: 372, title: "merkl-app v2.14.0 · Deployed", summary: "Approval ✓ · Build ✓ · Production ✓", source: "releases", triage: { decision: "filtered", reason: "Deployed", jev: null } }),
   }
 
@@ -221,6 +238,11 @@ export const buildFixtures = (paths: { readonly repoPath: string; readonly workt
       activity: "Could not reproduce the timeout locally", outcome: "needs_human", rootCauseFound: false, costUsd: 1.12, pushbacks: 1,
       diagnosis: "Couldn't reproduce the timeout: the same epoch computes in 212s locally against an archive node. Ruled out RPC latency (p99 180ms), the campaign config (unchanged) and memory (61% peak). The slow part in the failing run is `fetchPositions` for 3 Uniswap v4 pools (18k sequential calls); a cold cache on the engine pod is possible but unproven.",
     }),
+    critique: session(A.critique, "critiquing", { started: 15, updated: 0.5 }, {
+      activity: "Waiting for review", phase: "critique", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3352), costUsd: 0.86, component: "api",
+      diagnosis: "Linea's RPC returns reward amounts as hex strings above 2^53; `Number()` in `RewardService.format` overflows to Infinity and JSON serialisation fails. Parse with BigInt.",
+      release: { image: "merkl-api", tag: "api", version: "" }, milestones: shipped({ critiqued: false }),
+    }),
   } satisfies Record<keyof typeof SESSION, Session>
 
   const card = (spec: Omit<Action, "id" | "createdAt" | "url" | "options"> & { readonly url?: string | null; readonly options?: ReadonlyArray<string>; readonly minutesAgo: number }): Action => {
@@ -233,6 +255,7 @@ export const buildFixtures = (paths: { readonly repoPath: string; readonly workt
     card({ kind: "escalate", title: A.escalated.title, detail: A.escalated.triage.reason, primaryLabel: "Open in Slack", sessionId: null, alertId: A.escalated.id, payload: A.escalated.fingerprint, url: A.escalated.permalink, minutesAgo: 1 }),
     card({ kind: "reply", title: "Reply to Pierre", detail: "Reproduced: /opportunities 500s when chainId is empty because the param parses as NaN and slips past validation. A one-line fix coerces empty strings to undefined; I can open the PR.", primaryLabel: "Send reply", ...forSession(S.reply), payload: "Reproduced: /opportunities 500s when chainId is empty because the param parses as NaN and slips past validation. A one-line fix coerces empty strings to undefined; I can open the PR.", minutesAgo: 1.5 }),
     card({ kind: "review", title: `Root cause not found · ${S.review.title}`, detail: S.review.diagnosis ?? "", primaryLabel: "Close session", ...forSession(S.review), payload: null, minutesAgo: 4 }),
+    card({ kind: "investigate", title: A.watch.title, detail: `Grafana · ${A.watch.triage.reason}`, primaryLabel: "Investigate", sessionId: null, alertId: A.watch.id, payload: A.watch.fingerprint, minutesAgo: 3 }),
     card({ kind: "investigate", title: A.investigate.title, detail: `#${A.investigate.channelName} · ${A.investigate.triage.reason}`, primaryLabel: "Investigate", sessionId: null, alertId: A.investigate.id, payload: A.investigate.fingerprint, minutesAgo: 7 }),
     card({ kind: "merge", title: "Merge fix(app): import d3-shape from the package root", detail: `#3345 · ${S.merge.diagnosis ?? ""}`, primaryLabel: "Merge", ...forSession(S.merge), payload: S.merge.prUrl, minutesAgo: 12 }),
     card({ kind: "release", title: `Ship ${S.release.title}`, detail: `Merged ${pr(3338)}. Cutting dispute-v0.4.3 starts the deploy; approval stays with the reviewers.`, primaryLabel: "Cut dispute-v0.4.3", ...forSession(S.release), payload: "dispute-v0.4.3", minutesAgo: 30 }),
@@ -323,6 +346,14 @@ export const buildFixtures = (paths: { readonly repoPath: string; readonly workt
       t(40, "status", "Merged #3333"),
       t(15, "status", "Released api-v1.35.11"),
     ],
+    [SESSION.critique]: [
+      t(15, "status", "Session started"),
+      t(13.5, "tool", "Bash bun run scripts/logs.ts --app merkl-api --grep 502 --since 20m"),
+      t(12.2, "text", "Every 502 is a `TypeError: Do not know how to serialize Infinity` from `RewardService.format`, only on Linea."),
+      t(8.1, "tool", "Edit packages/api/src/services/reward.ts"),
+      t(5.4, "tool", "Bash gh pr create --draft --title \"fix(api): parse Linea reward amounts as BigInt\""),
+      t(5, "result", "Parse amounts with BigInt. Draft PR #3352."),
+    ],
     [SESSION.stopped]: [t(248, "status", "Session started"), t(240, "tool", "Bash bun run scripts/latency.ts --route /v4/campaigns"), t(236, "status", "Stopped by you")],
     [SESSION.resolved]: [t(297, "status", "Session started"), t(281, "result", "Pinned vite to 6.3.5. PR #3329."), t(250, "status", "Deployed admin-v0.6.1")],
   }
@@ -334,6 +365,7 @@ export const buildFixtures = (paths: { readonly repoPath: string; readonly workt
     [pr(3338)]: fakePr("fix(dispute): copy bun.lock in the Dockerfile", "green", "APPROVED", true),
     [pr(3336)]: fakePr("fix(indexer): pull base images from GHCR", "green", "APPROVED", true),
     [pr(3302)]: fakePr("fix(states-exporter): move to bookworm", "red", "REVIEW_REQUIRED"),
+    [pr(3352)]: { ...fakePr("fix(api): parse Linea reward amounts as BigInt", "pending", "REVIEW_REQUIRED"), moves: true },
   }
   const tags = ["admin-v0.6.0", "admin-v0.6.1", "app-v2.15.0", "api-v1.35.10", "api-v1.35.11", "dispute-v0.4.2", "indexer-v0.9.2", "studio-v1.4.0"]
 

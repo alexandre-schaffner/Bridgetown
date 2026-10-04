@@ -1,4 +1,4 @@
-import type { Alert, AlertEvent, AlertFields, AlertSource, Disposition, Feedback, Triage } from "./model.ts"
+import type { Alert, AlertEvent, AlertFields, AlertSource, Claimant, Disposition, Feedback, Triage } from "./model.ts"
 
 /** A Slack message read as an alert or an inbox item, before anything is stored or decided. */
 export interface ParsedAlert {
@@ -30,6 +30,7 @@ export interface AlertRecord {
   readonly events: ReadonlyArray<AlertEvent>
   readonly feedback?: Feedback | null
   readonly disposition?: Disposition | null
+  readonly claimedBy?: ReadonlyArray<Claimant>
 }
 
 /** The stored alert for a parsed message. The one place a `ParsedAlert` becomes an `Alert`. */
@@ -52,4 +53,5 @@ export const alertFromParsed = (parsed: ParsedAlert, record: AlertRecord): Alert
   feedback: record.feedback ?? null,
   events: record.events,
   disposition: record.disposition ?? null,
+  claimedBy: record.claimedBy ?? [],
 })

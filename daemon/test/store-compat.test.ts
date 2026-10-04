@@ -76,10 +76,14 @@ describe("a store the first daemon wrote", () => {
     })
     const sessions = Object.fromEntries(out.snapshot.sessions.map((s) => [s.id, [s.status, s.headline, s.steps.length, s.acceptsMessages]]))
     expect(sessions).toEqual({
-      [OLD_SESSIONS.ci.id]: ["ci", "In review · #product-approvals", 5, true],
-      [OLD_SESSIONS.stopped.id]: ["stopped", "Stopped by you", 5, false],
-      [OLD_SESSIONS.closedAsResolved.id]: ["closed", "Closed · root cause not found", 5, false],
+      [OLD_SESSIONS.ci.id]: ["ci", "In review · #product-approvals", 6, true],
+      [OLD_SESSIONS.stopped.id]: ["stopped", "Stopped by you", 6, false],
+      [OLD_SESSIONS.closedAsResolved.id]: ["closed", "Closed · root cause not found", 6, false],
     })
+    // Rows from before the adversarial review: none ran, and the stepper says so instead of claiming one.
+    const ci = out.snapshot.sessions.find((s) => s.id === OLD_SESSIONS.ci.id)
+    expect(ci).toMatchObject({ critique: null, critiqueRounds: 0 })
+    expect(ci?.steps.find((step) => step.key === "critique")).toEqual({ key: "critique", label: "No review", state: "skipped" })
     expect(out.snapshot.actions).toEqual([expect.objectContaining({ id: "a_old_review", url: null, inFlight: false, dismissCloses: false })])
     // Before history existed, the detail still says how it was triaged.
     expect(out.release?.events).toEqual([{ at: OLD_ALERTS.release.receivedAt, text: "Handed to an agent: Agent-resolvable build_failure" }])
