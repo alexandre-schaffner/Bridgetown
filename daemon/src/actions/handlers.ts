@@ -6,6 +6,7 @@ import type { SessionRepoShape } from "../sessions/repo.ts"
 import type { SessionRunnerShape } from "../sessions/runner.ts"
 import type { ShipperShape } from "../ship/shipper.ts"
 import { tagPrefix } from "../ship/transitions.ts"
+import { toMrkdwn } from "../slack/text.ts"
 import type { SlackThreadShape } from "../slack/thread.ts"
 import type { StoreShape } from "../store/store.ts"
 import { RETRY } from "./queue.ts"
@@ -87,7 +88,7 @@ export const makeHandlers = (deps: HandlerDeps): Readonly<Record<ActionKind, Han
     Effect.gen(function* () {
       const alert = yield* alertOf(deps.store, action)
       const text = (response ?? action.payload ?? "").trim()
-      const posted = alert === undefined || text === "" ? undefined : yield* deps.thread.post(alert, text)
+      const posted = alert === undefined || text === "" ? undefined : yield* deps.thread.post(alert, toMrkdwn(text))
       // A failed post keeps the card: nothing went out, so nothing is recorded.
       if (posted?._tag === "NotPosted" && posted.reason === "error") {
         return yield* new SlackApiError({ method: "chat.postMessage", code: "not_posted", message: "The reply could not be posted; nothing was sent" })

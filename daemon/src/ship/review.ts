@@ -1,4 +1,5 @@
 import { GH_HOST } from "../config.ts"
+import { toMrkdwn } from "../slack/text.ts"
 
 /** Slack user groups, as `packages/alerting/src/deployment.reviewers.ts` encodes them. */
 const DEV_PRODUCT = "<!subteam^S0ATVUW9T7V|dev-product>"
@@ -77,7 +78,7 @@ export const reviewRequestText = (request: ReviewRequest): string => {
   const alert = request.alertPermalink === null ? request.alertTitle : `<${request.alertPermalink}|${request.alertTitle}>`
   return [
     `${request.route.mention === null ? "" : `${request.route.mention} `}amp <${request.prUrl}|${number === null ? request.prTitle : `#${number}`}> — ${request.prTitle}`,
-    `Fixes ${alert}: ${request.summary}`,
+    `Fixes ${alert}: ${toMrkdwn(request.summary)}`,
     ...(revv === null ? [] : [`Walkthrough in Revv: ${revv}`]),
   ].join("\n")
 }

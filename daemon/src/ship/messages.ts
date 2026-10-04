@@ -1,3 +1,5 @@
+import { toMrkdwn } from "../slack/text.ts"
+
 /**
  * Everything Bridgetown posts in Slack threads, in one place. Each goes out
  * 🤖-prefixed under the user's name (see `SlackThread`), so the wording is theirs
@@ -5,11 +7,11 @@
  */
 export const investigating = "Investigating with Bridgetown…"
 
-export const fixPr = (prUrl: string, summary: string): string => `Fix PR: ${prUrl}\n${summary}`
+export const fixPr = (prUrl: string, summary: string): string => `Fix PR: ${prUrl}\n${toMrkdwn(summary)}`
 
-export const noActionNeeded = (summary: string): string => `No action needed: ${summary}`
+export const noActionNeeded = (summary: string): string => `No action needed: ${toMrkdwn(summary)}`
 
-export const recommendation = (summary: string, detail: string): string => `${summary}\nRecommendation: ${detail}`
+export const recommendation = (summary: string, detail: string): string => `${toMrkdwn(summary)}\nRecommendation: ${toMrkdwn(detail)}`
 
 export const reviewRequested = (channelName: string, prUrl: string): string => `Review requested in #${channelName}: ${prUrl}`
 

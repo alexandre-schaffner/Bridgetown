@@ -76,6 +76,43 @@ export const plain = (mrkdwn: string): string =>
     .replace(/&lt;/g, "<")
     .replace(/&amp;/g, "&")
 
+/**
+ * An agent's Markdown as Slack mrkdwn, for what Bridgetown posts: `**bold**` → `*bold*`,
+ * `~~strike~~` → `~strike~`, `[label](url)` → `<url|label>`, headings → bold lines, `-`/`*`
+ * bullets → `•`. Code, fences (minus their language) and Slack's own `<…>` tokens pass
+ * through. A single `*x*` is left alone: in a draft a person edits, it means Slack bold.
+ */
+export const toMrkdwn = (markdown: string): string =>
+  markdown
+    .split("```")
+    .map((part, index, parts) => {
+      if (index % 2 === 0 || index === parts.length - 1) return inlineToMrkdwn(part)
+      return part.replace(/^[\w+-]+\n/, "\n")
+    })
+    .join("```")
+
+const inlineToMrkdwn = (text: string): string =>
+  text
+    .split("`")
+    .map((part, index, parts) => (index % 2 === 1 && index < parts.length - 1 ? part : proseToMrkdwn(part)))
+    .join("`")
+
+const proseToMrkdwn = (text: string): string => {
+  const tokens: Array<string> = []
+  const keep = (token: string): string => `\u0000${tokens.push(token) - 1}\u0000`
+  return text
+    .replace(/\[([^\]\n]+)\]\((?:<([^>\n]+)>|([^)\s]+))\)/g, (_, label: string, angled?: string, bare?: string) =>
+      keep(`<${angled ?? bare}|${label}>`),
+    )
+    .replace(/<[^<>\n\u0000]+>/g, keep)
+    .replace(/^([ \t]*)[-*+][ \t]+/gm, "$1• ")
+    .replace(/\*\*(?=\S)(.+?)(?<=\S)\*\*/g, "*$1*")
+    .replace(/(?<![\w_])__(?=\S)(.+?)(?<=\S)__(?![\w_])/g, "*$1*")
+    .replace(/~~(?=\S)(.+?)(?<=\S)~~/g, "~$1~")
+    .replace(/^[ \t]*#{1,6}[ \t]+(.+?)[ \t#]*$/gm, (_, heading: string) => `*${heading.replace(/\*/g, "")}*`)
+    .replace(/\u0000(\d+)\u0000/g, (_, index: string) => tokens[Number(index)] ?? "")
+}
+
 /** First line with content, skipping bare group pings like `<!subteam^S0AV…>` that Grafana alerts lead with. */
 export const firstLine = (text: string): string =>
   text
