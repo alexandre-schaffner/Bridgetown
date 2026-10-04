@@ -1,0 +1,44 @@
+---
+import "../styles/global.css";
+import ArchMark from "../components/ArchMark.astro";
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Not found · Bridgetown</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <main>
+      <ArchMark size={40} />
+      <h1>Nothing stands here.</h1>
+      <p>This page doesn't exist. The way back is through the arch.</p>
+      <a class="button button-light" href="/">Back to Bridgetown</a>
+    </main>
+  </body>
+</html>
+
+<style>
+  main {
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 1.25rem;
+    min-height: 100svh;
+    padding: var(--gutter);
+    color: var(--night-ink);
+    text-align: center;
+  }
+
+  h1 {
+    font-size: var(--t-h2);
+    letter-spacing: -0.032em;
+  }
+
+  p {
+    color: var(--night-dim);
+  }
+</style>

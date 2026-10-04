@@ -1,0 +1,14 @@
+// Cloudflare: the built site served as static assets from a Worker (`bun run deploy`). The
+// Worker itself only runs for the videos, to answer the byte-range requests Safari needs.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "bridgetown",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/media/*", "/hero/*/loop.mp4"],
+  },
+}

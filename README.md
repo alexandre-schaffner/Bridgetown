@@ -24,6 +24,7 @@ Slack (poll) ──► parse ──► rules ──► Jev ──► policy ─�
 | `app/` | SwiftUI `MenuBarExtra` app (SwiftPM). Starts the daemon and stores tokens in Keychain |
 | `docs/API.md` | The daemon ↔ app contract |
 | `slack-app-manifest.yml` | The personal Slack app with the user scopes Bridgetown needs |
+| `site/` | The landing page (Astro, three.js). `cd site && bun install && bun run dev`; `bun run build` type-checks and writes `dist/` |
 
 ## Setup
 
@@ -160,3 +161,14 @@ Sessions are headless, so `monorepo/AGENTS.md`'s prod-safety hard rule applies i
   everything else goes to `#general-approvals` with the owning team. The request includes the PR link and the Revv walkthrough deep link
   (`revv://pr?host=nocturlab.ghe.com&repo=Merkl%2Fmonorepo&number=N`).
 - **In a teammate's thread:** a delegated agent's reply, only after you press **Send**.
+
+## Landing page
+
+`site/` is the public page: Astro, with the arch rendered live in three.js (`site/src/scripts/scene.ts`), the notch island
+ported from `app/Sources/Bridgetown/Island/` (`site/src/lib/notch.ts`, `site/src/scripts/island.ts`), and the page's
+choreography in `site/src/scripts/main.ts`. The access form posts `{ "email": … }` as JSON to `PUBLIC_ACCESS_ENDPOINT`;
+without it, the form says requests aren't open yet.
+
+The two videos in `site/public/media/` are recorded from `/film` (dev only): `?cut=keynote` is the 1920 × 1080 film,
+`?cut=island` the short notch recording. Record them with Chrome's screencast in real time and encode with ffmpeg
+(H.264, `+faststart`).

@@ -1,0 +1,37 @@
+---
+// The frame renderer, for development only: the arch scene at offline quality, one exact frame
+// per call (scripts/render.ts). .context tooling drives it to pre-render the hero.
+import "../styles/global.css";
+
+if (import.meta.env.PROD) return Astro.redirect("/");
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="robots" content="noindex" />
+    <title>Bridgetown · frame renderer</title>
+  </head>
+  <body>
+    <canvas data-scene></canvas>
+    <script>
+      import "../scripts/render";
+    </script>
+  </body>
+</html>
+
+<style>
+  :global(html),
+  :global(body) {
+    margin: 0;
+    overflow: hidden;
+    background: #050608;
+  }
+
+  canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+  }
+</style>

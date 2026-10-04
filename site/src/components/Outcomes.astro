@@ -1,0 +1,110 @@
+---
+// Day. The four ways a session ends, each a different fact that looks different. Words
+// brighten as they cross the middle of the screen.
+const outcomes = [
+  { word: "Resolved", dot: "green", evidence: "Deployed api v1.35.12. The release tracker confirmed it at 10:31." },
+  { word: "Closed", dot: "grey", evidence: "Root cause not found. Nothing shipped, and the card says so." },
+  { word: "Failed", dot: "red", evidence: "e2e failed twice after the fix. Handed back to you with the logs." },
+  { word: "Stopped", dot: "grey", evidence: "You stopped it during Fix. Its worktree is kept for you." },
+];
+---
+
+<section class="outcomes day" id="outcomes" aria-labelledby="outcomes-title">
+  <div class="wrap">
+    <div class="intro">
+      <h2 id="outcomes-title" class="display">Green means it happened.</h2>
+      <p class="lead">
+        A step is done when there is evidence for it: a PR that exists, a check that passed, a deploy the tracker
+        confirmed. A session that ends without a fix never looks like one that shipped.
+      </p>
+    </div>
+
+    <ul class="list">
+      {
+        outcomes.map((o) => (
+          <li data-outcome>
+            <span class="word">
+              <i class:list={["dot", `dot-${o.dot}`]} aria-hidden="true" />
+              {o.word}
+            </span>
+            <span class="evidence">{o.evidence}</span>
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>
+
+<style>
+  .outcomes {
+    padding-block: clamp(7rem, 16vh, 11rem);
+  }
+
+  .intro {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 2rem 4rem;
+    align-items: end;
+    margin-bottom: clamp(3rem, 8vh, 6rem);
+  }
+
+  .intro .display {
+    max-width: 10ch;
+  }
+
+  .list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-top: 1px solid var(--line-strong);
+  }
+
+  .list li {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 2rem;
+    padding: clamp(1.25rem, 3vh, 2rem) 0;
+    border-bottom: 1px solid var(--line);
+    opacity: var(--lit, 1);
+  }
+
+  .word {
+    display: flex;
+    align-items: center;
+    gap: clamp(1rem, 2vw, 1.75rem);
+    font-size: var(--t-h1);
+    font-weight: 560;
+    line-height: 1;
+    letter-spacing: -0.04em;
+  }
+
+  .word .dot {
+    width: clamp(0.75rem, 1.2vw, 1.125rem);
+    height: clamp(0.75rem, 1.2vw, 1.125rem);
+  }
+
+  .dot-grey {
+    color: transparent;
+    box-shadow: inset 0 0 0 2px var(--ink-faint);
+  }
+
+  .evidence {
+    max-width: 24rem;
+    color: var(--ink-dim);
+  }
+
+  :global(html.js) .list li {
+    --lit: 0.16;
+  }
+
+  @media (max-width: 900px) {
+    .intro,
+    .list li {
+      grid-template-columns: 1fr;
+    }
+    .list li {
+      gap: 0.75rem;
+    }
+  }
+</style>

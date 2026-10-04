@@ -1,0 +1,771 @@
+---
+// Day. One alert's whole path, Diagnose to Deploy, as a horizontal reel pinned in place.
+// Each step shows the thing that proves it happened. Two steps are yours.
+import Icon from "./Icon.astro";
+import { areaPath, linePath, series } from "../lib/spark";
+
+const rise = [...series(40, 12, 3, 9), 14, 22, 41, 63, 71, 69, 74, 72];
+const W = 520;
+
+const diff: [number, string, string][] = [
+  [41, "", "  const query = parseQuery(req)"],
+  [42, "del", "- const region = Number(query.region)"],
+  [42, "add", "+ if (!query.region) {"],
+  [43, "add", '+   return badRequest("region is required")'],
+  [44, "add", "+ }"],
+  [45, "add", "+ const region = Number(query.region)"],
+  [46, "", "  const orders = await findOrders(region)"],
+];
+const H = 120;
+---
+
+<section class="journey day" id="journey" data-journey aria-labelledby="journey-title">
+  <div class="pin" data-journey-pin>
+    <header class="head wrap">
+      <h2 id="journey-title" class="display">Agents take it all the way.</h2>
+      <p class="lead">
+        From the first log line to the deploy, every step leaves something you can open: a diagnosis, a diff, a pull
+        request, a check, a tracker entry.
+      </p>
+    </header>
+
+    <ol class="rail wrap" aria-hidden="true">
+      {
+        ["Diagnose", "Fix", "Draft PR", "Second review", "CI", "Review request", "Merge", "Release", "Deploy"].map(
+          (s, i) => (
+            <li data-rail class:list={[(i === 6 || i === 7) && "yours"]}>
+              <i />
+              <span>{s}</span>
+            </li>
+          ),
+        )
+      }
+    </ol>
+
+    <div class="viewport">
+      <ol class="track" data-track>
+        <li class="frame">
+          <p class="step">1 · Diagnose</p>
+          <h3>Finds what broke, and says so plainly.</h3>
+          <p class="caption">
+            The agent reads the alert, the logs and the dashboards around it in its own worktree.
+          </p>
+          <div class="panel">
+            <p class="panel-head"><span>Route 5xx · /v4/orders</span><b>71</b></p>
+            <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true" class="chart">
+              <path d={areaPath(rise, W, H, 8)} class="area" />
+              <path d={linePath(rise, W, H, 8)} class="line" pathLength="1" />
+              <line x1={W * 0.82} x2={W * 0.82} y1="0" y2={H} class="deploy" />
+            </svg>
+            <p class="panel-sub"><span class="mono">api v1.35.11</span> deployed 4 min before the rise</p>
+            <p class="diag">
+              <b>Diagnosis</b> /v4/orders parses an empty <code>region</code> as <code>0</code>, and the lookup throws.
+              The change came in with v1.35.11.
+            </p>
+          </div>
+        </li>
+
+        <li class="frame">
+          <p class="step">2 · Fix</p>
+          <h3>Changes the code, on its own branch.</h3>
+          <p class="caption">It edits only its worktree, then runs the tests that cover the change.</p>
+          <div class="panel code">
+            <p class="panel-head mono"><span>src/routes/orders.ts</span><span class="faint">+4 −1</span></p>
+            <pre>{diff.map(([n, kind, text]) => (
+              <span class:list={["dl", kind]}><span class="ln">{n}</span>{text}{"\n"}</span>
+            ))}</pre>
+            <p class="panel-foot mono"><span class="ok">✓</span> 214 pass · 0 fail</p>
+          </div>
+        </li>
+
+        <li class="frame">
+          <p class="step">3 · Draft PR</p>
+          <h3>Opens a draft, with the reasoning attached.</h3>
+          <p class="caption">The diagnosis goes in the description, so a reviewer starts with context.</p>
+          <div class="panel">
+            <p class="pr-title">fix(api): reject an empty region on /v4/orders <span class="faint">#3352</span></p>
+            <p class="pr-meta">
+              <span class="pill">Draft</span>
+              <span class="mono faint">fix-bt-api-empty-region</span>
+            </p>
+            <div class="pr-body">
+              <p><b>Root cause.</b> An empty region was parsed as 0 since v1.35.11.</p>
+              <p><b>Fix.</b> Reject it with a 400 before the lookup.</p>
+              <p><b>Tested.</b> A unit test for the empty, missing and valid cases.</p>
+            </div>
+          </div>
+        </li>
+
+        <li class="frame">
+          <p class="step">4 · Second review</p>
+          <h3>Another vendor's model reads every diff.</h3>
+          <p class="caption">
+            Codex reviews in a read-only sandbox. Blocking findings go back to the agent; nitpicks are dropped.
+          </p>
+          <div class="panel">
+            <ul class="rounds">
+              <li>
+                <span class="r">Round 1</span>
+                <span>A negative region still reaches the lookup.</span>
+                <span class="tag tag-amber">Blocking</span>
+              </li>
+              <li>
+                <span class="r"></span>
+                <span>Name the constant for the error message.</span>
+                <span class="tag">Dropped</span>
+              </li>
+              <li>
+                <span class="r"></span>
+                <span>Agent: validates <code>region &gt; 0</code>, adds a test.</span>
+                <span class="tag">Fixed</span>
+              </li>
+              <li>
+                <span class="r">Round 2</span>
+                <span>No blocking findings.</span>
+                <span class="tag tag-green">Passed</span>
+              </li>
+            </ul>
+          </div>
+        </li>
+
+        <li class="frame">
+          <p class="step">5 · CI</p>
+          <h3>Waits for green, and fixes what isn't.</h3>
+          <p class="caption">The PR leaves draft once the review passes. A failing check goes back to the agent.</p>
+          <div class="panel">
+            <ul class="checks">
+              <li><span class="ok">✓</span> lint <span class="faint mono">18s</span></li>
+              <li><span class="ok">✓</span> typecheck <span class="faint mono">41s</span></li>
+              <li><span class="ok">✓</span> unit <span class="faint mono">1m 12s</span></li>
+              <li><span class="ok">✓</span> e2e · orders <span class="faint mono">3m 05s</span></li>
+            </ul>
+          </div>
+        </li>
+
+        <li class="frame">
+          <p class="step">6 · Review request</p>
+          <h3>Asks a person to look.</h3>
+          <p class="caption">Once CI is green, it posts in your approvals channel with a link to a guided walkthrough.</p>
+          <div class="panel slack">
+            <p class="slack-ch mono">#approvals</p>
+            <div class="slack-msg">
+              <span class="avatar">A</span>
+              <div>
+                <p><b>Alex</b> <span class="faint">via Bridgetown · 10:12</span></p>
+                <p>🤖 <span class="link">PR #3352</span> is green and ready for review: reject an empty region on /v4/orders. <span class="link">Walkthrough</span></p>
+              </div>
+            </div>
+          </div>
+        </li>
+
+        <li class="frame yours">
+          <p class="step"><i class="dot dot-amber" aria-hidden="true"></i> 7 · Merge · Yours</p>
+          <h3>You press Merge.</h3>
+          <p class="caption">Approved and green, it waits in Needs you. Merging is always your click.</p>
+          <div class="panel">
+            <div class="act">
+              <span class="glyph green"><Icon name="git-merge" size={18} /></span>
+              <span><b>Merge fix(api): reject an empty region</b><span class="faint">#3352 · Approved · CI green</span></span>
+              <span class="primary">Merge</span>
+            </div>
+          </div>
+        </li>
+
+        <li class="frame yours">
+          <p class="step"><i class="dot dot-amber" aria-hidden="true"></i> 8 · Release · Yours</p>
+          <h3>You cut the release.</h3>
+          <p class="caption">The next version is worked out for you. Tags are never pushed by an agent.</p>
+          <div class="panel">
+            <div class="act">
+              <span class="glyph"><Icon name="package" size={18} /></span>
+              <span><b>Ship api v1.35.12</b><span class="faint">Merged · ready to release</span></span>
+              <span class="primary">Cut v1.35.12</span>
+            </div>
+          </div>
+        </li>
+
+        <li class="frame">
+          <p class="step">9 · Deploy</p>
+          <h3>Follows it to production.</h3>
+          <p class="caption">
+            It is done when the release tracker confirms the deploy, and not before. Then it says so in the alert's thread.
+          </p>
+          <div class="panel">
+            <p class="deployed"><i class="dot dot-green" aria-hidden="true"></i> Deployed api v1.35.12 <span class="faint">production · 10:31</span></p>
+            <div class="slack-msg">
+              <span class="avatar">A</span>
+              <div>
+                <p><b>Alex</b> <span class="faint">via Bridgetown · in thread</span></p>
+                <p>🤖 Deployed v1.35.12 ✓</p>
+              </div>
+            </div>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<style>
+  .journey {
+    padding-block: clamp(6rem, 12vh, 9rem) clamp(5rem, 10vh, 8rem);
+    overflow: clip;
+  }
+
+  .head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 2rem 4rem;
+    align-items: end;
+  }
+
+  .head .display {
+    max-width: 12ch;
+  }
+
+  .rail {
+    display: grid;
+    grid-template-columns: repeat(9, minmax(0, 1fr));
+    gap: 4px;
+    margin-top: clamp(2.5rem, 5vh, 3.5rem);
+    margin-bottom: clamp(2rem, 4vh, 3rem);
+    padding: 0;
+    list-style: none;
+  }
+
+  .rail li {
+    display: grid;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--ink-faint);
+  }
+
+  .rail i {
+    height: 3px;
+    border-radius: 2px;
+    background: var(--line);
+    transition: background-color 400ms var(--ease-out);
+  }
+
+  .rail li.done i {
+    background: var(--ink);
+  }
+
+  .rail li.done {
+    color: var(--ink);
+  }
+
+  .rail li.yours.done i {
+    background: var(--amber);
+  }
+
+  .viewport {
+    overflow: visible;
+  }
+
+  .track {
+    display: grid;
+    gap: clamp(3rem, 6vh, 5rem);
+    margin: 0;
+    padding: 0 var(--gutter);
+    list-style: none;
+  }
+
+  .frame {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    grid-template-areas:
+      "step panel"
+      "title panel"
+      "caption panel";
+    grid-template-rows: auto auto 1fr;
+    column-gap: clamp(2rem, 4vw, 4rem);
+    row-gap: 0.875rem;
+    align-items: start;
+  }
+
+  .step {
+    grid-area: step;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: var(--t-small);
+    font-weight: 500;
+    color: var(--ink-faint);
+  }
+
+  .yours .step {
+    color: var(--ink);
+  }
+
+  .frame h3 {
+    grid-area: title;
+    font-size: clamp(1.75rem, 1.6vw + 1rem, 2.625rem);
+    line-height: 1.08;
+    letter-spacing: -0.028em;
+    max-width: 14ch;
+  }
+
+  .caption {
+    grid-area: caption;
+    max-width: 26rem;
+    color: var(--ink-dim);
+  }
+
+  /* Artifacts: the app's own dark surfaces. */
+  .panel {
+    grid-area: panel;
+    display: grid;
+    gap: 0.875rem;
+    padding: 1.25rem;
+    border-radius: 14px;
+    background: #000;
+    color: var(--ui-text);
+    font-size: 0.875rem;
+    box-shadow: 0 30px 60px -36px oklch(0.19 0.008 255 / 0.55);
+  }
+
+  .faint {
+    color: var(--ui-faint);
+  }
+
+  .panel-head {
+    display: flex;
+    justify-content: space-between;
+    color: var(--ui-dim);
+    font-weight: 500;
+  }
+
+  .panel-head b {
+    color: var(--ui-text);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .panel-sub {
+    color: var(--ui-faint);
+    font-size: 0.8125rem;
+  }
+
+  .panel-sub .mono {
+    color: var(--ui-dim);
+    font-size: 0.78rem;
+  }
+
+  .chart {
+    width: 100%;
+    height: 7.5rem;
+  }
+
+  .chart .line {
+    fill: none;
+    stroke: #fff;
+    stroke-width: 1.4;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .chart .area {
+    fill: rgb(255 255 255 / 0.07);
+  }
+
+  .chart .deploy {
+    stroke: var(--amber);
+    stroke-width: 1.2;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .diag {
+    padding-top: 0.875rem;
+    border-top: 0.5px solid var(--ui-hairline);
+    line-height: 1.55;
+    color: var(--ui-dim);
+  }
+
+  .diag b {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: var(--ui-text);
+    font-weight: 600;
+  }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.92em;
+    padding: 0.05em 0.3em;
+    border-radius: 4px;
+    background: rgb(255 255 255 / 0.08);
+    color: var(--ui-text);
+  }
+
+  .code pre {
+    margin: 0;
+    padding: 0.75rem 0;
+    border-block: 0.5px solid var(--ui-hairline);
+    font-family: var(--mono);
+    font-size: 0.8125rem;
+    line-height: 1.7;
+    overflow-x: auto;
+    color: var(--ui-dim);
+  }
+
+  .dl {
+    display: block;
+    padding-right: 1rem;
+  }
+
+  .ln {
+    display: inline-block;
+    width: 2.25rem;
+    color: rgb(255 255 255 / 0.3);
+  }
+
+  .dl.del {
+    color: oklch(0.72 0.14 22);
+    background: oklch(0.6 0.19 22 / 0.1);
+  }
+
+  .dl.add {
+    color: oklch(0.8 0.13 158);
+    background: oklch(0.62 0.12 158 / 0.1);
+  }
+
+  .panel-foot {
+    color: var(--ui-dim);
+  }
+
+  .ok {
+    color: var(--green);
+  }
+
+  .pr-title {
+    font-size: 1.0625rem;
+    font-weight: 560;
+    letter-spacing: -0.012em;
+  }
+
+  .pr-meta {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .pill {
+    padding: 0.125rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    box-shadow: 0 0 0 0.5px var(--ui-outline) inset;
+    color: var(--ui-dim);
+  }
+
+  .pr-body {
+    display: grid;
+    gap: 0.375rem;
+    padding-top: 0.875rem;
+    border-top: 0.5px solid var(--ui-hairline);
+    color: var(--ui-dim);
+  }
+
+  .pr-body b {
+    color: var(--ui-text);
+    font-weight: 560;
+  }
+
+  .rounds,
+  .checks {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .rounds li {
+    display: grid;
+    grid-template-columns: 4.5rem minmax(0, 1fr) auto;
+    gap: 0.75rem;
+    align-items: baseline;
+    padding: 0.625rem 0;
+    color: var(--ui-dim);
+  }
+
+  .rounds li + li {
+    border-top: 0.5px solid var(--ui-hairline);
+  }
+
+  .r {
+    color: var(--ui-text);
+    font-weight: 500;
+  }
+
+  .tag {
+    padding: 0.0625rem 0.4375rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    background: rgb(255 255 255 / 0.06);
+    color: var(--ui-dim);
+  }
+
+  .tag-amber {
+    color: var(--amber);
+    background: oklch(0.8 0.15 74 / 0.14);
+  }
+
+  .tag-green {
+    color: var(--green);
+    background: oklch(0.62 0.12 158 / 0.16);
+  }
+
+  .checks li {
+    display: grid;
+    grid-template-columns: 1.25rem 1fr auto;
+    padding: 0.5625rem 0;
+  }
+
+  .checks li + li {
+    border-top: 0.5px solid var(--ui-hairline);
+  }
+
+  .slack {
+    gap: 0.75rem;
+  }
+
+  .slack-ch {
+    color: var(--ui-dim);
+  }
+
+  .slack-msg {
+    display: grid;
+    grid-template-columns: 2.25rem minmax(0, 1fr);
+    gap: 0.75rem;
+    line-height: 1.5;
+  }
+
+  .avatar {
+    display: grid;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 8px;
+    background: oklch(0.42 0.06 255);
+    font-weight: 600;
+  }
+
+  .link {
+    color: oklch(0.72 0.14 252);
+  }
+
+  .act {
+    display: grid;
+    grid-template-columns: 2rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.875rem;
+  }
+
+  .act b {
+    display: block;
+    font-weight: 500;
+  }
+
+  .act .faint {
+    font-size: 0.8125rem;
+  }
+
+  .glyph {
+    color: var(--ui-dim);
+  }
+
+  .glyph.green {
+    color: var(--green);
+  }
+
+  .primary {
+    display: inline-flex;
+    align-items: center;
+    height: 2rem;
+    padding: 0 0.875rem;
+    border-radius: 7px;
+    background: #ededed;
+    color: #000;
+    font-weight: 540;
+    white-space: nowrap;
+  }
+
+  .yours .panel {
+    box-shadow:
+      0 0 0 1px oklch(0.8 0.15 74 / 0.55),
+      0 30px 60px -36px oklch(0.19 0.008 255 / 0.55);
+  }
+
+  .deployed {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 500;
+    padding-bottom: 0.875rem;
+    border-bottom: 0.5px solid var(--ui-hairline);
+  }
+
+  /* Wide screens with script: the frames sit in a row and the section is pinned while they pass. */
+  @media (min-width: 981px) {
+    :global(html.js) .journey {
+      padding-block: 0;
+    }
+    :global(html.js) .pin {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      height: 100svh;
+      padding-top: 4.5rem;
+    }
+    :global(html.js) .track {
+      display: flex;
+      gap: clamp(5rem, 10vw, 11rem);
+      width: max-content;
+      padding-inline: var(--gutter);
+      will-change: transform;
+    }
+    :global(html.js) .frame {
+      width: min(76vw, 64rem);
+    }
+    :global(html.js) .head {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+    }
+    :global(html.js) .head .display {
+      font-size: clamp(2.25rem, 2.4vw + 1rem, 3.5rem);
+      max-width: none;
+    }
+  }
+
+  @media (max-width: 980px) {
+    .head {
+      grid-template-columns: 1fr;
+    }
+    .rail {
+      display: none;
+    }
+    .viewport {
+      margin-top: clamp(3rem, 7vh, 4.5rem);
+    }
+    .frame {
+      grid-template-columns: 1fr;
+      grid-template-areas: "step" "title" "caption" "panel";
+    }
+    .panel {
+      margin-top: 0.75rem;
+    }
+  }
+
+  /* Each frame plays its proof once, when it first reaches the middle (scripts/main.ts adds .played). */
+  :global(html.js) .chart .line {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    transition: stroke-dashoffset 1800ms var(--ease-in-out) 200ms;
+  }
+
+  :global(html.js) .chart .deploy,
+  :global(html.js) .chart .area {
+    opacity: 0;
+    transition: opacity 800ms var(--ease-out) 1400ms;
+  }
+
+  :global(html.js) .played .chart .line {
+    stroke-dashoffset: 0;
+  }
+
+  :global(html.js) .played .chart .deploy,
+  :global(html.js) .played .chart .area {
+    opacity: 1;
+  }
+
+  :global(html.js) .frame .dl,
+  :global(html.js) .frame .rounds li,
+  :global(html.js) .frame .checks li,
+  :global(html.js) .frame .pr-body p,
+  :global(html.js) .frame .diag {
+    opacity: 0;
+    translate: -0.75rem 0;
+    filter: blur(4px);
+    transition:
+      opacity 500ms var(--ease-out),
+      translate 700ms var(--ease-out),
+      filter 500ms var(--ease-out);
+  }
+
+  :global(html.js) .played .dl,
+  :global(html.js) .played .rounds li,
+  :global(html.js) .played .checks li,
+  :global(html.js) .played .pr-body p,
+  :global(html.js) .played .diag {
+    opacity: 1;
+    translate: 0 0;
+    filter: none;
+  }
+
+  .dl:nth-child(1), .rounds li:nth-child(1), .checks li:nth-child(1), .pr-body p:nth-child(1) { transition-delay: 150ms !important; }
+  .dl:nth-child(2), .rounds li:nth-child(2), .checks li:nth-child(2), .pr-body p:nth-child(2) { transition-delay: 450ms !important; }
+  .dl:nth-child(3), .rounds li:nth-child(3), .checks li:nth-child(3), .pr-body p:nth-child(3) { transition-delay: 750ms !important; }
+  .dl:nth-child(4), .rounds li:nth-child(4), .checks li:nth-child(4) { transition-delay: 1050ms !important; }
+  .dl:nth-child(5) { transition-delay: 1250ms !important; }
+  .dl:nth-child(6) { transition-delay: 1400ms !important; }
+  .dl:nth-child(7) { transition-delay: 1550ms !important; }
+  .diag { transition-delay: 1700ms !important; }
+
+  /* The two buttons that are yours get pressed. */
+  :global(html.js) .played .primary {
+    animation: press 1.6s var(--ease-out) 600ms both;
+  }
+
+  @keyframes press {
+    0%,
+    30% {
+      transform: none;
+      box-shadow: 0 0 0 0 oklch(0.8 0.15 74 / 0);
+    }
+    40% {
+      transform: scale(0.93);
+      background: #cfcfcf;
+    }
+    55% {
+      transform: none;
+      box-shadow: 0 0 0 6px oklch(0.8 0.15 74 / 0.35);
+    }
+    100% {
+      box-shadow: 0 0 0 14px oklch(0.8 0.15 74 / 0);
+    }
+  }
+
+  :global(html.js) .played .deployed .dot {
+    animation: land 900ms var(--ease-out) 300ms both;
+  }
+
+  @keyframes land {
+    from {
+      transform: scale(0);
+      box-shadow: 0 0 0 0 oklch(0.62 0.12 158 / 0.6);
+    }
+    60% {
+      transform: scale(1.4);
+    }
+    to {
+      transform: none;
+      box-shadow: 0 0 0 10px oklch(0.62 0.12 158 / 0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :global(html.js) .chart .line {
+      stroke-dashoffset: 0;
+    }
+    :global(html.js) .frame .dl,
+    :global(html.js) .frame .rounds li,
+    :global(html.js) .frame .checks li,
+    :global(html.js) .frame .pr-body p,
+    :global(html.js) .frame .diag,
+    :global(html.js) .chart .deploy,
+    :global(html.js) .chart .area {
+      opacity: 1;
+      translate: 0 0;
+      filter: none;
+    }
+  }
+</style>
