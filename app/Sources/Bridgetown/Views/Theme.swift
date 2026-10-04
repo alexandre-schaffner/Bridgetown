@@ -55,12 +55,18 @@ enum Easing {
 /// Geist, bundled under `app/Fonts` and registered at launch. Until it is (or if it
 /// can't be), `Font.custom` falls back to the system font at the same size.
 enum Geist {
+    /// Registers from the bytes, not the URLs: a URL-registered face is read lazily, so
+    /// once the bundle is replaced or deleted under a running app (a rebuild, a removed
+    /// worktree) any face not yet drawn renders as missing-glyph boxes.
     static func register() {
         for dir in fontDirectories {
             guard let urls = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { continue }
-            let fonts = urls.filter { $0.pathExtension == "ttf" }
+            let fonts = urls.filter { $0.pathExtension == "ttf" }.compactMap { try? Data(contentsOf: $0) }
             guard !fonts.isEmpty else { continue }
-            CTFontManagerRegisterFontURLs(fonts as CFArray, .process, true, nil)
+            for data in fonts {
+                guard let provider = CGDataProvider(data: data as CFData), let font = CGFont(provider) else { continue }
+                CTFontManagerRegisterGraphicsFont(font, nil)
+            }
             return
         }
     }
