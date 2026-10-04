@@ -47,11 +47,11 @@ struct BoardView: View {
         .lineLimit(1)
     }
 
-    /// "Last 24h", or "03:00 – 12:00" around an alert.
+    /// "Last hour", "Last 6h", or "03:00 – 12:00" around an alert.
     private var window: String {
-        let span = board.to.timeIntervalSince(board.from)
+        let hours = Int((board.to.timeIntervalSince(board.from) / 3600).rounded())
         if board.marker == nil, abs(board.to.timeIntervalSinceNow) < 600 {
-            return "Last \(Int((span / 3600).rounded()))h"
+            return hours <= 1 ? "Last hour" : "Last \(hours)h"
         }
         return "\(board.from.formatted(Format.clock)) – \(board.to.formatted(Format.clock))"
     }

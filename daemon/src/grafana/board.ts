@@ -41,7 +41,7 @@ export interface Deploy {
 
 export interface BoardsShape {
   /**
-   * The board. Fresh from the cache when under 5 minutes old; an older one comes back at
+   * The board. Fresh from the cache when under a minute old; an older one comes back at
    * once while a new one is fetched; with none, waits for the fetch. One fetch per board
    * at a time, and it outlives the request that started it, so closing the popover
    * mid-fetch still leaves the board cached for the next open.
@@ -53,7 +53,8 @@ export interface BoardsShape {
 
 export class Boards extends Context.Service<Boards, BoardsShape>()("Boards") {}
 
-const CACHE_MS = 5 * 60_000
+/** The overview covers an hour, so a minute-old board is as stale as it should get. */
+const CACHE_MS = 60_000
 const DEPLOY_LIMIT = 40
 export const GRAFANA_DOWN = "Grafana MCP is down. Run `bun grafana:mcp` in the monorepo to see prod charts."
 

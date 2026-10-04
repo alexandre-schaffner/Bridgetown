@@ -28,7 +28,7 @@ All timestamps are ISO-8601 strings. Every nullable field is always present, set
 | GET | `/state` | | `Snapshot` |
 | GET | `/events` | | SSE stream. Every change sends `event: snapshot` with `data: <Snapshot JSON>` (at most one per 150ms: a burst shares snapshots, and the last one is always read after the last change). The first message arrives on connect. A `: ping` comment is sent every 15s. |
 | GET | `/sessions/:id/transcript` | | `TranscriptEntry[]` (last 200) |
-| GET | `/boards/:view` | | `Board`: `incidents` (API 5xx and p99, engine and job errors) or `infra` (RPC errors, failed job pods, OOM kills, Postgres backends waiting), last 24h. Rebuilt every 5 minutes in the background. |
+| GET | `/boards/:view` | | `Board`: `incidents` (API 5xx and p99, engine and job errors) or `infra` (RPC errors, failed job pods, OOM kills, Postgres backends waiting), over the last hour. |
 | GET | `/alerts/:id/board` | | `Board` picked from what the alert is about (an API route, a release image, a chain, its kind), 6h either side of it; `null` when nothing in Grafana tracks it (a DM). |
 | GET | `/alerts/:id` | | `AlertDetail` — the full message, its history, its session (if any) and open actions. `:id` is URL-encoded (`C0AUKD42N3U%3A1790933006.433649`). |
 | POST | `/actions/:id/resolve` | `{ "response": string \| null }` | `Snapshot`. `409` while the same action is already being resolved (`inFlight`). Merge and release are idempotent per session: a repeat never merges or tags twice. |
@@ -77,8 +77,8 @@ type Board = {
   stepSeconds: number    // one point per step; count panels count per step
   marker: string | null  // when the alert fired, for an alert's board
   panels: Panel[]
-  deploys: Deploy[]      // newest first: the window (72h on the overview and for a release's image)
-  fetchedAt: string      // boards are cached up to 5 minutes
+  deploys: Deploy[]      // newest first: the window (72h for a release's image)
+  fetchedAt: string      // a board over a minute old comes back at once while a fresh one is fetched
   error: string | null   // nothing could be fetched (Grafana MCP down…); panels is then []
 }
 

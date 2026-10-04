@@ -75,6 +75,13 @@ describe("boards", () => {
     expect(stepFor(new Date(0), new Date(60_000))).toBe(60)
     expect(overviewBoard("infra", now).panels.map((p) => p.id)).toEqual(["rpc_errors", "failed_job_pods", "oom_kills", "db_waiting"])
   })
+
+  test("the overview is the last hour, deploys included", () => {
+    const board = overviewBoard("incidents", now)
+    expect(board.from.toISOString()).toBe("2026-10-04T11:00:00.000Z")
+    expect(board.deploysFrom.toISOString()).toBe("2026-10-04T11:00:00.000Z")
+    expect(board.stepSeconds).toBe(120)
+  })
 })
 
 describe("board data", () => {

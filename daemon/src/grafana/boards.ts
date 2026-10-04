@@ -48,6 +48,9 @@ export const OVERVIEW_VIEWS: ReadonlyArray<OverviewView> = ["incidents", "infra"
 
 const HOUR = 3_600_000
 
+/** The overview shows what's happening now: the last hour, deploys included. */
+export const OVERVIEW_HOURS = 1
+
 /** About 48 points across the window, in whole minutes. */
 export const stepFor = (from: Date, to: Date): number => Math.max(60, Math.ceil((to.getTime() - from.getTime()) / 1000 / 48 / 60) * 60)
 
@@ -238,7 +241,7 @@ const literal = (value: string) => value.replaceAll(".", "[.]")
 // MARK: Boards
 
 export const overviewBoard = (view: OverviewView, now: Date): BoardSpec => {
-  const from = new Date(now.getTime() - 24 * HOUR)
+  const from = new Date(now.getTime() - OVERVIEW_HOURS * HOUR)
   const panels = view === "incidents" ? [api5xx, apiP99, engineErrors(null), jobErrors(null)] : [rpcErrors(null), failedJobPods, oomKills, dbWaiting]
   return {
     key: `overview:${view}`,
@@ -249,7 +252,7 @@ export const overviewBoard = (view: OverviewView, now: Date): BoardSpec => {
     marker: null,
     panels,
     deployImage: null,
-    deploysFrom: new Date(now.getTime() - 72 * HOUR),
+    deploysFrom: from,
   }
 }
 

@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The top of the overview: three numbers, then prod as Grafana sees it over the last
-/// day: incidents (API errors and latency, engine and job errors) or infra (RPC, jobs,
+/// hour: incidents (API errors and latency, engine and job errors) or infra (RPC, jobs,
 /// memory kills, Postgres), with deploys marked.
 struct TelemetryPanel: View {
     @Environment(Store.self) private var store
