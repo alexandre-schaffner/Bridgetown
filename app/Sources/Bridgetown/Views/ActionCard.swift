@@ -8,37 +8,29 @@ struct ActionCard: View {
     var expanded = true
     /// Tapping the row; nil where the card can't collapse.
     var onToggle: (() -> Void)?
-    /// For the collapsed row's age.
-    var now: Date
+    /// For the row's age.
+    var now: Date = .now
+    /// The row's place in the list's selection, in the overview.
+    var pick: RowPick?
+    @ViewState private var hovering = false
     @ViewState private var reply = ""
     /// Editable copy of a `reply` action's draft.
     @ViewState private var draft: String
     @ViewState private var confirmingClose = false
     @FocusState private var replyFocused: Bool
-    @ViewState private var hovering = false
 
-    init(action: Action, expanded: Bool = true, now: Date = .now, onToggle: (() -> Void)? = nil) {
+    init(action: Action, expanded: Bool = true, now: Date = .now, pick: RowPick? = nil, onToggle: (() -> Void)? = nil) {
         self.action = action
         self.expanded = expanded
         self.now = now
+        self.pick = pick
         self.onToggle = onToggle
         _draft = ViewState(initialValue: action.detail)
-    }
-
-    /// Kinds whose primary button needs nothing typed or chosen, so a collapsed row can offer it.
-    private var oneClick: Bool {
-        switch action.kind {
-        case .reply, .answer: false
-        default: action.options.isEmpty
-        }
     }
 
     /// An agent's question with quick replies: answered from the row itself, one click,
     /// as nothing needs typing.
     private var answersInline: Bool { action.kind == .answer && !action.options.isEmpty && !action.inFlight }
-
-    /// Merge and release: the detail is the evidence the click rests on, so it gets room.
-    private var isGate: Bool { action.kind == .merge || action.kind == .release }
 
     /// For `reply` the detail is the draft itself, edited below rather than shown as text.
     private var showsDetail: Bool { !action.detail.isEmpty && action.kind != .reply }
@@ -58,11 +50,19 @@ struct ActionCard: View {
             if draft == old { draft = new }  // the agent revised its draft; keep user edits
         }
         .contextMenu {
+            if !action.inFlight, action.isOneClick {
+                Button(action.primaryLabel) { store.resolve(action) }
+                Divider()
+            }
             if let session = action.sessionId {
                 Button("Show session") { store.show(.session(session)) }
             }
             if !action.inFlight {
                 Button(action.dismissCloses ? "Close session…" : "Dismiss", action: requestDismiss)
+            }
+            if let pick {
+                Divider()
+                Button(pick.selected ? "Deselect" : "Select", action: pick.toggle)
             }
         }
     }
@@ -87,27 +87,51 @@ struct ActionCard: View {
         }
     }
 
-    /// One row: icon, title over a line of detail, then how long it has waited. The primary
-    /// button takes the age's place under the pointer, so a list of cards isn't a wall of
-    /// buttons; progress shows throughout. A question with quick replies shows them under
-    /// its title instead.
+    /// A failed agent is marked on its row; the group's header carries every other meaning.
+    private var failed: Bool { iconTint == Ink.red }
+
+    /// One row: the title and its age over the detail, each up to two lines. The group's header names
+    /// the verb, so the button waits for the pointer; it slides in over the row's end
+    /// rather than taking width from every title.
     private var compact: some View {
-        HStack(alignment: answersInline ? .top : .center, spacing: 12) {
-            icon
-                .padding(.top, answersInline ? 1 : 0)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(action.title)
-                    .font(.geist(12.5, .medium))
-                    .lineLimit(answersInline ? 2 : 1)
-                    .truncationMode(.tail)
-                    .fixedSize(horizontal: false, vertical: answersInline)
-                if !action.detail.isEmpty {
-                    Text(Markdown.line(action.detail, size: 11))
-                        .font(.geist(11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(isGate ? 2 : 1)
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            SelectMark(pick: pick, hovering: hovering) {
+                if failed {
+                    Image(systemName: Tone.failure.stopSymbol)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Ink.red)
+                        .accessibilityLabel("Failed")
+                }
+            }
+            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
+
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(action.title)
+                        .font(Typo.rowTitle)
+                        .tracking(Typo.rowTitleTracking)
+                        .lineSpacing(Typo.rowLineSpacing)
+                        .lineLimit(2)
                         .truncationMode(.tail)
-                        .fixedSize(horizontal: false, vertical: isGate)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 4)
+                    if action.inFlight {
+                        ProgressView().controlSize(.mini)
+                            .help(action.kind.progressLabel)
+                    } else {
+                        Text(Format.relative(action.createdAt, now: now))
+                            .font(Typo.rowTime)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                if !action.detail.isEmpty {
+                    Text(Markdown.line(action.detail, size: 12))
+                        .font(Typo.rowDetail)
+                        .lineSpacing(Typo.rowLineSpacing)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 if answersInline {
                     OptionChips(options: action.options) { store.resolve(action, response: $0) }
@@ -115,65 +139,54 @@ struct ActionCard: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if action.inFlight {
-                ProgressView().controlSize(.mini)
-                    .help(action.kind.progressLabel)
-            } else if !answersInline {
-                Text(Format.relative(action.createdAt, now: now))
-                    .font(Typo.time)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize()
-                    .accessibilityHidden(true)
-            }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .contentShape(Rectangle())
-        .rowHighlight()
+        .padding(.horizontal, Metrics.inset)
+        .padding(.vertical, 16)
+        .background(pick?.selected == true ? Ink.picked : hovering ? Ink.hover : .clear)
         .overlay(alignment: .trailing) {
-            if hovering && !action.inFlight && !answersInline {
-                rowButton
-                    .padding(.leading, 28)
-                    .padding(.trailing, 12)
-                    .frame(maxHeight: .infinity)
-                    .background {
-                        // The row under the pointer, fading in from the left so the
-                        // button lies over the text's end rather than cutting it.
-                        Ink.surface.overlay(Ink.hover)
-                            .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.3)], startPoint: .leading, endPoint: .trailing))
-                            .allowsHitTesting(false)
-                    }
-                    .transition(.opacity)
+            if hovering && !action.inFlight && !answersInline && pick?.picking != true {
+                hoverButton
+                    .transition(.opacity.combined(with: .offset(x: 6)))
             }
         }
-        .onHover { hovering = $0 }
         .animation(Easing.quick, value: hovering)
-        .onTapGesture { onToggle?() }
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture {
+            if pick?.click() == true { return }
+            onToggle?()
+        }
         .help(action.detail.isEmpty ? action.title : "\(action.title)\n\(Markdown.plain(action.detail))")
         .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(pick?.selected == true ? .isSelected : [])
         .accessibilityAction(named: "Expand") { onToggle?() }
-        .accessibilityActions {
-            // The button only draws under the pointer; VoiceOver gets it as an action.
-            if oneClick && !action.inFlight {
-                Button(action.primaryLabel) { store.resolve(action) }
-            }
+        .accessibilityAction(named: Text(action.primaryLabel)) {
+            if action.isOneClick { store.resolve(action) } else { onToggle?() }
         }
     }
 
-    /// The one-click action, or for the kinds that need input the button that opens the
-    /// card where it's typed or chosen.
-    @ViewBuilder
-    private var rowButton: some View {
-        if oneClick {
-            Button(action.primaryLabel) { store.resolve(action) }
-                .buttonStyle(.stage(.secondary, compact: true))
-                .lineLimit(1)
-                .fixedSize()
-        } else {
-            Button(action.kind == .reply ? "Review reply" : "Answer") { onToggle?() }
-                .buttonStyle(.stage(.secondary, compact: true))
-                .lineLimit(1)
-                .fixedSize()
+    /// The row's button on hover, over an opaque end of the row that fades in from the
+    /// left, so it reads as laid on top of the text rather than squeezing it.
+    private var hoverButton: some View {
+        HStack(spacing: 0) {
+            LinearGradient(colors: [Ink.hoverSolid.opacity(0), Ink.hoverSolid], startPoint: .leading, endPoint: .trailing)
+                .frame(width: 28)
+            Group {
+                if action.isOneClick {
+                    Button(action.primaryLabel) { store.resolve(action) }
+                        .buttonStyle(.stage(.secondary, compact: true))
+                } else {
+                    // Needs input: the button opens the card where it's typed or chosen.
+                    Button(action.kind == .reply ? "Review reply" : "Answer") { onToggle?() }
+                        .buttonStyle(.stage(.secondary, compact: true))
+                }
+            }
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.leading, 2)
+            .padding(.trailing, Metrics.inset)
+            .frame(maxHeight: .infinity)
+            .background(Ink.hoverSolid)
         }
     }
 

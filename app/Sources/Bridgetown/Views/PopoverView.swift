@@ -22,14 +22,15 @@ private struct OverviewPane: View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             VStack(spacing: 0) {
                 HeaderView(now: context.date)
-                    .padding(.leading, 16)
-                    .padding(.trailing, 10)
-                    .padding(.vertical, 8)
                 Hairline()
                 PaneScrollView {
+                    // Bottom only: the stats sit straight under the header, and the
+                    // sections' rows run to the pane's edges.
                     content(now: context.date)
-                        .padding(Metrics.inset)
+                        .padding(.bottom, Metrics.inset)
                 }
+                Hairline()
+                FooterView()
             }
         }
     }
@@ -39,9 +40,10 @@ private struct OverviewPane: View {
         if let snap = store.snapshot {
             let running = snap.inFlightSessions
             VStack(alignment: .leading, spacing: 24) {
-                ProblemList()
+                TelemetryPanel(snapshot: snap, now: now)
                 if snap.isQuiet {
                     EmptyState(snapshot: snap)
+                        .padding(.horizontal, Metrics.inset)
                 }
                 if !snap.actions.isEmpty {
                     NeedsYouSection(snapshot: snap, now: now)
@@ -49,14 +51,12 @@ private struct OverviewPane: View {
                 if !running.isEmpty {
                     AgentsSection(running: running, now: now)
                 }
-                TelemetryPanel(now: now)
-                RecentSection(snapshot: snap, now: now)
+                if !snap.alerts.isEmpty {
+                    RecentSection(snapshot: snap, now: now)
+                }
             }
         } else {
-            VStack(spacing: 0) {
-                ProblemList()
-                ConnectingState()
-            }
+            ConnectingState()
         }
     }
 }

@@ -6,15 +6,17 @@ import SwiftUI
 ///
 /// - `--preview-window`, `--preview-detail <session id>`, `--preview-alert <alert id>`,
 ///   `--preview-settings <tab>`: the UI in a normal window, for screenshots and design work.
+/// - `--preview-island`: the open island in a normal window, at its widest; with
+///   `--preview-detail` or `--preview-alert`, showing that session or alert.
 /// - `--snapshot <png>` (+ `--snapshot-quit`): render that window to a PNG once data arrives.
 /// - `--appearance dark|light`, `--preview-height <pt>`: for long content.
 /// - `--island-demo`: the notch island cycles hover, banner, open and close, for
 ///   screen recordings of its motion.
-/// - `--preview-island`: the island open, at its full size, in a window (for `--snapshot`).
 @MainActor
 final class PreviewHarness {
     struct Arguments {
         var previewWindow = false
+        var previewIsland = false
         var previewDetail: String?
         var previewAlert: String?
         var previewSettings: SettingsView.Tab?
@@ -23,20 +25,19 @@ final class PreviewHarness {
         var snapshotQuit = false
         var previewHeight: CGFloat?
         var islandDemo = false
-        var previewIsland = false
 
         init(_ argv: [String]) {
             var it = argv.dropFirst().makeIterator()
             while let arg = it.next() {
                 switch arg {
                 case "--preview-window": previewWindow = true
+                case "--preview-island": previewIsland = true
                 case "--preview-detail": previewDetail = it.next()
                 case "--preview-alert": previewAlert = it.next()
                 case "--preview-settings": previewSettings = it.next().flatMap(SettingsView.Tab.init(rawValue:)) ?? .accounts
                 case "--snapshot": snapshotPath = it.next()
                 case "--snapshot-quit": snapshotQuit = true
                 case "--island-demo": islandDemo = true
-                case "--preview-island": previewIsland = true
                 case "--preview-height": previewHeight = it.next().flatMap(Double.init).map { CGFloat($0) }
                 case "--appearance":
                     switch it.next() {
@@ -65,22 +66,19 @@ final class PreviewHarness {
         if args.islandDemo { islandDemo(island, store: store) }
 
         if args.previewIsland {
-            let geometry = NotchGeometry(
-                top: 0, centerX: 0, notch: CGSize(width: 185, height: 32), hardware: true,
-                openWidth: NotchGeometry.maxOpenWidth, openHeight: NotchGeometry.maxOpenHeight
-            )
-            let model = IslandModel(geometry: geometry)
-            model.presentation = .open
-            openWindow(
-                title: "Bridgetown · Island",
-                IslandOpenView(model: model)
-                    .environment(store)
-                    .environment(daemon)
-                    .font(.geist(12))
-                    .foregroundStyle(Ink.text, Ink.dim, Ink.faint)
-                    .background(.black)
-                    .environment(\.colorScheme, .dark)
-            )
+            // Once data is in: shown before, the first snapshot finds no such session yet
+            // and sends the island back to the overview.
+            let route: Store.Route? = args.previewDetail.map { .session($0) } ?? args.previewAlert.map { .alert($0) }
+            if let route {
+                Task { @MainActor in
+                    for _ in 0..<100 where store.snapshot == nil { try? await Task.sleep(for: .milliseconds(100)) }
+                    store.show(route)
+                }
+            }
+            var geometry = NotchGeometry.current()
+            geometry.openWidth = NotchGeometry.maxOpenWidth
+            geometry.openHeight = args.previewHeight ?? NotchGeometry.maxOpenHeight
+            openWindow(title: "Bridgetown · Island", IslandOpenView(model: IslandModel(geometry: geometry)).environment(store).environment(daemon))
         } else if let tab = args.previewSettings {
             openWindow(title: "Settings", SettingsView(initialTab: tab).environment(store).environment(daemon))
         } else if args.previewWindow || args.previewDetail != nil || args.previewAlert != nil {

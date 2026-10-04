@@ -1,11 +1,11 @@
 import SwiftUI
 
 /// The island open: the whole app laid out wide under the notch, in three columns you read
-/// left to right. Prod; what needs you; what the agents are doing and what came in. A
-/// session or alert opens in place of the last two, the prod column staying put.
+/// left to right. Status and prod; what needs you; what the agents are doing and what came
+/// in. A session or alert opens in place of the last two, the status column staying put.
 ///
 /// The notch's own band keeps the wings from the resting island, so opening reads as the
-/// same object unfolding. Beside them, the app's status line and its menu.
+/// same object unfolding.
 struct IslandOpenView: View {
     @Environment(Store.self) private var store
     let model: IslandModel
@@ -16,10 +16,10 @@ struct IslandOpenView: View {
 
     var body: some View {
         let geometry = model.geometry
-        TimelineView(.periodic(from: .now, by: 30)) { context in
-            VStack(spacing: 0) {
-                band(notch: geometry.notch, now: context.date)
-                Hairline()
+        VStack(spacing: 0) {
+            band(notch: geometry.notch)
+            Hairline()
+            TimelineView(.periodic(from: .now, by: 30)) { context in
                 HStack(alignment: .top, spacing: 0) {
                     status(now: context.date)
                         .frame(width: Self.statusWidth)
@@ -34,26 +34,33 @@ struct IslandOpenView: View {
         .stage()
     }
 
-    private func band(notch: CGSize, now: Date) -> some View {
+    private func band(notch: CGSize) -> some View {
         ZStack {
             GlanceWings(glance: model.glance, notch: notch, hovering: false)
-            HeaderView(now: now)
-                .padding(.leading, 16)
-                .padding(.trailing, 10)
+            HStack {
+                Spacer(minLength: 0)
+                FooterView()
+            }
         }
         .frame(height: notch.height)
     }
 
     private func status(now: Date) -> some View {
-        PaneScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                ProblemList()
-                // Before the first snapshot the main column says what's happening.
-                if store.snapshot != nil {
-                    TelemetryPanel(now: now)
+        VStack(spacing: 0) {
+            HeaderView(now: now)
+            Hairline()
+            PaneScrollView {
+                Group {
+                    if let snap = store.snapshot {
+                        TelemetryPanel(snapshot: snap, now: now)
+                    } else {
+                        ConnectingState()
+                    }
                 }
+                // Bottom only: the stats sit straight under the header, and they and the
+                // charts run to the column's edges.
+                .padding(.bottom, Metrics.inset)
             }
-            .padding(Metrics.inset)
         }
     }
 
@@ -79,7 +86,8 @@ struct IslandOpenView: View {
                                 NeedsYouSection(snapshot: snap, now: now)
                             }
                         }
-                        .padding(Metrics.inset)
+                        // Vertical only: the sections' rows run to the column's edges.
+                        .padding(.vertical, Metrics.inset)
                     }
                     Hairline(vertical: true)
                     PaneScrollView {
@@ -92,9 +100,11 @@ struct IslandOpenView: View {
                             } else {
                                 AgentsSection(running: running, now: now)
                             }
-                            RecentSection(snapshot: snap, now: now)
+                            if !snap.alerts.isEmpty {
+                                RecentSection(snapshot: snap, now: now)
+                            }
                         }
-                        .padding(Metrics.inset)
+                        .padding(.vertical, Metrics.inset)
                     }
                 }
             }
@@ -118,5 +128,6 @@ private struct ColumnNote: View {
                 .foregroundStyle(.tertiary)
                 .padding(.vertical, 4)
         }
+        .padding(.horizontal, Metrics.inset)
     }
 }
