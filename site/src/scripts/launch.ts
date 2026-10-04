@@ -14,18 +14,24 @@ type CueKind =
   | "hit" // a line of type lands
   | "impact" // the name
   | "riser" // building into the next cut (v = length)
-  | "whoosh" // a camera move or a push between shots
+  | "whoosh" // a camera move
+  | "push" // a shot pushed past the camera, into the cut 0.42s later
+  | "swell" // a panel rises into place
   | "click" // a button, pressed
   | "chime" // a verified outcome
   | "amber" // something is yours
   | "deny" // a command refused
-  | "type" // keys (v = length)
-  | "count"; // bars filling, numbers counting
+  | "type" // keys (v = length, n = keys)
+  | "line" // a line lands in a log
+  | "stream" // lines scrolling past (v = length)
+  | "count"; // a number counting up (v = length, n = steps, e = its ease)
 
 interface Cue {
   t: number;
   kind: CueKind;
   v?: number;
+  n?: number;
+  e?: string;
 }
 
 const $ = <T extends Element = HTMLElement>(s: string, root: ParentNode = document) => root.querySelector<T>(s)!;
@@ -35,7 +41,8 @@ const $$ = <T extends Element = HTMLElement>(s: string, root: ParentNode = docum
 gsap.ticker.lagSmoothing(0);
 const tl = gsap.timeline({ paused: true });
 const cues: Cue[] = [];
-const cue = (t: number, kind: CueKind, v?: number) => cues.push({ t: +t.toFixed(3), kind, ...(v === undefined ? {} : { v }) });
+const cue = (t: number, kind: CueKind, v?: number, more: { n?: number; e?: string } = {}) =>
+  cues.push({ t: +t.toFixed(3), kind, ...(v === undefined ? {} : { v }), ...more });
 const shots = Object.fromEntries($$("[data-shot]").map((el) => [el.dataset.shot!, el]));
 const shot = (name: string) => shots[name]!;
 
@@ -55,6 +62,18 @@ const scene = createArchScene($<HTMLCanvasElement>("[data-scene]"), {
   onFirstFrame: () => (sceneReady = true),
 });
 scene.setLight("out", 0.01);
+const sceneCanvas = $<HTMLCanvasElement>("[data-scene]");
+/** Starts or pauses the arch. A paused canvas still holds its last frame (often the white of
+ * the flare), so it is hidden too: a shot that leaves over it then dissolves to black. */
+const stage = (on: boolean, at: number) =>
+  tl.call(
+    () => {
+      scene.setActive(on);
+      sceneCanvas.style.visibility = on ? "visible" : "hidden";
+    },
+    [],
+    at,
+  );
 const cam: View = restView();
 gsap.ticker.add(() => {
   Object.assign(scene.view, cam);
@@ -73,7 +92,7 @@ const placeCamera = (at: number, view: Partial<View>, lamp?: LightName) =>
     at,
   );
 
-const island = createIsland($("[data-island-root]"), { reducedMotion: false });
+const island = createIsland($("[data-island-root]"), { reducedMotion: false, cinematic: true });
 island.setVisible(true);
 const flood = $("[data-flood]");
 
@@ -134,6 +153,7 @@ function enter(name: string, at: number, how: "cut" | "rise" = "rise") {
     { autoAlpha: 1, scale: 1, filter: "blur(0px)", duration: 0.9, ease: "expo.out" },
     at,
   );
+  cue(at, "swell");
 }
 
 /** A shot goes: pushed past the camera, or cut. */
@@ -144,7 +164,7 @@ function leave(name: string, at: number, how: "cut" | "push" = "push") {
     return;
   }
   tl.to(el, { autoAlpha: 0, scale: 1.07, filter: "blur(18px)", duration: 0.42, ease: "power2.in" }, at);
-  cue(at + 0.05, "whoosh");
+  cue(at, "push");
 }
 
 /** A slow camera move across a shot's whole life. */
@@ -153,10 +173,11 @@ function drift(name: string, at: number, dur: number, from: gsap.TweenVars, to: 
   tl.fromTo(c, { transformPerspective: 2400, ...from }, { ...to, duration: dur, ease: "sine.inOut" }, at);
 }
 
-/** Counts `el`'s number up to its target. */
-function countUp(el: HTMLElement, to: number, at: number, dur: number, fmt = (n: number) => `${Math.round(n)}%`, ease = "power3.out") {
+/** Counts `el`'s number up to its target; the score ticks with it unless `sound` is off. */
+function countUp(el: HTMLElement, to: number, at: number, dur: number, fmt = (n: number) => `${Math.round(n)}%`, ease = "power3.out", sound = true) {
   const o = { n: 0 };
   tl.to(o, { n: to, duration: dur, ease, onUpdate: () => (el.textContent = fmt(o.n)) }, at);
+  if (sound) cue(at, "count", dur, { n: Math.max(1, Math.min(16, Math.round(to))), e: ease });
 }
 
 /** Types `text` into `el` at `cps` characters a second. */
@@ -173,7 +194,7 @@ function typeInto(el: HTMLElement, text: string, at: number, cps = 38) {
     },
     at,
   );
-  cue(at, "type", +dur.toFixed(2));
+  cue(at, "type", +dur.toFixed(2), { n: text.length });
   return dur;
 }
 
@@ -201,6 +222,17 @@ function press(pointer: SVGElement, target: HTMLElement, at: number, from = { dx
     at - travel - 0.12,
   );
   tl.to(pointer, { scale: 0.82, duration: 0.08, transformOrigin: "4px 3px" }, at);
+  tl.to(pointer, { scale: 1, duration: 0.25, ease: "back.out(3)" }, at + 0.08);
+  tl.to(target, { scale: 0.93, duration: 0.08 }, at);
+  tl.to(target, { scale: 1, duration: 0.4, ease: "back.out(3)" }, at + 0.08);
+  cue(at, "click");
+}
+
+/** The pointer, already on screen, moves on to `target` and presses it at `at`. */
+function tap(pointer: SVGElement, target: HTMLElement, at: number, travel = 0.6) {
+  const p = offsetWithin(target, pointer.parentElement as HTMLElement);
+  tl.to(pointer, { x: p.x, y: p.y, duration: travel, ease: "power3.inOut" }, at - travel - 0.1);
+  tl.to(pointer, { scale: 0.82, duration: 0.08 }, at);
   tl.to(pointer, { scale: 1, duration: 0.25, ease: "back.out(3)" }, at + 0.08);
   tl.to(target, { scale: 0.93, duration: 0.08 }, at);
   tl.to(target, { scale: 1, duration: 0.4, ease: "back.out(3)" }, at + 0.08);
@@ -264,12 +296,12 @@ for (let i = 0; i < N; i++) {
     cue(t, "tick");
   });
   enter("noise", 0, "cut");
-  tl.call(() => scene.setActive(false), [], 0.1);
+  stage(false, 0.1);
   drift("noise", 0, 8, { scale: 2.1, rotateX: 22, rotateZ: -5, y: 40 }, { scale: 0.92, rotateX: 30, rotateZ: -9, y: -20 });
-  countUp($('[data-count="alerts"]'), 147, 0.4, 7.2, (n) => String(Math.round(n)), "power2.in");
-  countUp($('[data-count="mentions"]'), 23, 0.9, 6.7, (n) => String(Math.round(n)), "power2.in");
-  countUp($('[data-count="dms"]'), 9, 1.4, 6.2, (n) => String(Math.round(n)), "power2.in");
-  countUp($("[data-clock]"), 95, 0.4, 7.4, (n) => `${String(9 + Math.floor((12 + n) / 60)).padStart(2, "0")}:${String(Math.floor(12 + n) % 60).padStart(2, "0")}`, "power2.in");
+  countUp($('[data-count="alerts"]'), 147, 0.4, 7.2, (n) => String(Math.round(n)), "power2.in", false);
+  countUp($('[data-count="mentions"]'), 23, 0.9, 6.7, (n) => String(Math.round(n)), "power2.in", false);
+  countUp($('[data-count="dms"]'), 9, 1.4, 6.2, (n) => String(Math.round(n)), "power2.in", false);
+  countUp($("[data-clock]"), 95, 0.4, 7.4, (n) => `${String(9 + Math.floor((12 + n) / 60)).padStart(2, "0")}:${String(Math.floor(12 + n) % 60).padStart(2, "0")}`, "power2.in", false);
   cue(4.0, "riser", 3.95);
   // The pile rushes the lens, then nothing.
   tl.to($(".cam", shot("noise")), { scale: 1.6, filter: "blur(24px)", duration: 0.32, ease: "power3.in" }, 7.66);
@@ -288,8 +320,8 @@ leave("turn-b", 11.6);
 
 // MARK: 3 · The name (12–20)
 
-tl.call(() => scene.setActive(true), [], 11.5);
-placeCamera(11.9, { x: 0, y: 0.6, z: 31, lookY: 2.6 });
+placeCamera(11.45, { x: 0, y: 0.6, z: 31, lookY: 2.6 });
+stage(true, 11.5);
 light(12.1, "rest", 2.6);
 tl.to(cam, { z: 19, y: -0.5, lookY: 1.9, duration: 6.4, ease: "power2.out" }, 12);
 {
@@ -312,19 +344,22 @@ tl.to(cam, { z: 19, y: -0.5, lookY: 1.9, duration: 6.4, ease: "power2.out" }, 12
 tl.to(cam, { z: 0.9, y: -0.72, lookY: -0.72, lookZ: -14, duration: 1.9, ease: "power2.in" }, 18.1);
 tl.to(cam, { flare: 1, duration: 1.7, ease: "power1.in" }, 18.3);
 cue(17.9, "riser", 2.1);
-tl.call(() => scene.setActive(false), [], 20.2);
+stage(false, 20.2);
 
 // MARK: 4 · Triage (20–32)
 
-function chapter(name: string, at: number, out: number) {
+/** A chapter card. `fadeIn` > 0 dissolves it in over that many seconds, ending at `at`. */
+function chapter(name: string, at: number, out: number, fadeIn = 0) {
   const s = shot(name);
-  enter(name, at, "cut");
+  if (fadeIn) tl.fromTo(s, { autoAlpha: 0 }, { autoAlpha: 1, duration: fadeIn, ease: "power1.inOut" }, at - fadeIn);
+  else enter(name, at, "cut");
   tl.fromTo($(".kick", s), { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.8, ease: "expo.out" }, at + 0.05);
   reveal($(".hl", s), at + 0.1, { stagger: 0.07 });
   tl.fromTo(s, { scale: 1 }, { scale: 1.045, duration: out - at, ease: "none" }, at);
   leave(name, out);
 }
-chapter("ch-triage", 20, 22.6);
+// Out of the arch's light into the dark, not cut from white to black.
+chapter("ch-triage", 20, 22.6, 0.5);
 cue(20, "impact");
 
 {
@@ -342,8 +377,8 @@ cue(20, "impact");
       const p = Number(getComputedStyle(b.closest(".t-a")!).getPropertyValue("--p"));
       tl.to(b, { scaleX: p, duration: 0.8, ease: "expo.out" }, s + 0.1 + j * 0.1);
     });
-    $$("[data-pct]", row).forEach((el, j) => countUp(el, Number(el.dataset.pct), s + 0.1 + j * 0.1, 0.8));
-    if (bars.length) cue(s + 0.1, "count");
+    // One tick-run per row: three at once would blur into noise.
+    $$("[data-pct]", row).forEach((el, j) => countUp(el, Number(el.dataset.pct), s + 0.1 + j * 0.1, 0.8, undefined, undefined, j === 0));
     const route = $("[data-troute]", row);
     tl.fromTo(route, { opacity: 0, x: -14 }, { opacity: 1, x: 0, duration: 0.6, ease: "expo.out" }, s + 0.55);
     cue(s + 0.55, row.querySelector(".dot-amber") ? "amber" : "tick");
@@ -456,9 +491,10 @@ chapter("ch-agents", 36, 38.6);
     tl.fromTo(c, { opacity: 0, x: -14 }, { opacity: 1, x: 0, duration: 0.4, ease: "expo.out" }, T + 16 + 0.2 + j * 0.35);
     cue(T + 16 + 0.2 + j * 0.35, j === 2 ? "chime" : "tick");
   });
-  // Out into the day.
-  tl.to(flood, { opacity: 1, duration: 0.45, ease: "power2.in" }, 56.6);
-  leave("pipe", 56.55);
+  // Out into the day: the night dissolves slowly over the flood, so black never jumps to white.
+  tl.to(flood, { opacity: 1, duration: 0.3 }, 56.0);
+  tl.to(s, { autoAlpha: 0, scale: 1.04, filter: "blur(14px)", duration: 0.9, ease: "sine.inOut" }, 56.1);
+  cue(56.15, "whoosh");
 }
 
 // MARK: 6 · The notch (57–69)
@@ -485,11 +521,13 @@ chapter("ch-agents", 36, 38.6);
   caption("Click, and the whole app unfolds.", T + 5.8);
   cue(T + 5.6 + 1.07, "click");
   cue(T + 5.6 + 1.2, "whoosh");
+  // As the app unfolds, the camera leans in to the notch.
+  tl.to($(".mac-wrap", s), { scale: 1.05, transformOrigin: "50% 0%", duration: 2.4, ease: "power2.inOut" }, T + 6.5);
   tl.call(() => island.setStep(3), [], T + 8.4);
   caption("Merge, from the notch. Then back to work.", T + 8.5);
   cue(T + 8.4 + 1.45, "click");
   cue(T + 8.4 + 1.6, "chime");
-  leave("notch", 68.6);
+  // It leaves after the splice below gives the island time to fold back (Splices).
 }
 
 // MARK: 7 · Three clicks (69–75)
@@ -573,9 +611,9 @@ chapter("ch-watch", 81, 83.6);
   tl.fromTo($(".w-chart", s), { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.8, ease: "expo.out" }, T + 0.1);
   tl.to($("[data-wline]", s), { strokeDashoffset: 0, duration: 2.8, ease: "power1.inOut" }, T + 0.4);
   tl.to($("[data-wrise]", s), { opacity: 1, duration: 0.5 }, T + 2.9);
-  cue(T + 2.9, "count");
+  cue(T + 2.9, "swell");
   tl.fromTo($("[data-finding]", s), { opacity: 0, y: 20, scale: 0.96 }, { opacity: 1, y: 0, scale: 1, duration: 0.7, ease: "expo.out" }, T + 3.4);
-  cue(T + 3.4, "amber");
+  cue(T + 3.4, "hit");
   leave("watch", 89.6);
 }
 {
@@ -585,13 +623,12 @@ chapter("ch-watch", 81, 83.6);
   reveal($(".hl-s", s), T + 0.05);
   drift("logs", T, 6, { z: -40, rotateX: 5 }, { z: 30, rotateX: 0 });
   tl.fromTo($("[data-stream]", s).children, { y: 0 }, { y: -900, duration: 6, ease: "none" }, T);
-  cue(T + 0.2, "type", 1.6);
+  cue(T + 0.2, "stream", 5.4);
   $$("[data-pt]", s).forEach((p, i) => {
     const at = T + 1.3 + i * 0.85;
     tl.fromTo(p, { opacity: 0, y: 24, filter: "blur(6px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.7, ease: "expo.out" }, at);
-    $$("[data-pct]", p).forEach((el, j) => countUp(el, Number(el.dataset.pct), at + 0.25 + j * 0.08, 0.8));
+    $$("[data-pct]", p).forEach((el, j) => countUp(el, Number(el.dataset.pct), at + 0.25 + j * 0.08, 0.8, undefined, undefined, j === 0));
     cue(at, "hit");
-    cue(at + 0.25, "count");
   });
   leave("logs", 95.6);
 }
@@ -663,8 +700,9 @@ chapter("ch-watch", 81, 83.6);
 {
   const T = 116;
   const s = shot("light");
-  tl.call(() => scene.setActive(true), [], T - 0.6);
-  placeCamera(T - 0.4, { x: Math.sin(-0.5) * 17, z: Math.cos(-0.5) * 17, y: -1.2, lookX: -1.5, lookY: 0.2 }, "rest");
+  // The camera goes first: a resumed canvas must not show the frame it paused on.
+  placeCamera(T - 0.65, { x: Math.sin(-0.5) * 17, z: Math.cos(-0.5) * 17, y: -1.2, lookX: -1.5, lookY: 0.2 }, "rest");
+  stage(true, T - 0.6);
   const walk = { a: -0.5 };
   tl.to(
     walk,
@@ -710,11 +748,11 @@ chapter("ch-watch", 81, 83.6);
     cue(at, "hit");
   });
   leave("montage", T + 3.5, "cut");
-  tl.call(() => scene.setActive(false), [], T + 0.2);
+  stage(false, T + 0.2);
 
   const E = 128;
-  tl.call(() => scene.setActive(true), [], E - 0.4);
-  placeCamera(E - 0.2, { x: 0, y: 2.6, z: 32, lookY: -0.2 }, "out");
+  placeCamera(E - 0.5, { x: 0, y: 2.6, z: 32, lookY: -0.2 }, "out");
+  stage(true, E - 0.4);
   light(E + 0.6, "rest", 2.4);
   tl.to(cam, { z: 18.5, y: -0.4, lookY: 3.5, duration: 8.5, ease: "power3.out" }, E);
   const end = shot("end");
@@ -743,7 +781,11 @@ chapter("ch-watch", 81, 83.6);
 // spliced shots below are timed in the final cut.
 const INSERTS = [
   { at: 36, d: 6 }, // calibration, after Depth
-  { at: 96, d: 6 }, // health, after the logs
+  { at: 69, d: 2 }, // the notch, held a bar so the island folds before it goes
+  { at: 81, d: 6 }, // a session, live, after Ask
+  { at: 96, d: 12 }, // health, then the Prod board, after the logs
+  { at: 110, d: 6 }, // settings, after Safety
+  { at: 124, d: 6 }, // everything else, before the montage
 ];
 for (const { at, d } of [...INSERTS].sort((a, b) => b.at - a.at)) {
   for (const c of tl.getChildren(false, true, true)) if (c.startTime() >= at - 1e-6) c.startTime(c.startTime() + d);
@@ -785,10 +827,21 @@ for (const { at, d } of [...INSERTS].sort((a, b) => b.at - a.at)) {
   leave("calibrate", T + 5.6);
 }
 
-// MARK: 9b · Health (102–108)
+// MARK: 6b · The notch's exit (75–77)
 
 {
-  const T = 102;
+  // From the white desktop to the black of the next shot: a dusk, not a cut.
+  const s = shot("notch");
+  tl.to($(".mac-wrap", s), { scale: 1.08, duration: 1.6, ease: "power1.in" }, 75.4);
+  tl.fromTo($("[data-dusk]", s), { opacity: 0 }, { opacity: 1, duration: 1.25, ease: "sine.inOut" }, 75.7);
+  cue(75.7, "whoosh");
+  leave("notch", 77, "cut");
+}
+
+// MARK: 9b · Health (110–116)
+
+{
+  const T = 110;
   const s = shot("health");
   enter("health", T, "cut");
   drift("health", T, 6, { z: -50, rotateX: 5 }, { z: 30, rotateX: 0 });
@@ -810,6 +863,151 @@ for (const { at, d } of [...INSERTS].sort((a, b) => b.at - a.at)) {
   cue(T + 4.1, "tick");
   tl.to(fold, { height: 0, opacity: 0, duration: 0.6, ease: "expo.inOut" }, T + 5.0);
   leave("health", T + 5.6);
+}
+
+// MARK: 8b · A session, live (89–95)
+
+{
+  const T = 89;
+  const s = shot("session");
+  enter("session", T, "cut");
+  drift("session", T, 6, { rotateY: -7, z: -40 }, { rotateY: 3, z: 40 });
+  reveal($(".hl-m", s), T + 0.05);
+  reveal($(".sub", s), T + 0.6, { stagger: 0.03, dur: 0.8, hit: false });
+  tl.fromTo($("[data-sx]", s), { opacity: 0, y: 60, rotateX: -10 }, { opacity: 1, y: 0, rotateX: 0, duration: 0.9, ease: "expo.out" }, T + 0.2);
+  $$("[data-phase] i", s).forEach((b, i) => tl.fromTo(b, { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: "expo.out" }, T + 0.5 + i * 0.07));
+  const lines = $$("[data-tline]", s);
+  const you = lines.pop()!;
+  lines.forEach((l, i) => {
+    tl.fromTo(l, { opacity: 0, x: -12 }, { opacity: 1, x: 0, duration: 0.35, ease: "expo.out" }, T + 0.8 + i * 0.26);
+    cue(T + 0.8 + i * 0.26, "line");
+  });
+  // The clock and the bill run while it works.
+  const clock = { s: 372, usd: 1.84 };
+  tl.to(clock, {
+    s: 378,
+    usd: 1.93,
+    duration: 5.4,
+    ease: "none",
+    onUpdate: () => {
+      $("[data-sxtime]", s).textContent = `${Math.floor(clock.s / 60)}m ${String(Math.floor(clock.s % 60)).padStart(2, "0")}s`;
+      $("[data-sxcost]", s).textContent = `$${clock.usd.toFixed(2)}`;
+    },
+  }, T);
+  // A message mid-run: in the transcript at once, read at its next step.
+  const input = $("[data-sxin]", s);
+  typeInto(input, input.dataset.type!, T + 2.3, 42);
+  const ptr = $<SVGElement>("[data-pointer]", s);
+  press(ptr, $("[data-press]", s), T + 3.25, { dx: 220, dy: 240 }, 0.7);
+  tl.call(() => (input.textContent = ""), [], T + 3.35);
+  tl.set(you, { display: "grid" }, T + 3.4);
+  tl.fromTo(you, { opacity: 0, x: -12 }, { opacity: 1, x: 0, duration: 0.4, ease: "expo.out" }, T + 3.4);
+  cue(T + 3.4, "line");
+  const act = $("[data-sxact]", s);
+  tl.call(() => (act.textContent = "Read your message"), [], T + 3.7);
+  tl.fromTo(act, { opacity: 0.2 }, { opacity: 1, duration: 0.4 }, T + 3.7);
+  // Or pick it up yourself.
+  tap(ptr, $("[data-takeover]", s), T + 4.35, 0.5);
+  const term = $("[data-sxterm]", s);
+  tl.fromTo(term, { opacity: 0, y: 70, scale: 0.96 }, { opacity: 1, y: 0, scale: 1, duration: 0.6, ease: "expo.out" }, T + 4.45);
+  cue(T + 4.45, "whoosh");
+  tl.to(ptr, { opacity: 0, duration: 0.2 }, T + 4.5);
+  const cmd = $("[data-type]", term);
+  typeInto(cmd, cmd.dataset.type!, T + 4.6, 90);
+  leave("session", T + 5.6);
+}
+
+// MARK: 9c · Prod at a glance (116–122)
+
+{
+  const T = 116;
+  const s = shot("board");
+  enter("board", T, "cut");
+  drift("board", T, 6, { rotateX: 7, z: -50 }, { rotateX: 0, z: 40 });
+  reveal($(".hl-s", s), T + 0.05);
+  tl.fromTo($("[data-stats]", s), { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.8, ease: "expo.out" }, T + 0.25);
+  $$("[data-stat]", s).forEach((el, i) => countUp(el, Number(el.dataset.stat), T + 0.45 + i * 0.12, 1.1, (n) => String(Math.round(n))));
+  tl.fromTo($(".b-head", s), { opacity: 0 }, { opacity: 1, duration: 0.6 }, T + 0.6);
+  const boards = $$("[data-board]", s);
+  const tabs = $$("[data-tab]", s);
+  tl.set(boards.slice(1), { opacity: 0 }, T);
+  tl.fromTo($$(".b-chart", boards[0]!), { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.7, ease: "expo.out", stagger: 0.08 }, T + 0.7);
+  const draw = (b: HTMLElement, at: number) =>
+    tl.fromTo($$("[data-bline]", b), { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 1.1, ease: "power2.inOut", stagger: 0.06 }, at);
+  draw(boards[0]!, T + 0.8);
+  // Two fingers, and the next board slides in.
+  const swipe = $("[data-swipe]", s);
+  const fingers = $(".fingers", swipe);
+  tl.fromTo(swipe, { opacity: 0 }, { opacity: 1, duration: 0.4 }, T + 1.9);
+  [2.3, 3.7].forEach((dt, i) => {
+    const at = T + dt;
+    tl.fromTo(fingers, { x: 70 }, { x: -70, duration: 0.5, ease: "power2.inOut" }, at - 0.2);
+    tl.to(boards[i]!, { opacity: 0, x: -120, filter: "blur(8px)", duration: 0.3, ease: "power2.in" }, at);
+    tl.fromTo(boards[i + 1]!, { opacity: 0, x: 120, filter: "blur(8px)" }, { opacity: 1, x: 0, filter: "blur(0px)", duration: 0.7, ease: "expo.out" }, at + 0.22);
+    tl.call(() => tabs.forEach((t, j) => t.classList.toggle("on", j === i + 1)), [], at + 0.15);
+    draw(boards[i + 1]!, at + 0.2);
+    cue(at, "whoosh");
+    cue(at + 0.15, "tick");
+  });
+  tl.to(swipe, { opacity: 0, duration: 0.4 }, T + 4.6);
+  leave("board", T + 5.6);
+}
+
+// MARK: 10b · Settings (136–142)
+
+{
+  const T = 136;
+  const s = shot("settings");
+  enter("settings", T, "cut");
+  drift("settings", T, 6, { rotateY: 7, z: -40 }, { rotateY: -3, z: 40 });
+  reveal($(".hl-m", s), T + 0.05);
+  reveal($(".sub", s), T + 0.6, { stagger: 0.03, dur: 0.8, hit: false });
+  tl.fromTo($("[data-win]", s), { opacity: 0, y: 60, rotateY: -10 }, { opacity: 1, y: 0, rotateY: 0, duration: 0.9, ease: "expo.out" }, T + 0.2);
+  tl.fromTo($$("[data-toggle]", s), { opacity: 0, x: 24 }, { opacity: 1, x: 0, duration: 0.5, ease: "expo.out", stagger: 0.06 }, T + 0.45);
+  const ptr = $<SVGElement>("[data-pointer]", s);
+  $$("[data-flip]", s).forEach((row, i) => {
+    const at = T + 2.0 + i * 1.4;
+    const sw = $("[data-switch]", row);
+    if (i === 0) press(ptr, sw, at, { dx: 200, dy: 240 }, 0.7);
+    else tap(ptr, sw, at, 0.6);
+    tl.to(sw, { backgroundColor: "#f5f5f7", duration: 0.25 }, at + 0.05);
+    tl.to($("b", sw), { left: 29, backgroundColor: "#000", boxShadow: "none", duration: 0.35, ease: "back.out(2)" }, at + 0.05);
+    cue(at + 0.22, "line"); // the knob snaps home
+    const note = $("[data-flipnote]", row);
+    tl.to(note, { height: () => note.scrollHeight, marginTop: 4, opacity: 1, duration: 0.5, ease: "expo.out" }, at + 0.15);
+  });
+  tl.to(ptr, { opacity: 0, x: "+=60", y: "+=80", duration: 0.5, ease: "power2.in" }, T + 4.4);
+  leave("settings", T + 5.6);
+}
+
+// MARK: 12b · Everything else (156–162)
+
+{
+  const T = 156;
+  const s = shot("more");
+  stage(false, T + 0.1);
+  enter("more", T, "cut");
+  const c = $(".cam", s);
+  // Close on the name, then pulled back until the whole wall is in view.
+  tl.fromTo(c, { transformPerspective: 2400, scale: 2.5, rotateX: 0, rotateZ: 0, y: 0 }, { scale: 2.3, duration: 0.9, ease: "none" }, T);
+  tl.to(c, { scale: 0.84, rotateX: 16, rotateZ: -5, y: -20, duration: 4.7, ease: "power3.inOut" }, T + 0.9);
+  const hero = $("[data-mhero]", s);
+  tl.fromTo($(".mark", hero), { opacity: 0, y: 14, filter: "blur(8px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: 1, ease: "expo.out" }, T + 0.05);
+  reveal($(".mt-big", hero), T + 0.1, { stagger: 0.06 });
+  // The rest light up outward from the middle.
+  const tiles = $$("[data-mt]", s).filter((t) => t !== hero);
+  const mid = hero.offsetLeft + hero.offsetWidth / 2;
+  const midY = hero.offsetTop + hero.offsetHeight / 2;
+  tiles
+    .map((t) => ({ t, d: Math.hypot(t.offsetLeft + t.offsetWidth / 2 - mid, (t.offsetTop + t.offsetHeight / 2 - midY) * 1.6) }))
+    .sort((a, b) => a.d - b.d)
+    .forEach(({ t }, k) => {
+      const at = T + 0.9 + k * 0.055;
+      tl.fromTo(t, { opacity: 0, z: -220, filter: "blur(10px)" }, { opacity: 1, z: 0, filter: "blur(0px)", duration: 0.7, ease: "expo.out" }, at);
+      if (k % 4 === 0) cue(at, "tick");
+    });
+  cue(T + 3.4, "riser", 2.6);
+  leave("more", T + 5.6);
 }
 
 // MARK: Run

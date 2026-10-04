@@ -145,6 +145,67 @@ const lights = [
   ["paused", "Dim", "Paused. Alerts are still read."],
 ];
 const montage = ["Triage.", "Diagnose.", "Fix.", "Review.", "Ship.", "Watch.", "Guard."];
+
+// A session, live: the daemon's six steps, and its transcript as the app prints it.
+const phases = [["Diagnose", "done"], ["Fix", "done"], ["PR", "current"], ["Review", ""], ["CI", ""], ["Deploy", ""]];
+const transcript = [
+  ["10:04", "tool", "› Grep “region” src/routes"],
+  ["10:04", "tool", "› Read src/routes/orders.ts"],
+  ["10:05", "text", "An empty region is parsed as 0, and findOrders(0) throws."],
+  ["10:06", "tool", "› Edit src/routes/orders.ts"],
+  ["10:06", "tool", "› Bash bun test routes/orders"],
+  ["10:07", "status", "· 214 pass · 0 fail"],
+];
+
+// Prod: the overview's three numbers, then a board per view, swiped between.
+const boards = [
+  { name: "Incidents", charts: [["API 5xx", 11, 9], ["API p99", 340, 4], ["Engine errors", 6, 2], ["Job errors", 3, 7]] },
+  { name: "Infra", charts: [["eRPC errors", 18, 5], ["Failed job pods", 1, 11], ["OOM kills", 0.4, 13], ["Postgres", 22, 6]] },
+  { name: "Database", charts: [["Connections", 140, 3], ["Lock waits", 22, 8], ["Longest transaction", 4, 12], ["Replication lag", 0.6, 10]] },
+] as const;
+
+// Settings → Behaviour, as the app has it.
+const toggles = [
+  { label: "Start agents automatically", on: true },
+  { label: "Adversarial review", on: true, note: "Codex reviews every fix before the PR leaves draft." },
+  { label: "Watch prod", on: true, note: "Signals every 5 minutes, logs every 10." },
+  { label: "Watch my mentions & DMs everywhere", on: true },
+  { label: "Quiet hours", on: false, flip: "No notifications during quiet hours. Auto-start keeps running." },
+  { label: "Dry run", on: false, flip: "Agents still run, but nothing is posted to Slack." },
+  { label: "Launch at login", on: true },
+];
+
+// And everything else: the wall of features, one tile each, around the name.
+const more: [string, string][] = [
+  ["filter", "Rules first: no model call for a deploy notice"],
+  ["repeat", "Repeats join the session that owns them"],
+  ["at-sign", "Mentions, team mentions and DMs"],
+  ["gauge", "Sonnet, Opus or Opus max, by depth"],
+  ["git-branch", "One worktree per agent"],
+  ["shield-check", "Codex review, up to 4 rounds"],
+  ["map", "Revv walkthrough in every review request"],
+  ["tag", "Next version worked out for you"],
+  ["rocket", "Deploys confirmed by the release tracker"],
+  ["search", "Investigate anyway"],
+  ["rotate-ccw", "Retry a failed agent"],
+  ["message-square-reply", "Message an agent mid-run"],
+  ["sliders-horizontal", "Thresholds you set"],
+  ["eye", "A teammate’s 👀 means it’s theirs"],
+  ["scroll-text", "Prod → Logs, opened in Grafana Explore"],
+  ["chart-line", "Rises and spikes against the usual"],
+  ["users", "Teammates’ agents, in your notch"],
+  ["bell", "Notifications for what’s yours"],
+  ["moon", "Quiet hours"],
+  ["key", "Tokens in your Keychain"],
+  ["smile", "Slack mrkdwn and emoji, rendered"],
+  ["undo-2", "Two-finger swipe back"],
+  ["vibrate", "Haptics on the trackpad"],
+  ["accessibility", "Reduce Motion, respected"],
+  ["power", "Launch at login"],
+  ["square-stop", "Stop any agent, keep its worktree"],
+  ["terminal", "Take over in Terminal"],
+  ["cloud-off", "Says so when it can’t see"],
+];
 ---
 
 <!doctype html>
@@ -505,6 +566,7 @@ const montage = ["Triage.", "Diagnose.", "Fix.", "Review.", "Ship.", "Watch.", "
       <h2 class="day-title" data-split>It lives in the notch.</h2>
       <div class="mac-wrap" data-island-root><MacScreen class="film-mac" /></div>
       <p class="caption" data-caption></p>
+      <div class="dusk" data-dusk></div>
     </section>
 
     <!-- 6 · The three clicks. -->
@@ -588,10 +650,10 @@ const montage = ["Triage.", "Diagnose.", "Fix.", "Review.", "Ship.", "Watch.", "
           </svg>
           <span class="usual-label mono" style={`top:${cy(usual) + 52}px`}>usual · {Math.round(usual)}</span>
           <div class="finding" data-finding>
-            <p class="f-kind"><i class="dot dot-amber"></i> Rise · API 5xx</p>
+            <p class="f-kind"><i class="dot dot-done"></i> Rise · API 5xx</p>
             <p class="f-text">Median of the last 3 steps is 5.1× usual. No Slack alert covers it.</p>
             <p class="f-text faint">Recent deploys: api v1.35.11 at 10:14.</p>
-            <p class="f-session"><i class="dot dot-amber"></i> Suggested to you · never auto-started</p>
+            <p class="f-session"><i class="dot dot-blue live"></i> Investigation started · Opus · high</p>
           </div>
         </figure>
       </div>
@@ -707,6 +769,125 @@ const montage = ["Triage.", "Diagnose.", "Fix.", "Review.", "Ship.", "Watch.", "
           <li data-lstate={key}><i class={`lamp lamp-${key}`}></i><b>{name}</b><span>{text}</span></li>
         ))}
       </ul>
+    </section>
+
+    <!-- 8b · A session, live. -->
+    <section class="shot" data-shot="session">
+      <div class="cam session">
+        <div class="team-copy">
+          <h2 class="hl-m" data-split>Watch it work.<br /><span class="dim">Or take over.</span></h2>
+          <p class="sub" data-split>Every step and tool call, live. Message it mid-run, stop it, or pick it up in Terminal.</p>
+        </div>
+        <div class="sx" data-sx>
+          <p class="sx-from"><span class="mono">#alert-api</span> 5xx rate 3.1% on /v4/orders</p>
+          <h3 class="sx-title">fix(api): reject an empty region</h3>
+          <ol class="stepper">
+            {phases.map(([label, state]) => (
+              <li class:list={[state]} data-phase><i></i><span>{label}</span></li>
+            ))}
+          </ol>
+          <p class="sx-act"><i class="dot dot-blue live"></i> <span data-sxact>Running the orders tests</span></p>
+          <p class="sx-meta mono">Opus · high · <span data-sxtime>6m 12s</span> · <span data-sxcost>$1.84</span></p>
+          <ol class="sx-log mono" data-sxlog>
+            {transcript.map(([at, kind, text]) => (
+              <li class={kind} data-tline><span class="faint">{at}</span><span>{text}</span></li>
+            ))}
+            <li class="text you" data-tline data-you><span class="faint">10:07</span><span>You: Also cover negative regions.</span></li>
+          </ol>
+          <div class="sx-input"><span data-type="Also cover negative regions." data-sxin></span><span class="sx-send" data-press><Icon name="arrow-up" size={20} /></span></div>
+          <div class="sx-actions">
+            <span class="sx-btn" data-takeover><Icon name="terminal" size={20} /> Take over in Terminal</span>
+            <span class="sx-btn stop">Stop</span>
+          </div>
+        </div>
+        <div class="term sx-term" data-sxterm>
+          <div class="chrome"><i></i><i></i><i></i><span class="mono">Terminal — fix-bt-api-empty-region</span></div>
+          <div class="term-body mono">
+            <p class="cmd"><span class="p">$</span> <span data-type="cd …/worktrees/fix-bt-api-empty-region && claude --resume 7f3c2a1b"></span></p>
+          </div>
+        </div>
+        <svg class="pointer big" data-pointer width="34" height="34" viewBox="0 0 22 22"><path d="M4 2.5v15.2l3.9-3.6 2.5 5.6 2.6-1.1-2.4-5.5h5.3z" fill="#000" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+      </div>
+    </section>
+
+    <!-- 9c · Prod, at a glance. -->
+    <section class="shot" data-shot="board">
+      <div class="cam board">
+        <h2 class="hl-s" data-split>Prod, at a glance.</h2>
+        <div class="stats" data-stats>
+          <div class="stat"><p class="st-l">Needs you</p><p class="st-v amber" data-stat="2">0</p><p class="st-c">oldest 12m</p></div>
+          <div class="stat"><p class="st-l">Agents</p><p class="st-v blue" data-stat="3">0</p><p class="st-c"><i class="dot dot-blue live"></i> 2 fixing · 1 in CI</p></div>
+          <div class="stat"><p class="st-l">Resolved</p><p class="st-v green" data-stat="14">0</p><p class="st-c">of 17 · 24h</p></div>
+        </div>
+        <div class="b-head">
+          <ol class="tabs" data-tabs>
+            {[...boards.map((b) => b.name), "Logs"].map((n, i) => <li class:list={[i === 0 && "on"]} data-tab>{n}</li>)}
+          </ol>
+          <span class="mono faint">Grafana · last hour · counts per minute</span>
+        </div>
+        <div class="b-stage">
+          {boards.map((b, bi) => (
+            <div class="b-grid" data-board>
+              {b.charts.map(([name, base, seed], ci) => {
+                const vals = series(32, base, base * 0.2, seed + bi * 3);
+                return (
+                  <figure class="b-chart">
+                    <figcaption><span>{name}</span><span class="mono faint">{vals.at(-1)! < 10 ? vals.at(-1)!.toFixed(1) : Math.round(vals.at(-1)!)}</span></figcaption>
+                    <svg viewBox="0 0 400 120" preserveAspectRatio="none">
+                      <path d={areaPath(vals, 400, 120, 8, base * 1.5, base * 0.45)} class="area" />
+                      <path d={linePath(vals, 400, 120, 8, base * 1.5, base * 0.45)} class="line" pathLength="1" data-bline />
+                      {ci % 2 === 0 && <line x1={ci === 0 ? 268 : 120} x2={ci === 0 ? 268 : 120} y1="0" y2="120" class="deploy" />}
+                    </svg>
+                  </figure>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+        <div class="swipe" data-swipe><span class="fingers"><i></i><i></i></span><span class="mono">Swipe between boards</span></div>
+      </div>
+    </section>
+
+    <!-- 10b · Settings. -->
+    <section class="shot" data-shot="settings">
+      <div class="cam settings">
+        <div class="team-copy">
+          <h2 class="hl-m" data-split>Yours to tune.</h2>
+          <p class="sub" data-split>Thresholds, quiet hours, a dry run. Tokens stay in your Keychain.</p>
+        </div>
+        <div class="win" data-win>
+          <ol class="win-tabs">
+            {[["key", "Accounts"], ["hash", "Channels"], ["git-branch", "Repos"], ["sliders-horizontal", "Triage"], ["settings-2", "Behaviour"]].map(([icon, name]) => (
+              <li class:list={[name === "Behaviour" && "on"]}><Icon name={icon!} size={24} /><span>{name}</span></li>
+            ))}
+          </ol>
+          <ul class="toggles">
+            {toggles.map((t) => (
+              <li data-toggle data-flip={t.flip ? "" : undefined}>
+                <div>
+                  <p>{t.label}</p>
+                  {t.note && <p class="tg-note">{t.note}</p>}
+                  {t.flip && <p class="tg-note tg-flip" data-flipnote>{t.flip}</p>}
+                </div>
+                <span class:list={["switch", t.on && "on"]} data-switch><b></b></span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <svg class="pointer big" data-pointer width="34" height="34" viewBox="0 0 22 22"><path d="M4 2.5v15.2l3.9-3.6 2.5 5.6 2.6-1.1-2.4-5.5h5.3z" fill="#000" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+      </div>
+    </section>
+
+    <!-- 12b · And everything else. -->
+    <section class="shot" data-shot="more">
+      <div class="cam more">
+        <div class="wall-more" data-mwall>
+          {more.slice(0, 14).map(([icon, text]) => <div class="mt" data-mt><Icon name={icon} size={30} /><p>{text}</p></div>)}
+          <div class="mt hero" data-mt data-mhero><p class="mark"><ArchMark size={40} /></p><p class="mt-big">And everything<br />else, too.</p></div>
+          {more.slice(14).map(([icon, text]) => <div class="mt" data-mt><Icon name={icon} size={30} /><p>{text}</p></div>)}
+        </div>
+      </div>
+      <div class="veil"></div>
     </section>
 
     <!-- 13 · Montage and the end. -->
@@ -1691,6 +1872,15 @@ const montage = ["Triage.", "Diagnose.", "Fix.", "Review.", "Ship.", "Watch.", "
 
   /* MARK: Notch (day) */
 
+  .dusk {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+  }
+
   .day-shot {
     background: var(--day);
     color: var(--ink);
@@ -2557,5 +2747,526 @@ const montage = ["Triage.", "Diagnose.", "Fix.", "Review.", "Ship.", "Watch.", "
     font-size: 21px;
     color: var(--mid);
     text-shadow: 0 2px 18px #000;
+  }
+
+  /* MARK: Session */
+
+  .session {
+    display: grid;
+    grid-template-columns: 720px 900px;
+    gap: 90px;
+    justify-content: center;
+    align-content: center;
+    align-items: center;
+  }
+
+  .sx {
+    padding: 40px 44px 36px;
+    border-radius: 28px;
+    background: var(--card);
+    box-shadow:
+      inset 0 0 0 1px var(--hair),
+      0 60px 140px rgb(0 0 0 / 0.8);
+  }
+
+  .sx-from {
+    display: flex;
+    gap: 12px;
+    font-size: 19px;
+    color: var(--lo);
+  }
+
+  .sx-from .mono {
+    color: var(--mid);
+  }
+
+  .sx-title {
+    margin-top: 8px;
+    font-size: 36px;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    color: var(--hi);
+  }
+
+  .stepper {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 8px;
+    margin: 28px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .stepper i {
+    display: block;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--hair);
+    transform-origin: 0 50%;
+  }
+
+  .stepper span {
+    display: block;
+    margin-top: 10px;
+    font-size: 17px;
+    color: var(--lo);
+  }
+
+  .stepper :global(.done) i {
+    background: var(--mid);
+  }
+
+  .stepper :global(.done) span {
+    color: var(--mid);
+  }
+
+  .stepper :global(.current) i {
+    background: var(--blue);
+    box-shadow: 0 0 12px var(--blue);
+  }
+
+  .stepper :global(.current) span {
+    color: var(--hi);
+  }
+
+  .sx-act {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 28px;
+    font-size: 24px;
+    color: var(--hi);
+  }
+
+  .sx-meta {
+    margin-top: 6px;
+    font-size: 18px;
+    color: var(--lo);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .sx-log {
+    height: 268px;
+    margin: 22px 0 0;
+    padding: 18px 0 0;
+    list-style: none;
+    border-top: 1px solid var(--hair);
+    font-size: 18px;
+    line-height: 1.5;
+    overflow: hidden;
+  }
+
+  .sx-log li {
+    display: grid;
+    grid-template-columns: 70px 1fr;
+    gap: 14px;
+    padding: 3px 0;
+    color: var(--mid);
+    opacity: 0;
+  }
+
+  .sx-log li.text {
+    color: var(--hi);
+  }
+
+  .sx-log li.you {
+    display: none;
+  }
+
+  .sx-input {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 18px;
+    padding: 10px 10px 10px 22px;
+    min-height: 58px;
+    border-radius: 16px;
+    box-shadow: inset 0 0 0 1px var(--hair-strong);
+    font-size: 21px;
+    color: var(--hi);
+  }
+
+  .sx-input > span:first-child:empty::before {
+    content: "Message the agent";
+    color: var(--lo);
+  }
+
+  .sx-send {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: var(--hi);
+    color: #000;
+  }
+
+  .sx-actions {
+    display: flex;
+    gap: 14px;
+    margin-top: 18px;
+  }
+
+  .sx-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 22px;
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1px var(--hair-strong);
+    font-size: 20px;
+    color: var(--hi);
+  }
+
+  .sx-btn.stop {
+    color: #ff9f94;
+  }
+
+  .sx-term {
+    position: absolute;
+    right: 80px;
+    bottom: 110px;
+    width: 860px;
+    opacity: 0;
+  }
+
+  .sx-term .term-body {
+    min-height: 150px;
+  }
+
+  /* MARK: Board */
+
+  .board {
+    padding: 90px 150px 0;
+  }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    margin-top: 44px;
+    border-radius: 26px;
+    background: var(--card);
+    box-shadow: inset 0 0 0 1px var(--hair);
+  }
+
+  .stat {
+    padding: 26px 40px 28px;
+  }
+
+  .stat + .stat {
+    border-left: 1px solid var(--hair);
+  }
+
+  .st-l {
+    font-size: 20px;
+    color: var(--mid);
+  }
+
+  .st-v {
+    margin-top: 4px;
+    font-size: 84px;
+    font-weight: 560;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    color: var(--hi);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .st-v.amber {
+    color: var(--amber);
+  }
+
+  .st-v.blue {
+    color: oklch(0.72 0.16 252);
+  }
+
+  .st-v.green {
+    color: var(--green);
+  }
+
+  .st-c {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    font-size: 19px;
+    color: var(--lo);
+  }
+
+  .b-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 40px;
+    font-size: 18px;
+  }
+
+  .tabs {
+    position: relative;
+    display: flex;
+    gap: 6px;
+    margin: 0;
+    padding: 5px;
+    list-style: none;
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1px var(--hair);
+  }
+
+  .tabs li {
+    padding: 8px 22px;
+    border-radius: 999px;
+    font-size: 20px;
+    color: var(--mid);
+    transition: none;
+  }
+
+  .tabs li:global(.on) {
+    background: rgb(255 255 255 / 0.12);
+    color: var(--hi);
+  }
+
+  .b-stage {
+    position: relative;
+    height: 400px;
+    margin-top: 22px;
+  }
+
+  .b-grid {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 22px;
+    opacity: 0;
+  }
+
+  .b-grid:first-child {
+    opacity: 1;
+  }
+
+  .b-chart {
+    margin: 0;
+    padding: 22px 24px;
+    border-radius: 22px;
+    background: var(--card);
+    box-shadow: inset 0 0 0 1px var(--hair);
+  }
+
+  .b-chart figcaption {
+    display: flex;
+    justify-content: space-between;
+    font-size: 20px;
+    color: var(--hi);
+  }
+
+  .b-chart svg {
+    display: block;
+    width: 100%;
+    height: 290px;
+    margin-top: 16px;
+  }
+
+  .b-chart .area {
+    fill: rgb(255 255 255 / 0.05);
+  }
+
+  .b-chart .line {
+    fill: none;
+    stroke: var(--hi);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+  }
+
+  .b-chart .deploy {
+    stroke: var(--lo);
+    stroke-dasharray: 4 6;
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .swipe {
+    position: absolute;
+    left: 50%;
+    bottom: 70px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    translate: -50% 0;
+    font-size: 18px;
+    color: var(--mid);
+    opacity: 0;
+  }
+
+  .fingers {
+    position: relative;
+    display: flex;
+    gap: 12px;
+  }
+
+  .fingers i {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgb(255 255 255 / 0.85);
+    box-shadow: 0 0 22px rgb(255 255 255 / 0.4);
+  }
+
+  /* MARK: Settings */
+
+  .settings {
+    display: grid;
+    grid-template-columns: 640px 900px;
+    gap: 110px;
+    justify-content: center;
+    align-content: center;
+    align-items: center;
+  }
+
+  .win {
+    border-radius: 26px;
+    background: #111113;
+    box-shadow:
+      inset 0 0 0 1px var(--hair-strong),
+      0 60px 140px rgb(0 0 0 / 0.8);
+    overflow: hidden;
+  }
+
+  .win-tabs {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin: 0;
+    padding: 20px 20px 16px;
+    list-style: none;
+    border-bottom: 1px solid var(--hair);
+  }
+
+  .win-tabs li {
+    display: grid;
+    justify-items: center;
+    gap: 6px;
+    width: 120px;
+    padding: 10px 0 8px;
+    border-radius: 12px;
+    font-size: 15px;
+    color: var(--lo);
+  }
+
+  .win-tabs li.on {
+    background: rgb(255 255 255 / 0.08);
+    color: var(--hi);
+  }
+
+  .toggles {
+    margin: 0;
+    padding: 10px 44px 20px;
+    list-style: none;
+  }
+
+  .toggles li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 40px;
+    padding: 18px 0;
+    font-size: 25px;
+    color: var(--hi);
+  }
+
+  .toggles li + li {
+    border-top: 1px solid var(--hair);
+  }
+
+  .tg-note {
+    margin-top: 4px;
+    font-size: 18px;
+    color: var(--lo);
+  }
+
+  .tg-flip {
+    height: 0;
+    overflow: hidden;
+    margin-top: 0;
+    opacity: 0;
+  }
+
+  .switch {
+    position: relative;
+    flex: none;
+    width: 64px;
+    height: 38px;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.14);
+  }
+
+  .switch b {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 2px 6px rgb(0 0 0 / 0.4);
+  }
+
+  .switch.on {
+    background: var(--hi);
+  }
+
+  .switch.on b {
+    left: 29px;
+    background: #000;
+    box-shadow: none;
+  }
+
+  /* MARK: More */
+
+  .wall-more {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    display: grid;
+    grid-template-columns: repeat(6, 300px);
+    grid-auto-rows: 190px;
+    gap: 22px;
+    translate: -50% -50%;
+    transform-style: preserve-3d;
+  }
+
+  .mt {
+    display: grid;
+    align-content: space-between;
+    padding: 24px 26px;
+    border-radius: 24px;
+    background: var(--card);
+    box-shadow: inset 0 0 0 1px var(--hair);
+    color: var(--mid);
+  }
+
+  .mt p {
+    font-size: 23px;
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+    color: var(--hi);
+  }
+
+  .mt.hero {
+    grid-column: span 2;
+    align-content: center;
+    justify-items: center;
+    gap: 14px;
+    text-align: center;
+    background: #000;
+    box-shadow: inset 0 0 0 1px var(--hair-strong);
+  }
+
+  .mt-big {
+    font-size: 48px !important;
+    font-weight: 620;
+    letter-spacing: -0.04em !important;
+    line-height: 1.02 !important;
   }
 </style>
