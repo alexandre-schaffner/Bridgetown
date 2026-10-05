@@ -11,7 +11,7 @@ const outcomes = [
 
 <section class="outcomes day" id="outcomes" aria-labelledby="outcomes-title">
   <div class="wrap">
-    <div class="intro">
+    <div class="chapter-head">
       <h2 id="outcomes-title" class="display">Green means it happened.</h2>
       <p class="lead">
         A step is done when there is evidence for it: a PR that exists, a check that passed, a deploy the tracker
@@ -40,15 +40,7 @@ const outcomes = [
     padding-block: clamp(7rem, 16vh, 11rem);
   }
 
-  .intro {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 2rem 4rem;
-    align-items: end;
-    margin-bottom: clamp(3rem, 8vh, 6rem);
-  }
-
-  .intro .display {
+  .chapter-head .display {
     max-width: 10ch;
   }
 
@@ -99,7 +91,6 @@ const outcomes = [
   }
 
   @media (max-width: 900px) {
-    .intro,
     .list li {
       grid-template-columns: 1fr;
     }

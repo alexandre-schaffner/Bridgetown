@@ -21,7 +21,7 @@ const H = 120;
 
 <section class="journey day" id="journey" data-journey aria-labelledby="journey-title">
   <div class="pin" data-journey-pin>
-    <header class="head wrap">
+    <header class="chapter-head head wrap">
       <h2 id="journey-title" class="display">Agents take it all the way.</h2>
       <p class="lead">
         From the first log line to the deploy, every step leaves something you can open: a diagnosis, a diff, a pull
@@ -212,11 +212,9 @@ const H = 120;
     overflow: clip;
   }
 
+  /* The rail follows close under it, and it stacks at 980px with the rest of the reel. */
   .head {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 2rem 4rem;
-    align-items: end;
+    margin-bottom: 0;
   }
 
   .head .display {

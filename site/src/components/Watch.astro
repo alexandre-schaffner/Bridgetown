@@ -20,7 +20,7 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
 
 <section class="watch day" id="watch" data-watch aria-labelledby="watch-title">
   <div class="wrap">
-    <div class="intro">
+    <div class="chapter-head">
       <h2 id="watch-title" class="display">It watches production, too.</h2>
       <p class="lead">
         Every five minutes Bridgetown reads your dashboards. When a signal rises well above its usual level and no
@@ -91,15 +91,7 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
     background: var(--day-sunk);
   }
 
-  .intro {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 2rem 4rem;
-    align-items: end;
-    margin-bottom: clamp(3rem, 7vh, 5rem);
-  }
-
-  .intro .display {
+  .chapter-head .display {
     max-width: 11ch;
   }
 
@@ -272,7 +264,6 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
   }
 
   @media (max-width: 900px) {
-    .intro,
     .notes {
       grid-template-columns: 1fr;
     }
