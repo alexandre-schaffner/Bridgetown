@@ -16,6 +16,7 @@ import { AgentLive } from "../src/sessions/agent.ts"
 import { AsksLive } from "../src/sessions/asks.ts"
 import { SessionRepoLive } from "../src/sessions/repo.ts"
 import { SessionRunner, SessionRunnerLive } from "../src/sessions/runner.ts"
+import { WorktreesLive } from "../src/sessions/worktree.ts"
 import { GitHubLive } from "../src/ship/github.ts"
 import { SlackClientLive } from "../src/slack/client.ts"
 import { SlackThreadLive } from "../src/slack/thread.ts"
@@ -36,7 +37,7 @@ sh(`git remote add origin ${root}/origin.git && git push -q origin main`)
 const env = { ...readEnv(), slackToken: undefined, forceDryRun: true }
 const base = Layer.mergeAll(StoreLive(`${root}/home`), SlackClientLive(undefined), AgentLive, GitHubLive)
 const withHub = HubLive(env).pipe(Layer.provideMerge(base))
-const records = Layer.mergeAll(SlackThreadLive, SessionRepoLive, ActionQueueLive).pipe(Layer.provideMerge(withHub))
+const records = Layer.mergeAll(SlackThreadLive, SessionRepoLive, ActionQueueLive, WorktreesLive).pipe(Layer.provideMerge(withHub))
 const layer = SessionRunnerLive.pipe(Layer.provideMerge(AsksLive.pipe(Layer.provideMerge(records))))
 
 const alert: Alert = {

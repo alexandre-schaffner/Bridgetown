@@ -17,7 +17,7 @@ import { SessionRepo, withPatch } from "./repo.ts"
 import type { TurnEnd } from "./sdk-events.ts"
 import { makeTurnInput, makeTurns, type TurnInput, userMessage } from "./turn.ts"
 import { newSession } from "./new-session.ts"
-import { createWorktree } from "./worktree.ts"
+import { Worktrees } from "./worktree.ts"
 
 /** What Bridgetown may set along with a turn it asks for (CI round, review handled, what it is sent back for…). Status is the runner's. */
 export type TurnPatch = Partial<Pick<Session, "phase" | "activity" | "ciRounds" | "review" | "deployStage" | "sentBack">>
@@ -118,6 +118,7 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
     const asks = yield* Asks
     const agent = yield* Agent
     const github = yield* GitHub
+    const worktrees = yield* Worktrees
 
     const turns = yield* SynchronizedRef.make<Turns>({ live: new Map(), parked: new Map() })
     /** One fiber per session (preparing its worktree, or driving its turns), interrupted by a stop or when the layer shuts down. */
@@ -232,11 +233,10 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
       Effect.gen(function* () {
         const id = claimed.id
         yield* repo.log(id, "status", `Fetching origin/main and creating worktree on ${claimed.branch ?? "?"} (then bun install)…`)
-        const { path: worktree, warnings } = yield* createWorktree(claimed.repoPath, claimed.branch ?? "")
+        const { path: worktree, warnings, bunMismatch } = yield* worktrees.create(claimed.repoPath, claimed.branch ?? "")
         yield* repo.log(id, "status", `Worktree ready: ${worktree}`)
         for (const warning of warnings) yield* repo.log(id, "error", `Setup: ${warning}`)
-        const upgrade = warnings.find((w) => w.includes("bun upgrade"))
-        if (upgrade !== undefined) yield* hub.patchStatus({ error: upgrade })
+        if (bunMismatch !== null) yield* hub.patchStatus({ error: bunMismatch })
         const ready = yield* repo.modify(id, (current) => (current.status === "preparing" ? { ...current, worktree } : undefined))
         if (ready === undefined) return
         const prompt = yield* firstPrompt(ready, warnings)
@@ -272,7 +272,6 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
                 nearby,
                 deploymentRepoPath: (yield* hub.settings).deploymentRepoPath,
               })
-        if ((yield* repo.get(ready.id))?.status !== "preparing") return undefined
         return { text: `${prompt}${setupNotes(warnings)}`, resume: false }
       })
 
