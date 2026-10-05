@@ -131,6 +131,14 @@ import Testing
         #expect(env["PATH"]?.contains("/Users/me/.bun/bin") == true)
     }
 
+    @Test func anExplicitSwitchBeatsTheBundledDaemon() {
+        let bundled = URL(fileURLWithPath: "/Applications/Bridgetown.app/Contents/Resources/bridgetown-daemon")
+        #expect(DaemonProcess.mode(environment: ["BRIDGETOWN_ATTACH": "1"], bundled: bundled) == .attach)
+        #expect(DaemonProcess.mode(environment: ["BRIDGETOWN_ATTACH": "1", "BRIDGETOWN_DAEMON_CMD": "bun main.ts"], bundled: bundled) == .command("bun main.ts"))
+        #expect(DaemonProcess.mode(environment: [:], bundled: bundled) == .bundled(bundled))
+        #expect(DaemonProcess.mode(environment: ["BRIDGETOWN_DAEMON_CMD": " "], bundled: nil) == .missing)
+    }
+
     @Test func secretsLineIsOneJSONObject() throws {
         let line = try DaemonProcess.Secrets(apiToken: "tok", slackUserToken: "xoxp-1", typesafeApiKey: "").line()
         #expect(line.last == UInt8(ascii: "\n"))

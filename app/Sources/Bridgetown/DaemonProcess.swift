@@ -12,13 +12,15 @@ import Security
 @MainActor
 @Observable
 final class DaemonProcess {
+    /// Chosen in this order (`mode(environment:bundled:)`): an explicit switch in the
+    /// environment beats the bundle.
     enum Mode: Equatable {
         /// `BRIDGETOWN_DAEMON_CMD`, run through `/bin/sh -c` (dev).
         case command(String)
-        /// `bridgetown-daemon` inside the app bundle's Resources.
-        case bundled(URL)
         /// `BRIDGETOWN_ATTACH=1`: an already-running daemon, not ours to manage.
         case attach
+        /// `bridgetown-daemon` inside the app bundle's Resources.
+        case bundled(URL)
         /// Nothing to run and not attaching.
         case missing
 
@@ -70,21 +72,21 @@ final class DaemonProcess {
     init(environment env: [String: String] = ProcessInfo.processInfo.environment) {
         let port = env["BRIDGETOWN_PORT"].flatMap(Int.init) ?? Self.defaultPort
 
-        if let cmd = env["BRIDGETOWN_DAEMON_CMD"], !cmd.trimmingCharacters(in: .whitespaces).isEmpty {
-            mode = .command(cmd)
-        } else if let url = Bundle.main.url(forResource: "bridgetown-daemon", withExtension: nil) {
-            mode = .bundled(url)
-        } else if env["BRIDGETOWN_ATTACH"] == "1" {
-            mode = .attach
-        } else {
-            mode = .missing
-        }
+        mode = Self.mode(environment: env, bundled: Bundle.main.url(forResource: "bridgetown-daemon", withExtension: nil))
 
         let token = mode == .attach ? (env["BRIDGETOWN_API_TOKEN"] ?? "") : Self.randomToken()
         endpoint = DaemonEndpoint(port: port, token: token)
 
         // Writing secrets to a child that already died must fail the write, not kill the app.
         signal(SIGPIPE, SIG_IGN)
+    }
+
+    /// What to run: an explicit switch in the environment, then the bundle's daemon.
+    nonisolated static func mode(environment env: [String: String], bundled: URL?) -> Mode {
+        if let cmd = env["BRIDGETOWN_DAEMON_CMD"], !cmd.trimmingCharacters(in: .whitespaces).isEmpty { return .command(cmd) }
+        if env["BRIDGETOWN_ATTACH"] == "1" { return .attach }
+        if let bundled { return .bundled(bundled) }
+        return .missing
     }
 
     // MARK: Lifecycle
