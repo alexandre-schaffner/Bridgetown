@@ -13,6 +13,7 @@ import { Reflector } from "three/addons/objects/Reflector.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { ARCH } from "../lib/arch";
 import { createAtmosphere, ShaftsShader } from "./atmosphere";
+import { restView, type View } from "./view";
 
 /** The arch in scene units: one unit is 100 of the icon's. */
 const U = 1 / 100;
@@ -24,11 +25,11 @@ const KEY_DROP = ARCH.keyDrop * U;
 const JOINT = 0.085;
 const DEPTH = 1.15;
 const VOUSSOIRS = 9;
-export const FLOOR = -PIER;
+const FLOOR = -PIER;
 
 const NIGHT = new THREE.Color("#050608");
 
-export type LightName = "rest" | "working" | "needs-you" | "needs-you-working" | "paused" | "out";
+export type LightName = "rest" | "working" | "needs-you" | "paused" | "out";
 
 interface Lamp {
   /** Along the ring, 0 at the left springing, 1 at the right. */
@@ -61,21 +62,9 @@ const LIGHTS: Record<LightName, Light> = {
     ],
   },
   "needs-you": { color: AMBER, level: 1.15, lamps: [off, off, off] },
-  "needs-you-working": {
-    color: AMBER,
-    level: 1.05,
-    lamps: [
-      { at: 0.5, level: 1 },
-      { at: 0.3, level: 0 },
-      { at: 0.82, level: 0 },
-    ],
-  },
   paused: { color: GLOW.clone().lerp(WHITE, 0.5), level: 0.4, lamps: [off, off, off] },
   out: { color: GLOW, level: 0.05, lamps: [off, off, off] },
 };
-
-import { restView, type View } from "./view";
-export { restView, type View };
 
 // MARK: Geometry
 
@@ -281,7 +270,6 @@ export interface ArchScene {
    * the page. `beat` resolves when the page is free to take a short hitch.
    */
   prepare(beat: () => Promise<void>): Promise<void>;
-  dispose(): void;
 }
 
 export function createArchScene(
@@ -296,7 +284,7 @@ export function createArchScene(
     reducedMotion: boolean;
     onFirstFrame?: () => void;
     /**
-     * Offline quality for pre-rendered frames (scripts/render.ts): drawn at twice the size,
+     * Offline quality for pre-rendered frames (dev/render.ts): drawn at twice the size,
      * more fog and motes, twice the shaft samples, full-size mirror and light pass, no
      * baked grain (the page lays its own over the frames), and no frame loop.
      */
@@ -678,8 +666,7 @@ export function createArchScene(
 
   resize();
   applyLight(0);
-  const onResize = () => resize();
-  window.addEventListener("resize", onResize);
+  window.addEventListener("resize", () => resize());
   if (!ultra) raf = requestAnimationFrame(frame);
 
   return {
@@ -722,11 +709,6 @@ export function createArchScene(
     setDay(next) {
       const { r, g, b } = next.getRGB({ r: 1, g: 1, b: 1 }, THREE.SRGBColorSpace);
       (grade.uniforms.uDay!.value as THREE.Vector3).set(r, g, b);
-    },
-    dispose() {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("resize", onResize);
-      renderer.dispose();
     },
   };
 }

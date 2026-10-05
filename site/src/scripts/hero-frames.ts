@@ -1,4 +1,4 @@
-// The hero, pre-rendered (scripts/render.ts): frames of the walk through the arch, scrubbed by
+// The hero, pre-rendered (dev/render.ts): frames of the walk through the arch, scrubbed by
 // scroll with a crossfade between neighbours so any scroll position lands between two frames,
 // and a loop of the opening shot for when nobody is scrolling. Frames load coarse to fine,
 // so the scrub works early and sharpens as the rest arrive.

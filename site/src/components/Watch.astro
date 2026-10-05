@@ -37,7 +37,7 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
         <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={`API 5xx per five minutes over three hours: steady around ${Math.round(usual)}, then a rise to ${values.at(-1)!.toFixed(0)} in the last fifteen minutes.`}>
           <rect x={riseFrom} y="0" width={W - riseFrom} height={H} class="rise" data-rise></rect>
           <line x1="0" x2={W} y1={y(usual)} y2={y(usual)} class="usual"></line>
-          <path d={areaPath(values, W, H, PAD, max, 0)} class="area" data-area></path>
+          <path d={areaPath(values, W, H, PAD, max, 0)} class="area"></path>
           <path d={linePath(values, W, H, PAD, max, 0)} class="line" pathLength="1" data-line></path>
           <circle cx={x(values.length - 1)} cy={y(values.at(-1)!)} r="5" class="head" data-head></circle>
         </svg>

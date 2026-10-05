@@ -34,7 +34,7 @@ const steps = [
 
     <div class="copy">
       <h2 id="notch-title" class="display">It lives in the notch.</h2>
-      <ol class="steps" data-notch-steps>
+      <ol class="steps">
         {
           steps.map((s, i) => (
             <li data-step={s.id} class:list={[i === 0 && "on"]}>

@@ -9,13 +9,12 @@
 :root {
   /* Night: the stage behind the arch. */
   --night: oklch(0.12 0.006 255);
-  --night-raised: oklch(0.165 0.006 255);
   --night-ink: oklch(0.96 0.003 255);
   --night-dim: oklch(0.76 0.008 255);
   --night-faint: oklch(0.64 0.01 255);
   --night-line: oklch(1 0 0 / 0.14);
 
-  /* Day: the light on the other side. Kept in step with DAY in scripts/scene.ts. */
+  /* Day: the light on the other side. The arch's flood to day reads it at runtime (scripts/main.ts). */
   --day: oklch(0.982 0.003 255);
   --day-sunk: oklch(0.955 0.004 255);
   --ink: oklch(0.19 0.008 255);
@@ -23,12 +22,8 @@
   --ink-faint: oklch(0.52 0.012 255);
   --line: oklch(0.19 0.008 255 / 0.12);
   --line-strong: oklch(0.19 0.008 255 / 0.22);
-  --link: oklch(0.5 0.19 256);
 
-  --theme-ease: 0ms;
-
-  /* The app's popover, always dark (app/Sources/Bridgetown/Views/Theme.swift). */
-  --ui-stage: #000;
+  /* The app's panels, always dark (app/Sources/Bridgetown/Views/Theme.swift). */
   --ui-surface: #0a0a0a;
   --ui-hairline: rgb(255 255 255 / 0.17);
   --ui-outline: rgb(255 255 255 / 0.26);
@@ -52,7 +47,6 @@
   --t-small: 0.875rem;
   --t-body: 1.0625rem;
   --t-lead: clamp(1.1875rem, 0.6vw + 1rem, 1.4375rem);
-  --t-h3: clamp(1.375rem, 1vw + 1rem, 1.75rem);
   --t-h2: clamp(2.25rem, 3.2vw + 1rem, 4rem);
   --t-h1: clamp(3rem, 6vw + 1rem, 6rem);
 
@@ -66,7 +60,6 @@
   /* Layers. */
   --z-scene: 0;
   --z-content: 1;
-  --z-veil: 2;
   --z-nav: 10;
 }
 
@@ -79,12 +72,11 @@ html.theme-dark {
   --ink-faint: oklch(0.64 0.01 255);
   --line: oklch(1 0 0 / 0.12);
   --line-strong: oklch(1 0 0 / 0.22);
-  --link: oklch(0.74 0.14 252);
   color-scheme: dark;
 }
 
 /* Black panels need an edge on a dark page. */
-html.theme-dark :is(.panel, .finding, .claim, .pop, .thread) {
+html.theme-dark :is(.panel, .finding, .claim, .thread) {
   box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.14) !important;
 }
 
@@ -287,35 +279,6 @@ input {
 .button-light:hover {
   background: #fff;
   box-shadow: 0 0 0 6px oklch(1 0 0 / 0.08);
-}
-
-.button-dark {
-  background: var(--ink);
-  color: var(--day);
-}
-
-.button-dark:hover {
-  background: oklch(0.1 0.008 255);
-  box-shadow: 0 0 0 6px oklch(0.19 0.008 255 / 0.08);
-}
-
-.textlink {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  color: var(--link);
-  text-decoration: none;
-  font-weight: 500;
-}
-
-.night .textlink {
-  color: var(--night-ink);
-}
-
-.textlink:hover {
-  text-decoration: underline;
-  text-underline-offset: 0.2em;
-  text-decoration-thickness: 1px;
 }
 
 .dot {

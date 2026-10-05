@@ -7,8 +7,8 @@ import Lenis from "lenis";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import type { Color } from "three";
-import type { ArchScene, LightName, View } from "./scene";
-import { heroView as heroPath, restView } from "./view";
+import type { ArchScene, LightName } from "./scene";
+import { heroWhite, restView, type View } from "./view";
 import { createHeroFrames } from "./hero-frames";
 import { createIsland } from "./island";
 
@@ -39,7 +39,6 @@ if (!reduced) {
   lenis.on("scroll", ScrollTrigger.update);
   gsap.ticker.add((t) => lenis!.raf(t * 1000));
   gsap.ticker.lagSmoothing(0);
-  (window as unknown as { __lenis: Lenis }).__lenis = lenis;
 }
 
 for (const a of $$<HTMLAnchorElement>('a[href^="#"]')) {
@@ -296,8 +295,6 @@ if (title && !reduced) {
     clearProps: "filter",
   });
 }
-
-const intro = { t: 1 };
 
 function playBeats(p: number) {
   const shows = [1 - smooth(0.06, 0.15, p), band(p, 0.2, 0.26, 0.38, 0.45), band(p, 0.49, 0.55, 0.66, 0.73)];
@@ -563,13 +560,6 @@ if (journey) {
   // Before every measure (load, late fonts, resize), so the reel's length is never stale.
   ScrollTrigger.addEventListener("refreshInit", layout);
 
-  const played = new Set<Element>();
-  const play = (frame: Element) => {
-    if (played.has(frame)) return;
-    played.add(frame);
-    frame.classList.add("played");
-  };
-
   ScrollTrigger.create({
     trigger: journey,
     start: "top top",
@@ -592,7 +582,7 @@ if (journey) {
         if (panel && !reduced) {
           panel.style.transform = `perspective(1600px) translateX(${(d * -60).toFixed(1)}px) rotateY(${(d * -14).toFixed(2)}deg)`;
         }
-        if (d < 0.3) play(f);
+        if (d < 0.3) f.classList.add("played");
       });
       rail.forEach((r, i) => r.classList.toggle("done", i <= nearest));
     },
@@ -600,7 +590,7 @@ if (journey) {
 
   // Narrow screens: each frame plays as it scrolls into view.
   const io = new IntersectionObserver(
-    (entries) => entries.forEach((e) => e.isIntersecting && !wide.matches && play(e.target)),
+    (entries) => entries.forEach((e) => e.isIntersecting && !wide.matches && e.target.classList.add("played")),
     { threshold: 0.4 },
   );
   frames.forEach((f) => io.observe(f));
@@ -610,23 +600,26 @@ if (journey) {
 
 const lightSection = $("[data-light]");
 let lightP = 0;
-const LIGHT_ORDER: LightName[] = ["rest", "working", "needs-you", "paused"];
-let pickedLight: LightName | null = null;
-let pickedAt = -1;
+/** What the light chapter shows: the state scrolling has reached, or the one you picked. */
+let stageLight: LightName = "rest";
 if (lightSection) {
+  const ORDER: LightName[] = ["rest", "working", "needs-you", "paused"];
   const items = $$("[data-light-state]", lightSection);
-  const mark = (name: LightName) =>
+  let reached = 0;
+  let picked: { name: LightName; at: number } | null = null;
+  const show = (name: LightName) => {
+    stageLight = name;
     items.forEach((el) => {
       const on = el.dataset.lightState === name;
       el.classList.toggle("on", on);
       el.querySelector("button")?.setAttribute("aria-pressed", String(on));
     });
+  };
   // A picked light holds until scrolling moves on to the next state.
   for (const b of $$<HTMLButtonElement>("[data-light-pick]", lightSection)) {
     b.addEventListener("click", () => {
-      pickedLight = b.dataset.lightPick as LightName;
-      pickedAt = Math.min(LIGHT_ORDER.length - 1, Math.floor(lightP * LIGHT_ORDER.length));
-      mark(pickedLight);
+      picked = { name: b.dataset.lightPick as LightName, at: reached };
+      show(picked.name);
     });
   }
   // The section runs up and down through 70svh of dusk either side of its pinned stage.
@@ -636,9 +629,9 @@ if (lightSection) {
     end: () => `bottom-=${innerHeight * 0.7} bottom`,
     onUpdate: (s) => {
       lightP = s.progress;
-      const i = Math.min(LIGHT_ORDER.length - 1, Math.floor(s.progress * LIGHT_ORDER.length));
-      if (pickedLight && i !== pickedAt) pickedLight = null;
-      mark(pickedLight ?? LIGHT_ORDER[i]!);
+      reached = Math.min(ORDER.length - 1, Math.floor(s.progress * ORDER.length));
+      if (picked && reached !== picked.at) picked = null;
+      show(picked?.name ?? ORDER[reached]!);
     },
   });
 }
@@ -721,7 +714,6 @@ if (outcomes[0]) {
 
 let lastLight: LightName | null = null;
 let lastHeroP = -1;
-let lastIntro = -1;
 gsap.ticker.add(() => {
   // Reads first, all of them, so no write below forces a layout in between.
   const h = onScreen(hero);
@@ -737,10 +729,9 @@ gsap.ticker.add(() => {
     : [];
 
   // Then writes.
-  if (h > 0 && (heroP !== lastHeroP || intro.t !== lastIntro)) {
+  if (h > 0 && heroP !== lastHeroP) {
     playBeats(heroP);
     lastHeroP = heroP;
-    lastIntro = intro.t;
   }
   lit.forEach((v, i) => v && outcomes[i]!.style.setProperty("--lit", v));
 
@@ -750,7 +741,7 @@ gsap.ticker.add(() => {
   if (heroLeads && heroFrames) {
     heroFrames.render(heroP);
     heroFrames.setResting(heroP < 0.004);
-    const white = heroPath(heroP, innerWidth / innerHeight).white;
+    const white = heroWhite(heroP);
     heroMedia!.style.setProperty("--flood", Math.min(1, white * 1.4).toFixed(3));
     heroMedia!.style.setProperty("--reach", (white * 160).toFixed(1));
   } else heroFrames?.setResting(false);
@@ -763,7 +754,7 @@ gsap.ticker.add(() => {
   let light: LightName;
   if (l >= f) {
     view = lightView(lightP);
-    light = pickedLight ?? LIGHT_ORDER[Math.min(LIGHT_ORDER.length - 1, Math.floor(lightP * LIGHT_ORDER.length))]!;
+    light = stageLight;
   } else {
     view = finaleView(finaleP);
     light = "rest";
