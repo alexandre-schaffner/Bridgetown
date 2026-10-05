@@ -21,7 +21,7 @@ import { FIX, PATH, RISE } from "../../lib/story";
         <div class="panel" data-in>
           <p class="panel-head"><span>Route 5xx · /v4/orders</span><span class="mono faint">Grafana · last hour</span></p>
           <svg viewBox="0 0 1000 220" preserveAspectRatio="none" class="chart">
-            <path d={areaPath(RISE, 1000, 220, 14)} class="area" data-area />
+            <path d={areaPath(RISE, 1000, 220, 14)} class="area" />
             <path d={linePath(RISE, 1000, 220, 14)} class="line" pathLength="1" data-draw />
             <line x1="820" x2="820" y1="0" y2="220" class="deploy" />
           </svg>

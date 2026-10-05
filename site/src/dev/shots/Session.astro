@@ -31,11 +31,11 @@ const transcript = [
       </ol>
       <p class="sx-act"><i class="dot dot-blue live"></i> <span data-sxact>Running the orders tests</span></p>
       <p class="sx-meta mono">Opus · high · <span data-sxtime>6m 12s</span> · <span data-sxcost>$1.84</span></p>
-      <ol class="sx-log mono" data-sxlog>
+      <ol class="sx-log mono">
         {transcript.map(([at, kind, text]) => (
           <li class={kind} data-tline><span class="faint">{at}</span><span>{text}</span></li>
         ))}
-        <li class="text you" data-tline data-you><span class="faint">10:07</span><span>You: Also cover negative regions.</span></li>
+        <li class="text you" data-tline><span class="faint">10:07</span><span>You: Also cover negative regions.</span></li>
       </ol>
       <div class="sx-input"><span data-type="Also cover negative regions." data-sxin></span><span class="sx-send" data-press><Icon name="arrow-up" size={20} /></span></div>
       <div class="sx-actions">

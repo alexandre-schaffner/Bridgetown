@@ -38,7 +38,7 @@ const more: [string, string][] = [
 
 <section class="shot" data-shot="more">
   <div class="cam more">
-    <div class="wall-more" data-mwall>
+    <div class="wall-more">
       {more.slice(0, 14).map(([icon, text]) => <div class="mt" data-mt><Icon name={icon} size={30} /><p>{text}</p></div>)}
       <div class="mt hero" data-mt data-mhero><p class="mark"><ArchMark size={40} /></p><p class="mt-big">And everything<br />else, too.</p></div>
       {more.slice(14).map(([icon, text]) => <div class="mt" data-mt><Icon name={icon} size={30} /><p>{text}</p></div>)}

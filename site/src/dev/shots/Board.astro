@@ -18,7 +18,7 @@ const boards = [
       <div class="stat"><p class="st-l">Resolved</p><p class="st-v green" data-stat="14">0</p><p class="st-c">of 17 · 24h</p></div>
     </div>
     <div class="b-head">
-      <ol class="tabs" data-tabs>
+      <ol class="tabs">
         {[...boards.map((b) => b.name), "Logs"].map((n, i) => <li class:list={[i === 0 && "on"]} data-tab>{n}</li>)}
       </ol>
       <span class="mono faint">Grafana · last hour · counts per minute</span>
