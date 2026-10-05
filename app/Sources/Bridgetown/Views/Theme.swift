@@ -25,6 +25,9 @@ enum Ink {
     static let track = Color.white.opacity(0.08)
     /// Data marks: neutral, a step below the text.
     static let mark = Color.white.opacity(0.62)
+    /// The same grey, opaque: a status mark with no colour of its own (a step stopped, or
+    /// held in the queue), which fills and glows are tinted from.
+    static let neutral = Color(white: 0.62)
 
     /// Text levels on black: 16:1, 7.6:1, 5.5:1 (all AA).
     static let text = Color(white: 0.93)

@@ -9,8 +9,10 @@ import Testing
         #expect(widths == [85, 55, 55, 65, 40])
     }
 
-    @Test func scalesDownWhenMinimumsDontFit() {
-        #expect(StepFlow.widths(minimums: [100, 100], total: 100) == [50, 50])
+    /// Squeezed, pills would slide over each other; the row reports its true width instead,
+    /// so `StepFits` falls back to a narrower style.
+    @Test func neverGoesBelowTheMinimums() {
+        #expect(StepFlow.widths(minimums: [100, 100], total: 100) == [100, 100])
     }
 
     @Test func aLoneColumnTakesTheWidth() {

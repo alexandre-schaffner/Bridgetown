@@ -238,7 +238,8 @@ extension Session {
     var holder: Holder? {
         switch status {
         case .preparing, .running: .agent
-        case .critiquing: .critic
+        // Findings recorded and the agent's turn parked for a free slot: nobody is reviewing.
+        case .critiquing: tone == .neutral ? .queue : .critic
         case .waiting, .awaiting_merge, .awaiting_release: .you
         // CI green but the review request didn't go out: the daemon hands that to you.
         case .ci: reviewChannel != nil ? .reviewers : tone == .waiting ? .you : .ci
