@@ -233,7 +233,7 @@ extension Session {
 extension Session {
     /// Who an active session is waiting on. The tone can't tell: "In review" is live
     /// (in flight, not on you) yet no agent is working on it.
-    enum Holder: CaseIterable {
+    enum Holder {
         case agent, critic, you, reviewers, ci, deploy, queue
 
         var label: String {
@@ -264,19 +264,6 @@ extension Session {
         case .queued: .queue
         case .resolved, .closed, .failed, .stopped, .unknown: nil
         }
-    }
-
-    /// "1 working · 2 in review", in `Holder` order, empty groups left out; the first
-    /// `limit` groups when space is short.
-    static func breakdown(_ sessions: [Session], limit: Int = .max) -> String {
-        let holders = sessions.compactMap(\.holder)
-        return Holder.allCases
-            .compactMap { h in
-                let n = holders.filter { $0 == h }.count
-                return n > 0 ? "\(n) \(h.label)" : nil
-            }
-            .prefix(limit)
-            .joined(separator: " · ")
     }
 }
 
