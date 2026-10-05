@@ -26,10 +26,16 @@ export const problemOf = (lines: ReadonlyArray<string>): string | null => {
   return lines.length === 1 ? first : `${first} (+${lines.length - 1} more)`
 }
 
+/**
+ * Every field but `error`, which only `problem` sets. Refused by type even on a value whose type carries an `error`
+ * (the mock's control line), where an object literal's excess-property check does not apply.
+ */
+export type StatusPatch = Partial<Omit<Status, "error">> & { readonly error?: never }
+
 export interface HubShape {
   readonly status: Effect.Effect<Status>
-  /** Every field but `error`, which only `problem` sets. Atomic: concurrent patches never drop each other. */
-  readonly patchStatus: (patch: Partial<Omit<Status, "error">>) => Effect.Effect<void>
+  /** Every field but `error` (`StatusPatch`). Atomic: concurrent patches never drop each other. */
+  readonly patchStatus: (patch: StatusPatch) => Effect.Effect<void>
   /** `source`'s problem now, or `null` once it works again. */
   readonly problem: (source: ProblemSource, message: string | null) => Effect.Effect<void>
   readonly settings: Effect.Effect<Settings>

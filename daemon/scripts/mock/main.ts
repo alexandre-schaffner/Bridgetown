@@ -19,7 +19,8 @@
  *
  * Launched like the daemon (`BRIDGETOWN_DAEMON_CMD="bun …/scripts/mock/main.ts"`),
  * it reads its token from stdin and exits when stdin closes. Later lines on stdin
- * steer it: `{"mock":"status","patch":{"github":"blocked"}}` patches the status,
+ * steer it: `{"mock":"status","patch":{"github":"blocked"}}` patches the status (its `error` is
+ * reported as a problem, which is what shows there),
  * `{"mock":"crash","code":98}` exits at once with that code, as a crash would.
  *
  * Then: make dev-app (BRIDGETOWN_ATTACH=1 BRIDGETOWN_API_TOKEN=dev swift run --package-path app Bridgetown)
@@ -180,7 +181,11 @@ const steer = (input: ReturnType<typeof Bun.stdin.stream>) =>
         const command = decodeControl(line)
         if (command._tag === "None") continue
         if (command.value.mock === "crash") process.exit(command.value.code)
-        else yield* hub.patchStatus(command.value.patch)
+        const { error, ...status } = command.value.patch
+        yield* hub.patchStatus(status)
+        // Only a problem sets the status's error: this one stands as a failed poll's would, until a line clears it
+        // (or, live, the next poll round does, as it would a real one).
+        if (error !== undefined) yield* hub.problem("poll", error)
       }
     }
   })

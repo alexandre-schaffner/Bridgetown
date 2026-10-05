@@ -108,6 +108,19 @@ describe("the mock honours the daemon's launch contract", () => {
       await Bun.sleep(20)
     }
     expect(status).toMatchObject({ github: "blocked", slack: "missing_token" })
+    // The error a line names is shown (it is reported as a problem, the only thing that sets it), and goes with null.
+    const errorAfter = async (error: string | null) => {
+      mock.send({ mock: "status", patch: { error } })
+      let shown: unknown
+      for (let i = 0; i < 100; i++) {
+        shown = JSON.parse(await mock.state()).status.error
+        if (shown === error) break
+        await Bun.sleep(20)
+      }
+      return shown
+    }
+    expect(await errorAfter("Couldn't read the store: database is locked")).toBe("Couldn't read the store: database is locked")
+    expect(await errorAfter(null)).toBeNull()
     mock.send({ mock: "crash", code: 3 })
     expect(await mock.child.exited).toBe(3)
   }, 30_000)

@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { SlackApiError } from "../src/domain/errors.ts"
-import { Hub, problemOf } from "../src/hub.ts"
+import { Hub, problemOf, type StatusPatch } from "../src/hub.ts"
 import { SlackThread } from "../src/slack/thread.ts"
 import { Store } from "../src/store/store.ts"
 import { makeAlert } from "./fixtures/records.ts"
@@ -80,6 +80,13 @@ describe("patchStatus", () => {
     )
     expect(out.status).toMatchObject({ lastPollAt: "2026-10-05T12:00:00.000Z", grafanaMcp: "up" })
     expect(out.stored).toBe(String(out.status.paused))
+  })
+
+  test("takes no error, even from a value whose type carries one: only a problem sets it", () => {
+    const line: { readonly github?: "ok"; readonly error?: string | null } = { github: "ok", error: "boom" }
+    // @ts-expect-error `bun run check` fails here if a patch may carry `error` again.
+    const patch: StatusPatch = line
+    expect(patch.github).toBe("ok")
   })
 })
 
