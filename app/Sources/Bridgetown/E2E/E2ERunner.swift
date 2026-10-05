@@ -36,8 +36,6 @@ final class E2ERunner {
     /// The step running, for side effects and failures: `steps[3]`, `before[0]`, `control`.
     private var step = "setup"
 
-    static let mockToken = "MOCK_API_TOKEN"
-
     init(app: AppDelegate, suite: E2ESuite, suiteName: String, options: Options, defaults: UserDefaults, commit: String) {
         store = app.store
         daemon = app.daemon
@@ -145,16 +143,28 @@ final class E2ERunner {
             if let shown = surfaces.current, case .notch = shown.spec { surfaces.show(shown.spec) }
         case let .mock(line):
             daemon.sendControl(line.line)
+        case let .crash(code):
+            // On a quiet app: a request the steps before sent lands first rather than dying with it.
+            try await wait(.settled, timeoutMs: 0)
+            guard let crashing = daemonPid else { throw Failure(description: "no daemon running to crash") }
+            daemon.sendControl(E2EJSON.object(["mock": .string("crash"), "code": .number(Double(code))]).line)
+            // Done once the app has seen it go, so a `wait` after this one waits on what the
+            // app does about it, not on the moment before it noticed.
+            try await until("the crashed daemon to go", timeoutMs: 5_000) { daemonPid != crashing && !store.isConnected }
         case .stopDaemon:
+            try await wait(.settled, timeoutMs: 0)
             await withCheckedContinuation { done in
                 if !daemon.stop(completion: { done.resume() }) { done.resume() }
             }
         case let .restart(world, tokenMismatch):
             daemon.extraEnvironment["MOCK_WORLD"] = world ?? suite.world
-            daemon.extraEnvironment[Self.mockToken] = tokenMismatch ? "not-this-app" : nil
-            // Stopped or given up on, it starts afresh; running, it is replaced.
-            if case .running = daemon.state { daemon.restart() } else { daemon.start() }
-            // A fresh stream at once, rather than after the backoff a dead daemon built up.
+            daemon.extraEnvironment["MOCK_API_TOKEN"] = tokenMismatch ? "not-this-app" : ""
+            try await wait(.settled, timeoutMs: 0)
+            let replaced = daemonPid
+            daemon.restart()
+            // The old one can answer for a moment as it goes: the stream starts on the new one,
+            // at once rather than after the backoff a dead daemon built up.
+            try await until("the new daemon to run") { daemonPid.map { $0 != replaced } ?? false }
             store.connect(to: daemon.endpoint)
             try await wait(tokenMismatch ? .rejected : .connected, timeoutMs: 20_000)
         case let .appearance(next):
@@ -303,23 +313,34 @@ final class E2ERunner {
             _ = await settle(shown, appearance: appearances.first ?? .dark)
             return
         }
-        let deadline = ContinuousClock.now + .milliseconds(timeoutMs)
         // A dropped stream first says the daemon closed it, then, once a reconnect has failed,
         // that it is unreachable: wait for the reason to stand still a second.
         let hold: Duration = condition == .disconnected ? .seconds(1) : .zero
         var since: (connection: Store.Connection, at: ContinuousClock.Instant)?
-        while true {
-            if holds(condition) {
-                if since?.connection != store.connection { since = (store.connection, .now) }
-                if let since, ContinuousClock.now - since.at >= hold { return }
-            } else {
+        try await until("\(condition)", timeoutMs: timeoutMs) {
+            guard holds(condition) else {
                 since = nil
+                return false
             }
+            if since?.connection != store.connection { since = (store.connection, .now) }
+            return since.map { ContinuousClock.now - $0.at >= hold } ?? false
+        }
+    }
+
+    /// Polls `done` until it holds; past `timeoutMs` the step fails, saying what it waited for.
+    private func until(_ what: String, timeoutMs: Int = 20_000, _ done: () -> Bool) async throws {
+        let deadline = ContinuousClock.now + .milliseconds(timeoutMs)
+        while !done() {
             guard ContinuousClock.now < deadline else {
-                throw Failure(description: "not \(condition) within \(timeoutMs)ms (connection \(store.connection), daemon \(daemon.state))")
+                throw Failure(description: "waited \(timeoutMs)ms for \(what) (connection \(store.connection), daemon \(daemon.state))")
             }
             try await Task.sleep(for: .milliseconds(50))
         }
+    }
+
+    /// The daemon's process, while one runs.
+    private var daemonPid: Int32? {
+        if case let .running(pid) = daemon.state { pid } else { nil }
     }
 
     private func holds(_ condition: E2EStep.Wait) -> Bool {

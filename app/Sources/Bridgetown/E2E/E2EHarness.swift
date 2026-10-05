@@ -36,7 +36,7 @@ final class E2EHarness {
 
     /// @AppStorage reads and writes here during a run, never the app's own defaults.
     nonisolated static let defaultsDomain = "xyz.merkl.bridgetown.e2e"
-    /// No step may take longer, and a served run that hears nothing for this long ends.
+    /// The suite must be done within this, and a served run that hears nothing for this long ends.
     static let watchdogSeconds = 600
 
     let mode: Mode
@@ -114,16 +114,21 @@ final class E2EHarness {
             "MOCK_NOW": suite.now.formatted(.iso8601),
             "MOCK_WORLD": suite.world,
             "MOCK_ROOT": root,
-            // Whatever the shell had: the mock's store stays in its root, and nothing reaches out.
+            // Whatever the shell exported: the store stays in the root, nothing reaches out,
+            // and the mock answers this app, in its world as seeded (no forced dry run).
             "BRIDGETOWN_HOME": "\(root)/home",
             "MOCK_GRAFANA": "",
             "MOCK_GITHUB": "",
+            "MOCK_API_TOKEN": "",
+            "BRIDGETOWN_DRY_RUN": "",
         ]
         UserDefaults.standard.removePersistentDomain(forName: Self.defaultsDomain)
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
             UserDefaults.standard.removePersistentDomain(forName: Self.defaultsDomain)
         }
-        let defaults = UserDefaults(suiteName: Self.defaultsDomain) ?? .standard
+        guard let defaults = UserDefaults(suiteName: Self.defaultsDomain) else {
+            Self.exit(2, "no defaults domain \(Self.defaultsDomain) of its own", out: options.out.path)
+        }
         let runner = E2ERunner(
             app: app, suite: suite, suiteName: options.suite?.path ?? "none",
             options: E2ERunner.Options(out: options.out, only: options.only, baseline: options.baseline),

@@ -192,7 +192,10 @@ enum E2EStep {
     case type(into: Element, text: String)
     case scroll(in: String, to: String)
     case island(String, action: String?)
+    /// A status patch, as a control line on the mock's stdin.
     case mock(E2EJSON)
+    /// The mock exits with this code, as a crash would; the app does what it does about it.
+    case crash(Int)
     /// The app stops its daemon and leaves it down, until a `restart`.
     case stopDaemon
     case restart(world: String?, tokenMismatch: Bool)
@@ -291,7 +294,7 @@ enum E2EStep {
             if let status = mock["status"] {
                 self = .mock(.object(["mock": .string("status"), "patch": status]))
             } else if let code = mock["crash"]?.number {
-                self = .mock(.object(["mock": .string("crash"), "code": .number(code)]))
+                self = .crash(Int(code))
             } else {
                 throw bad("mock takes \"status\" or \"crash\"")
             }

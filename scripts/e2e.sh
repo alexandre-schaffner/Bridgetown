@@ -45,9 +45,8 @@ ALARM=900
 if [ -n "${SERVE:-}" ]; then ALARM=0; fi
 
 status=0
-env -u BRIDGETOWN_ATTACH -u BRIDGETOWN_API_TOKEN -u SLACK_USER_TOKEN -u TYPESAFE_API_KEY -u BRIDGETOWN_HOME \
-  -u MOCK_EXTRA -u MOCK_GITHUB -u MOCK_GRAFANA -u MOCK_RELEASE_HOLD_SECONDS -u MOCK_API_TOKEN \
-  BRIDGETOWN_DAEMON_CMD="bun $ROOT/daemon/scripts/mock/main.ts" BRIDGETOWN_PORT="$PORT" BRIDGETOWN_LOG_DIR="$ROOT/$RUN" \
+# The app sets the rest of the mock's environment itself (E2EHarness.configure), whatever this shell has.
+env BRIDGETOWN_DAEMON_CMD="bun $ROOT/daemon/scripts/mock/main.ts" BRIDGETOWN_PORT="$PORT" BRIDGETOWN_LOG_DIR="$ROOT/$RUN" \
   E2E_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" TZ=UTC \
   perl -e 'alarm shift; exec @ARGV' "$ALARM" "$BIN" -AppleLocale en_US -AppleLanguages '(en)' \
   --e2e "${SUITE:-app/E2E/suite.json}" --e2e-out "$RUN" \
