@@ -71,8 +71,8 @@ export const makeTurns = (deps: TurnDeps) => {
     report: (phase, note, prUrl) =>
       runPromise(
         repo
-          .patch(session.id, { phase, activity: note, ...(prUrl === undefined ? {} : { prUrl }) })
-          .pipe(Effect.andThen(repo.log(session.id, "status", `${phase}: ${note}`)), Effect.ignore),
+          .patch(session.id, { phase, activity: note })
+          .pipe(Effect.andThen(repo.log(session.id, "status", `${phase}: ${note}${prUrl === null ? "" : ` ${prUrl}`}`)), Effect.ignore),
       ),
     ask: (question, options) => runPromise(asks.ask(session, question, options)),
   })

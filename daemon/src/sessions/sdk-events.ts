@@ -1,12 +1,13 @@
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { Effect, Schema } from "effect"
 import type { AdapterError } from "../domain/errors.ts"
-import { openableUrl, Phase } from "../domain/model.ts"
+import { Phase } from "../domain/model.ts"
+import { GHE_REPO } from "../config.ts"
 import type { HubShape } from "../hub.ts"
 import { truncate } from "../slack/text.ts"
 import { WRITE_TOOLS } from "./confine.ts"
 import { commandOf } from "./guard.ts"
-import { SessionResult } from "./output.ts"
+import { ownPrUrl, SessionResult } from "./output.ts"
 import type { SessionRepoShape } from "./repo.ts"
 import { TOOL_SERVER } from "./tools.ts"
 
@@ -107,8 +108,9 @@ export const handleMessage = (id: string, message: SDKMessage, sink: EventSink):
         yield* repo.log(id, "result", message.result)
         const decoded = Schema.decodeUnknownOption(SessionResult)(message.structured_output)
         if (decoded._tag === "None") return yield* sink.onEnd({ _tag: "Failed", reason: "Agent finished without a structured result" })
-        // A PR link the app would open must be https (or another openable scheme); anything else is no PR.
-        return yield* sink.onEnd({ _tag: "Result", result: { ...decoded.value, prUrl: openableUrl(decoded.value.prUrl) } })
+        const prUrl = ownPrUrl(decoded.value.prUrl)
+        if (decoded.value.prUrl !== null && prUrl === null) yield* repo.log(id, "error", `Ignored the PR link ${truncate(decoded.value.prUrl, 200)}: not a pull request on ${GHE_REPO}`)
+        return yield* sink.onEnd({ _tag: "Result", result: { ...decoded.value, prUrl } })
       }
       default:
         return

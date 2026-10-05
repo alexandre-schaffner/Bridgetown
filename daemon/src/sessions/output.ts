@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { GH_HOST, GHE_REPO } from "../config.ts"
 import { Outcome, Recommendation } from "../domain/model.ts"
 
 export const SessionResult = Schema.Struct({
@@ -13,6 +14,15 @@ export const SessionResult = Schema.Struct({
   releasePrefix: Schema.NullOr(Schema.String),
 })
 export type SessionResult = typeof SessionResult.Type
+
+const OWN_PR = new RegExp(`^https://${GH_HOST.replaceAll(".", "\\.")}/${GHE_REPO}/pull/\\d+$`)
+
+/**
+ * The agent's PR link, if it is a pull request on the repo Bridgetown ships: anything else (another
+ * repo's PR, a teammate's link from an untrusted Slack message, a non-https URL) is no PR. The merge
+ * card runs `gh pr merge` on it with your credentials.
+ */
+export const ownPrUrl = (url: string | null | undefined): string | null => (url !== null && url !== undefined && OWN_PR.test(url) ? url : null)
 
 /** What the SDK enforces on the final message; decoded again with `SessionResult` at the boundary. */
 export const SESSION_RESULT_JSON_SCHEMA = {

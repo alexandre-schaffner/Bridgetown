@@ -27,7 +27,7 @@ export type CardRequest =
 
 export interface FinalizeInput {
   readonly session: Session
-  /** Its `prUrl` already filtered to an openable URL. */
+  /** Its `prUrl` already checked to be a PR on the repo Bridgetown ships (`ownPrUrl`). */
   readonly result: SessionResult
   readonly alert: Alert | undefined
   /** Evidence that the agent pushed its branch. */
