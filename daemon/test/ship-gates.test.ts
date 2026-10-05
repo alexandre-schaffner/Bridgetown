@@ -99,6 +99,25 @@ describe("the release gate through the real shipper", () => {
     }
   })
 
+  test("a new release follows its own tracker, not the one of the deploy before its follow-up PR", async () => {
+    const release = Deferred.makeUnsafe<void>()
+    await Effect.runPromise(Deferred.succeed(release, undefined))
+    const { github } = slowGitHub(release)
+    const world = makeWorld({ github })
+    try {
+      const after = await world.runPromise(
+        Effect.gen(function* () {
+          yield* seed({ ...releasable, tracker: "C0AUKD42N3U:1790930000.000100" }, releaseCard)
+          yield* (yield* Actions).resolve("a_rel", null)
+          return yield* (yield* Store).getSession("s_rel")
+        }),
+      )
+      expect(after).toMatchObject({ status: "deploying", release: { tag: "dispute-v0.4.3" }, deployStage: null, tracker: null })
+    } finally {
+      await world.dispose()
+    }
+  })
+
   test("a release GitHub refused leaves the card, clears the tag and puts the status line back", async () => {
     const release = Deferred.makeUnsafe<void>()
     await Effect.runPromise(Deferred.succeed(release, undefined))

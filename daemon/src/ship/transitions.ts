@@ -130,12 +130,13 @@ export type DeployStep =
 /**
  * Whether `tag`'s release tracker reports this session's own deploy: it cut that release (or re-ran it) and the
  * deploy has not landed. Before a release, `release.tag` is only the prefix the agent named, which can be a full tag:
- * the tracker of that tag (the failure being fixed) says nothing about this session.
+ * the tracker of that tag (the failure being fixed) says nothing about this session. A re-run sent back once it failed
+ * again still follows it, until the agent opens a PR of its own: from then on it ships that PR.
  */
 export const followsDeploy = (session: Session, tag: string): boolean =>
   session.release?.tag === tag &&
   !session.milestones.deployed &&
-  (session.status === "deploying" || session.milestones.released || session.deployStage !== null)
+  (session.status === "deploying" || session.milestones.released || (session.deployStage !== null && session.prUrl === null))
 
 /** A deploying session, given the tracker's state. Only a changed state moves it: a tracker edit never re-sends the agent. */
 export const deployTransition = (session: Session, state: ReleaseState): DeployStep => {

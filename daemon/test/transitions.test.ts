@@ -133,6 +133,10 @@ describe("followsDeploy: a tracker moves only the session shipping its tag", () 
     expect(followsDeploy(makeSession("deploying", { release }), "admin-v0.6.1")).toBe(false)
     expect(followsDeploy(makeSession("waiting", { release, milestones: { ...NO_MILESTONES, released: true, deployed: true } }), tag)).toBe(false)
   })
+  test("a re-run whose agent then opened a PR (naming the full tag) ships that PR, not the re-run's deploy", () => {
+    const failed = { _tag: "Failed" as const, stage: "Build", detail: "" }
+    expect(followsDeploy(makeSession("ci", { release, deployStage: failed, prUrl: "https://ghe/pull/9" }), tag)).toBe(false)
+  })
 })
 
 describe("after the merge (M2)", () => {

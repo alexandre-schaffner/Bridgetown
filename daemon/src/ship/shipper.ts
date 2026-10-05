@@ -340,7 +340,9 @@ export const ShipperLive = Layer.effect(Shipper)(
         activity: `Released ${tag}, waiting for approval`,
         milestones: { ...session.milestones, released: true },
         release: { image: session.release?.image ?? "", tag, version: tag.slice(tag.lastIndexOf("-v") + 1) },
+        // A new release gets a tracker message of its own: an earlier deploy's (before a follow-up PR) is not followed.
         deployStage: null,
+        tracker: null,
       })
       if (deploying !== undefined) yield* postFor(deploying, Messages.released(tag))
     })
