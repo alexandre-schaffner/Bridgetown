@@ -14,9 +14,9 @@ export const REASONS = {
   force: "Force pushes are not allowed. Add a new commit instead.",
   deleteRemote: "Deleting remote branches is not allowed.",
   apiWrite: "Write calls to the GitHub API are not allowed from Bridgetown sessions. Use `gh pr create` / `gh pr comment` for your own pull request.",
-  graphql: "GraphQL mutations are not allowed from Bridgetown sessions.",
+  graphql: "GraphQL mutations are not allowed from Bridgetown sessions. Pass a read query inline (`gh api graphql -f query='{ … }'`) so it can be checked.",
   ghCommand:
-    "Only read-only `gh` commands and your own PR's create/comment/edit are allowed (pr, run, workflow, issue, repo, search views; `gh api` GETs). Describe anything else in your result.",
+    "Only read-only `gh` commands and your own PR's create/comment/edit are allowed (pr, run, workflow, issue, repo, search views; `gh api` GETs and GraphQL queries). Describe anything else in your result.",
   gitExec: "This git command runs an arbitrary command (rebase --exec, submodule foreach, filter-branch, difftool -x, bisect run). Run the command directly so it can be checked.",
   gitConfig: "Setting this git config could run a command or push a tag on a later git call. It is not allowed.",
   credential: "Reading git credentials is not allowed. If a credential is missing, call the ask tool.",

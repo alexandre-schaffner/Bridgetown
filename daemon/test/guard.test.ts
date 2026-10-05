@@ -256,6 +256,9 @@ describe("guard", () => {
     // An unquoted value in `gh api` splits into flags (`-X PUT`).
     "gh api repos/o/r/issues --jq $Q",
     "gh api -X GET search/issues -f q=$Q",
+    // A GraphQL body the guard cannot read.
+    "gh api graphql -F query=@q.graphql",
+    "gh api graphql --input q.json",
     // ./envshebang.sh runs by path with an `env -S bash` shebang: still shell, still checked.
     "./envshebang.sh",
     // Deep nesting is reported, not crashed through (fail closed).
@@ -344,6 +347,9 @@ describe("guard", () => {
     `gh pr create --draft --title "$T" --body "$(cat <<'EOF'\n## Summary\nfixed\nEOF\n)"`,
     'gh auth status --hostname "$GH_HOST"',
     'gh api -X GET search/issues -f q="$Q"',
+    // GraphQL reads.
+    "gh api graphql -f query='query { viewer { login } }'",
+    `gh api graphql -f query='{ repository(owner: "Merkl", name: "monorepo") { pullRequest(number: 1) { mergeable } } }'`,
   ]
   for (const command of stillAllowed) {
     test(`allows: ${JSON.stringify(command)}`, () => expect(refusal(command, context)).toBeUndefined())
