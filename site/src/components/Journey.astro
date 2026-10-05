@@ -2,16 +2,26 @@
 // Day. One alert's whole path, Diagnose to Deploy, as a horizontal reel pinned in place.
 // Each step shows the thing that proves it happened. Two steps are yours.
 import Icon from "./Icon.astro";
-import { areaPath, linePath } from "../lib/spark";
-import { FIX, PATH, RISE } from "../lib/story";
+import { areaPath, linePath, series } from "../lib/spark";
 
+const rise = [...series(40, 12, 3, 9), 14, 22, 41, 63, 71, 69, 74, 72];
 const W = 520;
+
+const diff: [number, string, string][] = [
+  [41, "", "  const query = parseQuery(req)"],
+  [42, "del", "- const region = Number(query.region)"],
+  [42, "add", "+ if (!query.region) {"],
+  [43, "add", '+   return badRequest("region is required")'],
+  [44, "add", "+ }"],
+  [45, "add", "+ const region = Number(query.region)"],
+  [46, "", "  const orders = await findOrders(region)"],
+];
 const H = 120;
 ---
 
 <section class="journey day" id="journey" data-journey aria-labelledby="journey-title">
   <div class="pin" data-journey-pin>
-    <header class="chapter-head head wrap">
+    <header class="head wrap">
       <h2 id="journey-title" class="display">Agents take it all the way.</h2>
       <p class="lead">
         From the first log line to the deploy, every step leaves something you can open: a diagnosis, a diff, a pull
@@ -21,12 +31,14 @@ const H = 120;
 
     <ol class="rail wrap" aria-hidden="true">
       {
-        PATH.map(({ step, yours }) => (
-          <li data-rail class:list={[yours && "yours"]}>
-            <i />
-            <span>{step}</span>
-          </li>
-        ))
+        ["Diagnose", "Fix", "Draft PR", "Second review", "CI", "Review request", "Merge", "Release", "Deploy"].map(
+          (s, i) => (
+            <li data-rail class:list={[(i === 6 || i === 7) && "yours"]}>
+              <i />
+              <span>{s}</span>
+            </li>
+          ),
+        )
       }
     </ol>
 
@@ -41,8 +53,8 @@ const H = 120;
           <div class="panel">
             <p class="panel-head"><span>Route 5xx · /v4/orders</span><b>71</b></p>
             <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true" class="chart">
-              <path d={areaPath(RISE, W, H, 8)} class="area" />
-              <path d={linePath(RISE, W, H, 8)} class="line" pathLength="1" />
+              <path d={areaPath(rise, W, H, 8)} class="area" />
+              <path d={linePath(rise, W, H, 8)} class="line" pathLength="1" />
               <line x1={W * 0.82} x2={W * 0.82} y1="0" y2={H} class="deploy" />
             </svg>
             <p class="panel-sub"><span class="mono">api v1.35.11</span> deployed 4 min before the rise</p>
@@ -59,7 +71,7 @@ const H = 120;
           <p class="caption">It edits only its worktree, then runs the tests that cover the change.</p>
           <div class="panel code">
             <p class="panel-head mono"><span>src/routes/orders.ts</span><span class="faint">+4 −1</span></p>
-            <pre>{FIX.map(([n, kind, text]) => (
+            <pre>{diff.map(([n, kind, text]) => (
               <span class:list={["dl", kind]}><span class="ln">{n}</span>{text}{"\n"}</span>
             ))}</pre>
             <p class="panel-foot mono"><span class="ok">✓</span> 214 pass · 0 fail</p>
@@ -200,9 +212,11 @@ const H = 120;
     overflow: clip;
   }
 
-  /* The rail follows close under it, and it stacks at 980px with the rest of the reel. */
   .head {
-    margin-bottom: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 2rem 4rem;
+    align-items: end;
   }
 
   .head .display {
@@ -392,12 +406,10 @@ const H = 120;
     line-height: 1.7;
     overflow-x: auto;
     color: var(--ui-dim);
-    /* One column as wide as the longest line, so a narrow screen scrolls the diff with each
-       line's colour reaching its end. */
-    display: grid;
   }
 
   .dl {
+    display: block;
     padding-right: 1rem;
   }
 
@@ -643,8 +655,7 @@ const H = 120;
     }
   }
 
-  /* Each frame plays its proof once, when it first reaches the middle: .played, from reel.ts when
-     the frames are in a row, from scripts/main.ts when they are stacked. */
+  /* Each frame plays its proof once, when it first reaches the middle (scripts/main.ts adds .played). */
   :global(html.js) .chart .line {
     stroke-dasharray: 1;
     stroke-dashoffset: 1;
@@ -701,10 +712,10 @@ const H = 120;
 
   /* The two buttons that are yours get pressed. */
   :global(html.js) .played .primary {
-    animation: journey-press 1.6s var(--ease-out) 600ms both;
+    animation: press 1.6s var(--ease-out) 600ms both;
   }
 
-  @keyframes journey-press {
+  @keyframes press {
     0%,
     30% {
       transform: none;
@@ -724,10 +735,10 @@ const H = 120;
   }
 
   :global(html.js) .played .deployed .dot {
-    animation: journey-land 900ms var(--ease-out) 300ms both;
+    animation: land 900ms var(--ease-out) 300ms both;
   }
 
-  @keyframes journey-land {
+  @keyframes land {
     from {
       transform: scale(0);
       box-shadow: 0 0 0 0 oklch(0.62 0.12 158 / 0.6);

@@ -4,7 +4,7 @@ import Icon from "./Icon.astro";
 import { download } from "../lib/download";
 ---
 
-<header class="nav">
+<header class="nav" data-nav>
   <a class="brand" href="#top" aria-label="Bridgetown, back to top">
     <ArchMark size={17} />
     <span>Bridgetown</span>
@@ -27,68 +27,6 @@ import { download } from "../lib/download";
   </div>
 </header>
 
-<script>
-  import { $, $$ } from "../lib/dom";
-  import { onScroll, reduced } from "../scripts/scroll";
-
-  // Light, dark, or whatever the system says; remembered. The new theme opens as a circle
-  // from the switch, and "themechange" tells the arch's flood to follow (scripts/main.ts).
-  const themeSwitch = $("[data-theme-switch]");
-  if (themeSwitch) {
-    themeSwitch.hidden = false;
-    const root = document.documentElement;
-    const system = matchMedia("(prefers-color-scheme: dark)");
-    const buttons = $$<HTMLButtonElement>("[data-theme-option]", themeSwitch);
-    const resolve = (choice: string) => choice === "dark" || (choice === "system" && system.matches);
-    const sync = () => {
-      const choice = root.dataset.theme ?? "light";
-      buttons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.themeOption === choice)));
-      dispatchEvent(new Event("themechange"));
-    };
-    const apply = (choice: string, from?: HTMLElement) => {
-      const flip = () => {
-        root.dataset.theme = choice;
-        root.classList.toggle("theme-dark", resolve(choice));
-        sync();
-      };
-      try {
-        localStorage.setItem("bridgetown-theme", choice);
-      } catch {
-        // Private mode: the choice lasts for this visit.
-      }
-      if (resolve(choice) === root.classList.contains("theme-dark") || reduced || !document.startViewTransition || !from) {
-        flip();
-        return;
-      }
-      const r = from.getBoundingClientRect();
-      const x = r.left + r.width / 2;
-      const y = r.top + r.height / 2;
-      const radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
-      document.startViewTransition(flip).ready.then(() => {
-        document.documentElement.animate(
-          { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
-          { duration: 900, easing: "cubic-bezier(0.65, 0, 0.35, 1)", pseudoElement: "::view-transition-new(root)" },
-        );
-      });
-    };
-    buttons.forEach((b) => b.addEventListener("click", () => apply(b.dataset.themeOption!, b)));
-    system.addEventListener("change", () => {
-      if (root.dataset.theme === "system") apply("system");
-    });
-    sync();
-  }
-
-  // The nav steps aside while you read down, and comes back when you scroll up. Lenis reports
-  // a keyboard or scrollbar jump twice, the second time 400ms later without moving; only
-  // movement counts.
-  let lastY = 0;
-  onScroll((y) => {
-    if (y === lastY) return;
-    document.documentElement.classList.toggle("nav-hidden", y > lastY && y > 200);
-    lastY = y;
-  });
-</script>
-
 <style>
   /* Drawn in white and inverted against whatever is underneath, so it reads on night and day alike. */
   .nav {
@@ -107,12 +45,6 @@ import { download } from "../lib/download";
 
   :global(.nav-hidden) .nav {
     transform: translateY(-100%);
-  }
-
-  /* Back for whoever tabs into it, however far down the page. Keyboard focus only: a theme
-     button clicked with the mouse keeps its focus, and the nav would never step aside again. */
-  :global(.nav-hidden) .nav:has(:focus-visible) {
-    transform: none;
   }
 
   .brand {
@@ -201,7 +133,6 @@ import { download } from "../lib/download";
     color: #000;
     font-size: var(--t-small);
     font-weight: 520;
-    white-space: nowrap;
     text-decoration: none;
     transition: transform 400ms var(--ease-out);
   }
@@ -220,14 +151,6 @@ import { download } from "../lib/download";
     }
     .nav {
       grid-template-columns: 1fr auto;
-    }
-  }
-
-  /* A phone has room for the mark, the theme and the button, not the name as well: it is the
-     hero's first line. */
-  @media (max-width: 400px) {
-    .brand span {
-      display: none;
     }
   }
 </style>

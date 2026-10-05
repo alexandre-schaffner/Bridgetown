@@ -3,46 +3,20 @@
 // `.reveal` transition does it (a blur-fade that trails the shape, out quickly before it
 // closes). Scroll picks a step; each step plays in time, like the real thing would.
 
-import {
-  BOX_W,
-  frameWidth,
-  layoutFor,
-  NOTCH,
-  notchPath,
-  SCREEN_W,
-  WING,
-  type IslandLayout,
-  type Presentation,
-} from "../lib/notch";
+import { layoutFor, notchPath, NOTCH, WING, type IslandLayout, type Presentation } from "../lib/notch";
 
 /** SwiftUI's spring(response:dampingFraction:) as stiffness and damping, mass 1. */
 interface SpringSpec {
   response: number;
   damping: number;
 }
+const OPENING: SpringSpec = { response: 0.5, damping: 0.74 };
+const CLOSING: SpringSpec = { response: 0.38, damping: 0.92 };
 const SWELL: SpringSpec = { response: 0.32, damping: 0.62 };
-
-/** How the island moves: the springs it grows and shrinks on, and its layers' fades, in ms. */
-interface Pace {
-  opening: SpringSpec;
-  closing: SpringSpec;
-  fade: { in: number; delay: number; out: number };
-}
-/** The app's (IslandController), which the page plays at. */
-const APP: Pace = {
-  opening: { response: 0.5, damping: 0.74 },
-  closing: { response: 0.38, damping: 0.92 },
-  fade: { in: 420, delay: 70, out: 120 },
-};
-/**
- * The launch film's: slower and barely bouncing, so a full-screen black panel opening over a
- * white desktop reads as a move, not a flash.
- */
-const FILM: Pace = {
-  opening: { response: 0.8, damping: 0.9 },
-  closing: { response: 0.9, damping: 1 },
-  fade: { in: 700, delay: 180, out: 220 },
-};
+// The launch film's: slower and barely bouncing, so a full-screen black panel opening over a
+// white desktop reads as a move, not a flash.
+const FILM_OPENING: SpringSpec = { response: 0.8, damping: 0.9 };
+const FILM_CLOSING: SpringSpec = { response: 0.9, damping: 1 };
 
 class Spring {
   v = 0;
@@ -67,6 +41,7 @@ class Spring {
   }
 }
 
+const BOX_W = 1128;
 const sleep = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
     const t = setTimeout(resolve, ms);
@@ -84,7 +59,8 @@ export function createIsland(
   root: HTMLElement,
   { reducedMotion, cinematic = false }: { reducedMotion: boolean; cinematic?: boolean },
 ): IslandStage {
-  const pace = cinematic ? FILM : APP;
+  const opening = cinematic ? FILM_OPENING : OPENING;
+  const closing = cinematic ? FILM_CLOSING : CLOSING;
   const screen = root.querySelector<HTMLElement>("[data-screen]")!;
   const mac = root.querySelector<HTMLElement>("[data-mac]")!;
   const island = root.querySelector<HTMLElement>("[data-island]")!;
@@ -103,17 +79,15 @@ export function createIsland(
   const mergeRow = island.querySelector<HTMLElement>("[data-action='merge']")!;
   const mergeBtn = island.querySelector<HTMLElement>("[data-btn='merge']")!;
   const cursor = root.querySelector<SVGElement>("[data-cursor]")!;
-  const hit = island.querySelector<HTMLButtonElement>("[data-island-hit]")!;
   const steps = [...root.querySelectorAll<HTMLElement>("[data-step]")];
 
-  // Fit the screen to the bezel (inside its 14px edges). Narrow screens zoom in on the notch
-  // instead, keeping the open island and a little either side in view and letting the menu bar
-  // run off the sides.
+  // Fit the 1440-point screen to the bezel. Narrow screens zoom in on the notch instead,
+  // keeping the open island's width in view and letting the menu bar run off the sides.
   const fit = () => {
     const inner = mac.clientWidth - 28;
-    const k = inner < 900 ? inner / (BOX_W + 32) : inner / SCREEN_W;
+    const k = inner < 900 ? inner / 1160 : inner / 1440;
     mac.style.setProperty("--k", String(k));
-    mac.style.setProperty("--ox", `${(inner - SCREEN_W * k) / 2}px`);
+    mac.style.setProperty("--ox", `${(inner - 1440 * k) / 2}px`);
   };
   fit();
   new ResizeObserver(fit).observe(mac);
@@ -130,7 +104,7 @@ export function createIsland(
     corner: new Spring(start.corner),
     lift: new Spring(0),
   };
-  let spec = pace.opening;
+  let spec = opening;
   let visible = false;
   let raf = 0;
   let last = 0;
@@ -142,7 +116,8 @@ export function createIsland(
       shoulder: Math.max(0, springs.shoulder.x),
       corner: Math.max(0, springs.corner.x),
     };
-    const d = notchPath(layout, (BOX_W - frameWidth(layout)) / 2);
+    const frameW = layout.width + 2 * layout.shoulder;
+    const d = notchPath(layout, (BOX_W - frameW) / 2);
     fill.setAttribute("d", d);
     edge.setAttribute("d", d);
     clip.style.clipPath = `path("${d}")`;
@@ -178,7 +153,7 @@ export function createIsland(
   const shape = (p: Presentation) => {
     const target = layoutFor(p, hovering);
     const now = layoutFor(presentation, false);
-    spec = hovering && p === "wings" ? SWELL : target.height * target.width >= now.height * now.width ? pace.opening : pace.closing;
+    spec = hovering && (p === "wings") ? SWELL : target.height * target.width >= now.height * now.width ? opening : closing;
     springs.width.target = target.width;
     springs.height.target = target.height;
     springs.shoulder.target = target.shoulder;
@@ -202,8 +177,8 @@ export function createIsland(
       return;
     }
     el.animate(on ? [hidden, rest] : [rest, hidden], {
-      duration: on ? pace.fade.in : pace.fade.out,
-      delay: on ? pace.fade.delay : 0,
+      duration: on ? (cinematic ? 700 : 420) : cinematic ? 220 : 120,
+      delay: on ? (cinematic ? 180 : 70) : 0,
       easing: on ? "cubic-bezier(0.22, 1, 0.36, 1)" : "cubic-bezier(0.4, 0, 1, 1)",
       fill: "both",
     });
@@ -279,12 +254,12 @@ export function createIsland(
   };
   /** Where an element in the island sits, in the screen's unscaled coordinates. */
   const pointOf = (el: HTMLElement) => {
+    const k = screen.getBoundingClientRect().width / 1440;
     const s = screen.getBoundingClientRect();
-    const k = s.width / SCREEN_W;
     const r = el.getBoundingClientRect();
     return { x: (r.left - s.left + r.width * 0.55) / k, y: (r.top - s.top + r.height * 0.55) / k };
   };
-  const rightWing = { x: SCREEN_W / 2 + NOTCH.width / 2 + WING / 2, y: NOTCH.height / 2 };
+  const rightWing = { x: 720 + NOTCH.width / 2 + WING / 2, y: 16 };
 
   // MARK: Steps
 
@@ -377,6 +352,24 @@ export function createIsland(
   // MARK: Pointer
 
   // After the tour, the island answers the pointer: it swells under it and opens on a click.
+  const hit = document.createElement("button");
+  hit.type = "button";
+  hit.className = "island-hit";
+  hit.setAttribute("aria-label", "Open or close Bridgetown's island");
+  Object.assign(hit.style, {
+    position: "absolute",
+    top: "0",
+    left: "50%",
+    width: "300px",
+    height: "40px",
+    translate: "-50% 0",
+    zIndex: "7",
+    background: "transparent",
+    border: "0",
+    cursor: "pointer",
+    borderRadius: "0 0 16px 16px",
+  });
+  screen.append(hit);
   hit.addEventListener("pointerenter", () => {
     if (presentation !== "wings") return;
     hovering = true;
@@ -391,7 +384,15 @@ export function createIsland(
     controller.abort();
     showCursor(false);
     hovering = false;
-    present(presentation === "open" ? "wings" : "open");
+    if (presentation === "open") {
+      present("wings");
+      hit.style.height = "40px";
+      hit.style.width = "300px";
+    } else {
+      present("open");
+      hit.style.height = "40px";
+      hit.style.width = "1128px";
+    }
   });
 
   // Its buttons work too: each settles its row, and the island folds once nothing is left.

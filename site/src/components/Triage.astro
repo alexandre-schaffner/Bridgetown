@@ -4,7 +4,7 @@
 
 type Route = { label: string; dot: "blue" | "amber" | "grey" };
 interface Row {
-  /** What the policy does with it: the threshold below re-routes alerts and messages, never rules. */
+  /** What the policy does with it (scripts/main.ts re-routes as the threshold moves). */
   kind: "alert" | "inbox" | "rule";
   from: string;
   who: string;
@@ -77,7 +77,7 @@ const rows: Row[] = [
 
 <section class="triage day" id="triage" aria-labelledby="triage-title">
   <div class="wrap">
-    <div class="chapter-head">
+    <div class="intro">
       <h2 id="triage-title" class="display">One question for every message.</h2>
       <p class="lead">
         Rules clear the noise first: successful deploys, recoveries, anything already marked resolved. The rest
@@ -97,7 +97,7 @@ const rows: Row[] = [
       </div>
     </div>
 
-    <ol class="log">
+    <ol class="log" data-triage>
       <li class="log-head" aria-hidden="true">
         <span>Message</span>
         <span>Jev's answers</span>
@@ -150,67 +150,21 @@ const rows: Row[] = [
   </div>
 </section>
 
-<script>
-  import { $, $$ } from "../lib/dom";
-  import { revealOnView } from "../scripts/reveal";
-  import { reduced } from "../scripts/scroll";
-
-  const rows = $$("[data-row]");
-  revealOnView(rows, { threshold: 0.5, stagger: 160 });
-
-  // The threshold re-routes the messages, as the app's policy does with the one you set.
-  const policy = $("[data-policy]");
-  if (policy) {
-    const input = $<HTMLInputElement>("[data-threshold]", policy)!;
-    const out = $("[data-threshold-out]", policy)!;
-    const decide = (row: HTMLElement, t: number): [string, string] | null => {
-      const agent = Number(row.dataset.agent);
-      const other = Number(row.dataset.other);
-      if (row.dataset.kind === "alert") {
-        if (other >= 50) return null;
-        return agent >= t ? ["Agent starts", "blue"] : ["Suggested to you", "amber"];
-      }
-      if (row.dataset.kind === "inbox") return agent >= t ? ["Agent drafts, you send", "blue"] : ["Needs you", "amber"];
-      return null;
-    };
-    const apply = (animate: boolean) => {
-      const t = Number(input.value);
-      out.textContent = `${t}%`;
-      input.style.setProperty("--fill", `${((t - 50) / 45) * 100}%`);
-      for (const row of rows) {
-        row.style.setProperty("--threshold", `${t}%`);
-        const next = decide(row, t);
-        if (!next) continue;
-        const route = $("[data-route]", row)!;
-        const label = $("span", route)!;
-        const dot = $(".dot", route)!;
-        if (label.textContent === next[0]) continue;
-        label.textContent = next[0];
-        dot.className = `dot dot-${next[1]}`;
-        if (animate && !reduced) {
-          label.animate(
-            [
-              { opacity: 0, transform: "translateY(40%)", filter: "blur(4px)" },
-              { opacity: 1, transform: "none", filter: "blur(0)" },
-            ],
-            { duration: 420, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
-          );
-          dot.animate([{ transform: "scale(0)" }, { transform: "scale(1.5)" }, { transform: "none" }], { duration: 500 });
-        }
-      }
-    };
-    input.addEventListener("input", () => apply(true));
-    apply(false);
-  }
-</script>
-
 <style>
   .triage {
     padding-block: clamp(6rem, 14vh, 10rem);
     background: var(--day-sunk);
   }
 
-  .chapter-head .display {
+  .intro {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 2rem 4rem;
+    align-items: end;
+    margin-bottom: clamp(3rem, 7vh, 5rem);
+  }
+
+  .intro .display {
     max-width: 12ch;
   }
 
@@ -348,6 +302,9 @@ const rows: Row[] = [
   }
 
   @media (max-width: 900px) {
+    .intro {
+      grid-template-columns: 1fr;
+    }
     .log-head {
       display: none;
     }

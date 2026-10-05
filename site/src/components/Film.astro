@@ -1,7 +1,6 @@
 ---
-// The films, in a dialog over the page: a link to one (`<a href="/media/….mp4"
-// data-open-film>`) plays it here, with its …-poster.jpg. Without script, the link opens the
-// file.
+// The films, in a dialog over the page. [data-open-film="launch"] plays the 32-second launch
+// film, [data-open-film="keynote"] the full one.
 import Icon from "./Icon.astro";
 ---
 
@@ -13,39 +12,6 @@ import Icon from "./Icon.astro";
     <button class="close" aria-label="Close the film"><Icon name="x" size={18} stroke={2} /></button>
   </form>
 </dialog>
-
-<script>
-  import { $, $$ } from "../lib/dom";
-  import { lenis } from "../scripts/scroll";
-
-  const film = $<HTMLDialogElement>("[data-film]");
-  if (film) {
-    const video = $<HTMLVideoElement>("[data-film-video]", film)!;
-    for (const a of $$<HTMLAnchorElement>("a[data-open-film]")) {
-      a.addEventListener("click", (e) => {
-        // ⌘-click and the like still open the file.
-        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-        e.preventDefault();
-        const src = a.getAttribute("href")!;
-        if (video.getAttribute("src") !== src) {
-          video.poster = src.replace(/\.mp4$/, "-poster.jpg");
-          video.src = src;
-        }
-        film.showModal();
-        lenis?.stop();
-        void video.play().catch(() => {});
-      });
-    }
-    film.addEventListener("close", () => {
-      video.pause();
-      lenis?.start();
-    });
-    // A click on the backdrop closes it.
-    film.addEventListener("click", (e) => {
-      if (e.target === film) film.close();
-    });
-  }
-</script>
 
 <style>
   .film {
@@ -65,14 +31,14 @@ import Icon from "./Icon.astro";
   }
 
   .film[open] {
-    animation: film-arrive 700ms var(--ease-out);
+    animation: arrive 700ms var(--ease-out);
   }
 
   .film[open]::backdrop {
-    animation: film-fade 500ms var(--ease-out);
+    animation: fade 500ms var(--ease-out);
   }
 
-  @keyframes film-arrive {
+  @keyframes arrive {
     from {
       opacity: 0;
       transform: scale(0.92);
@@ -80,7 +46,7 @@ import Icon from "./Icon.astro";
     }
   }
 
-  @keyframes film-fade {
+  @keyframes fade {
     from {
       opacity: 0;
     }

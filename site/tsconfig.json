@@ -1,7 +1,5 @@
 {
   "extends": "astro/tsconfigs/strict",
   "include": [".astro/types.d.ts", "**/*"],
-  // Run by Bun, not shipped: checked on their own (tsconfig.tools.json), since Bun's globals
-  // would shadow the DOM's types in the page's code.
-  "exclude": ["dist", "scripts", "test"]
+  "exclude": ["dist"]
 }

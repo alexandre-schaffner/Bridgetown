@@ -1,4 +1,4 @@
-// The hero, pre-rendered (dev/render.ts): frames of the walk through the arch, scrubbed by
+// The hero, pre-rendered (scripts/render.ts): frames of the walk through the arch, scrubbed by
 // scroll with a crossfade between neighbours so any scroll position lands between two frames,
 // and a loop of the opening shot for when nobody is scrolling. Frames load coarse to fine,
 // so the scrub works early and sharpens as the rest arrive.
@@ -12,19 +12,21 @@ interface FrameSet {
   count: number;
   width: number;
   height: number;
-  /** The opening loop. */
-  loop: string;
+  /** The opening loop, if this set has one. */
+  loop?: string;
 }
 
-/**
- * Keyed by directory: the hero's <picture> (pages/index.astro) picks one by its first frame.
- * scripts/render-hero.ts renders them.
- */
-export const SETS: Record<string, FrameSet> = {
+const SETS = {
   l: { dir: "/hero/l", count: 240, width: 2560, height: 1440, loop: "/hero/l/loop.mp4" },
   m: { dir: "/hero/m", count: 240, width: 1920, height: 1080, loop: "/hero/l/loop.mp4" },
   p: { dir: "/hero/p", count: 200, width: 1080, height: 1920, loop: "/hero/p/loop.mp4" },
-};
+} satisfies Record<string, FrameSet>;
+
+/** The set for this screen: portrait for tall ones, the big set where the pixels need it. */
+function pick(): FrameSet {
+  if (innerWidth / innerHeight < 1) return SETS.p;
+  return innerWidth * Math.min(devicePixelRatio, 2) > 2100 ? SETS.l : SETS.m;
+}
 
 /** Every index once, coarse to fine: 0, the last, then every 32nd, 16th, … 1st. */
 function order(count: number): number[] {
@@ -48,13 +50,12 @@ export interface HeroFrames {
   setResting(resting: boolean): void;
 }
 
-export function createHeroFrames(root: HTMLElement, { reducedMotion }: { reducedMotion: boolean }): HeroFrames {
-  const first = root.querySelector<HTMLImageElement>("picture img")!;
-  const canvas = root.querySelector<HTMLCanvasElement>("[data-hero-frames]")!;
-  const video = root.querySelector<HTMLVideoElement>("[data-hero-loop]")!;
-  /** The set the <picture> chose for this screen, so the first frame and the rest agree. */
-  const chosen = () => SETS[(first.currentSrc || first.src).split("/").at(-2)!] ?? SETS.m!;
-  let set = chosen();
+export function createHeroFrames(
+  canvas: HTMLCanvasElement,
+  video: HTMLVideoElement,
+  { reducedMotion }: { reducedMotion: boolean },
+): HeroFrames {
+  let set = pick();
   let images: (HTMLImageElement | null)[] = [];
 
   // Two layers: the page's canvas below, a twin of it above.
@@ -82,43 +83,28 @@ export function createHeroFrames(root: HTMLElement, { reducedMotion }: { reduced
     }
   };
 
-  // Each load is a generation: a superseded one (the screen turned, and the set with it) stops
-  // asking for frames and drops the ones on their way, so two sets never download at once and
-  // no frame lands in the other set's slots.
-  let generation = 0;
-  let pending = new Set<HTMLImageElement>();
   const load = () => {
-    const gen = ++generation;
-    for (const img of pending) img.src = "";
-    pending = new Set();
-    const loading = pending;
-    const { dir, count } = set;
-    const frames: (HTMLImageElement | null)[] = (images = new Array(count).fill(null));
+    images = new Array(set.count).fill(null);
     for (const l of layers) l.index = -1;
-    const queue = order(count);
+    const queue = order(set.count);
     let next = 0;
     // A few at a time, so the first coarse pass lands quickly.
     const pump = () => {
       const i = queue[next++];
-      if (gen !== generation || i === undefined) return;
+      if (i === undefined) return;
       const img = new Image();
       img.decoding = "async";
-      img.src = `${dir}/${String(i).padStart(3, "0")}.webp`;
-      loading.add(img);
+      img.src = `${set.dir}/${String(i).padStart(3, "0")}.webp`;
       img
         .decode()
         .then(() => {
-          frames[i] = img;
+          images[i] = img;
         })
         .catch(() => {})
-        .finally(() => {
-          loading.delete(img);
-          pump();
-        });
+        .finally(pump);
     };
     for (let k = 0; k < 6; k++) pump();
-    // Reduce Motion never plays the loop, so it isn't fetched.
-    if (!reducedMotion && video.getAttribute("src") !== set.loop) {
+    if (set.loop) {
       video.src = set.loop;
       video.load();
     }
@@ -156,17 +142,12 @@ export function createHeroFrames(root: HTMLElement, { reducedMotion }: { reduced
 
   size();
   load();
-  addEventListener("resize", size);
-  // The <picture> picks again when the screen changes shape, and loads its new first frame.
-  first.addEventListener("load", () => {
-    const next = chosen();
-    if (next === set) return;
-    set = next;
+  addEventListener("resize", () => {
+    const before = set;
+    set = pick();
     size();
-    load();
+    if (set !== before) load();
   });
-
-  let stopping = 0;
 
   return {
     render(p) {
@@ -191,16 +172,10 @@ export function createHeroFrames(root: HTMLElement, { reducedMotion }: { reduced
     setResting(resting) {
       const play = resting && !reducedMotion && video.readyState >= 2;
       video.classList.toggle("on", play);
-      if (play) {
-        clearTimeout(stopping);
-        stopping = 0;
-        if (video.paused) void video.play().catch(() => {});
-      } else if (!video.paused && !stopping) {
-        // Let the dissolve finish before stopping it: one timer, however many frames ask.
-        stopping = window.setTimeout(() => {
-          stopping = 0;
-          if (!video.classList.contains("on")) video.pause();
-        }, 500);
+      if (play && video.paused) void video.play().catch(() => {});
+      if (!resting && !video.paused) {
+        // Let the dissolve finish before stopping it.
+        setTimeout(() => video.classList.contains("on") || video.pause(), 500);
       }
     },
   };
