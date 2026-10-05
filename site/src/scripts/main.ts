@@ -234,14 +234,21 @@ if (journey) {
   layout();
   // Before every measure (load, late fonts, resize), so the reel's length is never stale.
   ScrollTrigger.addEventListener("refreshInit", layout);
-  ScrollTrigger.create({
+  const slide = ScrollTrigger.create({
     trigger: journey,
     start: "top top",
     end: "bottom bottom",
     onUpdate: (s) => sideways && reel.seek(s.progress),
   });
+  // A frame coming into view plays: stacked, that frame; in a row, whatever the reel has near
+  // its middle. Scroll alone misses that when it stops exactly at the start (the nav's link
+  // lands there), since the progress never moves off 0.
   const io = new IntersectionObserver(
-    (entries) => entries.forEach((e) => e.isIntersecting && !sideways && e.target.classList.add("played")),
+    (entries) => {
+      if (!entries.some((e) => e.isIntersecting)) return;
+      if (sideways) reel.seek(slide.progress);
+      else entries.forEach((e) => e.isIntersecting && e.target.classList.add("played"));
+    },
     { threshold: 0.4 },
   );
   $$(".frame", journey).forEach((f) => io.observe(f));

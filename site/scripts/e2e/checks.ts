@@ -135,6 +135,26 @@ export const CHECKS: Check[] = [
     },
   },
   {
+    name: "The nav's link to the agents lands on the reel's first frame, played",
+    viewport: LAPTOP,
+    motion: "no-preference",
+    async run(page) {
+      // It lands exactly where the reel starts, where scrolling alone never moves its progress.
+      await page.click('nav a[href="#journey"]');
+      await page.waitForTimeout(2500);
+      const { top, played, done } = await page.evaluate(() => {
+        const journey = document.querySelector("#journey")!;
+        return {
+          top: journey.getBoundingClientRect().top,
+          played: journey.querySelector(".frame")!.classList.contains("played"),
+          done: journey.querySelector("[data-rail]")!.classList.contains("done"),
+        };
+      });
+      expect(Math.abs(top) < 2, `it lands ${Math.round(top)}px from the chapter's top`);
+      expect(played && done, `the first frame ${played ? "played" : "never played its proof"}, and its rail step is ${done ? "" : "not "}marked`);
+    },
+  },
+  {
     name: "The island opens and folds on a click, a target for the pointer alone",
     viewport: LAPTOP,
     motion: "reduce",
