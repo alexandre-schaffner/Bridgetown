@@ -4,7 +4,7 @@
 
 type Route = { label: string; dot: "blue" | "amber" | "grey" };
 interface Row {
-  /** What the policy does with it (scripts/main.ts re-routes as the threshold moves). */
+  /** What the policy does with it: the threshold below re-routes alerts and messages, never rules. */
   kind: "alert" | "inbox" | "rule";
   from: string;
   who: string;

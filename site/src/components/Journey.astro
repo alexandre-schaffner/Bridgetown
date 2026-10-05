@@ -643,7 +643,8 @@ const H = 120;
     }
   }
 
-  /* Each frame plays its proof once, when it first reaches the middle (scripts/main.ts adds .played). */
+  /* Each frame plays its proof once, when it first reaches the middle: .played, from reel.ts when
+     the frames are in a row, from scripts/main.ts when they are stacked. */
   :global(html.js) .chart .line {
     stroke-dasharray: 1;
     stroke-dashoffset: 1;

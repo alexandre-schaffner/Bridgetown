@@ -17,7 +17,6 @@ export interface View {
 
 export const restView = (): View => ({ x: 0, y: -1.1, z: 14, lookX: 0, lookY: 0.55, lookZ: 0, white: 0, flare: 0 });
 
-
 /** How far the hero has flooded to day at scroll progress `p`: the page lays its flood by it. */
 export const heroWhite = (p: number) => smooth(0.8, 0.97, p);
 
