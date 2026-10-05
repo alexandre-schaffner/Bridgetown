@@ -35,7 +35,10 @@ export class AlertPipeline extends Context.Service<AlertPipeline, AlertPipelineS
 /** On first run, older history is not news. */
 const LOOKBACK_MS = 3 * 60 * 60_000
 const HORIZON_MARGIN_MS = 30 * 60_000
+/** Newest posts read per channel every poll: enough to see the recent ones edited in place. */
 const HISTORY_LIMIT = 15
+/** How far one poll pages back, when more than a page arrived since the horizon (an outage, a burst). */
+const BACKLOG_LIMIT = 200
 
 const contentHash = (message: SlackMessage): string =>
   String(
@@ -49,17 +52,17 @@ export const isAlertMessage = (message: SlackMessage): boolean =>
   !isHumanMessage(message)
 
 /**
- * Only messages newer than this are news. It never reaches further back than
- * the lookback (a weekend asleep must not replay Friday's alerts) and follows
- * the clock, minus a margin for search indexing lag.
+ * Only messages newer than a horizon are news. It never reaches further back
+ * than the lookback (a weekend asleep must not replay Friday's alerts), and it
+ * moves only once a read succeeded (`commitHorizon`): what was posted while
+ * Slack could not be read is still news when it can.
  */
-export const horizon = (store: StoreShape, key: "since" | "inbox_since") =>
-  Effect.gen(function* () {
-    const stored = Number((yield* store.getKv(key)) ?? 0)
-    const floor = Math.max(stored, Date.now() - LOOKBACK_MS)
-    yield* store.setKv(key, String(Math.max(floor, Date.now() - HORIZON_MARGIN_MS)))
-    return floor
-  })
+export const readHorizon = (store: StoreShape, key: string) =>
+  store.getKv(key).pipe(Effect.map((stored) => Math.max(Number(stored ?? 0), Date.now() - LOOKBACK_MS)))
+
+/** After a read that started at `readAt` succeeded: its start, minus a margin for search indexing lag and for a message whose ingest failed to be tried again. */
+export const commitHorizon = (store: StoreShape, key: string, floor: number, readAt: number) =>
+  store.setKv(key, String(Math.max(floor, readAt - HORIZON_MARGIN_MS)))
 
 export const AlertPipelineLive = Layer.effect(AlertPipeline)(
   Effect.gen(function* () {
@@ -237,25 +240,39 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
         }
       })
 
+    /** A channel's posts back to `since`, newest first: its newest page, and the rest when more than a page arrived since. */
+    const postsSince = (channel: Channel, since: number) =>
+      Effect.gen(function* () {
+        const newest = yield* slack.latest(channel.id, HISTORY_LIMIT)
+        const last = newest.at(-1)
+        if (newest.length < HISTORY_LIMIT || last === undefined || Number(last.ts) * 1000 <= since) return newest
+        // Inclusive at both ends, so the page's last post comes back too.
+        const backlog = yield* slack.latest(channel.id, BACKLOG_LIMIT, String(since / 1000), last.ts)
+        return [...newest, ...backlog.filter((m) => m.ts !== last.ts)]
+      })
+
     const pollOnce = Effect.gen(function* () {
       if ((yield* hub.status).slack === "missing_token") return
       yield* me.identity
-      const since = yield* horizon(store, "since")
       const enabled = (yield* hub.settings).channels.filter((c) => c.enabled)
       const seen = new Set<string>()
       let failures = 0
       for (const channel of enabled) {
-        const messages = yield* slack.latest(channel.id, HISTORY_LIMIT).pipe(
-          Effect.tapError((error) => hub.patchStatus({ error: `Slack #${channel.name}: ${error.message}` })),
-          Effect.orElseSucceed((): ReadonlyArray<SlackMessage> => {
-            failures += 1
-            return []
-          }),
-        )
-        for (const message of [...messages].reverse()) {
+        // One horizon per channel: a channel Slack would not serve keeps its own until it does.
+        const key = `since:${channel.id}`
+        const since = yield* readHorizon(store, key)
+        const readAt = Date.now()
+        const read = yield* postsSince(channel, since).pipe(Effect.result)
+        if (read._tag === "Failure") {
+          failures += 1
+          yield* hub.patchStatus({ error: `Slack #${channel.name}: ${read.failure.message}` })
+          continue
+        }
+        for (const message of [...read.success].reverse()) {
           seen.add(`${channel.id}:${message.ts}`)
           yield* ingest(channel, message, since).pipe(Effect.catch((error) => hub.patchStatus({ error: `#${channel.name}: ${error.message}` })))
         }
+        yield* commitHorizon(store, key, since, readAt)
       }
       yield* refreshTrackers(seen)
       yield* hub.patchStatus({ slack: failures === enabled.length && failures > 0 ? "error" : "ok", lastPollAt: now() })

@@ -17,7 +17,7 @@ import { Store } from "../store/store.ts"
 import { Jev } from "../triage/jev.ts"
 import { decideInbox } from "../triage/policy.ts"
 import { triageWith } from "../triage/verdict.ts"
-import { AlertPipeline, horizon } from "./alerts.ts"
+import { AlertPipeline, commitHorizon, readHorizon } from "./alerts.ts"
 
 /** Mentions, group mentions and DMs anywhere in Slack, including what people write in alert channels. */
 export interface InboxShape {
@@ -27,6 +27,7 @@ export interface InboxShape {
 export class Inbox extends Context.Service<Inbox, InboxShape>()("Inbox") {}
 
 const SEARCH_COUNT = 20
+const INBOX_HORIZON = "inbox_since"
 
 export const InboxLive = Layer.effect(Inbox)(
   Effect.gen(function* () {
@@ -122,17 +123,24 @@ export const InboxLive = Layer.effect(Inbox)(
         if ((yield* hub.status).slack !== "ok" || identity === undefined) return
         const settings = yield* hub.settings
         if (!settings.inbox) return
-        const since = yield* horizon(store, "inbox_since")
+        const since = yield* readHorizon(store, INBOX_HORIZON)
+        const readAt = Date.now()
         const alertChannels = new Set(settings.channels.filter((c) => c.enabled).map((c) => c.id))
+        let complete = true
         for (const query of inboxQueries(identity.user_id, yield* me.groups)) {
           const matches = yield* slack.search(query.query, SEARCH_COUNT).pipe(
             Effect.tapError((error) => hub.patchStatus({ error: `Slack search: ${error.message} (add the search:read scope)` })),
-            Effect.orElseSucceed((): ReadonlyArray<SearchMatch> => []),
+            Effect.orElseSucceed((): ReadonlyArray<SearchMatch> => {
+              complete = false
+              return []
+            }),
           )
           for (const match of [...matches].reverse()) {
             yield* ingest(match, query.via, since, alertChannels).pipe(Effect.catch((error) => hub.patchStatus({ error: `Inbox: ${error.message}` })))
           }
         }
+        // A search that failed leaves the horizon: its mentions are still news next time.
+        if (complete) yield* commitHorizon(store, INBOX_HORIZON, since, readAt)
       }),
     }
   }),

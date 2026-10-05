@@ -1,5 +1,11 @@
-import { describe, expect, test } from "bun:test"
+import { afterAll, describe, expect, test } from "bun:test"
+import { Effect } from "effect"
+import { SlackApiError } from "../src/domain/errors.ts"
+import { Inbox } from "../src/pipeline/inbox.ts"
 import { inboxQueries, parseInbox, threadTsFromPermalink } from "../src/slack/inbox.ts"
+import { SlackMe } from "../src/slack/me.ts"
+import { Store } from "../src/store/store.ts"
+import { fakeSlack, makeWorld } from "./fixtures/world.ts"
 import { decideInbox } from "../src/triage/policy.ts"
 import { DEFAULT_SETTINGS } from "../src/config.ts"
 import type { JevVerdict } from "../src/domain/model.ts"
@@ -71,5 +77,35 @@ describe("inbox policy", () => {
     expect(decideInbox(verdict({ kind: "pr_review" }), t).decision).toBe("escalate")
     expect(decideInbox(verdict({ actionable: 0.1 }), t).decision).toBe("ignore")
     expect(decideInbox(verdict({ humanOnIt: 0.9 }), t).decision).toBe("ignore")
+  })
+})
+
+describe("the inbox horizon", () => {
+  let failing = true
+  const world = makeWorld({
+    slack: {
+      ...fakeSlack(() => []),
+      search: () => (failing ? Effect.fail(new SlackApiError({ method: "search.messages", code: "ratelimited", message: "ratelimited" })) : Effect.succeed([])),
+    },
+  })
+  afterAll(() => world.dispose())
+
+  test("a search that failed leaves it, so what it missed is still news; one that worked moves it", async () => {
+    const out = await world.runPromise(
+      Effect.gen(function* () {
+        yield* (yield* SlackMe).identity
+        const store = yield* Store
+        const inbox = yield* Inbox
+        const lastGood = String(Date.now() - 2 * 60 * 60_000)
+        yield* store.setKv("inbox_since", lastGood)
+        yield* inbox.poll
+        const afterFailure = yield* store.getKv("inbox_since")
+        failing = false
+        yield* inbox.poll
+        return { lastGood, afterFailure, afterSuccess: Number(yield* store.getKv("inbox_since")) }
+      }),
+    )
+    expect(out.afterFailure).toBe(out.lastGood)
+    expect(out.afterSuccess).toBeGreaterThan(Date.now() - 31 * 60_000)
   })
 })
