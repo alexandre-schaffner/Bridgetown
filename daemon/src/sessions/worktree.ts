@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { basename, join } from "node:path"
 import { Context, Effect, Layer } from "effect"
@@ -61,6 +61,9 @@ const FETCH_ATTEMPTS = 3
 const INSTALLED_MARKER = ".bridgetown-installed"
 
 const tail = (text: string, lines = 6): string => text.trim().split("\n").slice(-lines).join("\n")
+
+/** A worktree's directory deleted outright, off the event loop: with its node_modules it may be hundreds of thousands of files. */
+const deleteDir = (path: string) => attempt("fs", "remove worktree", () => rm(path, { recursive: true, force: true }))
 
 /** `"packageManager": "bun@1.4.2"` → `"1.4.2"`. */
 export const pinnedBunVersion = (repoPath: string): string | undefined => {
@@ -133,8 +136,8 @@ const create = Effect.fn("Worktrees.create")(function* (repoPath: string, branch
     const fetchWarning = yield* fetchMain(repoPath)
     if (fetchWarning !== undefined) warnings.push(fetchWarning)
     yield* run(["git", "worktree", "prune"], { cwd: repoPath })
-    // A checkout cut short: the session's own directory, so it goes.
-    if (existsSync(path)) rmSync(path, { recursive: true, force: true })
+    // A checkout or a removal cut short: the session's own directory, so it goes.
+    if (existsSync(path)) yield* deleteDir(path)
     yield* runOk(yield* addCommand(repoPath, branch, path), { cwd: repoPath })
   }
   const installed = yield* install(path, repoPath)
@@ -147,10 +150,9 @@ const remove = Effect.fn("Worktrees.remove")(function* (repoPath: string, branch
   if (!existsSync(repoPath)) return
   const path = worktreePath(repoPath, branch)
   if (existsSync(path)) {
-    // Forced twice: a worktree with changes or a lock goes too. A directory git no longer knows is deleted
-    // outright, off the event loop, since it may be as big.
+    // Forced twice: a worktree with changes or a lock goes too. A directory git no longer knows is deleted outright.
     yield* run(["git", "worktree", "remove", "--force", "--force", path], { cwd: repoPath, timeoutMs: REMOVE_TIMEOUT_MS })
-    if (existsSync(path)) yield* attempt("fs", "remove worktree", () => rm(path, { recursive: true, force: true }))
+    if (existsSync(path)) yield* deleteDir(path)
   }
   yield* run(["git", "worktree", "prune"], { cwd: repoPath })
   if (!options.deleteBranch) return

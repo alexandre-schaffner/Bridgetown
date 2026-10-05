@@ -32,6 +32,18 @@ describe("worktree setup", () => {
     expect((await worktrees((w) => w.create(repo, "fix-bt-done"))).warnings).toEqual([])
   }, 60_000)
 
+  test("a worktree whose removal was cut short is rebuilt in place", async () => {
+    const repo = scratchRepo()
+    const first = await worktrees((w) => w.create(repo, "fix-bt-half"))
+    // What a `git worktree remove` killed partway can leave: the checkout's .git gone, other files still there.
+    rmSync(join(first.path, ".git"))
+    mkdirSync(join(first.path, "node_modules", "left-over"), { recursive: true })
+    const again = await worktrees((w) => w.create(repo, "fix-bt-half"))
+    expect(again.path).toBe(first.path)
+    expect(existsSync(join(again.path, ".git"))).toBe(true)
+    expect(existsSync(join(again.path, "node_modules", "left-over"))).toBe(false)
+  }, 60_000)
+
   test("a branch only origin still has is checked out from origin, not from main", async () => {
     const repo = scratchRepo()
     sh("git checkout -q -b fix-bt-pushed", repo)
