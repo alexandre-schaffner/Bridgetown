@@ -36,6 +36,21 @@ const events = (id: string) => Effect.gen(function* () {
   return { events: alert?.events.map((e) => e.text), disposition: alert?.disposition?.kind ?? null }
 })
 
+describe("a card is looked up by its id", () => {
+  test("among others it is the one acted on; an unknown id is not found", async () => {
+    const out = await world.runPromise(Effect.gen(function* () {
+      yield* seed({ id: "C1:pick" }, card({ id: "a_other", kind: "investigate", alertId: "C1:pick" }))
+      yield* seed({ id: "C1:pick" }, card({ id: "a_pick", kind: "escalate", alertId: "C1:pick" }))
+      yield* (yield* Actions).dismiss("a_pick")
+      const missing = yield* (yield* Actions).dismiss("a_never").pipe(Effect.flip)
+      const cards = (yield* (yield* Store).listActions()).map((a) => a.id)
+      yield* (yield* Store).deleteAction("a_other")
+      return { ...(yield* events("C1:pick")), cards, missing: missing._tag }
+    }))
+    expect(out).toEqual({ events: ["Dismissed by you without opening it"], disposition: "dismissed", cards: ["a_other"], missing: "NotFound" })
+  })
+})
+
 describe("dismiss", () => {
   test("a suggestion: recorded as dismissed, no agent started", async () => {
     const out = await world.runPromise(Effect.gen(function* () {

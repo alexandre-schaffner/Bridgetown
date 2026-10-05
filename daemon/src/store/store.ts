@@ -54,6 +54,7 @@ export interface StoreShape {
   readonly recentSessions: (limit: number) => Effect.Effect<ReadonlyArray<Session>, AdapterError>
   /** Every session updated at or after `since` (ISO), so every one started then too. */
   readonly sessionsUpdatedSince: (since: string) => Effect.Effect<ReadonlyArray<Session>, AdapterError>
+  readonly getAction: (id: string) => Effect.Effect<Action | undefined, AdapterError>
   readonly putAction: (action: Action) => Effect.Effect<void, AdapterError>
   readonly deleteAction: (id: string) => Effect.Effect<void, AdapterError>
   /** Deletes every action matching `predicate`; returns how many. */
@@ -201,6 +202,12 @@ const StoreImpl = Layer.effect(Store)(
         sql<{ readonly json: string }>`SELECT json FROM sessions WHERE updated_at >= ${since} ORDER BY updated_at DESC`.pipe(
           Effect.mapError(sqlError("sessions since")),
           Effect.flatMap(decodeRows("decode session", Session)),
+        ),
+      getAction: (id) =>
+        sql<{ readonly json: string }>`SELECT json FROM actions WHERE id = ${id}`.pipe(
+          Effect.mapError(sqlError("get action")),
+          Effect.flatMap(decodeRows("decode action", Action)),
+          Effect.map(first),
         ),
       putAction: (action) =>
         sql`

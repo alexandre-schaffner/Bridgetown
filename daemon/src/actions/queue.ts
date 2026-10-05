@@ -50,7 +50,7 @@ export const ActionQueueLive = Layer.effect(ActionQueue)(
       list: store.listActions(),
       find: (id) =>
         Effect.gen(function* () {
-          const action = (yield* store.listActions()).find((a) => a.id === id)
+          const action = yield* store.getAction(id)
           if (action === undefined) return yield* new NotFound({ message: "unknown action" })
           return action
         }),
