@@ -220,12 +220,19 @@ const envRefusal = (args: ReadonlyArray<Word>, scope: Scope): string | undefined
   return undefined
 }
 
+/** `ps` flags that dump a process's environment: `--environment`, `-E`/`-wwE` in a single-dash cluster, or the BSD `e` in a no-dash cluster (`eww`, `auxe`). `-e`/`-ef` lists all processes, which is fine. */
+const isPsEnvDump = (text: string): boolean =>
+  text === "--environment" || (!text.startsWith("--") && text.startsWith("-") && /E/.test(text)) || (!text.startsWith("-") && /^[a-z]*e[a-z]*$/i.test(text))
+
 const commandRefusal = (name: string, head: Word, args: ReadonlyArray<Word>, scope: Scope): string | undefined => {
   if (name === "sudo" || name === "su" || name === "doas") return REASONS.privilege
   if (CLUSTER.has(name)) return REASONS.cluster
   if (GCP.has(name)) return REASONS.gcp
   if (name === "op") return REASONS.secrets
   if (name === "security" && args.some((arg) => /^(find-(generic|internet)-password|dump-keychain|export)$/.test(arg.text))) return REASONS.secrets
+  // `ps eww`/`ps -E` dumps a process's initial environment: in development the daemon still carries its tokens there (the kernel's envp copy survives the delete). The env dump is never needed for the task. (`-e`/`-ef` is the all-processes flag, not the environment one.)
+  if (name === "ps" && args.some((arg) => isPsEnvDump(arg.text))) return REASONS.secrets
+  if (name === "cat" && args.some((arg) => /\/proc\/[^/]+\/environ\b/.test(arg.text))) return REASONS.secrets
   if (name === "cast" && (args[0]?.text === "send" || args[0]?.text === "publish")) return REASONS.transaction
   if (name === "prisma" && (args[0]?.text === "migrate" || (args[0]?.text === "db" && args[1]?.text === "push"))) return REASONS.migration
   if (name === "bun" || name === "npm" || name === "pnpm" || name === "yarn") return packageManagerRefusal(name, args, scope)

@@ -213,6 +213,13 @@ describe("guard", () => {
     "alias g=gh; g pr merge 1",
     "let 'a[$(gh pr merge 1)]'",
     "declare -i y='$(gh pr merge 1)'",
+    // Reading another process's environment (the daemon still carries dev tokens in its envp).
+    "ps eww",
+    "ps -E",
+    "ps auxe",
+    "ps -wwE -p 1",
+    "ps eww -p 1234 | grep SLACK",
+    "cat /proc/1/environ",
     // Env assignments that would run a later command the guard never sees.
     "BASH_ENV=./x.sh bash -c true",
     "GIT_SSH_COMMAND='gh pr merge 1' git fetch",
@@ -275,6 +282,9 @@ describe("guard", () => {
     "./py.py",
     "setsid bun test",
     "parallel bun test ::: a b",
+    "ps aux",
+    "ps -ef | grep bun",
+    "ps -p 1234 -o command",
   ]
   for (const command of stillAllowed) {
     test(`allows: ${JSON.stringify(command)}`, () => expect(refusal(command, context)).toBeUndefined())
