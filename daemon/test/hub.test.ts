@@ -1,8 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
+import { SlackApiError } from "../src/domain/errors.ts"
 import { Hub, problemOf } from "../src/hub.ts"
+import { SlackThread } from "../src/slack/thread.ts"
 import { Store } from "../src/store/store.ts"
-import { makeWorld } from "./fixtures/world.ts"
+import { makeAlert } from "./fixtures/records.ts"
+import { fakeSlack, makeWorld } from "./fixtures/world.ts"
 
 describe("status problems", () => {
   const world = makeWorld()
@@ -32,6 +35,30 @@ describe("status problems", () => {
     expect(problemOf([])).toBeNull()
     expect(problemOf(["Slack #a: ratelimited"])).toBe("Slack #a: ratelimited")
     expect(problemOf(["Slack #a: ratelimited", "Slack #b: ratelimited", "#c: boom"])).toBe("Slack #a: ratelimited (+2 more)")
+  })
+})
+
+describe("Slack posts' problem", () => {
+  const world = makeWorld({
+    dryRun: false,
+    slack: { ...fakeSlack(() => []), post: () => Effect.fail(new SlackApiError({ method: "chat.postMessage", code: "ratelimited", message: "ratelimited" })) },
+  })
+  afterAll(() => world.dispose())
+
+  test("a failed post is shown until posts stop failing; in dry run nothing goes out, so none is", async () => {
+    const out = await world.runPromise(
+      Effect.gen(function* () {
+        const hub = yield* Hub
+        const thread = yield* SlackThread
+        yield* hub.modifySettings((current) => Effect.succeed({ ...current, dryRun: false }))
+        const failed = yield* thread.post(makeAlert(), "Merged")
+        const shown = (yield* hub.status).error
+        yield* hub.modifySettings((current) => Effect.succeed({ ...current, dryRun: true }))
+        yield* thread.postChannel("C1", "Review requested")
+        return { failed: failed._tag, shown, after: (yield* hub.status).error }
+      }),
+    )
+    expect(out).toEqual({ failed: "NotPosted", shown: "Slack post failed: ratelimited", after: null })
   })
 })
 
