@@ -475,7 +475,10 @@ final class E2ERunner {
     private func diff(_ image: NSBitmapImageRep, file: String) -> E2EReport.Diff? {
         guard let baseline = options.baseline else { return nil }
         let old = baseline.appending(path: "shots/\(file).png")
-        guard let previous = E2ECapture.read(old) else { return nil }
+        // Said, rather than passed off as unchanged: a baseline from an ONLY run has few shots.
+        guard let previous = E2ECapture.read(old) else {
+            return E2EReport.Diff(baseline: old.path, changedPixels: 0, bbox: nil, png: nil, missing: true)
+        }
         guard previous.pixelsWide == image.pixelsWide, previous.pixelsHigh == image.pixelsHigh else {
             return E2EReport.Diff(baseline: old.path, changedPixels: image.pixelsWide * image.pixelsHigh, bbox: nil, png: nil)
         }

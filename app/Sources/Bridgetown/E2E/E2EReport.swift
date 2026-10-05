@@ -9,6 +9,8 @@ struct E2EReport: Encodable {
         var errors = 0
         var warnings = 0
         var changed = 0
+        /// Shots the baseline doesn't have, so not compared.
+        var missing = 0
     }
 
     struct SideEffect: Encodable {
@@ -21,9 +23,13 @@ struct E2EReport: Encodable {
     struct Diff: Encodable {
         var baseline: String
         var changedPixels: Int
+        /// Nil when the size changed or the baseline has no such shot.
         var bbox: [Double]?
-        /// diff/<shot>.png: changed pixels in red. Nil when the size changed.
+        /// diff/<shot>.png: changed pixels in red.
         var png: String?
+        /// The baseline run has no such shot (it ran with ONLY, or the shot is new), so
+        /// nothing here was compared.
+        var missing = false
     }
 
     struct Shot: Encodable {
@@ -61,11 +67,13 @@ struct E2EReport: Encodable {
         summary.shots = shots.count
         summary.errors = shots.reduce(0) { $0 + $1.issues.filter { $0.severity == .error }.count }
         summary.warnings = shots.reduce(0) { $0 + $1.issues.filter { $0.severity == .warning }.count }
-        summary.changed = shots.filter { $0.diff != nil }.count
+        summary.changed = shots.filter { $0.diff.map { !$0.missing } ?? false }.count
+        summary.missing = shots.filter { $0.diff?.missing == true }.count
     }
 
     var summaryLine: String {
         var parts = ["\(summary.shots) shots", "\(summary.errors) errors", "\(summary.warnings) warnings", "\(summary.changed) changed since baseline"]
+        if summary.missing > 0 { parts.append("\(summary.missing) not in the baseline") }
         if let failure { parts.append("FAILED: \(failure)") }
         return parts.joined(separator: " · ")
     }
@@ -107,7 +115,10 @@ struct E2EReport: Encodable {
         if !changed.isEmpty {
             out += ["## Changed since baseline", ""]
             out += changed.compactMap { shot in
-                shot.diff.map { "- `\(shot.file)`: \($0.changedPixels) px\($0.bbox.map { " in \($0.map { Int($0) })" } ?? " (size changed)")\(Self.link($0.png, "diff"))" }
+                shot.diff.map { diff in
+                    let what = diff.missing ? "not in the baseline" : "\(diff.changedPixels) px\(diff.bbox.map { " in \($0.map { Int($0) })" } ?? " (size changed)")"
+                    return "- `\(shot.file)`: \(what)\(Self.link(diff.png, "diff"))"
+                }
             }
             out.append("")
         }
