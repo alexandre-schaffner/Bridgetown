@@ -78,13 +78,8 @@ private struct SweepContent: View {
                 Text("· swept \(Format.ago(sweptAt, now: now))")
             }
             Spacer(minLength: 0)
-            Button {
-                SystemActions.open(sweep.link)
-            } label: {
-                NudgeLabel(title: "Open in Grafana", symbol: "arrow.up.right", nudge: CGSize(width: 1.5, height: -1.5))
-            }
-            .buttonStyle(.plain)
-            .help("Prod's error lines over the last 3 hours, in Grafana Explore")
+            TextLink("Open in Grafana", opening: sweep.link)
+                .help("Prod's error lines over the last 3 hours, in Grafana Explore")
         }
         .font(.geist(11.5).monospacedDigit())
         .foregroundStyle(.tertiary)
@@ -141,14 +136,9 @@ private struct PatternRow: View {
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
                         if let alertId = pattern.alertId {
-                            Button {
-                                store.show(.alert(alertId))
-                            } label: {
-                                NudgeLabel(title: "Finding", symbol: "chevron.right", nudge: CGSize(width: 2, height: 0))
-                            }
-                            .buttonStyle(.plain)
-                            .font(.geist(11.5, .medium))
-                            .help("Show the finding Bridgetown raised for this pattern")
+                            TextLink("Finding", direction: .inward) { store.show(.alert(alertId)) }
+                                .font(.geist(11.5, .medium))
+                                .help("Show the finding Bridgetown raised for this pattern")
                         }
                     }
                 }
@@ -190,27 +180,5 @@ private struct PatternRow: View {
         if !pattern.versions.isEmpty { lines.append("Versions \(pattern.versions.joined(separator: ", "))") }
         lines.append("Click to open its lines in Grafana")
         return lines.joined(separator: "\n")
-    }
-}
-
-/// A text link whose trailing glyph leans the way it goes on hover: right for into the
-/// app, up and out for the browser. The text brightens with it.
-struct NudgeLabel: View {
-    let title: String
-    let symbol: String
-    let nudge: CGSize
-    @ViewState private var hovering = false
-
-    var body: some View {
-        HStack(spacing: 3) {
-            Text(title)
-            Image(systemName: symbol)
-                .font(.geist(8.5, .semibold))
-                .offset(hovering ? nudge : .zero)
-        }
-        .foregroundStyle(hovering ? .primary : .secondary)
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .animation(Easing.quick, value: hovering)
     }
 }

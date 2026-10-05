@@ -231,14 +231,9 @@ private struct MiniPanel: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onSelect)
-            Button {
-                SystemActions.open(panel.link)
-            } label: {
-                NudgeLabel(title: "Open in Grafana", symbol: "arrow.up.right", nudge: CGSize(width: 1.5, height: -1.5))
-            }
-            .buttonStyle(.plain)
-            .font(.geist(11.5, .medium))
-            .help("This panel's dashboard over the same window, in Grafana")
+            TextLink("Open in Grafana", opening: panel.link)
+                .font(.geist(11.5, .medium))
+                .help("This panel's dashboard over the same window, in Grafana")
             Button(action: onSelect) {
                 Image(systemName: "chevron.up")
                     .font(.system(size: 9, weight: .semibold))

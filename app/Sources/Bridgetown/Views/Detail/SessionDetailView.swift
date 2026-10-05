@@ -108,15 +108,11 @@ struct SessionDetailView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Text("·").foregroundStyle(.tertiary)
-            Button("View alert") { store.show(.alert(session.alertId)) }
-                .buttonStyle(.link)
-                .foregroundStyle(Ink.blue)
+            TextLink("View alert", direction: .inward) { store.show(.alert(session.alertId)) }
                 .help("How Jev triaged it, the original message and its history")
             if let thread = session.slackThreadUrl {
                 Text("·").foregroundStyle(.tertiary)
-                Button("Slack thread") { SystemActions.open(thread) }
-                    .buttonStyle(.link)
-                    .foregroundStyle(Ink.blue)
+                TextLink("Slack thread", opening: thread)
                     .help("Open the session's Slack thread")
             }
             Spacer(minLength: 0)
@@ -128,23 +124,21 @@ struct SessionDetailView: View {
 
     private var links: some View {
         DetailSection(title: "Pull request") {
-            VStack(alignment: .leading, spacing: 9) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 14) {
                     if let pr = session.prUrl {
-                        LinkButton(title: "PR \(Format.prLabel(pr))", systemImage: "arrow.triangle.pull", url: pr, help: "Open pull request \(pr)")
+                        TextLink("PR \(Format.prLabel(pr))", opening: pr)
+                            .help("Open pull request \(pr)")
                     } else {
                         Text(session.isActive ? "Not opened yet" : "No PR opened").foregroundStyle(.secondary)
                     }
                     if let revv = session.revvUrl {
-                        LinkButton(title: "Open in Revv", systemImage: "text.magnifyingglass", url: revv, help: "Open the PR walkthrough in Revv")
+                        TextLink("Open in Revv", opening: revv)
+                            .help("Open the PR walkthrough in Revv")
                     }
                     Spacer(minLength: 0)
                 }
                 .font(.geist(13, .medium))
-                .labelStyle(.titleAndIcon)
-                .imageScale(.small)
-                .lineLimit(1)
-                .fixedSize(horizontal: false, vertical: true)
 
                 if let channel = session.reviewChannel {
                     keyValue("Review") {
@@ -152,7 +146,8 @@ struct SessionDetailView: View {
                             Text("Requested in #\(channel)")
                                 .foregroundStyle(.secondary)
                             if let url = session.reviewUrl {
-                                LinkButton(title: "View", url: url, help: "Open the review request in Slack")
+                                TextLink("View", opening: url)
+                                    .help("Open the review request in Slack")
                             }
                         }
                     }
@@ -185,7 +180,8 @@ struct SessionDetailView: View {
         }
     }
 
-    /// A key in the first column, its value beside it: the PR section's facts line up.
+    /// A key in the first column, its value beside it: the PR section's facts line up, each
+    /// as tall as a link, so a row with one is spaced like the rest.
     private func keyValue<Value: View>(_ key: String, @ViewBuilder value: () -> Value) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(key)
@@ -195,6 +191,7 @@ struct SessionDetailView: View {
             value()
             Spacer(minLength: 0)
         }
+        .frame(minHeight: 20)
         .font(.geist(12.5))
         .monospacedDigit()
         .accessibilityElement(children: .combine)

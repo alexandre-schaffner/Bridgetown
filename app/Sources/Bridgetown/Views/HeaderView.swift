@@ -51,15 +51,8 @@ struct StatusSummary: View {
                 Text("Paused")
                     .foregroundStyle(.primary)
                     .help("Alerts are still triaged, but no agent starts on its own")
-                Button { store.setPaused(false) } label: {
-                    // Taller than the word, so it is easy to hit in the band.
-                    Text("Resume")
-                        .padding(.vertical, 4)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.link)
-                .foregroundStyle(Ink.blue)
-                .accessibilityIdentifier("header.resume")
+                TextLink("Resume") { store.setPaused(false) }
+                    .accessibilityIdentifier("header.resume")
             }
             if status.dryRun {
                 if status.paused { dot }
@@ -300,9 +293,8 @@ private struct ProblemLine: View {
             Spacer(minLength: 0)
             if let fix = problem.fix {
                 Button(fix.label, action: onFix)
-                    .buttonStyle(.link)
-                    .foregroundStyle(Ink.blue)
-                    .font(.geist(12))
+                    .buttonStyle(.stage(.secondary))
+                    .fixedSize()
             }
         }
     }

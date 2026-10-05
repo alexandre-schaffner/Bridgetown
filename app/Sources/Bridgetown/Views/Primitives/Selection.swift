@@ -166,10 +166,8 @@ struct SelectionHeader<Actions: View>: View {
                 .lineLimit(1)
                 .fixedSize()
             if count < total {
-                Button("Select all", action: selectAll)
-                    .buttonStyle(.plain)
-                    .font(.geist(11, .medium))
-                    .foregroundStyle(.secondary)
+                TextLink("Select all", action: selectAll)
+                    .font(.geist(11.5, .medium))
                     .fixedSize()
             }
             Spacer(minLength: 0)

@@ -289,10 +289,8 @@ struct ActionCard: View {
                         .buttonStyle(.stage(.primary))
                         .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     if draft != action.detail {
-                        Button("Revert") { draft = action.detail }
-                            .buttonStyle(.plain)
-                            .font(.geist(11))
-                            .foregroundStyle(.secondary)
+                        TextLink("Revert") { draft = action.detail }
+                            .font(.geist(11.5))
                     }
                     if store.isBusy(action.id) { ProgressView().controlSize(.mini) }
                 }
@@ -323,10 +321,8 @@ struct ActionCard: View {
                 // offered only when the daemon will take a message.
                 if action.kind == .review, let session = action.sessionId,
                    store.snapshot?.session(id: session)?.acceptsMessages == true {
-                    Button("Reply to agent") { store.show(.session(session)) }
-                        .buttonStyle(.plain)
-                        .font(.geist(11))
-                        .foregroundStyle(.secondary)
+                    TextLink("Reply to agent", direction: .inward) { store.show(.session(session)) }
+                        .font(.geist(11.5))
                         .help("Open the session to message the agent")
                 }
                 if store.isBusy(action.id) {

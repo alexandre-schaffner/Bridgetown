@@ -53,10 +53,8 @@ struct ClampedText: View {
                     }
                 }
             if truncated {
-                Button(expanded ? "Show less" : moreLabel) { expanded.toggle() }
-                    .buttonStyle(.plain)
-                    .font(.geist(11, .medium))
-                    .foregroundStyle(.tint)
+                TextLink(expanded ? "Show less" : moreLabel) { expanded.toggle() }
+                    .font(.geist(11.5, .medium))
             }
         }
     }
