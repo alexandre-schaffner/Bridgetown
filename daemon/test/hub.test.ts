@@ -55,3 +55,26 @@ describe("patchStatus", () => {
     expect(out.stored).toBe(String(out.status.paused))
   })
 })
+
+describe("settings", () => {
+  const world = makeWorld()
+  afterAll(() => world.dispose())
+
+  test("two changes at once both land: each reads what the other wrote", async () => {
+    const out = await world.runPromise(
+      Effect.gen(function* () {
+        const hub = yield* Hub
+        // The first change yields before writing, as a request does: without the lock, the second would read the old settings.
+        yield* Effect.all(
+          [
+            hub.modifySettings((current) => Effect.yieldNow.pipe(Effect.as({ ...current, autoStart: false }))),
+            hub.modifySettings((current) => Effect.succeed({ ...current, inbox: false })),
+          ],
+          { concurrency: "unbounded" },
+        )
+        return yield* hub.settings
+      }),
+    )
+    expect(out).toMatchObject({ autoStart: false, inbox: false })
+  })
+})

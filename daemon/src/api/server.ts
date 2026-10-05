@@ -150,7 +150,7 @@ const postRoute = (path: string, request: Request) =>
     const hub = yield* Hub
     if (path === "/settings") {
       const patch = yield* readBody(request, SettingsPatch)
-      return yield* thenSnapshot(mergeSettings(yield* hub.settings, patch).pipe(Effect.flatMap(hub.updateSettings)))
+      return yield* thenSnapshot(hub.modifySettings((current) => mergeSettings(current, patch)))
     }
     if (path === "/pause") {
       const body = yield* readBody(request, PauseBody)

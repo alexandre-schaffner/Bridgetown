@@ -33,6 +33,9 @@ export interface HubShape {
   /** `source`'s problem now, or `null` once it works again. */
   readonly problem: (source: ProblemSource, message: string | null) => Effect.Effect<void>
   readonly settings: Effect.Effect<Settings>
+  /** Read, change and store in one step: concurrent changes (two toggles flipped quickly) never drop each other. */
+  readonly modifySettings: <E>(f: (current: Settings) => Effect.Effect<Settings, E>) => Effect.Effect<Settings, E | AdapterError>
+  /** Replaces them whole (tests, the mock daemon), in turn with `modifySettings`. */
   readonly updateSettings: (next: Settings) => Effect.Effect<Settings, AdapterError>
   /** Effective dry-run: the settings toggle or the `--dry-run` flag. */
   readonly dryRun: Effect.Effect<boolean>
@@ -102,9 +105,19 @@ export const HubLive = (env: Env) =>
         problems: new Map(),
       })
       const persisting = yield* Semaphore.make(1)
+      const configuring = yield* Semaphore.make(1)
       // Sliding: a subscriber that has not caught up only needs to know that something changed, not how often.
       const changed = yield* Effect.acquireRelease(PubSub.sliding<void>(1), PubSub.shutdown)
       const notify = PubSub.publish(changed, undefined).pipe(Effect.asVoid)
+
+      const modifySettings = <E>(f: (current: Settings) => Effect.Effect<Settings, E>) =>
+        Effect.gen(function* () {
+          const next = yield* f(yield* Ref.get(settings))
+          yield* store.setKv(SETTINGS_KEY, JSON.stringify(next))
+          yield* Ref.set(settings, next)
+          yield* notify
+          return next
+        }).pipe(configuring.withPermits(1))
 
       /** Applies `f` in one step; true when anything the snapshot shows changed. */
       const update = (f: (current: State) => State) =>
@@ -133,13 +146,8 @@ export const HubLive = (env: Env) =>
             Effect.flatMap((changed) => (changed ? notify : Effect.void)),
           ),
         settings: Ref.get(settings),
-        updateSettings: (next) =>
-          Effect.gen(function* () {
-            yield* store.setKv(SETTINGS_KEY, JSON.stringify(next))
-            yield* Ref.set(settings, next)
-            yield* notify
-            return next
-          }),
+        modifySettings,
+        updateSettings: (next) => modifySettings(() => Effect.succeed(next)),
         dryRun: Ref.get(settings).pipe(Effect.map((s) => s.dryRun || env.forceDryRun)),
         notify,
         subscribe: PubSub.subscribe(changed).pipe(Effect.map(Stream.fromSubscription)),
