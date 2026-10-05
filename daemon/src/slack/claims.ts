@@ -108,7 +108,7 @@ export const ClaimsLive = Layer.effect(Claims)(
           const already = yield* read(eyesOf(alert), yield* repliesOf(alert))
           if (already.length > 0) return { _tag: "TakenBy", claimedBy: already } satisfies Take
         }
-        const posted = yield* thread.post(alert, Messages.investigating)
+        const posted = yield* thread.postUpdate(alert, Messages.investigating)
         if (!yieldTo || posted._tag === "NotPosted") return taken
         // Two copies can both find the thread empty and post. Both read it back; the earlier post wins.
         const after = yield* repliesOf(alert)

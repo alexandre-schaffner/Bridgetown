@@ -59,7 +59,7 @@ export const ShipperLive = Layer.effect(Shipper)(
     const postFor = (session: Session, text: string) =>
       Effect.gen(function* () {
         const alert = yield* store.getAlert(session.alertId)
-        if (alert !== undefined) yield* thread.post(alert, text)
+        if (alert !== undefined) yield* thread.postUpdate(alert, text)
       })
 
     /** Another round for the agent, or a hand-off once the CI-round budget is spent. */
@@ -170,7 +170,7 @@ export const ShipperLive = Layer.effect(Shipper)(
               ? "Review request not sent (dry run is on)"
               : `Review request to #${route.channelName} failed; retrying`,
         }))
-        if (posted && alert !== undefined) yield* thread.post(alert, Messages.reviewRequested(route.channelName, session.prUrl))
+        if (posted && alert !== undefined) yield* thread.postUpdate(alert, Messages.reviewRequested(route.channelName, session.prUrl))
       })
 
     const checkCi = (sessionId: string) =>
@@ -255,7 +255,7 @@ export const ShipperLive = Layer.effect(Shipper)(
         if (done === undefined) return
         yield* settle(done)
         const origin = yield* store.getAlert(session.alertId)
-        yield* thread.post(origin ?? alert, Messages.deployed(tag === "" ? alert.title : tag))
+        yield* thread.postUpdate(origin ?? alert, Messages.deployed(tag === "" ? alert.title : tag))
         if (session.worktree !== null) yield* removeWorktree(session.repoPath, session.worktree).pipe(Effect.ignore)
       })
 
@@ -362,7 +362,7 @@ export const ShipperLive = Layer.effect(Shipper)(
         deployStage: null,
         tracker: tag === null ? null : session.alertId,
       })
-      if (alert !== undefined) yield* thread.post(alert, Messages.reranJobs)
+      if (alert !== undefined) yield* thread.postUpdate(alert, Messages.reranJobs)
     })
 
     return { tick, trackDeploy, merge, release, rerun }

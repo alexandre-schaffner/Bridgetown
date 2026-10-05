@@ -7,7 +7,8 @@ import type { GitHubShape, PullRequest } from "../src/ship/github.ts"
 import { Shipper } from "../src/ship/shipper.ts"
 import { Store } from "../src/store/store.ts"
 import { makeAlert, makeSession } from "./fixtures/records.ts"
-import { makeWorld } from "./fixtures/world.ts"
+import { Hub } from "../src/hub.ts"
+import { fakeSlack, makeWorld } from "./fixtures/world.ts"
 
 const PR = "https://ghe/pull/3345"
 const green = [{ name: "lint", status: "COMPLETED", conclusion: "SUCCESS" }]
@@ -157,6 +158,32 @@ describe("the merge is recorded once", () => {
       expect(out.session).toMatchObject({ status: "awaiting_release", milestones: { merged: true } })
       expect(out.cards).toEqual(["Cut app-v2.15.1"])
       expect(calls.merge).toBe(0)
+    } finally {
+      await world.dispose()
+    }
+  })
+})
+
+describe("an inbox session's updates stay out of the teammate's thread", () => {
+  test("its merge is not announced in their DM; an alert's is posted in the alert thread", async () => {
+    const posts: Array<string> = []
+    const { github } = fakeGitHub({ current: { state: "MERGED", mergedAt: "2026-10-05T11:00:00Z" } })
+    const world = makeWorld({ github, dryRun: false, slack: { ...fakeSlack(() => []), post: (_channel, _thread, text) => Effect.sync(() => void posts.push(text)).pipe(Effect.as("1.1")) } })
+    const inbox = { _tag: "inbox" as const, from: "U2", fromName: "Pierre", channelKind: "dm" as const, via: "dm" as const, threadTs: null, prUrl: null }
+    try {
+      await world.runPromise(
+        Effect.gen(function* () {
+          yield* (yield* Hub).modifySettings((current) => Effect.succeed({ ...current, dryRun: false }))
+          const store = yield* Store
+          // Nothing to release: the merge resolves both, and each would announce it.
+          yield* store.putAlert(makeAlert({ id: "D1:1", sessionId: "s_in", source: "inbox", fields: inbox }))
+          yield* store.putSession(shipping("awaiting_merge", { id: "s_in", alertId: "D1:1", release: null }))
+          yield* store.putAlert(makeAlert({ id: "C1:m", sessionId: "s_m" }))
+          yield* store.putSession(shipping("awaiting_merge", { release: null }))
+          yield* (yield* Shipper).tick
+        }),
+      )
+      expect(posts).toEqual([`🤖 Merged ${PR}`])
     } finally {
       await world.dispose()
     }

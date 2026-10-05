@@ -7,6 +7,12 @@ import { BOT_PREFIX, flattenMessage, plain } from "./text.ts"
 export interface SlackThreadShape {
   /** Posts `🤖 <text>` in the alert's thread as the user. Never fails; a no-op in dry-run. Says whether it went out. */
   readonly post: (alert: Alert, text: string) => Effect.Effect<ThreadPost>
+  /**
+   * `post` for Bridgetown's own updates (investigating, merged, released, deployed…), which nobody approved one by
+   * one. An inbox item's thread is a teammate's conversation (often a DM): only a reply you sent goes there, so
+   * updates are not posted in it.
+   */
+  readonly postUpdate: (alert: Alert, text: string) => Effect.Effect<ThreadPost>
   /** Posts `🤖 <text>` at the top of a channel; returns the message permalink. `null` in dry-run or on failure. */
   readonly postChannel: (channelId: string, text: string) => Effect.Effect<ChannelPost>
   /** Other channel messages within ±`minutes` of the alert, oldest first, readable. Best effort. */
@@ -27,25 +33,28 @@ export const SlackThreadLive = Layer.effect(SlackThread)(
   Effect.gen(function* () {
     const slack = yield* SlackClient
     const hub = yield* Hub
-    return {
-      post: (alert, text) =>
-        Effect.gen(function* () {
-          // The prod watcher's findings have no Slack message to reply under.
-          if (alert.source === "watch") return { _tag: "NotPosted", reason: "no_thread" } satisfies ThreadPost
-          if (yield* hub.dryRun) {
-            yield* Effect.logInfo(`[dry-run] would post in ${alert.channelName}/${alert.ts}: ${text}`)
-            const skipped: ThreadPost = { _tag: "NotPosted", reason: "dry_run" }
-            return skipped
-          }
-          const ts = yield* slack.post(alert.channelId, threadTsOf(alert), `${BOT_PREFIX} ${text}`)
-          yield* hub.problem("post", null)
-          const posted: ThreadPost = { _tag: "Posted", ts }
-          return posted
-        }).pipe(
-          Effect.catch((error) =>
-            hub.problem("post", `Slack post failed: ${error.message}`).pipe(Effect.as<ThreadPost>({ _tag: "NotPosted", reason: "error" })),
-          ),
+    const post = (alert: Alert, text: string) =>
+      Effect.gen(function* () {
+        // The prod watcher's findings have no Slack message to reply under.
+        if (alert.source === "watch") return { _tag: "NotPosted", reason: "no_thread" } satisfies ThreadPost
+        if (yield* hub.dryRun) {
+          yield* Effect.logInfo(`[dry-run] would post in ${alert.channelName}/${alert.ts}: ${text}`)
+          const skipped: ThreadPost = { _tag: "NotPosted", reason: "dry_run" }
+          return skipped
+        }
+        const ts = yield* slack.post(alert.channelId, threadTsOf(alert), `${BOT_PREFIX} ${text}`)
+        yield* hub.problem("post", null)
+        const posted: ThreadPost = { _tag: "Posted", ts }
+        return posted
+      }).pipe(
+        Effect.catch((error) =>
+          hub.problem("post", `Slack post failed: ${error.message}`).pipe(Effect.as<ThreadPost>({ _tag: "NotPosted", reason: "error" })),
         ),
+      )
+    return {
+      post,
+      postUpdate: (alert, text) =>
+        alert.fields._tag === "inbox" ? Effect.succeed<ThreadPost>({ _tag: "NotPosted", reason: "no_thread" }) : post(alert, text),
       postChannel: (channelId, text) =>
         Effect.gen(function* () {
           if (yield* hub.dryRun) {
