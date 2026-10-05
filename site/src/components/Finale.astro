@@ -35,6 +35,55 @@ import { site } from "../site";
   </div>
 </section>
 
+<script>
+  import { $ } from "../lib/dom";
+
+  // Posts the address to PUBLIC_ACCESS_ENDPOINT; "access-sent" lets the light settle (scripts/main.ts).
+  const form = $<HTMLFormElement>("[data-access-form]");
+  if (form) {
+    const input = $<HTMLInputElement>("input", form)!;
+    const button = $<HTMLButtonElement>("button", form)!;
+    const status = $("[role=status]", form)!;
+    const say = (text: string, error = false) => {
+      status.textContent = text;
+      status.classList.toggle("error", error);
+    };
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = input.value.trim();
+      if (!input.checkValidity() || !email) {
+        say("Enter an email address we can write to.", true);
+        input.focus();
+        return;
+      }
+      const endpoint = form.dataset.endpoint;
+      if (!endpoint) {
+        say("Requests aren't open yet. Check back soon.", true);
+        return;
+      }
+      button.disabled = true;
+      button.textContent = "Sending…";
+      say("");
+      try {
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
+        if (!res.ok) throw new Error(String(res.status));
+        form.reset();
+        say(`Thanks. We'll write to ${email} when there's a place for you.`);
+        form.dispatchEvent(new Event("access-sent", { bubbles: true }));
+      } catch {
+        say("That didn't go through. Try again in a moment.", true);
+      } finally {
+        button.disabled = false;
+        button.textContent = "Request early access";
+      }
+    });
+  }
+</script>
+
 <style>
   .finale {
     padding-top: 70svh;

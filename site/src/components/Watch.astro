@@ -65,6 +65,26 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
   </div>
 </section>
 
+<script>
+  import { $ } from "../lib/dom";
+  import { ScrollTrigger } from "../scripts/scroll";
+
+  const watch = $("[data-watch]");
+  if (watch) {
+    const line = $<SVGPathElement>("[data-line]", watch);
+    ScrollTrigger.create({
+      trigger: $("[data-chart]", watch),
+      start: "top 85%",
+      end: "center 45%",
+      onUpdate: (s) => {
+        line?.style.setProperty("--draw", (1 - s.progress).toFixed(4));
+        if (s.progress > 0.985) watch.classList.add("risen");
+        else if (s.progress < 0.9) watch.classList.remove("risen");
+      },
+    });
+  }
+</script>
+
 <style>
   .watch {
     padding-block: clamp(7rem, 16vh, 11rem);

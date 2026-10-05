@@ -81,6 +81,13 @@ const rules = [
   </div>
 </section>
 
+<script>
+  import { $$ } from "../lib/dom";
+  import { revealOnView } from "../scripts/reveal";
+
+  revealOnView($$("[data-rule]"), { threshold: 0.6, stagger: 80 });
+</script>
+
 <style>
   .team {
     padding-block: clamp(7rem, 16vh, 11rem) clamp(3rem, 8vh, 5rem);

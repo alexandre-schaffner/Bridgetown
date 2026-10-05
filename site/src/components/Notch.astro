@@ -49,6 +49,55 @@ const steps = [
   </div>
 </section>
 
+<script>
+  import { gsap } from "gsap";
+  import { $, $$ } from "../lib/dom";
+  import { clamp } from "../lib/math";
+  import { createIsland } from "../scripts/island";
+  import { reduced, ScrollTrigger } from "../scripts/scroll";
+
+  const notch = $("[data-notch]");
+  if (notch) {
+    const island = createIsland(notch, { reducedMotion: reduced });
+    const tryIt = $("[data-try]", notch);
+    if (tryIt) tryIt.hidden = false;
+    const steps = $$("[data-step]", notch);
+    const cuts = [0, 0.22, 0.46, 0.7, 1];
+    ScrollTrigger.create({
+      trigger: notch,
+      start: "top 60%",
+      end: "bottom bottom",
+      onToggle: (s) => island.setVisible(s.isActive),
+      onUpdate: (s) => {
+        // Pinning starts at "top top"; the first stretch before it is the approach.
+        const pinStart = innerHeight * 0.6;
+        const total = notch.offsetHeight - innerHeight + pinStart;
+        const p = clamp((s.progress * total - pinStart) / (total - pinStart));
+        const step = cuts.findIndex((c, i) => p >= c && p < (cuts[i + 1] ?? 2));
+        island.setStep(Math.max(0, step));
+        steps.forEach((el, i) => el.style.setProperty("--fill", clamp((p - cuts[i]!) / (cuts[i + 1]! - cuts[i]!)).toFixed(3)));
+      },
+    });
+    island.setVisible(true);
+
+    // The machine rises into place as the day arrives.
+    if (!reduced) {
+      gsap.fromTo(
+        $("[data-mac]", notch),
+        { y: 120, scale: 0.9, rotateX: 22, transformPerspective: 1400, transformOrigin: "50% 0%", opacity: 0.4 },
+        {
+          y: 0,
+          scale: 1,
+          rotateX: 0,
+          opacity: 1,
+          ease: "none",
+          scrollTrigger: { trigger: notch, start: "top bottom", end: "top top", scrub: true },
+        },
+      );
+    }
+  }
+</script>
+
 <style>
   .notch {
     padding-block: 5rem 4rem;

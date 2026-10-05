@@ -44,6 +44,61 @@ import Icon from "./Icon.astro";
   </div>
 </section>
 
+<script>
+  import { $, $$ } from "../lib/dom";
+  import { clamp, inOut, lerp, smooth } from "../lib/math";
+  import { reduced, ScrollTrigger } from "../scripts/scroll";
+
+  // The clip grows from between the two halves of its line to fill the screen, and plays
+  // only while you can see it.
+  const recording = $("[data-recording]");
+  if (recording) {
+    const video = $<HTMLVideoElement>("[data-clip-video]", recording)!;
+    const toggle = $<HTMLButtonElement>("[data-clip-toggle]", recording)!;
+    let userPaused = reduced;
+    const setPaused = (paused: boolean) => {
+      toggle.classList.toggle("paused", paused);
+      toggle.setAttribute("aria-label", paused ? "Play the recording" : "Pause the recording");
+    };
+    setPaused(userPaused);
+    toggle.addEventListener("click", () => {
+      userPaused = !video.paused;
+      if (userPaused) video.pause();
+      else void video.play();
+      setPaused(userPaused);
+    });
+    new IntersectionObserver(
+      ([e]) => {
+        if (e!.isIntersecting && !userPaused) void video.play().catch(() => setPaused(true));
+        else video.pause();
+      },
+      { threshold: 0.25 },
+    ).observe(video);
+
+    if (!reduced) {
+      const halves = $$("[data-half]", recording);
+      ScrollTrigger.create({
+        trigger: recording,
+        start: "top bottom",
+        end: "bottom bottom",
+        onUpdate: (s) => {
+          // The first stretch is the approach; the pin starts once the section reaches the top.
+          const total = recording.offsetHeight;
+          const y = s.progress * total;
+          const p = clamp((y - innerHeight * 0.75) / (total - innerHeight * 1.2));
+          const grow = inOut(clamp(p / 0.8));
+          recording.style.setProperty("--grow", lerp(0.34, 1, grow).toFixed(4));
+          recording.style.setProperty("--caption", smooth(0.75, 0.95, p).toFixed(3));
+          halves.forEach((h) => (h.style.opacity = (1 - smooth(0.25, 0.65, p)).toFixed(3)));
+        },
+      });
+    } else {
+      recording.style.setProperty("--grow", "1");
+      recording.style.setProperty("--caption", "1");
+    }
+  }
+</script>
+
 <style>
   .recording {
     padding-block: clamp(5rem, 12vh, 8rem);
