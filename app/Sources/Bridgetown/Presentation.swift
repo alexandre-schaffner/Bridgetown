@@ -582,6 +582,25 @@ extension LogSweep.Pattern {
     }
 }
 
+// MARK: - Clock
+
+/// The time every view reads: ages, "polled 2m ago", whether a chart's window ends now.
+/// The wall clock, unless an e2e run has stopped it at its suite's instant, the one the
+/// mock daemon's clock stopped at too.
+enum AppClock {
+    static var now: Date {
+        #if DEBUG
+        if let override { return override }
+        #endif
+        return Date()
+    }
+
+    #if DEBUG
+    /// Set once at launch (`E2EHarness.configure`), before any view reads the time.
+    nonisolated(unsafe) static var override: Date?
+    #endif
+}
+
 // MARK: - Formatting
 
 enum Format {
@@ -623,7 +642,7 @@ enum Format {
     }
 
     /// "now", "4m", "2h", "3d", then a short date.
-    static func relative(_ date: Date, now: Date = .now) -> String {
+    static func relative(_ date: Date, now: Date = AppClock.now) -> String {
         let s = max(0, now.timeIntervalSince(date))
         switch s {
         case ..<45: return "now"

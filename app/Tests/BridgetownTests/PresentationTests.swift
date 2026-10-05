@@ -119,9 +119,10 @@ import Testing
             "TYPESAFE_API_KEY": "ts_1",
             "BRIDGETOWN_DAEMON_CMD": "bun src/main.ts",
             "BRIDGETOWN_ATTACH": "1",
+            "BRIDGETOWN_LOG_DIR": "/tmp/run",
         ]
         let env = DaemonProcess.childEnvironment(inherited: inherited, port: 47622, home: "/Users/me")
-        for key in ["BRIDGETOWN_API_TOKEN", "SLACK_USER_TOKEN", "TYPESAFE_API_KEY", "BRIDGETOWN_DAEMON_CMD", "BRIDGETOWN_ATTACH"] {
+        for key in ["BRIDGETOWN_API_TOKEN", "SLACK_USER_TOKEN", "TYPESAFE_API_KEY", "BRIDGETOWN_DAEMON_CMD", "BRIDGETOWN_ATTACH", "BRIDGETOWN_LOG_DIR"] {
             #expect(env[key] == nil, "\(key)")
         }
         #expect(env["BRIDGETOWN_SECRETS"] == "stdin")
@@ -137,6 +138,11 @@ import Testing
         #expect(DaemonProcess.mode(environment: ["BRIDGETOWN_ATTACH": "1", "BRIDGETOWN_DAEMON_CMD": "bun main.ts"], bundled: bundled) == .command("bun main.ts"))
         #expect(DaemonProcess.mode(environment: [:], bundled: bundled) == .bundled(bundled))
         #expect(DaemonProcess.mode(environment: ["BRIDGETOWN_DAEMON_CMD": " "], bundled: nil) == .missing)
+    }
+
+    @MainActor @Test func theLogGoesToTheRunWhenItAsks() {
+        #expect(DaemonProcess(environment: ["BRIDGETOWN_LOG_DIR": "/tmp/run"]).logURL.path == "/tmp/run/daemon.log")
+        #expect(DaemonProcess(environment: [:]).logURL.path.hasSuffix("/Library/Logs/Bridgetown/daemon.log"))
     }
 
     @Test func secretsLineIsOneJSONObject() throws {

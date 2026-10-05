@@ -32,6 +32,12 @@ enum Keychain {
         var next = credentials()
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         next[account.rawValue] = trimmed.isEmpty ? nil : trimmed
+        #if DEBUG
+        if inMemory != nil {
+            inMemory = next
+            return true
+        }
+        #endif
         guard store(next) else { return false }
         cache = next
         return true
@@ -40,15 +46,16 @@ enum Keychain {
     // MARK: Storage
 
     #if DEBUG
-    /// Snapshot runs (PreviewHarness) attach to a mock daemon and never need the tokens. A
-    /// rebuilt debug binary is a new signature, so reading would put up a Keychain prompt.
-    @MainActor static var disabledForSnapshots = false
+    /// Stands in for the Keychain item while set: an e2e run (`E2EHarness`) never reads or
+    /// writes the real tokens, and a rebuilt debug binary, a new signature, would put up a
+    /// Keychain prompt that blocks it.
+    @MainActor static var inMemory: [String: String]?
     #endif
 
     @MainActor
     private static func credentials() -> [String: String] {
         #if DEBUG
-        if disabledForSnapshots { return [:] }
+        if let inMemory { return inMemory }
         #endif
         if let cache { return cache }
         let loaded = loadCombined() ?? migrateLegacyItems()

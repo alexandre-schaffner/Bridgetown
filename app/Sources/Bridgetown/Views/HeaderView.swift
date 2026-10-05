@@ -43,8 +43,10 @@ struct HeaderView: View {
                         help: paused ? "Resume auto-start" : "Pause auto-start",
                         size: 16
                     ) { store.setPaused(!paused) }
+                    .accessibilityIdentifier("header.pause")
                 }
                 IconButton(systemName: "gearshape", help: "Settings", size: 14, action: showSettings)
+                    .accessibilityIdentifier("header.settings")
             }
 
             ForEach(problems) { problem in
@@ -57,8 +59,7 @@ struct HeaderView: View {
     }
 
     private func showSettings() {
-        NSApp.activate()
-        openSettings()
+        SystemActions.showSettings(openSettings)
     }
 
     private func fix(_ fix: Problem.Fix?) {

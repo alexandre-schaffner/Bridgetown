@@ -65,6 +65,7 @@ private struct SweepContent: View {
                 }
                 .buttonStyle(.stage(.secondary, compact: true))
                 .frame(maxWidth: .infinity)
+                .accessibilityIdentifier("logs.showSteady")
             }
             footer
                 .bleedInset()
@@ -161,6 +162,7 @@ private struct PatternRow: View {
         .onTapGesture { SystemActions.open(pattern.link) }
         .help(tooltip)
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("logs.pattern.\(pattern.key)")
         .accessibilityAddTraits(.isLink)
         .accessibilityHint("Opens its lines in Grafana")
         // What the click does, for VoiceOver and AXPress: a tap gesture answers neither.

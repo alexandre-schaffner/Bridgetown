@@ -1,4 +1,7 @@
 import Foundation
+#if DEBUG
+import os
+#endif
 
 struct DaemonEndpoint: Sendable, Equatable {
     var port: Int
@@ -64,6 +67,12 @@ struct DaemonClient: Sendable {
         c.waitsForConnectivity = false
         return URLSession(configuration: c)
     }()
+
+    #if DEBUG
+    /// REST requests under way (the event stream is not one): the e2e harness waits for
+    /// none before it calls a frame settled.
+    static let requestsInFlight = OSAllocatedUnfairLock(initialState: 0)
+    #endif
 
     private static func session(timeout: TimeInterval) -> URLSession {
         let c = URLSessionConfiguration.ephemeral
@@ -178,7 +187,7 @@ struct DaemonClient: Sendable {
     }
 
     private func get<T: Decodable>(_ path: String, session: URLSession = Self.rest) async throws -> T {
-        let (data, response) = try await session.data(for: makeRequest(path, method: "GET"))
+        let (data, response) = try await Self.send(makeRequest(path, method: "GET"), on: session)
         try Self.check(response, body: data)
         return try JSON.decoder().decode(T.self, from: data)
     }
@@ -191,9 +200,17 @@ struct DaemonClient: Sendable {
         var r = makeRequest(path, method: "POST")
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
         r.httpBody = body
-        let (data, response) = try await session.data(for: r)
+        let (data, response) = try await Self.send(r, on: session)
         try Self.check(response, body: data)
         return try JSON.decoder().decode(T.self, from: data)
+    }
+
+    private static func send(_ request: URLRequest, on session: URLSession) async throws -> (Data, URLResponse) {
+        #if DEBUG
+        requestsInFlight.withLock { $0 += 1 }
+        defer { requestsInFlight.withLock { $0 -= 1 } }
+        #endif
+        return try await session.data(for: request)
     }
 
     private static func check(_ response: URLResponse, body: Data?) throws {

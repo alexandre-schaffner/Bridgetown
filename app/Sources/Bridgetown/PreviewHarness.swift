@@ -56,7 +56,7 @@ final class PreviewHarness {
 
     init(arguments: [String]) {
         args = Arguments(arguments)
-        if args.snapshotPath != nil { Keychain.disabledForSnapshots = true }
+        if args.snapshotPath != nil { Keychain.inMemory = [:] }
     }
 
     var popoverHeight: CGFloat? { args.previewHeight }

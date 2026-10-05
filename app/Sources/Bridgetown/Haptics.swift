@@ -20,8 +20,16 @@ enum Haptics {
     private static let minimumGap: TimeInterval = 0.2
     private static var last: Date?
 
+    #if DEBUG
+    /// An e2e run plays nothing: its clicks are not yours.
+    static var muted = false
+    #endif
+
     /// `source` names the call site in the log (`log stream --predicate 'category == "haptics"'`).
     static func perform(_ pattern: NSHapticFeedbackManager.FeedbackPattern, _ source: StaticString) {
+        #if DEBUG
+        if muted { return }
+        #endif
         let now = Date()
         if let last, now.timeIntervalSince(last) < minimumGap {
             log.debug("\(source, privacy: .public) pattern=\(pattern.rawValue) dropped: too close to the last")

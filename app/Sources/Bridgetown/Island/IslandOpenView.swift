@@ -19,12 +19,13 @@ struct IslandOpenView: View {
         VStack(spacing: 0) {
             band(notch: geometry.notch)
             Hairline()
-            TimelineView(.periodic(from: .now, by: 30)) { context in
+            // Only schedules the redraw: the time itself is the app's clock.
+            TimelineView(.periodic(from: .now, by: 30)) { _ in
                 HStack(alignment: .top, spacing: 0) {
-                    status(now: context.date)
+                    status(now: AppClock.now)
                         .frame(width: Self.statusWidth)
                     Hairline(vertical: true)
-                    main(now: context.date)
+                    main(now: AppClock.now)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .clipped()
                 }
@@ -61,6 +62,7 @@ struct IslandOpenView: View {
                 // charts run to the column's edges.
                 .padding(.bottom, Metrics.inset)
             }
+            .accessibilityIdentifier("pane.status")
         }
     }
 
@@ -89,6 +91,7 @@ struct IslandOpenView: View {
                         // Vertical only: the sections' rows run to the column's edges.
                         .padding(.vertical, Metrics.inset)
                     }
+                    .accessibilityIdentifier("pane.needsYou")
                     Hairline(vertical: true)
                     PaneScrollView {
                         VStack(alignment: .leading, spacing: 24) {
@@ -106,6 +109,7 @@ struct IslandOpenView: View {
                         }
                         .padding(.vertical, Metrics.inset)
                     }
+                    .accessibilityIdentifier("pane.agents")
                 }
             }
         } else {
