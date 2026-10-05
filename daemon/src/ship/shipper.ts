@@ -62,17 +62,16 @@ export const ShipperLive = Layer.effect(Shipper)(
         if (alert !== undefined) yield* thread.postUpdate(alert, text)
       })
 
-    /** Another round for the agent, or a hand-off once the CI-round budget is spent. */
-    const escalate = (session: Session, escalation: Escalation, prompt: string, patch: Partial<Session> = {}) =>
+    /**
+     * Another round for the agent, or a hand-off once the CI-round budget is spent. `record` (what this step saw, so
+     * the next tick does not act on it again) is written first either way; the turn itself only sets its round.
+     */
+    const escalate = (session: Session, escalation: Escalation, prompt: string, record: Partial<Session>) =>
       Effect.gen(function* () {
-        if (escalation._tag === "HandOff") return yield* handOff(session.id, escalation, () => patch)
-        const delivery = yield* runner.continueWith(session.id, prompt, {
-          ...patch,
-          phase: escalation.phase,
-          ciRounds: escalation.round,
-          activity: escalation.activity,
-        })
-        if (delivery === "refused") yield* handOff(session.id, cannotResume("send it back"), () => patch)
+        if (escalation._tag === "HandOff") return yield* handOff(session.id, escalation, () => record)
+        yield* repo.patch(session.id, record)
+        const delivery = yield* runner.continueWith(session.id, prompt, { phase: escalation.phase, ciRounds: escalation.round, activity: escalation.activity })
+        if (delivery === "refused") yield* handOff(session.id, cannotResume("send it back"))
       })
 
     /** After a move the shipper made: the session's cards its new state no longer offers go (`cardStands`). */
@@ -190,7 +189,6 @@ export const ShipperLive = Layer.effect(Shipper)(
         // The stepper's CI step is what GitHub says now: green, or not (yet) after a new push or a red run.
         const ciGreen = ci._tag === "Green"
         const milestones = { ...session.milestones, ciGreen }
-        const syncCi = session.milestones.ciGreen === ciGreen ? Effect.void : repo.patch(sessionId, { milestones })
         switch (step._tag) {
           case "Merged":
             return yield* onMerged(sessionId)
@@ -198,20 +196,20 @@ export const ShipperLive = Layer.effect(Shipper)(
             // Someone closed it on GitHub: closed without a fix, not stopped by you.
             yield* settle(yield* repo.patch(sessionId, { status: "closed", activity: "PR closed on GitHub", resolution: "PR closed without merging" }))
             return
-          case "Wait":
-            if (step.activity === null || step.activity === session.activity) return yield* syncCi
-            yield* repo.patch(sessionId, { activity: step.activity, milestones })
+          case "Wait": {
+            const activity = step.activity ?? session.activity
+            if (activity !== session.activity || ciGreen !== session.milestones.ciGreen) yield* repo.patch(sessionId, { activity, milestones })
             return
+          }
           case "BackToCi":
             yield* settle(yield* repo.patch(sessionId, { status: "ci", activity: step.activity, mergeRequestedAt: null, milestones }))
             return
           case "Red":
-            yield* syncCi
-            return yield* escalate(session, step.escalation, ciFailedPrompt(step.failing, session.ciRounds + 1, MAX_CI_ROUNDS))
+            return yield* escalate(session, step.escalation, ciFailedPrompt(step.failing, session.ciRounds + 1, MAX_CI_ROUNDS), { milestones })
           case "ChangesRequested":
-            yield* syncCi
             return yield* escalate(session, step.escalation, reviewChangesPrompt(step.review.author.login, step.review.body), {
               review: session.review === null ? null : { ...session.review, handledReviewId: step.review.id },
+              milestones,
             })
           case "ReadyToMerge": {
             // Staying at the gate keeps its card. Arriving there (from CI, or after a merge GitHub took and dropped) puts a fresh one.
