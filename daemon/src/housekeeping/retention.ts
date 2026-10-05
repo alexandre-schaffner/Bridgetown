@@ -22,14 +22,16 @@ const WORKTREE_GRACE_MS: Readonly<Partial<Record<SessionStatus, number>>> = { re
 const isActiveStatus = (status: SessionStatus): boolean => ACTIVE_STATUSES.includes(status)
 
 /**
- * Whether a session's worktree may go: it is finished and past its grace. A session that never
- * recorded one (stopped or interrupted while preparing) cannot take messages, so whatever setup
- * left behind goes at once.
+ * Whether a session's worktree may go: it is finished and past its grace, or nothing can use it any
+ * more. Your message only reopens a session that recorded its worktree, but Retry rebuilds a failed
+ * one in place, so what setup left of a session stopped while preparing goes at once, and what it
+ * left of one that failed there (a restart mid-setup) waits out the grace like any failed session's.
  */
 export const worktreeDue = (session: Pick<SessionRef, "status" | "updatedAt" | "worktree">, nowMs: number): boolean => {
   const grace = WORKTREE_GRACE_MS[session.status]
   if (grace === undefined) return false
-  return session.worktree === null || nowMs - Date.parse(session.updatedAt) >= grace
+  const usable = session.worktree !== null || session.status === "failed"
+  return !usable || nowMs - Date.parse(session.updatedAt) >= grace
 }
 
 export interface PruneRefs {

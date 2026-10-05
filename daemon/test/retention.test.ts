@@ -102,8 +102,11 @@ describe("worktreeDue", () => {
     expect(due("waiting", 90 * 24 * HOUR)).toBe(false)
   })
 
-  test("a session that never recorded its worktree has nothing to resume: due at once once finished", () => {
+  test("a session that never recorded its worktree: due at once unless Retry can still use it", () => {
     expect(due("stopped", 0, null)).toBe(true)
+    expect(due("closed", 0, null)).toBe(true)
+    expect(due("failed", 23 * HOUR, null)).toBe(false)
+    expect(due("failed", 25 * HOUR, null)).toBe(true)
     expect(due("preparing", 0, null)).toBe(false)
   })
 })

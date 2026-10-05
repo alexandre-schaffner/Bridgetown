@@ -80,11 +80,16 @@ describe("worktrees past their session's grace", () => {
     expect((await run(Worktrees.use((w) => w.create(repo, branch)))).path).toBe(path)
   })
 
-  test("a session interrupted while preparing never recorded its worktree: found by its branch, removed at once", async () => {
-    const { path, branch } = await seed("interrupted", "failed", ago(0), { worktree: null })
+  test("a session cut off while preparing never recorded its worktree: found by its branch, kept only while Retry can use it", async () => {
+    const stopped = await seed("stopped-setup", "stopped", ago(0), { worktree: null })
+    const fresh = await seed("interrupted-fresh", "failed", ago(23 * HOUR), { worktree: null })
+    const stale = await seed("interrupted-stale", "failed", ago(25 * HOUR), { worktree: null })
     await housekeep()
-    expect(existsSync(path)).toBe(false)
-    expect(branches()).toContain(branch)
+    expect(existsSync(stopped.path)).toBe(false)
+    expect(branches()).not.toContain(stopped.branch)
+    expect(existsSync(fresh.path)).toBe(true)
+    expect(existsSync(stale.path)).toBe(false)
+    expect(branches()).toContain(stale.branch)
   })
 
   test("an active session, and a finished one with a turn waiting for a slot, keep theirs", async () => {
