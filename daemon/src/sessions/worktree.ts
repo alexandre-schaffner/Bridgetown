@@ -1,12 +1,15 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { rm } from "node:fs/promises"
 import { basename, join } from "node:path"
 import { Context, Effect, Layer } from "effect"
 import { appSupportDir } from "../config.ts"
-import { AdapterError } from "../domain/errors.ts"
+import { AdapterError, attempt } from "../domain/errors.ts"
 import { run, runOk } from "../proc.ts"
 import { makeKeyedLock } from "../store/keyed-lock.ts"
 
 const INSTALL_TIMEOUT_MS = 10 * 60_000
+/** A session worktree is a monorepo checkout plus its node_modules: hundreds of thousands of files to delete. */
+const REMOVE_TIMEOUT_MS = 10 * 60_000
 
 export const slug = (text: string): string =>
   text
@@ -144,9 +147,10 @@ const remove = Effect.fn("Worktrees.remove")(function* (repoPath: string, branch
   if (!existsSync(repoPath)) return
   const path = worktreePath(repoPath, branch)
   if (existsSync(path)) {
-    // Forced twice: a worktree with changes or a lock goes too. A directory git no longer knows is deleted outright.
-    yield* run(["git", "worktree", "remove", "--force", "--force", path], { cwd: repoPath })
-    if (existsSync(path)) rmSync(path, { recursive: true, force: true })
+    // Forced twice: a worktree with changes or a lock goes too. A directory git no longer knows is deleted
+    // outright, off the event loop, since it may be as big.
+    yield* run(["git", "worktree", "remove", "--force", "--force", path], { cwd: repoPath, timeoutMs: REMOVE_TIMEOUT_MS })
+    if (existsSync(path)) yield* attempt("fs", "remove worktree", () => rm(path, { recursive: true, force: true }))
   }
   yield* run(["git", "worktree", "prune"], { cwd: repoPath })
   if (!options.deleteBranch) return
