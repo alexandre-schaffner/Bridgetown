@@ -96,7 +96,13 @@ struct StatusSummary: View {
         case .missing: "Daemon not installed"
         case .portInUse: "Daemon couldn't start"
         case .restarting: "Restarting daemon…"
-        default: store.connection == .rejected ? "Not connected" : "Connecting…"
+        default:
+            switch store.connection {
+            case .rejected: "Not connected"
+            // The store keeps retrying; the problem line below says why it dropped.
+            case .disconnected: "Reconnecting…"
+            case .connecting, .connected: "Connecting…"
+            }
         }
     }
 }
