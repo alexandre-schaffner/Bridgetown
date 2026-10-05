@@ -1,0 +1,226 @@
+---
+// Prod at a glance: the overview's three numbers, then a board per view, swiped between.
+import { areaPath, linePath, series } from "../../lib/spark";
+
+const boards = [
+  { name: "Incidents", charts: [["API 5xx", 11, 9], ["API p99", 340, 4], ["Engine errors", 6, 2], ["Job errors", 3, 7]] },
+  { name: "Infra", charts: [["eRPC errors", 18, 5], ["Failed job pods", 1, 11], ["OOM kills", 0.4, 13], ["Postgres", 22, 6]] },
+  { name: "Database", charts: [["Connections", 140, 3], ["Lock waits", 22, 8], ["Longest transaction", 4, 12], ["Replication lag", 0.6, 10]] },
+] as const;
+---
+
+<section class="shot" data-shot="board">
+  <div class="cam board">
+    <h2 class="hl-s">Prod, at a glance.</h2>
+    <div class="stats" data-stats>
+      <div class="stat"><p class="st-l">Needs you</p><p class="st-v amber" data-stat="2">0</p><p class="st-c">oldest 12m</p></div>
+      <div class="stat"><p class="st-l">Agents</p><p class="st-v blue" data-stat="3">0</p><p class="st-c"><i class="dot dot-blue live"></i> 2 fixing · 1 in CI</p></div>
+      <div class="stat"><p class="st-l">Resolved</p><p class="st-v green" data-stat="14">0</p><p class="st-c">of 17 · 24h</p></div>
+    </div>
+    <div class="b-head">
+      <ol class="tabs" data-tabs>
+        {[...boards.map((b) => b.name), "Logs"].map((n, i) => <li class:list={[i === 0 && "on"]} data-tab>{n}</li>)}
+      </ol>
+      <span class="mono faint">Grafana · last hour · counts per minute</span>
+    </div>
+    <div class="b-stage">
+      {boards.map((b, bi) => (
+        <div class="b-grid" data-board>
+          {b.charts.map(([name, base, seed], ci) => {
+            const vals = series(32, base, base * 0.2, seed + bi * 3);
+            return (
+              <figure class="b-chart">
+                <figcaption><span>{name}</span><span class="mono faint">{vals.at(-1)! < 10 ? vals.at(-1)!.toFixed(1) : Math.round(vals.at(-1)!)}</span></figcaption>
+                <svg viewBox="0 0 400 120" preserveAspectRatio="none">
+                  <path d={areaPath(vals, 400, 120, 8, base * 1.5, base * 0.45)} class="area" />
+                  <path d={linePath(vals, 400, 120, 8, base * 1.5, base * 0.45)} class="line" pathLength="1" data-bline />
+                  {ci % 2 === 0 && <line x1={ci === 0 ? 268 : 120} x2={ci === 0 ? 268 : 120} y1="0" y2="120" class="deploy" />}
+                </svg>
+              </figure>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+    <div class="swipe" data-swipe><span class="fingers"><i></i><i></i></span><span class="mono">Swipe between boards</span></div>
+  </div>
+</section>
+
+<style>
+  .board {
+    padding: 90px 150px 0;
+  }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    margin-top: 44px;
+    border-radius: 26px;
+    background: var(--card);
+    box-shadow: inset 0 0 0 1px var(--hair);
+  }
+
+  .stat {
+    padding: 26px 40px 28px;
+  }
+
+  .stat + .stat {
+    border-left: 1px solid var(--hair);
+  }
+
+  .st-l {
+    font-size: 20px;
+    color: var(--mid);
+  }
+
+  .st-v {
+    margin-top: 4px;
+    font-size: 84px;
+    font-weight: 560;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    color: var(--hi);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .st-v.amber {
+    color: var(--amber);
+  }
+
+  .st-v.blue {
+    color: oklch(0.72 0.16 252);
+  }
+
+  .st-v.green {
+    color: var(--green);
+  }
+
+  .st-c {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    font-size: 19px;
+    color: var(--lo);
+  }
+
+  .b-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 40px;
+    font-size: 18px;
+  }
+
+  .tabs {
+    position: relative;
+    display: flex;
+    gap: 6px;
+    margin: 0;
+    padding: 5px;
+    list-style: none;
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1px var(--hair);
+  }
+
+  .tabs li {
+    padding: 8px 22px;
+    border-radius: 999px;
+    font-size: 20px;
+    color: var(--mid);
+    transition: none;
+  }
+
+  .tabs li:global(.on) {
+    background: rgb(255 255 255 / 0.12);
+    color: var(--hi);
+  }
+
+  .b-stage {
+    position: relative;
+    height: 400px;
+    margin-top: 22px;
+  }
+
+  .b-grid {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 22px;
+    opacity: 0;
+  }
+
+  .b-grid:first-child {
+    opacity: 1;
+  }
+
+  .b-chart {
+    margin: 0;
+    padding: 22px 24px;
+    border-radius: 22px;
+    background: var(--card);
+    box-shadow: inset 0 0 0 1px var(--hair);
+  }
+
+  .b-chart figcaption {
+    display: flex;
+    justify-content: space-between;
+    font-size: 20px;
+    color: var(--hi);
+  }
+
+  .b-chart svg {
+    display: block;
+    width: 100%;
+    height: 290px;
+    margin-top: 16px;
+  }
+
+  .b-chart .area {
+    fill: rgb(255 255 255 / 0.05);
+  }
+
+  .b-chart .line {
+    fill: none;
+    stroke: var(--hi);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+  }
+
+  .b-chart .deploy {
+    stroke: var(--lo);
+    stroke-dasharray: 4 6;
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .swipe {
+    position: absolute;
+    left: 50%;
+    bottom: 70px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    translate: -50% 0;
+    font-size: 18px;
+    color: var(--mid);
+    opacity: 0;
+  }
+
+  .fingers {
+    position: relative;
+    display: flex;
+    gap: 12px;
+  }
+
+  .fingers i {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgb(255 255 255 / 0.85);
+    box-shadow: 0 0 22px rgb(255 255 255 / 0.4);
+  }
+</style>

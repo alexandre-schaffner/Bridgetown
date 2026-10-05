@@ -1,0 +1,96 @@
+---
+// And everything else: the wall of features, a tile each, around the name.
+import ArchMark from "../../components/ArchMark.astro";
+import Icon from "../../components/Icon.astro";
+
+const more: [string, string][] = [
+  ["filter", "Rules first: no model call for a deploy notice"],
+  ["repeat", "Repeats join the session that owns them"],
+  ["at-sign", "Mentions, team mentions and DMs"],
+  ["gauge", "Sonnet, Opus or Opus max, by depth"],
+  ["git-branch", "One worktree per agent"],
+  ["shield-check", "Codex review, up to 4 rounds"],
+  ["map", "Revv walkthrough in every review request"],
+  ["tag", "Next version worked out for you"],
+  ["rocket", "Deploys confirmed by the release tracker"],
+  ["search", "Investigate anyway"],
+  ["rotate-ccw", "Retry a failed agent"],
+  ["message-square-reply", "Message an agent mid-run"],
+  ["sliders-horizontal", "Thresholds you set"],
+  ["eye", "A teammate’s 👀 means it’s theirs"],
+  ["scroll-text", "Prod → Logs, opened in Grafana Explore"],
+  ["chart-line", "Rises and spikes against the usual"],
+  ["users", "Teammates’ agents, in your notch"],
+  ["bell", "Notifications for what’s yours"],
+  ["moon", "Quiet hours"],
+  ["key", "Tokens in your Keychain"],
+  ["smile", "Slack mrkdwn and emoji, rendered"],
+  ["undo-2", "Two-finger swipe back"],
+  ["vibrate", "Haptics on the trackpad"],
+  ["accessibility", "Reduce Motion, respected"],
+  ["power", "Launch at login"],
+  ["square-stop", "Stop any agent, keep its worktree"],
+  ["terminal", "Take over in Terminal"],
+  ["cloud-off", "Says so when it can’t see"],
+];
+---
+---
+
+<section class="shot" data-shot="more">
+  <div class="cam more">
+    <div class="wall-more" data-mwall>
+      {more.slice(0, 14).map(([icon, text]) => <div class="mt" data-mt><Icon name={icon} size={30} /><p>{text}</p></div>)}
+      <div class="mt hero" data-mt data-mhero><p class="mark"><ArchMark size={40} /></p><p class="mt-big">And everything<br />else, too.</p></div>
+      {more.slice(14).map(([icon, text]) => <div class="mt" data-mt><Icon name={icon} size={30} /><p>{text}</p></div>)}
+    </div>
+  </div>
+  <div class="veil"></div>
+</section>
+
+<style>
+  .wall-more {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    display: grid;
+    grid-template-columns: repeat(6, 300px);
+    grid-auto-rows: 190px;
+    gap: 22px;
+    translate: -50% -50%;
+    transform-style: preserve-3d;
+  }
+
+  .mt {
+    display: grid;
+    align-content: space-between;
+    padding: 24px 26px;
+    border-radius: 24px;
+    background: var(--card);
+    box-shadow: inset 0 0 0 1px var(--hair);
+    color: var(--mid);
+  }
+
+  .mt p {
+    font-size: 23px;
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+    color: var(--hi);
+  }
+
+  .mt.hero {
+    grid-column: span 2;
+    align-content: center;
+    justify-items: center;
+    gap: 14px;
+    text-align: center;
+    background: #000;
+    box-shadow: inset 0 0 0 1px var(--hair-strong);
+  }
+
+  .mt-big {
+    font-size: 48px !important;
+    font-weight: 620;
+    letter-spacing: -0.04em !important;
+    line-height: 1.02 !important;
+  }
+</style>

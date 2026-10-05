@@ -1,0 +1,191 @@
+---
+// Watch: the overview's signals, and the rise on one of them that no alert covers.
+import { linePath, series } from "../../lib/spark";
+import { SIGNAL } from "../../lib/story";
+
+const signals = [
+  ["API 5xx", 11, 9],
+  ["API p99", 340, 4],
+  ["Engine errors", 6, 2],
+  ["Job errors", 3, 7],
+  ["eRPC errors", 18, 5],
+  ["Failed job pods", 1, 11],
+  ["OOM kills", 0.4, 13],
+  ["DB waits", 22, 6],
+] as const;
+const CW = 1040;
+const CH = 500;
+const { values, usual } = SIGNAL;
+const cy = (v: number) => 30 + (1 - v / 80) * (CH - 60);
+const riseX = (CW * (values.length - 3)) / (values.length - 1) - 14;
+---
+
+<section class="shot" data-shot="watch">
+  <div class="cam watch">
+    <ul class="signals">
+      <li class="s-head mono"><span>Overview · every 5 minutes</span></li>
+      {signals.map(([name, base, seed], i) => (
+        <li class:list={["sig", i === 0 && "hot"]} data-sig>
+          <span>{name}</span>
+          <svg viewBox="0 0 120 28" preserveAspectRatio="none">
+            <path d={linePath(i === 0 ? [...series(20, base, base * 0.2, seed), base * 3.6, base * 5.8, base * 6.4] : series(23, base, base * 0.25, seed), 120, 28, 3)} />
+          </svg>
+        </li>
+      ))}
+    </ul>
+    <figure class="w-chart">
+      <figcaption class="w-head"><span>API 5xx <span class="faint">· per 5 minutes · last 3 hours</span></span><span class="mono faint">Grafana</span></figcaption>
+      <svg viewBox={`0 0 ${CW} ${CH}`} preserveAspectRatio="none">
+        <rect x={riseX} y="0" width={CW - riseX} height={CH} class="rise" data-wrise />
+        <line x1="0" x2={CW} y1={cy(usual)} y2={cy(usual)} class="usual" />
+        <path d={linePath(values, CW, CH, 30, 80, 0)} class="line" pathLength="1" data-wline />
+      </svg>
+      <span class="usual-label mono" style={`top:${cy(usual) + 52}px`}>usual · {Math.round(usual)}</span>
+      <div class="finding" data-finding>
+        <p class="f-kind"><i class="dot dot-done"></i> Rise · API 5xx</p>
+        <p class="f-text">Median of the last 3 steps is 5.1× usual. No Slack alert covers it.</p>
+        <p class="f-text faint">Recent deploys: api v1.35.11 at 10:14.</p>
+        <p class="f-session"><i class="dot dot-blue live"></i> Investigation started · Opus · high</p>
+      </div>
+    </figure>
+  </div>
+</section>
+
+<style>
+  .watch {
+    display: grid;
+    grid-template-columns: 420px 1100px;
+    gap: 80px;
+    justify-content: center;
+    align-content: center;
+  }
+
+  .signals {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .s-head {
+    padding-bottom: 16px;
+    font-size: 17px;
+    color: var(--lo);
+  }
+
+  .sig {
+    display: grid;
+    grid-template-columns: 1fr 140px;
+    align-items: center;
+    padding: 20px 0;
+    border-top: 1px solid var(--hair);
+    font-size: 26px;
+    color: var(--mid);
+  }
+
+  .sig svg {
+    width: 140px;
+    height: 28px;
+  }
+
+  .sig path {
+    fill: none;
+    stroke: var(--lo);
+    stroke-width: 1.6;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .sig.hot {
+    color: var(--hi);
+  }
+
+  .sig.hot path {
+    stroke: var(--amber);
+  }
+
+  .w-chart {
+    position: relative;
+    margin: 0;
+    padding: 30px 30px 26px;
+    border-radius: 26px;
+    background: var(--card);
+    box-shadow: inset 0 0 0 1px var(--hair);
+  }
+
+  .w-head {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 22px;
+    font-size: 20px;
+    color: var(--hi);
+  }
+
+  .w-chart svg {
+    display: block;
+    width: 1040px;
+    height: 500px;
+  }
+
+  .w-chart .line {
+    fill: none;
+    stroke: var(--hi);
+    stroke-width: 2.5;
+    vector-effect: non-scaling-stroke;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+  }
+
+  .w-chart .usual {
+    stroke: var(--lo);
+    stroke-dasharray: 3 6;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .w-chart .rise {
+    fill: oklch(0.8 0.15 74 / 0.1);
+    opacity: 0;
+  }
+
+  .usual-label {
+    position: absolute;
+    left: 40px;
+    font-size: 15px;
+    color: var(--lo);
+  }
+
+  .finding {
+    position: absolute;
+    right: 120px;
+    top: 100px;
+    width: 440px;
+    padding: 24px 26px;
+    border-radius: 18px;
+    background: #1c1c1e;
+    box-shadow:
+      inset 0 0 0 1px var(--hair-strong),
+      0 30px 80px rgb(0 0 0 / 0.7);
+    display: grid;
+    gap: 10px;
+    opacity: 0;
+  }
+
+  .f-kind,
+  .f-session {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    font-size: 19px;
+    color: var(--hi);
+  }
+
+  .f-text {
+    font-size: 21px;
+    line-height: 1.35;
+    color: var(--hi);
+  }
+
+  .f-session {
+    padding-top: 10px;
+    border-top: 1px solid var(--hair);
+    color: var(--amber);
+  }
+</style>
