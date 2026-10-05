@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Deferred, Effect, Fiber } from "effect"
 import { Actions } from "../src/actions/actions.ts"
 import { SlackApiError } from "../src/domain/errors.ts"
 import { type Action, type Alert, RETRY, type Session } from "../src/domain/model.ts"
@@ -121,8 +121,59 @@ describe("resolve", () => {
     expect(out).toEqual({ failure: "Conflict", status: "running", cards: [] })
   })
 
+  test("a blank reply is refused before anything is posted: the card stays, the session waits", async () => {
+    const out = await world.runPromise(Effect.gen(function* () {
+      const waiting = makeSession("waiting", { id: "s_blank", alertId: "C1:blank" })
+      yield* seed({ id: "C1:blank", sessionId: "s_blank" }, card({ id: "a_blank", kind: "reply", sessionId: "s_blank", alertId: "C1:blank", payload: "draft" }), waiting)
+      const failure = yield* (yield* Actions).resolve("a_blank", "   ").pipe(Effect.flip)
+      const store = yield* Store
+      return { failure: failure._tag, status: (yield* store.getSession("s_blank"))?.status, cards: (yield* store.listActions()).map((a) => a.id) }
+    }))
+    expect(out).toEqual({ failure: "InvalidInput", status: "waiting", cards: expect.arrayContaining(["a_blank"]) })
+  })
+
+  test("a reply whose message is gone is NotFound, never recorded as replied", async () => {
+    const out = await world.runPromise(Effect.gen(function* () {
+      const store = yield* Store
+      yield* store.putSession(makeSession("waiting", { id: "s_gone", alertId: "C1:gone" }))
+      yield* store.putAction(card({ id: "a_gone", kind: "reply", sessionId: "s_gone", alertId: "C1:gone", payload: "draft" }))
+      const failure = yield* (yield* Actions).resolve("a_gone", null).pipe(Effect.flip)
+      return { failure: failure._tag, status: (yield* store.getSession("s_gone"))?.status }
+    }))
+    expect(out).toEqual({ failure: "NotFound", status: "waiting" })
+  })
+
   test("an unknown action is NotFound", async () => {
     const error = await world.runPromise(Actions.use((actions) => actions.resolve("a_nope", null)).pipe(Effect.flip))
     expect(error._tag).toBe("NotFound")
+  })
+})
+
+describe("one resolve or dismiss of a card at a time", () => {
+  const release = Effect.runSync(Deferred.make<void>())
+  const answered = Effect.runSync(Deferred.make<void>())
+  const slow = makeWorld({
+    dryRun: false,
+    slack: { ...fakeSlack(() => []), post: () => Deferred.succeed(answered, undefined).pipe(Effect.andThen(Deferred.await(release)), Effect.as("1.2")) },
+  })
+  afterAll(() => slow.dispose())
+
+  test("a dismiss while the reply is going out is a Conflict, and so is a second resolve; the reply is posted once", async () => {
+    const out = await slow.runPromise(Effect.gen(function* () {
+      yield* (yield* Hub).modifySettings((current) => Effect.succeed({ ...current, dryRun: false }))
+      const waiting = makeSession("waiting", { id: "s_once", alertId: "C1:once" })
+      yield* seed({ id: "C1:once", sessionId: "s_once" }, card({ id: "a_once", kind: "reply", sessionId: "s_once", alertId: "C1:once", payload: "Done" }), waiting)
+      const actions = yield* Actions
+      const first = yield* actions.resolve("a_once", null).pipe(Effect.forkChild)
+      yield* Deferred.await(answered)
+      const dismissed = yield* actions.dismiss("a_once").pipe(Effect.flip)
+      const again = yield* actions.resolve("a_once", null).pipe(Effect.flip)
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.join(first)
+      // Once it is done the card is gone: a late resolve finds nothing to act on.
+      const late = yield* actions.resolve("a_once", null).pipe(Effect.flip)
+      return { dismissed: dismissed._tag, again: again._tag, late: late._tag, status: (yield* (yield* Store).getSession("s_once"))?.status }
+    }))
+    expect(out).toEqual({ dismissed: "Conflict", again: "Conflict", late: "NotFound", status: "resolved" })
   })
 })
