@@ -58,7 +58,7 @@ describe("dismiss", () => {
 
   test("a card of a session that is still moving leaves the session alone", async () => {
     const out = await world.runPromise(Effect.gen(function* () {
-      yield* seed({ id: "C1:ci" }, card({ id: "a_ci", kind: "grafana", sessionId: "s_ci", alertId: "C1:ci" }), makeSession("ci", { id: "s_ci", alertId: "C1:ci" }))
+      yield* seed({ id: "C1:ci" }, card({ id: "a_ci", kind: "reply", sessionId: "s_ci", alertId: "C1:ci" }), makeSession("ci", { id: "s_ci", alertId: "C1:ci" }))
       yield* (yield* Actions).dismiss("a_ci")
       return (yield* (yield* Store).getSession("s_ci"))?.status
     }))

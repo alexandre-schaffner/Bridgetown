@@ -1,7 +1,6 @@
 import { Effect } from "effect"
 import { type AdapterError, type DaemonError, type NotFound, SlackApiError } from "../domain/errors.ts"
 import type { Action, ActionKind, Alert, Session } from "../domain/model.ts"
-import type { HealthShape } from "../health.ts"
 import type { SessionRepoShape } from "../sessions/repo.ts"
 import type { SessionRunnerShape } from "../sessions/runner.ts"
 import type { ShipperShape } from "../ship/shipper.ts"
@@ -34,7 +33,6 @@ export interface HandlerDeps {
   readonly runner: SessionRunnerShape
   readonly shipper: ShipperShape
   readonly thread: SlackThreadShape
-  readonly health: HealthShape
   readonly investigate: (alertId: string) => Effect.Effect<void, AdapterError | NotFound>
 }
 
@@ -81,8 +79,6 @@ export const makeHandlers = (deps: HandlerDeps): Readonly<Record<ActionKind, Han
     session === undefined || action.payload === null ? Effect.void : deps.shipper.rerun(session.id, action.payload),
 
   answer: ({ action, response }) => deps.runner.answer(action.id, response ?? "").pipe(Effect.asVoid),
-
-  grafana: () => deps.health.probeGrafana,
 
   reply: ({ action, session, response }) =>
     Effect.gen(function* () {

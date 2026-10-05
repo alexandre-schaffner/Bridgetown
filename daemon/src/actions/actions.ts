@@ -1,7 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { Conflict, type DaemonError } from "../domain/errors.ts"
 import { type Action, dismissCloses } from "../domain/model.ts"
-import { Health } from "../health.ts"
 import { Hub } from "../hub.ts"
 import { AlertPipeline } from "../pipeline/alerts.ts"
 import { SessionRepo } from "../sessions/repo.ts"
@@ -46,7 +45,6 @@ export const ActionsLive = Layer.effect(Actions)(
       runner,
       shipper: yield* Shipper,
       thread: yield* SlackThread,
-      health: yield* Health,
       investigate: pipeline.investigate,
     })
 

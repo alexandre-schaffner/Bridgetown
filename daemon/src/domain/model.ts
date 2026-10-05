@@ -382,7 +382,6 @@ export const ActionKind = Schema.Literals([
   "release",
   "rerun",
   "answer",
-  "grafana",
   "review",
   "reply",
   "escalate",
