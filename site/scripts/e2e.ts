@@ -652,6 +652,39 @@ const CHECKS: Check[] = [
       expect(opacity === "1", `it is drawn at opacity ${opacity}, shown only on hover`);
     },
   },
+  {
+    name: "Watch the film opens the dialog, fading in out of a blur",
+    viewport: LAPTOP,
+    motion: "no-preference",
+    async run(page) {
+      await page.click("a[data-open-film]");
+      const start = await page.evaluate(() => {
+        const film = document.querySelector<HTMLDialogElement>("[data-film]")!;
+        const a = film.getAnimations()[0];
+        if (!film.open || !a) return null;
+        a.pause();
+        a.currentTime = 0;
+        const { opacity, filter } = getComputedStyle(film);
+        return { opacity, filter, src: film.querySelector("video")!.getAttribute("src") };
+      });
+      expect(start, "the dialog didn't open, or opened without its animation");
+      expect(start.filter.includes("blur") && Number(start.opacity) < 0.05, `it starts at opacity ${start.opacity}, ${start.filter}`);
+      expect(start.src === "/media/launch.mp4", `it plays ${start.src}`);
+    },
+  },
+  {
+    name: "Each film link points at its film, for when script never runs",
+    viewport: LAPTOP,
+    motion: "reduce",
+    async run(page) {
+      const hrefs = await page.evaluate(() => [...document.querySelectorAll<HTMLAnchorElement>("[data-open-film]")].map((a) => a.href));
+      expect(hrefs.length === 2, `there are ${hrefs.length} film links, not 2`);
+      for (const href of hrefs) {
+        const res = await page.request.get(href, { headers: { Range: "bytes=0-1" } });
+        expect(res.status() === 206 && href.endsWith(".mp4"), `${href} answers ${res.status()}`);
+      }
+    },
+  },
 ];
 
 async function check(browser: Browser, base: string, out: string, c: Check, n: number): Promise<CheckResult> {

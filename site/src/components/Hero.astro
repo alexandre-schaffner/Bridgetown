@@ -16,10 +16,10 @@ import Icon from "./Icon.astro";
         </p>
         <div class="actions">
           <a class="button button-light" href="#access">Request early access</a>
-          <button class="watch" type="button" data-open-film="launch">
+          <a class="watch" href="/media/launch.mp4" data-open-film>
             <span class="disc"><Icon name="play" size={12} stroke={2.4} /></span>
             Watch the film
-          </button>
+          </a>
         </div>
       </div>
     </div>
@@ -92,13 +92,10 @@ import Icon from "./Icon.astro";
     display: inline-flex;
     align-items: center;
     gap: 0.625rem;
-    padding: 0;
-    border: 0;
-    background: none;
     color: var(--night-ink);
     font-size: 0.9375rem;
     font-weight: 520;
-    cursor: pointer;
+    text-decoration: none;
   }
 
   .disc {
