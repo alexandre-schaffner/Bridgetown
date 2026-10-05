@@ -1,5 +1,5 @@
 import { GH_HOST } from "../config.ts"
-import { flags, REASONS } from "./guard-reasons.ts"
+import { flags, REASONS, runsNothing } from "./guard-reasons.ts"
 import type { Word } from "./shell.ts"
 
 /**
@@ -202,17 +202,27 @@ const GIT_VALUE_OPTIONS = flags("-C", "--git-dir", "--work-tree", "--namespace",
 
 const explicitPush = (branch: string) => `Push only your own branch, explicitly: git push -u origin ${branch}`
 
-/** Config keys that, once set, could run a command or push a tag on a later git call. */
-const forbiddenConfig = (key: string): boolean =>
-  /^(alias\.|push\.(followtags|default)|remote\..+\.(push|mirror|pushurl)|core\.(sshcommand|pager|fsmonitor|editor|hookspath)|pager\.|sequence\.editor|diff\.external|credential\.(helper|.*\.helper))/i.test(
-    key.trim(),
-  )
+/** Keys that push tags or every ref on a later push, or name one git command after another. */
+const PUSH_CONFIG = /^(alias\.|push\.(followtags|default)|remote\..+\.(push|mirror|pushurl))/i
+/** Keys whose value is a command a later git call runs (a pager, editor, ssh, askpass, hook path, diff, merge or filter driver, credential helper, signing program), or a file of more config. */
+const COMMAND_CONFIG =
+  /^(core\.(sshcommand|pager|fsmonitor|editor|hookspath|askpass|gitproxy)|pager\.|sequence\.editor|diff\.(external|.+\.(command|textconv))|difftool\.|mergetool\.|merge\..+\.driver|filter\.|credential\.(helper|.+\.helper)|gpg\.(program|.+\.program)|sendemail\.|uploadpack\.packobjectshook|include\.|includeif\.)/i
 
-/** The `key` of a `-c key=value`, `--config-env=key=env` or bare config word, or `undefined` when it is dynamic. */
-const configKey = (word: Word | undefined): string | undefined => {
+/**
+ * Whether setting `key` to `value` (`undefined` when only known at runtime) could run
+ * a command or push a tag on a later git call. A command key may be set to one that
+ * runs nothing, as the Claude CLI's own git calls do (`-c core.pager= -c core.hooksPath=/dev/null`).
+ */
+const forbiddenConfig = (key: string, value: string | undefined): boolean =>
+  PUSH_CONFIG.test(key.trim()) || (COMMAND_CONFIG.test(key.trim()) && (value === undefined || !runsNothing(value)))
+
+/** A `-c key=value` (a bare key sets it to true) or `--config-env=key=VAR`, whose value is the environment's. A computed one could set anything. */
+const configOptionRefusal = (word: Word | undefined, fromEnv: boolean): string | undefined => {
   if (word === undefined) return undefined
-  if (word.dynamic) return ""
-  return word.text.replace(/^--config-env=/, "").split("=")[0]
+  if (word.dynamic) return REASONS.gitConfig
+  const eq = word.text.indexOf("=")
+  const value = fromEnv ? undefined : eq === -1 ? "true" : word.text.slice(eq + 1)
+  return forbiddenConfig(eq === -1 ? word.text : word.text.slice(0, eq), value) ? REASONS.gitConfig : undefined
 }
 
 export const gitRefusal = (args: ReadonlyArray<Word>, branch: string): string | undefined => {
@@ -221,10 +231,12 @@ export const gitRefusal = (args: ReadonlyArray<Word>, branch: string): string | 
     const option = args[at]
     if (option === undefined || !option.text.startsWith("-")) break
     if (option.text === "-c" || option.text === "--config-env") {
-      if (forbiddenConfig(configKey(args[at + 1]) ?? "")) return REASONS.gitConfig
+      const reason = configOptionRefusal(args[at + 1], option.text === "--config-env")
+      if (reason !== undefined) return reason
       at++
-    } else if (option.text.startsWith("-c=") || option.text.startsWith("--config-env=")) {
-      if (forbiddenConfig(configKey(option) ?? "")) return REASONS.gitConfig
+    } else if (option.text.startsWith("--config-env=")) {
+      const reason = configOptionRefusal({ ...option, text: option.text.slice("--config-env=".length) }, true)
+      if (reason !== undefined) return reason
     } else if (GIT_VALUE_OPTIONS.has(option.text)) at++
   }
   const sub = args[at]
@@ -266,13 +278,32 @@ export const gitRefusal = (args: ReadonlyArray<Word>, branch: string): string | 
   }
 }
 
-/** `git config` may read freely; it may not write a key that could run a command or push a tag later. */
+/** `git config` options that read or remove, never set. */
+const CONFIG_READS = flags(
+  ...["--get", "--get-all", "--get-regexp", "--get-urlmatch", "--get-color", "--get-colorbool", "-l", "--list"],
+  ...["--unset", "--unset-all", "--remove-section", "--rename-section"],
+)
+/** The same as git 2.46's sub-commands (`git config get core.pager`); `set` is the one that writes. */
+const CONFIG_READ_COMMANDS = flags("get", "list", "unset", "remove-section", "rename-section")
+const CONFIG_VALUE_OPTIONS = flags("-f", "--file", "--blob", "-t", "--type", "--default", "--comment", "--value", "--url")
+
+/** `git config` may read and remove freely; it may not set a key that could run a command or push a tag later. */
 const configRefusal = (args: ReadonlyArray<Word>): string | undefined => {
-  const reading = args.some((arg) => ["--get", "--get-all", "--get-regexp", "--get-urlmatch", "-l", "--list"].includes(arg.text))
-  if (reading) return undefined
-  const key = args.find((arg) => !arg.text.startsWith("-"))
-  if (key?.dynamic) return REASONS.gitConfig
-  return key !== undefined && forbiddenConfig(key.text) ? REASONS.gitConfig : undefined
+  if (args.some((arg) => CONFIG_READS.has(arg.text))) return undefined
+  const positional: Array<Word> = []
+  for (let i = 0; i < args.length; i++) {
+    const word = args[i]
+    if (word === undefined) break
+    if (CONFIG_VALUE_OPTIONS.has(word.text)) i++
+    else if (!word.text.startsWith("-")) positional.push(word)
+  }
+  const [first, ...rest] = positional
+  if (first !== undefined && CONFIG_READ_COMMANDS.has(first.text)) return undefined
+  const [key, value] = first?.text === "set" ? rest : positional
+  // A key alone reads it.
+  if (key === undefined || value === undefined) return undefined
+  if (key.dynamic) return REASONS.gitConfig
+  return forbiddenConfig(key.text, value.dynamic ? undefined : value.text) ? REASONS.gitConfig : undefined
 }
 
 const PUSH_REF_FLAGS = flags("--tags", "--follow-tags", "--mirror", "--all", "--branches")

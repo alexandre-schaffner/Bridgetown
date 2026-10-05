@@ -290,6 +290,16 @@ describe("guard", () => {
     "pnpm -C apps/api rollout",
     "npm --prefix=apps/api run rollout",
     "bun run $SCRIPT",
+    // Git config that runs a command later, set however git takes it.
+    'git -c "$X" fetch',
+    'git --config-env="$X" fetch',
+    "git --config-env=core.pager=PAGER log",
+    'git config set core.pager "gh pr merge 1"',
+    'git config -f .git/config core.pager "gh pr merge 1"',
+    "git -c core.askPass='gh pr merge 1' fetch",
+    "git -c include.path=/tmp/x fetch",
+    "git -c filter.x.smudge='gh pr merge 1' checkout .",
+    "git -c diff.x.textconv='gh pr merge 1' diff",
     // ./envshebang.sh runs by path with an `env -S bash` shebang: still shell, still checked.
     "./envshebang.sh",
     // Deep nesting is reported, not crashed through (fail closed).
@@ -387,6 +397,14 @@ describe("guard", () => {
     "bun test",
     "bun build ./src/index.ts --outdir dist",
     "cd apps/api && bun install",
+    // Config that turns a command off, as the Claude CLI's own git calls do; reading and removing config.
+    "git -c core.hooksPath=/dev/null -c core.fsmonitor= worktree list --porcelain",
+    "git -c core.quotePath=false -c core.fsmonitor= -c core.hooksPath=/dev/null -c core.pager= -c log.showSignature=false log --since=7.days",
+    "git -c core.pager=cat -c core.editor=true -c credential.helper= status",
+    "git config core.pager cat",
+    "git config core.pager",
+    "git config --unset alias.p",
+    "git config unset core.pager",
   ]
   for (const command of stillAllowed) {
     test(`allows: ${JSON.stringify(command)}`, () => expect(refusal(command, context)).toBeUndefined())
