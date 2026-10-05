@@ -92,9 +92,6 @@ import Icon from "./Icon.astro";
           halves.forEach((h) => (h.style.opacity = (1 - smooth(0.25, 0.65, p)).toFixed(3)));
         },
       });
-    } else {
-      recording.style.setProperty("--grow", "1");
-      recording.style.setProperty("--caption", "1");
     }
   }
 </script>
@@ -170,9 +167,16 @@ import Icon from "./Icon.astro";
     transition: opacity 300ms var(--ease-out);
   }
 
+  /* Where nothing hovers, the clip's only pause control stays in sight. */
   .frame:hover .toggle,
   .toggle:focus-visible {
     opacity: 1;
+  }
+
+  @media (hover: none) {
+    .toggle {
+      opacity: 1;
+    }
   }
 
   .toggle .play,
@@ -235,75 +239,78 @@ import Icon from "./Icon.astro";
     font-weight: 400;
   }
 
-  /* With script, pinned while the clip grows; the line parts around it. */
-  :global(html.js) .recording {
-    height: 280svh;
-    padding: 0;
-  }
-
-  :global(html.js) .pin {
-    /* The clip at full size; the line is sized so both halves fit beside it at its smallest. */
-    --clip-w: min(100cqw - 2 * var(--gutter), 96rem, (100svh - 12rem) * 1600 / 996);
-    position: sticky;
-    top: 0;
-    height: 100svh;
-    align-content: center;
-    width: 100%;
-    overflow: hidden;
-    container-type: inline-size;
-  }
-
-  /* Each half hugs the clip's edge, a little apart from it, and is pushed out as it grows. */
-  :global(html.js) .line {
-    position: absolute;
-    inset: 0;
-    align-items: center;
-    flex-wrap: nowrap;
-    gap: 0;
-    font-size: min(var(--t-h1), (50cqw - var(--gutter) - var(--clip-w) * 0.17) / 4.3);
-    pointer-events: none;
-  }
-
-  :global(html.js) .half {
-    flex: 1 1 0;
-  }
-
-  :global(html.js) .half.left {
-    text-align: right;
-    translate: calc(-1 * (var(--clip-w) * var(--grow, 0.34) / 2 + 0.3em)) 0;
-  }
-
-  :global(html.js) .half.right {
-    text-align: left;
-    translate: calc(var(--clip-w) * var(--grow, 0.34) / 2 + 0.3em) 0;
-  }
-
-  :global(html.js) .clip {
-    width: var(--clip-w);
-    transform: scale(var(--grow, 0.34));
-    transform-origin: 50% 50%;
-  }
-
-  :global(html.js) .caption {
-    opacity: var(--caption, 0);
-    translate: 0 calc((1 - var(--caption, 0)) * 1rem);
-  }
-
-  @media (max-width: 760px) {
-    :global(html.js) .line {
-      flex-direction: column;
-      justify-content: space-between;
-      padding-block: 18svh;
+  /* With script, pinned while the clip grows; the line parts around it. Under Reduce Motion
+     nothing grows, and the chapter keeps the plain layout above. */
+  @media (prefers-reduced-motion: no-preference) {
+    :global(html.js) .recording {
+      height: 280svh;
+      padding: 0;
     }
-    :global(html.js) .line {
-      font-size: var(--t-h1);
+
+    :global(html.js) .pin {
+      /* The clip at full size; the line is sized so both halves fit beside it at its smallest. */
+      --clip-w: min(100cqw - 2 * var(--gutter), 96rem, (100svh - 12rem) * 1600 / 996);
+      position: sticky;
+      top: 0;
+      height: 100svh;
+      align-content: center;
+      width: 100%;
+      overflow: hidden;
+      container-type: inline-size;
     }
+
+    /* Each half hugs the clip's edge, a little apart from it, and is pushed out as it grows. */
+    :global(html.js) .line {
+      position: absolute;
+      inset: 0;
+      align-items: center;
+      flex-wrap: nowrap;
+      gap: 0;
+      font-size: min(var(--t-h1), (50cqw - var(--gutter) - var(--clip-w) * 0.17) / 4.3);
+      pointer-events: none;
+    }
+
     :global(html.js) .half {
-      flex: none;
+      flex: 1 1 0;
     }
-    :global(html.js) .half.left,
+
+    :global(html.js) .half.left {
+      text-align: right;
+      translate: calc(-1 * (var(--clip-w) * var(--grow, 0.34) / 2 + 0.3em)) 0;
+    }
+
     :global(html.js) .half.right {
-      translate: 0 0;
+      text-align: left;
+      translate: calc(var(--clip-w) * var(--grow, 0.34) / 2 + 0.3em) 0;
+    }
+
+    :global(html.js) .clip {
+      width: var(--clip-w);
+      transform: scale(var(--grow, 0.34));
+      transform-origin: 50% 50%;
+    }
+
+    :global(html.js) .caption {
+      opacity: var(--caption, 0);
+      translate: 0 calc((1 - var(--caption, 0)) * 1rem);
+    }
+
+    @media (max-width: 760px) {
+      :global(html.js) .line {
+        flex-direction: column;
+        justify-content: space-between;
+        padding-block: 18svh;
+      }
+      :global(html.js) .line {
+        font-size: var(--t-h1);
+      }
+      :global(html.js) .half {
+        flex: none;
+      }
+      :global(html.js) .half.left,
+      :global(html.js) .half.right {
+        translate: 0 0;
+      }
     }
   }
 </style>

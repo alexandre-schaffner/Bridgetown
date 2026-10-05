@@ -643,6 +643,15 @@ const CHECKS: Check[] = [
       expect(top > -1, `the focused nav is ${Math.round(-top)}px off the top of the screen`);
     },
   },
+  {
+    name: "On a touch screen the recording's pause button is in sight",
+    viewport: PHONE,
+    motion: "no-preference",
+    async run(page) {
+      const opacity = await page.evaluate(() => getComputedStyle(document.querySelector("[data-clip-toggle]")!).opacity);
+      expect(opacity === "1", `it is drawn at opacity ${opacity}, shown only on hover`);
+    },
+  },
 ];
 
 async function check(browser: Browser, base: string, out: string, c: Check, n: number): Promise<CheckResult> {
