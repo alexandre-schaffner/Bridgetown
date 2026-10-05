@@ -343,6 +343,24 @@ input {
   color: var(--ui-faint);
 }
 
+/* A dot for something happening now. Keyframe names are global (Astro scopes selectors, not
+   keyframes), so a component's own carry its name: film-arrive, hero-grain. */
+.live {
+  animation: live-breathe 2.4s var(--ease-in-out) infinite;
+}
+
+@keyframes live-breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live {
+    animation: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

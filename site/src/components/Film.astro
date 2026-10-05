@@ -31,14 +31,14 @@ import Icon from "./Icon.astro";
   }
 
   .film[open] {
-    animation: arrive 700ms var(--ease-out);
+    animation: film-arrive 700ms var(--ease-out);
   }
 
   .film[open]::backdrop {
-    animation: fade 500ms var(--ease-out);
+    animation: film-fade 500ms var(--ease-out);
   }
 
-  @keyframes arrive {
+  @keyframes film-arrive {
     from {
       opacity: 0;
       transform: scale(0.92);
@@ -46,7 +46,7 @@ import Icon from "./Icon.astro";
     }
   }
 
-  @keyframes fade {
+  @keyframes film-fade {
     from {
       opacity: 0;
     }

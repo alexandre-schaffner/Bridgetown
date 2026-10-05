@@ -712,10 +712,10 @@ const H = 120;
 
   /* The two buttons that are yours get pressed. */
   :global(html.js) .played .primary {
-    animation: press 1.6s var(--ease-out) 600ms both;
+    animation: journey-press 1.6s var(--ease-out) 600ms both;
   }
 
-  @keyframes press {
+  @keyframes journey-press {
     0%,
     30% {
       transform: none;
@@ -735,10 +735,10 @@ const H = 120;
   }
 
   :global(html.js) .played .deployed .dot {
-    animation: land 900ms var(--ease-out) 300ms both;
+    animation: journey-land 900ms var(--ease-out) 300ms both;
   }
 
-  @keyframes land {
+  @keyframes journey-land {
     from {
       transform: scale(0);
       box-shadow: 0 0 0 0 oklch(0.62 0.12 158 / 0.6);

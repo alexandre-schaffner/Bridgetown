@@ -188,16 +188,6 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
     border-top: 0.5px solid var(--ui-hairline);
   }
 
-  .live {
-    animation: breathe 2.4s var(--ease-in-out) infinite;
-  }
-
-  @keyframes breathe {
-    50% {
-      opacity: 0.35;
-    }
-  }
-
   .axis {
     display: flex;
     justify-content: space-between;
@@ -270,12 +260,6 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
       position: static;
       width: auto;
       margin-top: 1rem;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .live {
-      animation: none;
     }
   }
 </style>

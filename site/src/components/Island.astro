@@ -342,10 +342,10 @@ const recent = [
   }
 
   .glyph:global(.working) {
-    animation: glow 2.4s ease-in-out infinite;
+    animation: island-glow 2.4s ease-in-out infinite;
   }
 
-  @keyframes glow {
+  @keyframes island-glow {
     0%,
     100% {
       filter: drop-shadow(0 0 3px oklch(0.63 0.19 252 / 0.35));
@@ -832,18 +832,7 @@ const recent = [
     align-self: start;
   }
 
-  .live {
-    animation: breathe 2.4s var(--ease-in-out) infinite;
-  }
-
-  @keyframes breathe {
-    50% {
-      opacity: 0.35;
-    }
-  }
-
   @media (prefers-reduced-motion: reduce) {
-    .live,
     .glyph:global(.working) {
       animation: none;
     }
