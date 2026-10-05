@@ -58,7 +58,7 @@ const LIVE_ONLY: ReadonlyArray<ActionKind> = ["merge", "release", "rerun", "answ
  * A card that acts on a session still in flight (a merge, a release, a rerun, an answer, a hand-off), so it goes
  * when the session ends. A draft reply still posts, and the retry card is how a failed session goes on.
  */
-export const endsWithSession = (action: Action): boolean => LIVE_ONLY.includes(action.kind) || (action.kind === "review" && action.payload !== RETRY)
+const endsWithSession = (action: Action): boolean => LIVE_ONLY.includes(action.kind) || (action.kind === "review" && action.payload !== RETRY)
 
 /** A patch applied to a session; `milestones` merge instead of replacing. */
 export const withPatch = (session: Session, patch: Partial<Session>): Session => ({

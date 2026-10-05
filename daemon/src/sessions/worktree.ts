@@ -16,8 +16,11 @@ export const slug = (text: string): string =>
     .slice(0, 40)
     .replace(/-+$/, "")
 
-/** `fix-bt-<slug>-<id tail>` (`branchFor`): the only branches Bridgetown makes, so the only worktrees and branches it ever removes. */
-const SESSION_BRANCH = /^fix-bt-[a-z0-9-]+$/
+/**
+ * `fix-bt-<slug>-<id tail>` (`branchFor`): the only branches Bridgetown makes, so the only worktrees and
+ * branches it ever removes. One path segment, never `..`: the mock's ids put an `_` in the tail.
+ */
+const SESSION_BRANCH = /^fix-bt-[a-z0-9_-]+$/
 
 export const isSessionBranch = (branch: string | null): branch is string => branch !== null && SESSION_BRANCH.test(branch)
 
