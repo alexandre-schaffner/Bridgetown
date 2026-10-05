@@ -2,13 +2,9 @@
 // second, a bar two). Plays once in real time and reports when it is done, plus the cues the
 // score is built from.
 
-import { gsap } from "gsap";
-import * as THREE from "three";
-import { createArchScene, type LightName } from "../scripts/scene";
 import { splitText } from "../lib/split";
-import { createIsland } from "../scripts/island";
-import { restView, type View } from "../scripts/view";
-import "./rig";
+import type { LightName } from "../scripts/scene";
+import { $, $$, createRig } from "./rig";
 
 type CueKind =
   | "tick" // a notification lands
@@ -36,12 +32,7 @@ interface Cue {
   e?: string;
 }
 
-const $ = <T extends Element = HTMLElement>(s: string, root: ParentNode = document) => root.querySelector<T>(s)!;
-const $$ = <T extends Element = HTMLElement>(s: string, root: ParentNode = document) => [...root.querySelectorAll<T>(s)];
-
-// The film keeps to the clock even when a frame runs long, so the score stays in sync.
-gsap.ticker.lagSmoothing(0);
-const tl = gsap.timeline({ paused: true });
+const { tl, scene, cam, flood, light, place, tour, publish } = createRig({ cinematic: true });
 const cues: Cue[] = [];
 const cue = (t: number, kind: CueKind, v?: number, more: { n?: number; e?: string } = {}) =>
   cues.push({ t: +t.toFixed(3), kind, ...(v === undefined ? {} : { v }), ...more });
@@ -50,20 +41,6 @@ const shot = (name: string) => shots[name]!;
 
 // MARK: The arch
 
-const day = (() => {
-  const c = document.createElement("canvas").getContext("2d")!;
-  c.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--day");
-  c.fillRect(0, 0, 1, 1);
-  const [r, g, b] = c.getImageData(0, 0, 1, 1).data;
-  return new THREE.Color().setRGB(r! / 255, g! / 255, b! / 255, THREE.SRGBColorSpace);
-})();
-let sceneReady = false;
-const scene = createArchScene($<HTMLCanvasElement>("[data-scene]"), {
-  day,
-  reducedMotion: false,
-  onFirstFrame: () => (sceneReady = true),
-});
-scene.setLight("out", 0.01);
 const sceneCanvas = $<HTMLCanvasElement>("[data-scene]");
 /** Starts or pauses the arch. A paused canvas still holds its last frame (often the white of
  * the flare), so it is hidden too: a shot that leaves over it then dissolves to black. */
@@ -76,27 +53,6 @@ const stage = (on: boolean, at: number) =>
     [],
     at,
   );
-const cam: View = restView();
-gsap.ticker.add(() => {
-  Object.assign(scene.view, cam);
-});
-const light = (at: number, name: LightName, seconds = 1.1) => tl.call(() => scene.setLight(name, seconds), [], at);
-const placeCamera = (at: number, view: Partial<View>, lamp?: LightName) =>
-  tl.call(
-    () => {
-      Object.assign(cam, { x: 0, y: 0, z: 30, lookX: 0, lookY: 0, lookZ: 0, white: 0, flare: 0 }, view);
-      // The ticker hands the camera over once a frame; a cut can't wait for it.
-      Object.assign(scene.view, cam);
-      scene.snap();
-      if (lamp) scene.setLight(lamp, 0.01);
-    },
-    [],
-    at,
-  );
-
-const island = createIsland($("[data-island-root]"), { reducedMotion: false, cinematic: true });
-island.setVisible(true);
-const flood = $("[data-flood]");
 
 // MARK: Grammar
 
@@ -144,8 +100,15 @@ function drift(name: string, at: number, dur: number, from: gsap.TweenVars, to: 
   tl.fromTo(c, { transformPerspective: 2400, ...from }, { ...to, duration: dur, ease: "sine.inOut" }, at);
 }
 
-/** Counts `el`'s number up to its target; the score ticks with it unless `sound` is off. */
-function countUp(el: HTMLElement, to: number, at: number, dur: number, fmt = (n: number) => `${Math.round(n)}%`, ease = "power3.out", sound = true) {
+/** Counts `el` up to `to`, shown as a percentage unless `fmt` says otherwise; the score ticks
+ * with it unless `sound` is off. */
+function countUp(
+  el: HTMLElement,
+  to: number,
+  at: number,
+  dur: number,
+  { fmt = (n: number) => `${Math.round(n)}%`, ease = "power3.out", sound = true } = {},
+) {
   const o = { n: 0 };
   tl.to(o, { n: to, duration: dur, ease, onUpdate: () => (el.textContent = fmt(o.n)) }, at);
   if (sound) cue(at, "count", dur, { n: Math.max(1, Math.min(16, Math.round(to))), e: ease });
@@ -269,10 +232,13 @@ for (let i = 0; i < N; i++) {
   enter("noise", 0, "cut");
   stage(false, 0.1);
   drift("noise", 0, 8, { scale: 2.1, rotateX: 22, rotateZ: -5, y: 40 }, { scale: 0.92, rotateX: 30, rotateZ: -9, y: -20 });
-  countUp($('[data-count="alerts"]'), 147, 0.4, 7.2, (n) => String(Math.round(n)), "power2.in", false);
-  countUp($('[data-count="mentions"]'), 23, 0.9, 6.7, (n) => String(Math.round(n)), "power2.in", false);
-  countUp($('[data-count="dms"]'), 9, 1.4, 6.2, (n) => String(Math.round(n)), "power2.in", false);
-  countUp($("[data-clock]"), 95, 0.4, 7.4, (n) => `${String(9 + Math.floor((12 + n) / 60)).padStart(2, "0")}:${String(Math.floor(12 + n) % 60).padStart(2, "0")}`, "power2.in", false);
+  const quiet = { fmt: (n: number) => String(Math.round(n)), ease: "power2.in", sound: false };
+  countUp($('[data-count="alerts"]'), 147, 0.4, 7.2, quiet);
+  countUp($('[data-count="mentions"]'), 23, 0.9, 6.7, quiet);
+  countUp($('[data-count="dms"]'), 9, 1.4, 6.2, quiet);
+  const two = (n: number) => String(n).padStart(2, "0");
+  const clock = (n: number) => `${two(9 + Math.floor((12 + n) / 60))}:${two(Math.floor(12 + n) % 60)}`;
+  countUp($("[data-clock]"), 95, 0.4, 7.4, { ...quiet, fmt: clock });
   cue(4.0, "riser", 3.95);
   // The pile rushes the lens, then nothing.
   tl.to($(".cam", shot("noise")), { scale: 1.6, filter: "blur(24px)", duration: 0.32, ease: "power3.in" }, 7.66);
@@ -291,7 +257,7 @@ leave("turn-b", 11.6);
 
 // MARK: 3 · The name (12–20)
 
-placeCamera(11.45, { x: 0, y: 0.6, z: 31, lookY: 2.6 });
+place(11.45, { x: 0, y: 0.6, z: 31, lookY: 2.6 });
 stage(true, 11.5);
 light(12.1, "rest", 2.6);
 tl.to(cam, { z: 19, y: -0.5, lookY: 1.9, duration: 6.4, ease: "power2.out" }, 12);
@@ -349,7 +315,7 @@ cue(20, "impact");
       tl.to(b, { scaleX: p, duration: 0.8, ease: "expo.out" }, s + 0.1 + j * 0.1);
     });
     // One tick-run per row: three at once would blur into noise.
-    $$("[data-pct]", row).forEach((el, j) => countUp(el, Number(el.dataset.pct), s + 0.1 + j * 0.1, 0.8, undefined, undefined, j === 0));
+    $$("[data-pct]", row).forEach((el, j) => countUp(el, Number(el.dataset.pct), s + 0.1 + j * 0.1, 0.8, { sound: j === 0 }));
     const route = $("[data-troute]", row);
     tl.fromTo(route, { opacity: 0, x: -14 }, { opacity: 1, x: 0, duration: 0.6, ease: "expo.out" }, s + 0.55);
     cue(s + 0.55, row.querySelector(".dot-amber") ? "amber" : "tick");
@@ -477,25 +443,12 @@ chapter("ch-agents", 36, 38.6);
   tl.set(flood, { opacity: 0 }, T + 1);
   tl.from($(".mac-wrap", s), { y: 180, rotateX: 20, scale: 0.9, transformPerspective: 1800, duration: 2.2, ease: "expo.out" }, T);
   reveal($(".day-title", s), T + 0.1);
-  const cap = $("[data-caption]", s);
-  const caption = (text: string, at: number) => {
-    tl.to(cap, { opacity: 0, filter: "blur(6px)", duration: 0.2 }, at);
-    tl.call(() => (cap.textContent = text), [], at + 0.21);
-    tl.to(cap, { opacity: 1, filter: "blur(0px)", duration: 0.6, ease: "expo.out" }, at + 0.22);
-  };
-  tl.call(() => island.setStep(0), [], T + 0.9);
-  caption("Agents at work, either side of the notch.", T + 0.9);
-  tl.call(() => island.setStep(1), [], T + 2.5);
-  caption("Something is yours: a banner drops, then tucks back in.", T + 2.6);
+  tour($("[data-caption]", s), [T + 0.9, T + 2.5, T + 5.6, T + 8.4], [T + 0.9, T + 2.6, T + 5.8, T + 8.5]);
   cue(T + 2.85, "amber");
-  tl.call(() => island.setStep(2), [], T + 5.6);
-  caption("Click, and the whole app unfolds.", T + 5.8);
   cue(T + 5.6 + 1.07, "click");
   cue(T + 5.6 + 1.2, "whoosh");
   // As the app unfolds, the camera leans in to the notch.
   tl.to($(".mac-wrap", s), { scale: 1.05, transformOrigin: "50% 0%", duration: 2.4, ease: "power2.inOut" }, T + 6.5);
-  tl.call(() => island.setStep(3), [], T + 8.4);
-  caption("Merge, from the notch. Then back to work.", T + 8.5);
   cue(T + 8.4 + 1.45, "click");
   cue(T + 8.4 + 1.6, "chime");
   // It leaves after the splice below gives the island time to fold back (Splices).
@@ -517,16 +470,8 @@ chapter("ch-agents", 36, 38.6);
   gates.forEach((g, i) => {
     const at = T + 1.9 + i * 1.0;
     const btn = $("[data-press]", g);
-    const off = offsetWithin(btn, $(".cam", s));
     if (i === 0) press(ptr, btn, at, { dx: 220, dy: 260 }, 0.7);
-    else {
-      tl.to(ptr, { x: off.x, y: off.y, duration: 0.55, ease: "power3.inOut" }, at - 0.62);
-      tl.to(ptr, { scale: 0.82, duration: 0.08 }, at);
-      tl.to(ptr, { scale: 1, duration: 0.25, ease: "back.out(3)" }, at + 0.08);
-      tl.to(btn, { scale: 0.93, duration: 0.08 }, at);
-      tl.to(btn, { scale: 1, duration: 0.4, ease: "back.out(3)" }, at + 0.08);
-      cue(at, "click");
-    }
+    else tap(ptr, btn, at, 0.52);
     const kind = $(".g-kind", g);
     tl.call(() => {
       kind.innerHTML = `<i class="dot dot-done"></i> ${["Merged #3352", "Released v1.35.12", "Sent to Jonas"][i]}`;
@@ -557,14 +502,7 @@ chapter("ch-agents", 36, 38.6);
   tl.to($("[data-after]", $("[data-acard]", s)), { opacity: 1, duration: 0.5 }, T + 2.0);
   const draft = $("[data-type]", s);
   typeInto(draft, draft.dataset.type!, T + 2.1, 60);
-  const send = $$("[data-chip]", s)[2]!;
-  const off = offsetWithin(send, $(".cam", s));
-  tl.to(ptr, { x: off.x, y: off.y, duration: 0.7, ease: "power3.inOut" }, T + 3.9);
-  tl.to(ptr, { scale: 0.82, duration: 0.08 }, T + 4.7);
-  tl.to(ptr, { scale: 1, duration: 0.25, ease: "back.out(3)" }, T + 4.78);
-  tl.to(send, { scale: 0.93, duration: 0.08 }, T + 4.7);
-  tl.to(send, { scale: 1, duration: 0.4, ease: "back.out(3)" }, T + 4.78);
-  cue(T + 4.7, "click");
+  tap(ptr, $$("[data-chip]", s)[2]!, T + 4.7, 0.7);
   tl.to($("[data-after]", $("[data-rcard]", s)), { opacity: 1, duration: 0.5 }, T + 4.9);
   tl.to(ptr, { opacity: 0, duration: 0.3 }, T + 5.3);
   leave("ask", 80.6);
@@ -598,7 +536,7 @@ chapter("ch-watch", 81, 83.6);
   $$("[data-pt]", s).forEach((p, i) => {
     const at = T + 1.3 + i * 0.85;
     tl.fromTo(p, { opacity: 0, y: 24, filter: "blur(6px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.7, ease: "expo.out" }, at);
-    $$("[data-pct]", p).forEach((el, j) => countUp(el, Number(el.dataset.pct), at + 0.25 + j * 0.08, 0.8, undefined, undefined, j === 0));
+    $$("[data-pct]", p).forEach((el, j) => countUp(el, Number(el.dataset.pct), at + 0.25 + j * 0.08, 0.8, { sound: j === 0 }));
     cue(at, "hit");
   });
   leave("logs", 95.6);
@@ -672,7 +610,7 @@ chapter("ch-watch", 81, 83.6);
   const T = 116;
   const s = shot("light");
   // The camera goes first: a resumed canvas must not show the frame it paused on.
-  placeCamera(T - 0.65, { x: Math.sin(-0.5) * 17, z: Math.cos(-0.5) * 17, y: -1.2, lookX: -1.5, lookY: 0.2 }, "rest");
+  place(T - 0.65, { x: Math.sin(-0.5) * 17, z: Math.cos(-0.5) * 17, y: -1.2, lookX: -1.5, lookY: 0.2 }, "rest");
   stage(true, T - 0.6);
   const walk = { a: -0.5 };
   tl.to(
@@ -702,7 +640,7 @@ chapter("ch-watch", 81, 83.6);
     cue(at as number, name === "needs-you" ? "amber" : "hit");
   });
   leave("light", 123.6);
-  tl.call(() => scene.setLight("out", 0.3), [], 123.7);
+  light(123.7, "out", 0.3);
 }
 
 // MARK: 14 · Montage, and the end (124–137)
@@ -722,7 +660,7 @@ chapter("ch-watch", 81, 83.6);
   stage(false, T + 0.2);
 
   const E = 128;
-  placeCamera(E - 0.5, { x: 0, y: 2.6, z: 32, lookY: -0.2 }, "out");
+  place(E - 0.5, { x: 0, y: 2.6, z: 32, lookY: -0.2 }, "out");
   stage(true, E - 0.4);
   light(E + 0.6, "rest", 2.4);
   tl.to(cam, { z: 18.5, y: -0.4, lookY: 3.5, duration: 8.5, ease: "power3.out" }, E);
@@ -746,10 +684,10 @@ chapter("ch-watch", 81, 83.6);
 
 // MARK: Splices
 
-// Two shots cut in after the rest was timed: everything from `at` on (in the cut before any
-// splice) moves `d` seconds later, cues included, and the score maps its sections the same way.
-// Each is whole bars, so the grid holds. Times above this are in the cut before the splices; the
-// spliced shots below are timed in the final cut.
+// Shots cut in after the rest was timed: everything from `at` on (in the cut before any splice)
+// moves `d` seconds later, cues included, and the score maps its sections the same way. Each is
+// whole bars, so the grid holds. Times above this are in the cut before the splices; the spliced
+// shots below are timed in the final cut.
 const INSERTS = [
   { at: 36, d: 6 }, // calibration, after Depth
   { at: 69, d: 2 }, // the notch, held a bar so the island folds before it goes
@@ -786,14 +724,7 @@ for (const { at, d } of [...INSERTS].sort((a, b) => b.at - a.at)) {
   };
   const up = label(rows[0]!, 0, "You marked this a good call", T + 2.0);
   press(ptr, up, T + 2.0, { dx: 240, dy: 260 }, 0.8);
-  const down = label(rows[1]!, 1, "You marked this a bad call", T + 3.4);
-  const off = offsetWithin(down, $(".cam", s));
-  tl.to(ptr, { x: off.x, y: off.y, duration: 0.6, ease: "power3.inOut" }, T + 2.7);
-  tl.to(ptr, { scale: 0.82, duration: 0.08 }, T + 3.4);
-  tl.to(ptr, { scale: 1, duration: 0.25, ease: "back.out(3)" }, T + 3.48);
-  tl.to(down, { scale: 0.9, duration: 0.08 }, T + 3.4);
-  tl.to(down, { scale: 1, duration: 0.4, ease: "back.out(3)" }, T + 3.48);
-  cue(T + 3.4, "click");
+  tap(ptr, label(rows[1]!, 1, "You marked this a bad call", T + 3.4), T + 3.4, 0.6);
   tl.to(ptr, { opacity: 0, x: "+=60", y: "+=80", duration: 0.5, ease: "power2.in" }, T + 4.4);
   leave("calibrate", T + 5.6);
 }
@@ -897,7 +828,7 @@ for (const { at, d } of [...INSERTS].sort((a, b) => b.at - a.at)) {
   drift("board", T, 6, { rotateX: 7, z: -50 }, { rotateX: 0, z: 40 });
   reveal($(".hl-s", s), T + 0.05);
   tl.fromTo($("[data-stats]", s), { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.8, ease: "expo.out" }, T + 0.25);
-  $$("[data-stat]", s).forEach((el, i) => countUp(el, Number(el.dataset.stat), T + 0.45 + i * 0.12, 1.1, (n) => String(Math.round(n))));
+  $$("[data-stat]", s).forEach((el, i) => countUp(el, Number(el.dataset.stat), T + 0.45 + i * 0.12, 1.1, { fmt: (n) => String(Math.round(n)) }));
   tl.fromTo($(".b-head", s), { opacity: 0 }, { opacity: 1, duration: 0.6 }, T + 0.6);
   const boards = $$("[data-board]", s);
   const tabs = $$("[data-tab]", s);
@@ -983,32 +914,4 @@ for (const { at, d } of [...INSERTS].sort((a, b) => b.at - a.at)) {
 
 // MARK: Run
 
-tl.eventCallback("onComplete", () => (window.__film.done = true));
-window.__film = {
-  ready: false,
-  done: false,
-  duration: tl.duration(),
-  cues: cues.sort((a, b) => a.t - b.t),
-  inserts: INSERTS,
-  start: () => void tl.play(0),
-};
-const params = new URLSearchParams(location.search);
-const wait = () => {
-  if (sceneReady) document.fonts.ready.then(() => setTimeout(() => (window.__film.ready = true), 800));
-  else requestAnimationFrame(wait);
-};
-wait();
-if (params.has("at")) {
-  // `?at=42` holds the film at 42 seconds, for stills.
-  const at = Number(params.get("at"));
-  const go = () =>
-    sceneReady
-      ? setTimeout(() => {
-          tl.seek(Math.max(0, at - 3), false);
-          tl.play();
-        }, 600)
-      : requestAnimationFrame(go);
-  go();
-  tl.call(() => tl.pause(), [], at);
-}
-if (params.has("play")) setTimeout(() => tl.play(0), 1500);
+publish({ cues: cues.sort((a, b) => a.t - b.t), inserts: INSERTS });

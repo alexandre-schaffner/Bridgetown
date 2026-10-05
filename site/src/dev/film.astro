@@ -1,127 +1,83 @@
 ---
 // The film rig, served by `astro dev` only (astro.config.mjs): the site's own components played
-// on a timeline, to be recorded (film.ts). `?cut=keynote` is the product film at 1920 × 1080;
-// `?cut=island` is the short notch recording at 1600 × 1000.
-import "../styles/global.css";
+// on a timeline (film.ts), to be recorded (scripts/record.ts). `?cut=keynote` is the product
+// film at 1920 × 1080, `?cut=launch` its 30-second cut, `?cut=island` the short notch
+// recording at 1600 × 996.
 import ArchMark from "../components/ArchMark.astro";
-import MacScreen from "../components/MacScreen.astro";
 import Journey from "../components/Journey.astro";
+import MacScreen from "../components/MacScreen.astro";
 import Outcomes from "../components/Outcomes.astro";
+import RigLayout from "./RigLayout.astro";
 ---
 
-<!doctype html>
-<html lang="en" class="js film">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="robots" content="noindex" />
-    <title>Bridgetown · film rig</title>
-    <script is:inline>
-      // `?slow=4` runs the page's clocks at a quarter speed (timers, frames, Date, performance),
-      // so a recorder that can't keep up still gets every moment; it speeds the capture back up.
-      // CSS and WAAPI animations are slowed by the recorder through DevTools.
-      (() => {
-        const slow = Number(new URLSearchParams(location.search).get("slow")) || 1;
-        if (slow === 1) return;
-        const realDate = Date.now.bind(Date);
-        const d0 = realDate();
-        Date.now = () => d0 + (realDate() - d0) / slow;
-        const realPerf = performance.now.bind(performance);
-        const p0 = realPerf();
-        performance.now = () => p0 + (realPerf() - p0) / slow;
-        const raf = window.requestAnimationFrame.bind(window);
-        window.requestAnimationFrame = (cb) => raf((t) => cb(p0 + (t - p0) / slow));
-        const st = window.setTimeout.bind(window);
-        window.setTimeout = (fn, ms = 0, ...a) => st(fn, ms * slow, ...a);
-        const si = window.setInterval.bind(window);
-        window.setInterval = (fn, ms = 0, ...a) => si(fn, ms * slow, ...a);
-      })();
-    </script>
-  </head>
-  <body>
-    <canvas class="scene" data-scene></canvas>
+<RigLayout title="film rig" rig="film">
+  <!-- Night cards over the arch. -->
+  <div class="card night-card high" data-card="title">
+    <p class="mark"><ArchMark size={44} /></p>
+    <h1>Bridgetown</h1>
+  </div>
+  <div class="card night-card low" data-card="promise">
+    <p class="big">Your alerts, handled<br />before you look.</p>
+  </div>
+  <div class="card night-card low" data-card="question">
+    <p class="big">Every alert gets one question.<br /><span class="soft">Can an agent finish this, or does it need you?</span></p>
+  </div>
 
-    <!-- Night cards over the arch. -->
-    <div class="card night-card high" data-card="title">
-      <p class="mark"><ArchMark size={44} /></p>
-      <h1>Bridgetown</h1>
+  <!-- Day: the notch. -->
+  <section class="scene-day" data-card="notch">
+    <h2 class="day-title">It lives in the notch.</h2>
+    <div class="mac-wrap" data-island-root>
+      <MacScreen class="film-mac" />
     </div>
-    <div class="card night-card low" data-card="promise">
-      <p class="big">Your alerts, handled<br />before you look.</p>
-    </div>
-    <div class="card night-card low" data-card="question">
-      <p class="big">Every alert gets one question.<br /><span class="soft">Can an agent finish this, or does it need you?</span></p>
-    </div>
+    <p class="caption" data-caption></p>
+  </section>
 
-    <!-- Day: the notch. -->
-    <section class="scene-day" data-card="notch">
-      <h2 class="day-title">It lives in the notch.</h2>
-      <div class="mac-wrap" data-island-root>
-        <MacScreen class="film-mac" />
-      </div>
-      <p class="caption" data-caption></p>
-    </section>
+  <!-- Day: the agents' path. -->
+  <section class="scene-day journey-wrap" data-card="journey">
+    <Journey />
+  </section>
 
-    <!-- Day: the agents' path. -->
-    <section class="scene-day journey-wrap" data-card="journey">
-      <Journey />
-    </section>
+  <!-- Night: the light. -->
+  <div class="card night-card corner" data-card="light">
+    <h2 class="light-title">Read the light.</h2>
+    <p class="light-caption" data-light-caption></p>
+  </div>
 
-    <!-- Night: the light. -->
-    <div class="card night-card corner" data-card="light">
-      <h2 class="light-title">Read the light.</h2>
-      <p class="light-caption" data-light-caption></p>
-    </div>
+  <!-- Day: outcomes. -->
+  <section class="scene-day outcomes-wrap" data-card="outcomes">
+    <Outcomes />
+  </section>
 
-    <!-- Day: outcomes. -->
-    <section class="scene-day outcomes-wrap" data-card="outcomes">
-      <Outcomes />
-    </section>
+  <!-- Night: the end. -->
+  <div class="card night-card high end" data-card="end">
+    <p class="mark"><ArchMark size={36} /></p>
+    <h2>Bridgetown</h2>
+    <p class="end-line">Early access, for macOS 14 or later.</p>
+  </div>
 
-    <!-- Night: the end. -->
-    <div class="card night-card high end" data-card="end">
-      <p class="mark"><ArchMark size={36} /></p>
-      <h2>Bridgetown</h2>
-      <p class="end-line">Early access, for macOS 14 or later.</p>
-    </div>
+  <!-- Launch cut: its own words. -->
+  <div class="card night-card low" data-card="l-alerts">
+    <p class="big">Every alert. Every mention.<br /><span class="soft">Read the moment it lands.</span></p>
+  </div>
+  <div class="card night-card low" data-card="l-agents">
+    <p class="big">Agents take what they can finish.<br /><span class="soft">You get the rest.</span></p>
+  </div>
+  <div class="card night-card high" data-card="l-intro">
+    <p class="kick">Introducing</p>
+    <p class="mark"><ArchMark size={40} /></p>
+    <h2 class="intro-name">Bridgetown</h2>
+    <p class="end-line">Your alerts, handled before you look.</p>
+    <p class="end-line soft-small">Early access, for macOS 14 or later.</p>
+  </div>
 
-    <!-- Launch cut: its own words. -->
-    <div class="card night-card low" data-card="l-alerts">
-      <p class="big">Every alert. Every mention.<br /><span class="soft">Read the moment it lands.</span></p>
-    </div>
-    <div class="card night-card low" data-card="l-agents">
-      <p class="big">Agents take what they can finish.<br /><span class="soft">You get the rest.</span></p>
-    </div>
-    <div class="card night-card high" data-card="l-intro">
-      <p class="kick">Introducing</p>
-      <p class="mark"><ArchMark size={40} /></p>
-      <h2 class="intro-name">Bridgetown</h2>
-      <p class="end-line">Your alerts, handled before you look.</p>
-      <p class="end-line soft-small">Early access, for macOS 14 or later.</p>
-    </div>
-
-    <div class="flood" data-flood></div>
-
-    <script>
-      import "./film";
-    </script>
-  </body>
-</html>
+  <script>
+    import "./film";
+  </script>
+</RigLayout>
 
 <style>
-  :global(html.film),
-  :global(html.film body) {
-    width: 100vw;
-    height: 100vh;
-    overflow: hidden;
+  :global(html.film) {
     background: #050608;
-    cursor: none;
-  }
-
-  .scene {
-    position: fixed;
-    inset: 0;
-    width: 100vw;
-    height: 100vh;
   }
 
   [data-card] {
@@ -275,15 +231,6 @@ import Outcomes from "../components/Outcomes.astro";
   .end-line {
     font-size: 1.75rem;
     color: var(--night-dim);
-  }
-
-  .flood {
-    position: fixed;
-    inset: 0;
-    z-index: 1;
-    background: var(--day);
-    opacity: 0;
-    pointer-events: none;
   }
 
   /* The island cut: just the screen, edge to edge, all of it. */

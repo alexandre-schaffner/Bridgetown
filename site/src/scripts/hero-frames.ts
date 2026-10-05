@@ -16,8 +16,11 @@ interface FrameSet {
   loop: string;
 }
 
-/** Keyed by directory: the hero's <picture> (pages/index.astro) picks one by its first frame. */
-const SETS: Record<string, FrameSet> = {
+/**
+ * Keyed by directory: the hero's <picture> (pages/index.astro) picks one by its first frame.
+ * scripts/render-hero.ts renders them.
+ */
+export const SETS: Record<string, FrameSet> = {
   l: { dir: "/hero/l", count: 240, width: 2560, height: 1440, loop: "/hero/l/loop.mp4" },
   m: { dir: "/hero/m", count: 240, width: 1920, height: 1080, loop: "/hero/l/loop.mp4" },
   p: { dir: "/hero/p", count: 200, width: 1080, height: 1920, loop: "/hero/p/loop.mp4" },

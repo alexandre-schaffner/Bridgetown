@@ -2,11 +2,11 @@
 // The launch film rig, served by `astro dev` only (astro.config.mjs): every feature, one shot
 // each, cut to a 120 BPM grid (launch.ts directs it, and reports the cues its score is built
 // from). Drawn at a fixed 1920 × 1080, in pixels.
-import "../styles/global.css";
 import ArchMark from "../components/ArchMark.astro";
 import Icon from "../components/Icon.astro";
 import MacScreen from "../components/MacScreen.astro";
 import { areaPath, linePath, series } from "../lib/spark";
+import RigLayout from "./RigLayout.astro";
 
 // Triage: what Jev answers for each message, and where the policy sends it.
 const triage = [
@@ -206,715 +206,636 @@ const more: [string, string][] = [
 ];
 ---
 
-<!doctype html>
-<html lang="en" class="js launch">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="robots" content="noindex" />
-    <title>Bridgetown · launch film</title>
-    <script is:inline>
-      // `?vt` puts the page on a virtual clock (Date, performance, frames, timers, CSS and Web
-      // Animations) that only moves when the recorder calls `__advance(ms)`. Every frame of the
-      // film is then drawn at its exact time, whatever it costs to draw.
-      (() => {
-        if (!new URLSearchParams(location.search).has("vt")) return;
-        let now = 0;
-        const d0 = Date.now();
-        const p0 = performance.now();
-        Date.now = () => d0 + now;
-        performance.now = () => p0 + now;
+<RigLayout title="launch film" rig="launch">
+  <!-- 1 · The noise. -->
+  <section class="shot" data-shot="noise">
+    <div class="cam"><div class="wall" data-wall></div></div>
+    <div class="veil"></div>
+    <div class="tally mono">
+      <p><b data-count="alerts">0</b> alerts</p>
+      <p><b data-count="mentions">0</b> mentions</p>
+      <p><b data-count="dms">0</b> messages</p>
+      <p class="clock" data-clock>09:12</p>
+    </div>
+  </section>
 
-        let frames = new Map();
-        let nextId = 1;
-        window.requestAnimationFrame = (cb) => (frames.set(nextId, cb), nextId++);
-        window.cancelAnimationFrame = (id) => frames.delete(id);
+  <section class="shot center" data-shot="turn-a">
+    <h2 class="hl" data-split>Most of it doesn’t need you.</h2>
+  </section>
+  <section class="shot center" data-shot="turn-b">
+    <h2 class="hl" data-split>The rest <span class="dim">can’t wait.</span></h2>
+  </section>
 
-        const timers = new Map();
-        const later = (fn, ms, args, every) => {
-          const id = nextId++;
-          timers.set(id, { at: now + Math.max(0, ms || 0), fn, args, every });
-          return id;
-        };
-        window.setTimeout = (fn, ms, ...args) => later(fn, ms, args, 0);
-        window.setInterval = (fn, ms, ...args) => later(fn, ms, args, Math.max(1, ms || 0));
-        window.clearTimeout = window.clearInterval = (id) => timers.delete(id);
+  <!-- 2 · The name, over the arch. -->
+  <section class="shot over high" data-shot="title">
+    <p class="mark"><ArchMark size={56} /></p>
+    <h1 class="name" data-split>Bridgetown</h1>
+  </section>
+  <section class="shot over low" data-shot="tagline">
+    <p class="tag-line" data-split>Your alerts, handled <span class="dim">before you look.</span></p>
+  </section>
 
-        // Each animation's own time, moved by hand.
-        const clocks = new WeakMap();
-        const animations = (ms) => {
-          for (const a of document.getAnimations()) {
-            if (!clocks.has(a)) {
-              clocks.set(a, a.currentTime ?? 0);
-              a.pause();
-            }
-            const t = clocks.get(a) + ms * (a.playbackRate || 1);
-            clocks.set(a, t);
-            const end = a.effect?.getComputedTiming().endTime ?? 0;
-            if (Number.isFinite(end) && t >= end) a.finish();
-            else a.currentTime = t;
-          }
-        };
+  <!-- Chapter cards. -->
+  <section class="shot center chapter" data-shot="ch-triage">
+    <p class="kick mono">01 · Triage</p>
+    <h2 class="hl" data-split>One question<br />for every message.</h2>
+  </section>
+  <section class="shot center chapter" data-shot="ch-agents">
+    <p class="kick mono">02 · Agents</p>
+    <h2 class="hl" data-split>Agents take it<br /><span class="dim">all the way.</span></h2>
+  </section>
+  <section class="shot center chapter" data-shot="ch-watch">
+    <p class="kick mono">03 · Watch</p>
+    <h2 class="hl" data-split>It watches prod.<br /><span class="dim">Even when Slack is quiet.</span></h2>
+  </section>
 
-        window.__advance = (ms) => {
-          const target = now + ms;
-          for (;;) {
-            let due = null;
-            for (const [id, t] of timers) if (t.at <= target && (!due || t.at < due[1].at)) due = [id, t];
-            if (!due) break;
-            const [id, t] = due;
-            now = Math.max(now, t.at);
-            if (t.every) t.at += t.every;
-            else timers.delete(id);
-            typeof t.fn === "function" ? t.fn(...t.args) : 0;
-          }
-          now = target;
-          animations(ms);
-          const run = frames;
-          frames = new Map();
-          for (const cb of run.values()) cb(p0 + now);
-        };
-      })();
-    </script>
-  </head>
-  <body>
-    <canvas class="scene" data-scene></canvas>
-    <div class="flood" data-flood></div>
-
-    <!-- 1 · The noise. -->
-    <section class="shot" data-shot="noise">
-      <div class="cam"><div class="wall" data-wall></div></div>
-      <div class="veil"></div>
-      <div class="tally mono">
-        <p><b data-count="alerts">0</b> alerts</p>
-        <p><b data-count="mentions">0</b> mentions</p>
-        <p><b data-count="dms">0</b> messages</p>
-        <p class="clock" data-clock>09:12</p>
-      </div>
-    </section>
-
-    <section class="shot center" data-shot="turn-a">
-      <h2 class="hl" data-split>Most of it doesn’t need you.</h2>
-    </section>
-    <section class="shot center" data-shot="turn-b">
-      <h2 class="hl" data-split>The rest <span class="dim">can’t wait.</span></h2>
-    </section>
-
-    <!-- 2 · The name, over the arch. -->
-    <section class="shot over high" data-shot="title">
-      <p class="mark"><ArchMark size={56} /></p>
-      <h1 class="name" data-split>Bridgetown</h1>
-    </section>
-    <section class="shot over low" data-shot="tagline">
-      <p class="tag-line" data-split>Your alerts, handled <span class="dim">before you look.</span></p>
-    </section>
-
-    <!-- Chapter cards. -->
-    <section class="shot center chapter" data-shot="ch-triage">
-      <p class="kick mono">01 · Triage</p>
-      <h2 class="hl" data-split>One question<br />for every message.</h2>
-    </section>
-    <section class="shot center chapter" data-shot="ch-agents">
-      <p class="kick mono">02 · Agents</p>
-      <h2 class="hl" data-split>Agents take it<br /><span class="dim">all the way.</span></h2>
-    </section>
-    <section class="shot center chapter" data-shot="ch-watch">
-      <p class="kick mono">03 · Watch</p>
-      <h2 class="hl" data-split>It watches prod.<br /><span class="dim">Even when Slack is quiet.</span></h2>
-    </section>
-
-    <!-- 3 · Triage. -->
-    <section class="shot" data-shot="triage">
-      <div class="cam">
-        <div class="triage">
-          <header class="t-head">
-            <p class="eyebrow"><span class="jev">Jev</span> TypeSafe System One · one call per message</p>
-            <p class="eyebrow right">Rules first · then Jev · then your policy</p>
-          </header>
-          <ol class="t-log">
-            <li class="t-cols mono"><span>Message</span><span>Jev’s answers</span><span>Route</span></li>
-            {
-              triage.map((row) => (
-                <li class="t-row" data-trow>
-                  <div class="t-msg">
-                    <p class="t-meta"><span class="mono">{row.from}</span><span>{row.who}</span></p>
-                    <p class="t-text">{row.text}</p>
-                  </div>
-                  <div class="t-answers">
-                    {row.answers ? (
-                      row.answers.map(([q, p]) => (
-                        <div class="t-a" style={`--p:${p / 100}`}>
-                          <span class="q">{q}</span>
-                          <span class="bar"><i /></span>
-                          <span class="pct mono" data-pct={p}>0%</span>
-                        </div>
-                      ))
-                    ) : (
-                      <p class="t-rule mono">Matched a rule: a successful deploy.<br />No model call.</p>
-                    )}
-                  </div>
-                  <p class="t-route" data-troute>
-                    <i class={`dot dot-${row.route[1]}`} />
-                    <span>{row.route[0]}</span>
-                  </p>
-                </li>
-              ))
-            }
-          </ol>
-          <div class="policy">
-            <span class="p-label">Start an agent when Jev is at least</span>
-            <span class="p-track"><i data-pfill></i><b data-pthumb></b></span>
-            <span class="p-val mono" data-pval>75%</span>
-            <span class="p-label dim">sure it can finish the job</span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="shot" data-shot="depth">
-      <div class="cam depth">
-        <h2 class="hl-m" data-split>Depth picks the model.</h2>
-        <div class="d-grid">
+  <!-- 3 · Triage. -->
+  <section class="shot" data-shot="triage">
+    <div class="cam">
+      <div class="triage">
+        <header class="t-head">
+          <p class="eyebrow"><span class="jev">Jev</span> TypeSafe System One · one call per message</p>
+          <p class="eyebrow right">Rules first · then Jev · then your policy</p>
+        </header>
+        <ol class="t-log">
+          <li class="t-cols mono"><span>Message</span><span>Jev’s answers</span><span>Route</span></li>
           {
-            depths.map((d) => (
-              <div class="d-card" data-dcard>
-                <p class="d-depth mono">{d.depth}</p>
-                <p class="d-model">{d.model}</p>
-                <p class="d-effort">{d.effort} effort</p>
-                <span class="d-meter"><i style={`--f:${d.fill}`} /></span>
-                <p class="d-ex">{d.example}</p>
-              </div>
-            ))
-          }
-        </div>
-      </div>
-    </section>
-
-    <section class="shot" data-shot="calibrate">
-      <div class="cam calibrate">
-        <div class="team-copy">
-          <h2 class="hl-m" data-split>Tell it when <span class="dim">it’s wrong.</span></h2>
-          <p class="sub" data-split>Every verdict is kept with its numbers. A thumb labels it for calibration.</p>
-        </div>
-        <ol class="verdicts">
-          {
-            verdicts.map((v) => (
-              <li class="v-row" data-vrow>
-                <p class="t-meta"><span class="mono">{v.from}</span><span>{v.who}</span></p>
-                <p class="v-text">{v.text}</p>
-                <p class="v-route"><i class={`dot dot-${v.route[1]}`} /> {v.route[0]} <span class="faint mono">{v.nums}</span></p>
-                <div class="v-fb">
-                  <span class="v-q" data-vq>Was this the right call?</span>
-                  <span class="thumb" data-thumb><Icon name="thumbs-up" size={24} /></span>
-                  <span class="thumb" data-thumb><Icon name="thumbs-down" size={24} /></span>
+            triage.map((row) => (
+              <li class="t-row" data-trow>
+                <div class="t-msg">
+                  <p class="t-meta"><span class="mono">{row.from}</span><span>{row.who}</span></p>
+                  <p class="t-text">{row.text}</p>
                 </div>
+                <div class="t-answers">
+                  {row.answers ? (
+                    row.answers.map(([q, p]) => (
+                      <div class="t-a" style={`--p:${p / 100}`}>
+                        <span class="q">{q}</span>
+                        <span class="bar"><i /></span>
+                        <span class="pct mono" data-pct={p}>0%</span>
+                      </div>
+                    ))
+                  ) : (
+                    <p class="t-rule mono">Matched a rule: a successful deploy.<br />No model call.</p>
+                  )}
+                </div>
+                <p class="t-route" data-troute>
+                  <i class={`dot dot-${row.route[1]}`} />
+                  <span>{row.route[0]}</span>
+                </p>
               </li>
             ))
           }
         </ol>
-        <svg class="pointer big" data-pointer width="34" height="34" viewBox="0 0 22 22"><path d="M4 2.5v15.2l3.9-3.6 2.5 5.6 2.6-1.1-2.4-5.5h5.3z" fill="#000" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+        <div class="policy">
+          <span class="p-label">Start an agent when Jev is at least</span>
+          <span class="p-track"><i data-pfill></i><b data-pthumb></b></span>
+          <span class="p-val mono" data-pval>75%</span>
+          <span class="p-label dim">sure it can finish the job</span>
+        </div>
       </div>
-    </section>
+    </div>
+  </section>
 
-    <!-- 4 · The agents' path, Diagnose to Deploy. -->
-    <section class="shot" data-shot="pipe">
-      <ol class="rail">
-        {rail.map((s, i) => (
-          <li data-rail class:list={[(i === 6 || i === 7) && "yours"]}><i></i><span>{s}</span></li>
-        ))}
+  <section class="shot" data-shot="depth">
+    <div class="cam depth">
+      <h2 class="hl-m" data-split>Depth picks the model.</h2>
+      <div class="d-grid">
+        {
+          depths.map((d) => (
+            <div class="d-card" data-dcard>
+              <p class="d-depth mono">{d.depth}</p>
+              <p class="d-model">{d.model}</p>
+              <p class="d-effort">{d.effort} effort</p>
+              <span class="d-meter"><i style={`--f:${d.fill}`} /></span>
+              <p class="d-ex">{d.example}</p>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <section class="shot" data-shot="calibrate">
+    <div class="cam calibrate">
+      <div class="team-copy">
+        <h2 class="hl-m" data-split>Tell it when <span class="dim">it’s wrong.</span></h2>
+        <p class="sub" data-split>Every verdict is kept with its numbers. A thumb labels it for calibration.</p>
+      </div>
+      <ol class="verdicts">
+        {
+          verdicts.map((v) => (
+            <li class="v-row" data-vrow>
+              <p class="t-meta"><span class="mono">{v.from}</span><span>{v.who}</span></p>
+              <p class="v-text">{v.text}</p>
+              <p class="v-route"><i class={`dot dot-${v.route[1]}`} /> {v.route[0]} <span class="faint mono">{v.nums}</span></p>
+              <div class="v-fb">
+                <span class="v-q" data-vq>Was this the right call?</span>
+                <span class="thumb" data-thumb><Icon name="thumbs-up" size={24} /></span>
+                <span class="thumb" data-thumb><Icon name="thumbs-down" size={24} /></span>
+              </div>
+            </li>
+          ))
+        }
       </ol>
-      <div class="viewport">
-        <ol class="track" data-track>
-          <li class="frame" data-frame>
-            <p class="step mono">1 · Diagnose</p>
-            <h3>Finds what broke, and says so plainly.</h3>
-            <div class="panel" data-in>
-              <p class="panel-head"><span>Route 5xx · /v4/orders</span><span class="mono faint">Grafana · last hour</span></p>
-              <svg viewBox="0 0 1000 220" preserveAspectRatio="none" class="chart">
-                <path d={areaPath(rise, 1000, 220, 14)} class="area" data-area />
-                <path d={linePath(rise, 1000, 220, 14)} class="line" pathLength="1" data-draw />
-                <line x1="820" x2="820" y1="0" y2="220" class="deploy" />
-              </svg>
-              <p class="panel-sub mono" data-in>api v1.35.11 deployed 4 min before the rise</p>
-              <p class="diag" data-in><b>Diagnosis</b> /v4/orders parses an empty <code>region</code> as <code>0</code>, and the lookup throws. The change came in with v1.35.11.</p>
+      <svg class="pointer big" data-pointer width="34" height="34" viewBox="0 0 22 22"><path d="M4 2.5v15.2l3.9-3.6 2.5 5.6 2.6-1.1-2.4-5.5h5.3z" fill="#000" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+    </div>
+  </section>
+
+  <!-- 4 · The agents' path, Diagnose to Deploy. -->
+  <section class="shot" data-shot="pipe">
+    <ol class="rail">
+      {rail.map((s, i) => (
+        <li data-rail class:list={[(i === 6 || i === 7) && "yours"]}><i></i><span>{s}</span></li>
+      ))}
+    </ol>
+    <div class="viewport">
+      <ol class="track" data-track>
+        <li class="frame" data-frame>
+          <p class="step mono">1 · Diagnose</p>
+          <h3>Finds what broke, and says so plainly.</h3>
+          <div class="panel" data-in>
+            <p class="panel-head"><span>Route 5xx · /v4/orders</span><span class="mono faint">Grafana · last hour</span></p>
+            <svg viewBox="0 0 1000 220" preserveAspectRatio="none" class="chart">
+              <path d={areaPath(rise, 1000, 220, 14)} class="area" data-area />
+              <path d={linePath(rise, 1000, 220, 14)} class="line" pathLength="1" data-draw />
+              <line x1="820" x2="820" y1="0" y2="220" class="deploy" />
+            </svg>
+            <p class="panel-sub mono" data-in>api v1.35.11 deployed 4 min before the rise</p>
+            <p class="diag" data-in><b>Diagnosis</b> /v4/orders parses an empty <code>region</code> as <code>0</code>, and the lookup throws. The change came in with v1.35.11.</p>
+          </div>
+        </li>
+        <li class="frame" data-frame>
+          <p class="step mono">2 · Fix</p>
+          <h3>Changes the code, on its own branch.</h3>
+          <div class="panel code" data-in>
+            <p class="panel-head mono"><span>src/routes/orders.ts</span><span class="faint">fix-bt-api-empty-region · +4 −1</span></p>
+            <pre>{diff.map(([n, kind, text]) => (
+              <span class:list={["dl", kind]} data-in><span class="ln">{n}</span>{text}{"\n"}</span>
+            ))}</pre>
+            <p class="panel-foot mono" data-in><span class="ok">✓</span> 214 pass · 0 fail</p>
+          </div>
+        </li>
+        <li class="frame" data-frame>
+          <p class="step mono">3 · Draft PR</p>
+          <h3>Opens a draft, with the reasoning attached.</h3>
+          <div class="panel" data-in>
+            <p class="pr-title">fix(api): reject an empty region on /v4/orders <span class="faint">#3352</span></p>
+            <p class="pr-meta"><span class="pill">Draft</span><span class="mono faint">fix-bt-api-empty-region</span></p>
+            <div class="pr-body">
+              <p data-in><b>Root cause.</b> An empty region was parsed as 0 since v1.35.11.</p>
+              <p data-in><b>Fix.</b> Reject it with a 400 before the lookup.</p>
+              <p data-in><b>Tested.</b> A unit test for the empty, missing and valid cases.</p>
             </div>
-          </li>
-          <li class="frame" data-frame>
-            <p class="step mono">2 · Fix</p>
-            <h3>Changes the code, on its own branch.</h3>
-            <div class="panel code" data-in>
-              <p class="panel-head mono"><span>src/routes/orders.ts</span><span class="faint">fix-bt-api-empty-region · +4 −1</span></p>
-              <pre>{diff.map(([n, kind, text]) => (
-                <span class:list={["dl", kind]} data-in><span class="ln">{n}</span>{text}{"\n"}</span>
-              ))}</pre>
-              <p class="panel-foot mono" data-in><span class="ok">✓</span> 214 pass · 0 fail</p>
-            </div>
-          </li>
-          <li class="frame" data-frame>
-            <p class="step mono">3 · Draft PR</p>
-            <h3>Opens a draft, with the reasoning attached.</h3>
-            <div class="panel" data-in>
-              <p class="pr-title">fix(api): reject an empty region on /v4/orders <span class="faint">#3352</span></p>
-              <p class="pr-meta"><span class="pill">Draft</span><span class="mono faint">fix-bt-api-empty-region</span></p>
-              <div class="pr-body">
-                <p data-in><b>Root cause.</b> An empty region was parsed as 0 since v1.35.11.</p>
-                <p data-in><b>Fix.</b> Reject it with a 400 before the lookup.</p>
-                <p data-in><b>Tested.</b> A unit test for the empty, missing and valid cases.</p>
+          </div>
+        </li>
+        <li class="frame" data-frame>
+          <p class="step mono">4 · Second review</p>
+          <h3>Another vendor’s model reads every diff.</h3>
+          <div class="panel" data-in>
+            <p class="panel-head"><span>Codex · read-only sandbox</span><span class="mono faint">Jev judges each finding</span></p>
+            <ul class="rounds">
+              <li data-in><span class="r mono">Round 1</span><span>A negative region still reaches the lookup.</span><span class="tag tag-amber">Blocking · 91%</span></li>
+              <li data-in><span class="r"></span><span>Name the constant for the error message.</span><span class="tag">Dropped · nitpick</span></li>
+              <li data-in><span class="r"></span><span>Agent: validates <code>region &gt; 0</code>, adds a test.</span><span class="tag">Fixed</span></li>
+              <li data-in><span class="r mono">Round 2</span><span>No blocking findings.</span><span class="tag tag-green">Passed</span></li>
+            </ul>
+          </div>
+        </li>
+        <li class="frame" data-frame>
+          <p class="step mono">5 · CI</p>
+          <h3>Waits for green, and fixes what isn’t.</h3>
+          <div class="panel" data-in>
+            <p class="panel-head"><span>Out of draft · checks</span><span class="mono faint">#3352</span></p>
+            <ul class="checks">
+              <li data-check><span class="ok">✓</span> lint <span class="faint mono">18s</span></li>
+              <li data-check><span class="ok">✓</span> typecheck <span class="faint mono">41s</span></li>
+              <li data-check><span class="ok">✓</span> unit <span class="faint mono">1m 12s</span></li>
+              <li data-check><span class="ok">✓</span> e2e · orders <span class="faint mono">3m 05s</span></li>
+            </ul>
+          </div>
+        </li>
+        <li class="frame" data-frame>
+          <p class="step mono">6 · Review request</p>
+          <h3>Asks a person to look.</h3>
+          <div class="panel slack" data-in>
+            <p class="slack-ch mono">#general-approvals</p>
+            <div class="slack-msg" data-in>
+              <span class="avatar">A</span>
+              <div>
+                <p><b>Alex</b> <span class="faint">via Bridgetown · 10:12</span></p>
+                <p>🤖 <span class="link">PR #3352</span> is green and ready for review: reject an empty region on /v4/orders.</p>
+                <p class="revv" data-in><Icon name="map" size={16} /> <span class="link">Revv walkthrough</span> <span class="faint">· 4 steps · 3 min</span></p>
               </div>
             </div>
-          </li>
-          <li class="frame" data-frame>
-            <p class="step mono">4 · Second review</p>
-            <h3>Another vendor’s model reads every diff.</h3>
-            <div class="panel" data-in>
-              <p class="panel-head"><span>Codex · read-only sandbox</span><span class="mono faint">Jev judges each finding</span></p>
-              <ul class="rounds">
-                <li data-in><span class="r mono">Round 1</span><span>A negative region still reaches the lookup.</span><span class="tag tag-amber">Blocking · 91%</span></li>
-                <li data-in><span class="r"></span><span>Name the constant for the error message.</span><span class="tag">Dropped · nitpick</span></li>
-                <li data-in><span class="r"></span><span>Agent: validates <code>region &gt; 0</code>, adds a test.</span><span class="tag">Fixed</span></li>
-                <li data-in><span class="r mono">Round 2</span><span>No blocking findings.</span><span class="tag tag-green">Passed</span></li>
-              </ul>
+          </div>
+        </li>
+        <li class="frame yours" data-frame>
+          <p class="step mono"><i class="dot dot-amber"></i> 7 · Merge · Yours</p>
+          <h3>You press Merge.</h3>
+          <div class="panel" data-in>
+            <div class="act">
+              <span class="glyph green"><Icon name="git-merge" size={22} /></span>
+              <span><b>Merge fix(api): reject an empty region</b><span class="faint">#3352 · Approved · CI green</span></span>
+              <span class="primary" data-press>Merge</span>
             </div>
-          </li>
-          <li class="frame" data-frame>
-            <p class="step mono">5 · CI</p>
-            <h3>Waits for green, and fixes what isn’t.</h3>
-            <div class="panel" data-in>
-              <p class="panel-head"><span>Out of draft · checks</span><span class="mono faint">#3352</span></p>
-              <ul class="checks">
-                <li data-check><span class="ok">✓</span> lint <span class="faint mono">18s</span></li>
-                <li data-check><span class="ok">✓</span> typecheck <span class="faint mono">41s</span></li>
-                <li data-check><span class="ok">✓</span> unit <span class="faint mono">1m 12s</span></li>
-                <li data-check><span class="ok">✓</span> e2e · orders <span class="faint mono">3m 05s</span></li>
-              </ul>
+            <ul class="evidence" data-in>
+              <li><span class="ok">✓</span> Approved by Julien</li>
+              <li><span class="ok">✓</span> CI green · 4 checks</li>
+              <li><span class="ok">✓</span> Second review passed</li>
+            </ul>
+            <svg class="pointer" data-pointer width="28" height="28" viewBox="0 0 22 22"><path d="M4 2.5v15.2l3.9-3.6 2.5 5.6 2.6-1.1-2.4-5.5h5.3z" fill="#000" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+          </div>
+        </li>
+        <li class="frame yours" data-frame>
+          <p class="step mono"><i class="dot dot-amber"></i> 8 · Release · Yours</p>
+          <h3>You cut the release.</h3>
+          <div class="panel" data-in>
+            <div class="act">
+              <span class="glyph"><Icon name="package" size={22} /></span>
+              <span><b>Ship api v1.35.12</b><span class="faint">Merged · next version worked out for you</span></span>
+              <span class="primary" data-press>Cut v1.35.12</span>
             </div>
-          </li>
-          <li class="frame" data-frame>
-            <p class="step mono">6 · Review request</p>
-            <h3>Asks a person to look.</h3>
-            <div class="panel slack" data-in>
-              <p class="slack-ch mono">#general-approvals</p>
-              <div class="slack-msg" data-in>
-                <span class="avatar">A</span>
-                <div>
-                  <p><b>Alex</b> <span class="faint">via Bridgetown · 10:12</span></p>
-                  <p>🤖 <span class="link">PR #3352</span> is green and ready for review: reject an empty region on /v4/orders.</p>
-                  <p class="revv" data-in><Icon name="map" size={16} /> <span class="link">Revv walkthrough</span> <span class="faint">· 4 steps · 3 min</span></p>
-                </div>
+            <ul class="evidence" data-in>
+              <li><span class="faint">Next</span> v1.35.12</li>
+              <li><span class="faint">Changes</span> 1 PR · #3352</li>
+              <li><span class="faint">Tag</span> pushed by you, never an agent</li>
+            </ul>
+            <svg class="pointer" data-pointer width="28" height="28" viewBox="0 0 22 22"><path d="M4 2.5v15.2l3.9-3.6 2.5 5.6 2.6-1.1-2.4-5.5h5.3z" fill="#000" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+          </div>
+        </li>
+        <li class="frame" data-frame>
+          <p class="step mono">9 · Deploy</p>
+          <h3>Follows it to production.</h3>
+          <div class="panel" data-in>
+            <ol class="tracker">
+              <li data-check><i class="dot dot-done"></i> Approved <span class="faint mono">10:24</span></li>
+              <li data-check><i class="dot dot-done"></i> Built <span class="faint mono">10:27</span></li>
+              <li data-check class="prod"><i class="dot dot-green"></i> Deployed api v1.35.12 to production <span class="faint mono">10:31</span></li>
+            </ol>
+            <div class="slack-msg" data-in>
+              <span class="avatar">A</span>
+              <div>
+                <p><b>Alex</b> <span class="faint">via Bridgetown · in the alert’s thread</span></p>
+                <p>🤖 Deployed v1.35.12 ✓ 5xx on /v4/orders back to usual.</p>
               </div>
             </div>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- 5 · The notch (day). -->
+  <section class="shot day-shot notch" data-shot="notch">
+    <h2 class="day-title" data-split>It lives in the notch.</h2>
+    <div class="mac-wrap" data-island-root><MacScreen class="film-mac" /></div>
+    <p class="caption" data-caption></p>
+    <div class="dusk" data-dusk></div>
+  </section>
+
+  <!-- 6 · The three clicks. -->
+  <section class="shot" data-shot="gates">
+    <div class="cam gates">
+      <h2 class="hl-m" data-split>Three clicks stay yours.</h2>
+      <div class="g-row">
+        <div class="g" data-gate>
+          <p class="g-kind"><i class="dot dot-amber"></i> Needs you</p>
+          <span class="g-btn" data-press>Merge</span>
+          <p class="g-d">Approved, green, waiting.</p>
+        </div>
+        <div class="g" data-gate>
+          <p class="g-kind"><i class="dot dot-amber"></i> Needs you</p>
+          <span class="g-btn" data-press>Cut release</span>
+          <p class="g-d">Tags are never pushed by an agent.</p>
+        </div>
+        <div class="g" data-gate>
+          <p class="g-kind"><i class="dot dot-amber"></i> Needs you</p>
+          <span class="g-btn" data-press>Send reply</span>
+          <p class="g-d">Nothing goes to a teammate unsent.</p>
+        </div>
+      </div>
+      <p class="g-foot" data-split>Everything else, the agents carry.</p>
+      <svg class="pointer big" data-pointer width="34" height="34" viewBox="0 0 22 22"><path d="M4 2.5v15.2l3.9-3.6 2.5 5.6 2.6-1.1-2.4-5.5h5.3z" fill="#000" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+    </div>
+  </section>
+
+  <!-- 7 · Ask and reply. -->
+  <section class="shot" data-shot="ask">
+    <div class="cam ask">
+      <div class="ask-col">
+        <h2 class="hl-s" data-split>It asks. <span class="dim">You answer.</span></h2>
+        <div class="card" data-acard>
+          <p class="c-meta"><i class="dot dot-blue live"></i> fix(api): empty region · Fix <span class="faint mono">Opus · high</span></p>
+          <p class="c-q">Negative regions return 400 too, or should they fall back to the default region?</p>
+          <div class="c-replies">
+            <span class="chip" data-chip>Return 400</span>
+            <span class="chip" data-chip>Fall back</span>
+          </div>
+          <p class="c-after" data-after><i class="dot dot-blue live"></i> Answered. The agent carries on.</p>
+        </div>
+      </div>
+      <div class="ask-col">
+        <h2 class="hl-s" data-split>It drafts. <span class="dim">You send.</span></h2>
+        <div class="card" data-rcard>
+          <p class="c-meta"><span class="mono">#eng-api</span> Jonas <span class="faint">· 10:02</span></p>
+          <p class="c-q">@alex the orders page 500s when region is empty, can you take a look?</p>
+          <div class="draft">
+            <p class="d-label mono">Draft · from the agent</p>
+            <p class="d-text" data-type="Found it: an empty region was parsed as 0 since v1.35.11. Fix is in #3352, green and up for review."></p>
+          </div>
+          <div class="c-replies end"><span class="chip">Edit</span><span class="chip primary" data-chip>Send reply</span></div>
+          <p class="c-after" data-after><i class="dot dot-done"></i> Sent in the thread, as you.</p>
+        </div>
+      </div>
+      <svg class="pointer big" data-pointer width="34" height="34" viewBox="0 0 22 22"><path d="M4 2.5v15.2l3.9-3.6 2.5 5.6 2.6-1.1-2.4-5.5h5.3z" fill="#000" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+    </div>
+  </section>
+
+  <!-- 8 · Watch: signals, then logs. -->
+  <section class="shot" data-shot="watch">
+    <div class="cam watch">
+      <ul class="signals">
+        <li class="s-head mono"><span>Overview · every 5 minutes</span></li>
+        {signals.map(([name, base, seed], i) => (
+          <li class:list={["sig", i === 0 && "hot"]} data-sig>
+            <span>{name}</span>
+            <svg viewBox="0 0 120 28" preserveAspectRatio="none">
+              <path d={linePath(i === 0 ? [...series(20, base, base * 0.2, seed), base * 3.6, base * 5.8, base * 6.4] : series(23, base, base * 0.25, seed), 120, 28, 3)} />
+            </svg>
           </li>
-          <li class="frame yours" data-frame>
-            <p class="step mono"><i class="dot dot-amber"></i> 7 · Merge · Yours</p>
-            <h3>You press Merge.</h3>
-            <div class="panel" data-in>
-              <div class="act">
-                <span class="glyph green"><Icon name="git-merge" size={22} /></span>
-                <span><b>Merge fix(api): reject an empty region</b><span class="faint">#3352 · Approved · CI green</span></span>
-                <span class="primary" data-press>Merge</span>
+        ))}
+      </ul>
+      <figure class="w-chart">
+        <figcaption class="w-head"><span>API 5xx <span class="faint">· per 5 minutes · last 3 hours</span></span><span class="mono faint">Grafana</span></figcaption>
+        <svg viewBox={`0 0 ${CW} ${CH}`} preserveAspectRatio="none">
+          <rect x={riseX} y="0" width={CW - riseX} height={CH} class="rise" data-wrise />
+          <line x1="0" x2={CW} y1={cy(usual)} y2={cy(usual)} class="usual" />
+          <path d={linePath(watchValues, CW, CH, 30, 80, 0)} class="line" pathLength="1" data-wline />
+        </svg>
+        <span class="usual-label mono" style={`top:${cy(usual) + 52}px`}>usual · {Math.round(usual)}</span>
+        <div class="finding" data-finding>
+          <p class="f-kind"><i class="dot dot-done"></i> Rise · API 5xx</p>
+          <p class="f-text">Median of the last 3 steps is 5.1× usual. No Slack alert covers it.</p>
+          <p class="f-text faint">Recent deploys: api v1.35.11 at 10:14.</p>
+          <p class="f-session"><i class="dot dot-blue live"></i> Investigation started · Opus · high</p>
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <section class="shot" data-shot="logs">
+    <div class="cam logs">
+      <h2 class="hl-s" data-split>And it reads the logs.</h2>
+      <div class="l-grid">
+        <div class="stream mono" data-stream>
+          {[...logStream, ...logStream, ...logStream].map((l) => <p class:list={[l.includes("error") && "err", l.includes("warn") && "warn"]}>{l}</p>)}
+        </div>
+        <ol class="patterns">
+          <li class="pt-cols mono"><span>Pattern · every 10 minutes</span><span>Real problem</span><span>Agent work</span><span>Users hit</span></li>
+          {patterns.map((p) => (
+            <li class="pt" data-pt>
+              <div>
+                <p class="pt-text mono">{p.text}</p>
+                <p class="pt-meta"><span class="tag">{p.tag}</span><span class="faint">{p.jobs} · {p.n}</span></p>
               </div>
-              <ul class="evidence" data-in>
-                <li><span class="ok">✓</span> Approved by Julien</li>
-                <li><span class="ok">✓</span> CI green · 4 checks</li>
-                <li><span class="ok">✓</span> Second review passed</li>
-              </ul>
-              <svg class="pointer" data-pointer width="28" height="28" viewBox="0 0 22 22"><path d="M4 2.5v15.2l3.9-3.6 2.5 5.6 2.6-1.1-2.4-5.5h5.3z" fill="#000" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"></path></svg>
-            </div>
-          </li>
-          <li class="frame yours" data-frame>
-            <p class="step mono"><i class="dot dot-amber"></i> 8 · Release · Yours</p>
-            <h3>You cut the release.</h3>
-            <div class="panel" data-in>
-              <div class="act">
-                <span class="glyph"><Icon name="package" size={22} /></span>
-                <span><b>Ship api v1.35.12</b><span class="faint">Merged · next version worked out for you</span></span>
-                <span class="primary" data-press>Cut v1.35.12</span>
-              </div>
-              <ul class="evidence" data-in>
-                <li><span class="faint">Next</span> v1.35.12</li>
-                <li><span class="faint">Changes</span> 1 PR · #3352</li>
-                <li><span class="faint">Tag</span> pushed by you, never an agent</li>
-              </ul>
-              <svg class="pointer" data-pointer width="28" height="28" viewBox="0 0 22 22"><path d="M4 2.5v15.2l3.9-3.6 2.5 5.6 2.6-1.1-2.4-5.5h5.3z" fill="#000" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"></path></svg>
-            </div>
-          </li>
-          <li class="frame" data-frame>
-            <p class="step mono">9 · Deploy</p>
-            <h3>Follows it to production.</h3>
-            <div class="panel" data-in>
-              <ol class="tracker">
-                <li data-check><i class="dot dot-done"></i> Approved <span class="faint mono">10:24</span></li>
-                <li data-check><i class="dot dot-done"></i> Built <span class="faint mono">10:27</span></li>
-                <li data-check class="prod"><i class="dot dot-green"></i> Deployed api v1.35.12 to production <span class="faint mono">10:31</span></li>
-              </ol>
-              <div class="slack-msg" data-in>
-                <span class="avatar">A</span>
-                <div>
-                  <p><b>Alex</b> <span class="faint">via Bridgetown · in the alert’s thread</span></p>
-                  <p>🤖 Deployed v1.35.12 ✓ 5xx on /v4/orders back to usual.</p>
-                </div>
-              </div>
-            </div>
-          </li>
+              {p.answers.map((a) => <span class="pt-a mono" data-pct={a}>0%</span>)}
+            </li>
+          ))}
         </ol>
       </div>
-    </section>
+    </div>
+  </section>
 
-    <!-- 5 · The notch (day). -->
-    <section class="shot day-shot notch" data-shot="notch">
-      <h2 class="day-title" data-split>It lives in the notch.</h2>
-      <div class="mac-wrap" data-island-root><MacScreen class="film-mac" /></div>
-      <p class="caption" data-caption></p>
-      <div class="dusk" data-dusk></div>
-    </section>
-
-    <!-- 6 · The three clicks. -->
-    <section class="shot" data-shot="gates">
-      <div class="cam gates">
-        <h2 class="hl-m" data-split>Three clicks stay yours.</h2>
-        <div class="g-row">
-          <div class="g" data-gate>
-            <p class="g-kind"><i class="dot dot-amber"></i> Needs you</p>
-            <span class="g-btn" data-press>Merge</span>
-            <p class="g-d">Approved, green, waiting.</p>
-          </div>
-          <div class="g" data-gate>
-            <p class="g-kind"><i class="dot dot-amber"></i> Needs you</p>
-            <span class="g-btn" data-press>Cut release</span>
-            <p class="g-d">Tags are never pushed by an agent.</p>
-          </div>
-          <div class="g" data-gate>
-            <p class="g-kind"><i class="dot dot-amber"></i> Needs you</p>
-            <span class="g-btn" data-press>Send reply</span>
-            <p class="g-d">Nothing goes to a teammate unsent.</p>
-          </div>
+  <section class="shot" data-shot="health">
+    <div class="cam health">
+      <h2 class="hl-m" data-split>When it can’t see, <span class="dim">it says so.</span></h2>
+      <div class="h-card" data-hcard>
+        <p class="h-strip">
+          {services.map((s) => <span class="h-svc" data-svc={s}><i class="dot dot-done" />{s}</span>)}
+          <span class="faint mono h-poll">polled 12s ago</span>
+        </p>
+        <div class="h-fold" data-hfold>
+          <p class="h-problem"><i class="dot dot-amber" /> <span class="mono" data-type="grafana MCP · sessions: not reachable. Run `bun grafana:mcp` in the monorepo."></span></p>
+          <p class="h-problem h-after" data-hafter><i class="dot dot-done" /> Grafana is back. The warning clears itself.</p>
         </div>
-        <p class="g-foot" data-split>Everything else, the agents carry.</p>
-        <svg class="pointer big" data-pointer width="34" height="34" viewBox="0 0 22 22"><path d="M4 2.5v15.2l3.9-3.6 2.5 5.6 2.6-1.1-2.4-5.5h5.3z" fill="#000" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"></path></svg>
       </div>
-    </section>
+    </div>
+  </section>
 
-    <!-- 7 · Ask and reply. -->
-    <section class="shot" data-shot="ask">
-      <div class="cam ask">
-        <div class="ask-col">
-          <h2 class="hl-s" data-split>It asks. <span class="dim">You answer.</span></h2>
-          <div class="card" data-acard>
-            <p class="c-meta"><i class="dot dot-blue live"></i> fix(api): empty region · Fix <span class="faint mono">Opus · high</span></p>
-            <p class="c-q">Negative regions return 400 too, or should they fall back to the default region?</p>
-            <div class="c-replies">
-              <span class="chip" data-chip>Return 400</span>
-              <span class="chip" data-chip>Fall back</span>
-            </div>
-            <p class="c-after" data-after><i class="dot dot-blue live"></i> Answered. The agent carries on.</p>
-          </div>
-        </div>
-        <div class="ask-col">
-          <h2 class="hl-s" data-split>It drafts. <span class="dim">You send.</span></h2>
-          <div class="card" data-rcard>
-            <p class="c-meta"><span class="mono">#eng-api</span> Jonas <span class="faint">· 10:02</span></p>
-            <p class="c-q">@alex the orders page 500s when region is empty, can you take a look?</p>
-            <div class="draft">
-              <p class="d-label mono">Draft · from the agent</p>
-              <p class="d-text" data-type="Found it: an empty region was parsed as 0 since v1.35.11. Fix is in #3352, green and up for review."></p>
-            </div>
-            <div class="c-replies end"><span class="chip">Edit</span><span class="chip primary" data-chip>Send reply</span></div>
-            <p class="c-after" data-after><i class="dot dot-done"></i> Sent in the thread, as you.</p>
-          </div>
-        </div>
-        <svg class="pointer big" data-pointer width="34" height="34" viewBox="0 0 22 22"><path d="M4 2.5v15.2l3.9-3.6 2.5 5.6 2.6-1.1-2.4-5.5h5.3z" fill="#000" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+  <!-- 9 · The team. -->
+  <section class="shot" data-shot="team">
+    <div class="cam team">
+      <div class="team-copy">
+        <h2 class="hl-m" data-split>One owner per alert. <span class="dim">Across the team.</span></h2>
+        <p class="sub" data-split>The first claim in the thread wins. No alert gets two agents.</p>
       </div>
-    </section>
+      <div class="thread">
+        <div class="slack-msg" data-tm>
+          <span class="avatar bot">M</span>
+          <div><p><b>Monitor</b> <span class="faint mono">#alert-api · 10:02</span></p><p>5xx rate 3.1% on /v4/orders over 5 minutes</p></div>
+        </div>
+        <div class="slack-msg reply" data-tm>
+          <span class="avatar maya">M</span>
+          <div><p><b>Maya</b> <span class="faint">via Bridgetown · 10:02</span></p><p>🤖 Investigating with Bridgetown…</p></div>
+        </div>
+        <div class="slack-msg reply late" data-tm data-late>
+          <span class="avatar">A</span>
+          <div><p><b>Alex</b> <span class="faint">via Bridgetown · 10:02</span></p><p>🤖 Investigating with Bridgetown…</p></div>
+        </div>
+        <p class="withdrawn mono" data-withdrawn>Later claim withdrawn · no second agent</p>
+        <div class="yours-notch" data-tm>
+          <span class="faint">In your notch</span>
+          <span class="pill-dark"><i class="dot dot-blue live"></i> Maya’s agent is on it</span>
+        </div>
+      </div>
+    </div>
+  </section>
 
-    <!-- 8 · Watch: signals, then logs. -->
-    <section class="shot" data-shot="watch">
-      <div class="cam watch">
-        <ul class="signals">
-          <li class="s-head mono"><span>Overview · every 5 minutes</span></li>
-          {signals.map(([name, base, seed], i) => (
-            <li class:list={["sig", i === 0 && "hot"]} data-sig>
-              <span>{name}</span>
-              <svg viewBox="0 0 120 28" preserveAspectRatio="none">
-                <path d={linePath(i === 0 ? [...series(20, base, base * 0.2, seed), base * 3.6, base * 5.8, base * 6.4] : series(23, base, base * 0.25, seed), 120, 28, 3)} />
-              </svg>
+  <!-- 10 · Safety. -->
+  <section class="shot" data-shot="safety">
+    <div class="cam safety">
+      <div class="s-copy">
+        <h2 class="hl-m" data-split>A worktree.<br /><span class="dim">Never the keys.</span></h2>
+        <ul class="guarantees">{guarantees.map((g) => <li data-g><span class="ok">✓</span> {g}</li>)}</ul>
+      </div>
+      <div class="term">
+        <div class="chrome"><i></i><i></i><i></i><span class="mono">fix-bt-api-empty-region — agent</span></div>
+        <div class="term-body mono" data-term>
+          {refusals.map(([cmd, why]) => (
+            <div class="ref" data-ref>
+              <p class="cmd"><span class="p">$</span> <span data-type={cmd}></span></p>
+              <p class="why"><span class="x">✕</span> {why}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 11 · Outcomes. -->
+  <section class="shot" data-shot="outcomes">
+    <div class="cam outcomes">
+      <h2 class="hl-m" data-split>Green means it happened.</h2>
+      <ul class="o-list">
+        {outcomes.map((o) => (
+          <li data-outcome><span class="o-word"><i class={`dot dot-${o.dot}`} /> {o.word}</span><span class="o-ev">{o.evidence}</span></li>
+        ))}
+      </ul>
+    </div>
+  </section>
+
+  <!-- 12 · The light. -->
+  <section class="shot over corner" data-shot="light">
+    <h2 class="light-title" data-split>Read the light.</h2>
+    <p class="light-sub">The arch on your Dock burns the same colour.</p>
+    <ul class="light-states">
+      {lights.map(([key, name, text]) => (
+        <li data-lstate={key}><i class={`lamp lamp-${key}`}></i><b>{name}</b><span>{text}</span></li>
+      ))}
+    </ul>
+  </section>
+
+  <!-- 8b · A session, live. -->
+  <section class="shot" data-shot="session">
+    <div class="cam session">
+      <div class="team-copy">
+        <h2 class="hl-m" data-split>Watch it work.<br /><span class="dim">Or take over.</span></h2>
+        <p class="sub" data-split>Every step and tool call, live. Message it mid-run, stop it, or pick it up in Terminal.</p>
+      </div>
+      <div class="sx" data-sx>
+        <p class="sx-from"><span class="mono">#alert-api</span> 5xx rate 3.1% on /v4/orders</p>
+        <h3 class="sx-title">fix(api): reject an empty region</h3>
+        <ol class="stepper">
+          {phases.map(([label, state]) => (
+            <li class:list={[state]} data-phase><i></i><span>{label}</span></li>
+          ))}
+        </ol>
+        <p class="sx-act"><i class="dot dot-blue live"></i> <span data-sxact>Running the orders tests</span></p>
+        <p class="sx-meta mono">Opus · high · <span data-sxtime>6m 12s</span> · <span data-sxcost>$1.84</span></p>
+        <ol class="sx-log mono" data-sxlog>
+          {transcript.map(([at, kind, text]) => (
+            <li class={kind} data-tline><span class="faint">{at}</span><span>{text}</span></li>
+          ))}
+          <li class="text you" data-tline data-you><span class="faint">10:07</span><span>You: Also cover negative regions.</span></li>
+        </ol>
+        <div class="sx-input"><span data-type="Also cover negative regions." data-sxin></span><span class="sx-send" data-press><Icon name="arrow-up" size={20} /></span></div>
+        <div class="sx-actions">
+          <span class="sx-btn" data-takeover><Icon name="terminal" size={20} /> Take over in Terminal</span>
+          <span class="sx-btn stop">Stop</span>
+        </div>
+      </div>
+      <div class="term sx-term" data-sxterm>
+        <div class="chrome"><i></i><i></i><i></i><span class="mono">Terminal — fix-bt-api-empty-region</span></div>
+        <div class="term-body mono">
+          <p class="cmd"><span class="p">$</span> <span data-type="cd …/worktrees/fix-bt-api-empty-region && claude --resume 7f3c2a1b"></span></p>
+        </div>
+      </div>
+      <svg class="pointer big" data-pointer width="34" height="34" viewBox="0 0 22 22"><path d="M4 2.5v15.2l3.9-3.6 2.5 5.6 2.6-1.1-2.4-5.5h5.3z" fill="#000" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+    </div>
+  </section>
+
+  <!-- 9c · Prod, at a glance. -->
+  <section class="shot" data-shot="board">
+    <div class="cam board">
+      <h2 class="hl-s" data-split>Prod, at a glance.</h2>
+      <div class="stats" data-stats>
+        <div class="stat"><p class="st-l">Needs you</p><p class="st-v amber" data-stat="2">0</p><p class="st-c">oldest 12m</p></div>
+        <div class="stat"><p class="st-l">Agents</p><p class="st-v blue" data-stat="3">0</p><p class="st-c"><i class="dot dot-blue live"></i> 2 fixing · 1 in CI</p></div>
+        <div class="stat"><p class="st-l">Resolved</p><p class="st-v green" data-stat="14">0</p><p class="st-c">of 17 · 24h</p></div>
+      </div>
+      <div class="b-head">
+        <ol class="tabs" data-tabs>
+          {[...boards.map((b) => b.name), "Logs"].map((n, i) => <li class:list={[i === 0 && "on"]} data-tab>{n}</li>)}
+        </ol>
+        <span class="mono faint">Grafana · last hour · counts per minute</span>
+      </div>
+      <div class="b-stage">
+        {boards.map((b, bi) => (
+          <div class="b-grid" data-board>
+            {b.charts.map(([name, base, seed], ci) => {
+              const vals = series(32, base, base * 0.2, seed + bi * 3);
+              return (
+                <figure class="b-chart">
+                  <figcaption><span>{name}</span><span class="mono faint">{vals.at(-1)! < 10 ? vals.at(-1)!.toFixed(1) : Math.round(vals.at(-1)!)}</span></figcaption>
+                  <svg viewBox="0 0 400 120" preserveAspectRatio="none">
+                    <path d={areaPath(vals, 400, 120, 8, base * 1.5, base * 0.45)} class="area" />
+                    <path d={linePath(vals, 400, 120, 8, base * 1.5, base * 0.45)} class="line" pathLength="1" data-bline />
+                    {ci % 2 === 0 && <line x1={ci === 0 ? 268 : 120} x2={ci === 0 ? 268 : 120} y1="0" y2="120" class="deploy" />}
+                  </svg>
+                </figure>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      <div class="swipe" data-swipe><span class="fingers"><i></i><i></i></span><span class="mono">Swipe between boards</span></div>
+    </div>
+  </section>
+
+  <!-- 10b · Settings. -->
+  <section class="shot" data-shot="settings">
+    <div class="cam settings">
+      <div class="team-copy">
+        <h2 class="hl-m" data-split>Yours to tune.</h2>
+        <p class="sub" data-split>Thresholds, quiet hours, a dry run. Tokens stay in your Keychain.</p>
+      </div>
+      <div class="win" data-win>
+        <ol class="win-tabs">
+          {[["key", "Accounts"], ["hash", "Channels"], ["git-branch", "Repos"], ["sliders-horizontal", "Triage"], ["settings-2", "Behaviour"]].map(([icon, name]) => (
+            <li class:list={[name === "Behaviour" && "on"]}><Icon name={icon!} size={24} /><span>{name}</span></li>
+          ))}
+        </ol>
+        <ul class="toggles">
+          {toggles.map((t) => (
+            <li data-toggle data-flip={t.flip ? "" : undefined}>
+              <div>
+                <p>{t.label}</p>
+                {t.note && <p class="tg-note">{t.note}</p>}
+                {t.flip && <p class="tg-note tg-flip" data-flipnote>{t.flip}</p>}
+              </div>
+              <span class:list={["switch", t.on && "on"]} data-switch><b></b></span>
             </li>
           ))}
         </ul>
-        <figure class="w-chart">
-          <figcaption class="w-head"><span>API 5xx <span class="faint">· per 5 minutes · last 3 hours</span></span><span class="mono faint">Grafana</span></figcaption>
-          <svg viewBox={`0 0 ${CW} ${CH}`} preserveAspectRatio="none">
-            <rect x={riseX} y="0" width={CW - riseX} height={CH} class="rise" data-wrise />
-            <line x1="0" x2={CW} y1={cy(usual)} y2={cy(usual)} class="usual" />
-            <path d={linePath(watchValues, CW, CH, 30, 80, 0)} class="line" pathLength="1" data-wline />
-          </svg>
-          <span class="usual-label mono" style={`top:${cy(usual) + 52}px`}>usual · {Math.round(usual)}</span>
-          <div class="finding" data-finding>
-            <p class="f-kind"><i class="dot dot-done"></i> Rise · API 5xx</p>
-            <p class="f-text">Median of the last 3 steps is 5.1× usual. No Slack alert covers it.</p>
-            <p class="f-text faint">Recent deploys: api v1.35.11 at 10:14.</p>
-            <p class="f-session"><i class="dot dot-blue live"></i> Investigation started · Opus · high</p>
-          </div>
-        </figure>
       </div>
-    </section>
+      <svg class="pointer big" data-pointer width="34" height="34" viewBox="0 0 22 22"><path d="M4 2.5v15.2l3.9-3.6 2.5 5.6 2.6-1.1-2.4-5.5h5.3z" fill="#000" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+    </div>
+  </section>
 
-    <section class="shot" data-shot="logs">
-      <div class="cam logs">
-        <h2 class="hl-s" data-split>And it reads the logs.</h2>
-        <div class="l-grid">
-          <div class="stream mono" data-stream>
-            {[...logStream, ...logStream, ...logStream].map((l) => <p class:list={[l.includes("error") && "err", l.includes("warn") && "warn"]}>{l}</p>)}
-          </div>
-          <ol class="patterns">
-            <li class="pt-cols mono"><span>Pattern · every 10 minutes</span><span>Real problem</span><span>Agent work</span><span>Users hit</span></li>
-            {patterns.map((p) => (
-              <li class="pt" data-pt>
-                <div>
-                  <p class="pt-text mono">{p.text}</p>
-                  <p class="pt-meta"><span class="tag">{p.tag}</span><span class="faint">{p.jobs} · {p.n}</span></p>
-                </div>
-                {p.answers.map((a) => <span class="pt-a mono" data-pct={a}>0%</span>)}
-              </li>
-            ))}
-          </ol>
-        </div>
+  <!-- 12b · And everything else. -->
+  <section class="shot" data-shot="more">
+    <div class="cam more">
+      <div class="wall-more" data-mwall>
+        {more.slice(0, 14).map(([icon, text]) => <div class="mt" data-mt><Icon name={icon} size={30} /><p>{text}</p></div>)}
+        <div class="mt hero" data-mt data-mhero><p class="mark"><ArchMark size={40} /></p><p class="mt-big">And everything<br />else, too.</p></div>
+        {more.slice(14).map(([icon, text]) => <div class="mt" data-mt><Icon name={icon} size={30} /><p>{text}</p></div>)}
       </div>
-    </section>
+    </div>
+    <div class="veil"></div>
+  </section>
 
-    <section class="shot" data-shot="health">
-      <div class="cam health">
-        <h2 class="hl-m" data-split>When it can’t see, <span class="dim">it says so.</span></h2>
-        <div class="h-card" data-hcard>
-          <p class="h-strip">
-            {services.map((s) => <span class="h-svc" data-svc={s}><i class="dot dot-done" />{s}</span>)}
-            <span class="faint mono h-poll">polled 12s ago</span>
-          </p>
-          <div class="h-fold" data-hfold>
-            <p class="h-problem"><i class="dot dot-amber" /> <span class="mono" data-type="grafana MCP · sessions: not reachable. Run `bun grafana:mcp` in the monorepo."></span></p>
-            <p class="h-problem h-after" data-hafter><i class="dot dot-done" /> Grafana is back. The warning clears itself.</p>
-          </div>
-        </div>
-      </div>
-    </section>
+  <!-- 13 · Montage and the end. -->
+  <section class="shot center" data-shot="montage">
+    {montage.map((w) => <p class="m-word" data-mword>{w}</p>)}
+  </section>
+  <section class="shot over high end" data-shot="end">
+    <p class="kick mono">Introducing</p>
+    <p class="mark"><ArchMark size={48} /></p>
+    <h2 class="name sm" data-split>Bridgetown</h2>
+    <p class="end-line">Your alerts, handled before you look.</p>
+    <p class="end-small mono">Built for Merkl Infra · macOS 14 or later · Early access</p>
+  </section>
 
-    <!-- 9 · The team. -->
-    <section class="shot" data-shot="team">
-      <div class="cam team">
-        <div class="team-copy">
-          <h2 class="hl-m" data-split>One owner per alert. <span class="dim">Across the team.</span></h2>
-          <p class="sub" data-split>The first claim in the thread wins. No alert gets two agents.</p>
-        </div>
-        <div class="thread">
-          <div class="slack-msg" data-tm>
-            <span class="avatar bot">M</span>
-            <div><p><b>Monitor</b> <span class="faint mono">#alert-api · 10:02</span></p><p>5xx rate 3.1% on /v4/orders over 5 minutes</p></div>
-          </div>
-          <div class="slack-msg reply" data-tm>
-            <span class="avatar maya">M</span>
-            <div><p><b>Maya</b> <span class="faint">via Bridgetown · 10:02</span></p><p>🤖 Investigating with Bridgetown…</p></div>
-          </div>
-          <div class="slack-msg reply late" data-tm data-late>
-            <span class="avatar">A</span>
-            <div><p><b>Alex</b> <span class="faint">via Bridgetown · 10:02</span></p><p>🤖 Investigating with Bridgetown…</p></div>
-          </div>
-          <p class="withdrawn mono" data-withdrawn>Later claim withdrawn · no second agent</p>
-          <div class="yours-notch" data-tm>
-            <span class="faint">In your notch</span>
-            <span class="pill-dark"><i class="dot dot-blue live"></i> Maya’s agent is on it</span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 10 · Safety. -->
-    <section class="shot" data-shot="safety">
-      <div class="cam safety">
-        <div class="s-copy">
-          <h2 class="hl-m" data-split>A worktree.<br /><span class="dim">Never the keys.</span></h2>
-          <ul class="guarantees">{guarantees.map((g) => <li data-g><span class="ok">✓</span> {g}</li>)}</ul>
-        </div>
-        <div class="term">
-          <div class="chrome"><i></i><i></i><i></i><span class="mono">fix-bt-api-empty-region — agent</span></div>
-          <div class="term-body mono" data-term>
-            {refusals.map(([cmd, why]) => (
-              <div class="ref" data-ref>
-                <p class="cmd"><span class="p">$</span> <span data-type={cmd}></span></p>
-                <p class="why"><span class="x">✕</span> {why}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 11 · Outcomes. -->
-    <section class="shot" data-shot="outcomes">
-      <div class="cam outcomes">
-        <h2 class="hl-m" data-split>Green means it happened.</h2>
-        <ul class="o-list">
-          {outcomes.map((o) => (
-            <li data-outcome><span class="o-word"><i class={`dot dot-${o.dot}`} /> {o.word}</span><span class="o-ev">{o.evidence}</span></li>
-          ))}
-        </ul>
-      </div>
-    </section>
-
-    <!-- 12 · The light. -->
-    <section class="shot over corner" data-shot="light">
-      <h2 class="light-title" data-split>Read the light.</h2>
-      <p class="light-sub">The arch on your Dock burns the same colour.</p>
-      <ul class="light-states">
-        {lights.map(([key, name, text]) => (
-          <li data-lstate={key}><i class={`lamp lamp-${key}`}></i><b>{name}</b><span>{text}</span></li>
-        ))}
-      </ul>
-    </section>
-
-    <!-- 8b · A session, live. -->
-    <section class="shot" data-shot="session">
-      <div class="cam session">
-        <div class="team-copy">
-          <h2 class="hl-m" data-split>Watch it work.<br /><span class="dim">Or take over.</span></h2>
-          <p class="sub" data-split>Every step and tool call, live. Message it mid-run, stop it, or pick it up in Terminal.</p>
-        </div>
-        <div class="sx" data-sx>
-          <p class="sx-from"><span class="mono">#alert-api</span> 5xx rate 3.1% on /v4/orders</p>
-          <h3 class="sx-title">fix(api): reject an empty region</h3>
-          <ol class="stepper">
-            {phases.map(([label, state]) => (
-              <li class:list={[state]} data-phase><i></i><span>{label}</span></li>
-            ))}
-          </ol>
-          <p class="sx-act"><i class="dot dot-blue live"></i> <span data-sxact>Running the orders tests</span></p>
-          <p class="sx-meta mono">Opus · high · <span data-sxtime>6m 12s</span> · <span data-sxcost>$1.84</span></p>
-          <ol class="sx-log mono" data-sxlog>
-            {transcript.map(([at, kind, text]) => (
-              <li class={kind} data-tline><span class="faint">{at}</span><span>{text}</span></li>
-            ))}
-            <li class="text you" data-tline data-you><span class="faint">10:07</span><span>You: Also cover negative regions.</span></li>
-          </ol>
-          <div class="sx-input"><span data-type="Also cover negative regions." data-sxin></span><span class="sx-send" data-press><Icon name="arrow-up" size={20} /></span></div>
-          <div class="sx-actions">
-            <span class="sx-btn" data-takeover><Icon name="terminal" size={20} /> Take over in Terminal</span>
-            <span class="sx-btn stop">Stop</span>
-          </div>
-        </div>
-        <div class="term sx-term" data-sxterm>
-          <div class="chrome"><i></i><i></i><i></i><span class="mono">Terminal — fix-bt-api-empty-region</span></div>
-          <div class="term-body mono">
-            <p class="cmd"><span class="p">$</span> <span data-type="cd …/worktrees/fix-bt-api-empty-region && claude --resume 7f3c2a1b"></span></p>
-          </div>
-        </div>
-        <svg class="pointer big" data-pointer width="34" height="34" viewBox="0 0 22 22"><path d="M4 2.5v15.2l3.9-3.6 2.5 5.6 2.6-1.1-2.4-5.5h5.3z" fill="#000" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"></path></svg>
-      </div>
-    </section>
-
-    <!-- 9c · Prod, at a glance. -->
-    <section class="shot" data-shot="board">
-      <div class="cam board">
-        <h2 class="hl-s" data-split>Prod, at a glance.</h2>
-        <div class="stats" data-stats>
-          <div class="stat"><p class="st-l">Needs you</p><p class="st-v amber" data-stat="2">0</p><p class="st-c">oldest 12m</p></div>
-          <div class="stat"><p class="st-l">Agents</p><p class="st-v blue" data-stat="3">0</p><p class="st-c"><i class="dot dot-blue live"></i> 2 fixing · 1 in CI</p></div>
-          <div class="stat"><p class="st-l">Resolved</p><p class="st-v green" data-stat="14">0</p><p class="st-c">of 17 · 24h</p></div>
-        </div>
-        <div class="b-head">
-          <ol class="tabs" data-tabs>
-            {[...boards.map((b) => b.name), "Logs"].map((n, i) => <li class:list={[i === 0 && "on"]} data-tab>{n}</li>)}
-          </ol>
-          <span class="mono faint">Grafana · last hour · counts per minute</span>
-        </div>
-        <div class="b-stage">
-          {boards.map((b, bi) => (
-            <div class="b-grid" data-board>
-              {b.charts.map(([name, base, seed], ci) => {
-                const vals = series(32, base, base * 0.2, seed + bi * 3);
-                return (
-                  <figure class="b-chart">
-                    <figcaption><span>{name}</span><span class="mono faint">{vals.at(-1)! < 10 ? vals.at(-1)!.toFixed(1) : Math.round(vals.at(-1)!)}</span></figcaption>
-                    <svg viewBox="0 0 400 120" preserveAspectRatio="none">
-                      <path d={areaPath(vals, 400, 120, 8, base * 1.5, base * 0.45)} class="area" />
-                      <path d={linePath(vals, 400, 120, 8, base * 1.5, base * 0.45)} class="line" pathLength="1" data-bline />
-                      {ci % 2 === 0 && <line x1={ci === 0 ? 268 : 120} x2={ci === 0 ? 268 : 120} y1="0" y2="120" class="deploy" />}
-                    </svg>
-                  </figure>
-                );
-              })}
-            </div>
-          ))}
-        </div>
-        <div class="swipe" data-swipe><span class="fingers"><i></i><i></i></span><span class="mono">Swipe between boards</span></div>
-      </div>
-    </section>
-
-    <!-- 10b · Settings. -->
-    <section class="shot" data-shot="settings">
-      <div class="cam settings">
-        <div class="team-copy">
-          <h2 class="hl-m" data-split>Yours to tune.</h2>
-          <p class="sub" data-split>Thresholds, quiet hours, a dry run. Tokens stay in your Keychain.</p>
-        </div>
-        <div class="win" data-win>
-          <ol class="win-tabs">
-            {[["key", "Accounts"], ["hash", "Channels"], ["git-branch", "Repos"], ["sliders-horizontal", "Triage"], ["settings-2", "Behaviour"]].map(([icon, name]) => (
-              <li class:list={[name === "Behaviour" && "on"]}><Icon name={icon!} size={24} /><span>{name}</span></li>
-            ))}
-          </ol>
-          <ul class="toggles">
-            {toggles.map((t) => (
-              <li data-toggle data-flip={t.flip ? "" : undefined}>
-                <div>
-                  <p>{t.label}</p>
-                  {t.note && <p class="tg-note">{t.note}</p>}
-                  {t.flip && <p class="tg-note tg-flip" data-flipnote>{t.flip}</p>}
-                </div>
-                <span class:list={["switch", t.on && "on"]} data-switch><b></b></span>
-              </li>
-            ))}
-          </ul>
-        </div>
-        <svg class="pointer big" data-pointer width="34" height="34" viewBox="0 0 22 22"><path d="M4 2.5v15.2l3.9-3.6 2.5 5.6 2.6-1.1-2.4-5.5h5.3z" fill="#000" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"></path></svg>
-      </div>
-    </section>
-
-    <!-- 12b · And everything else. -->
-    <section class="shot" data-shot="more">
-      <div class="cam more">
-        <div class="wall-more" data-mwall>
-          {more.slice(0, 14).map(([icon, text]) => <div class="mt" data-mt><Icon name={icon} size={30} /><p>{text}</p></div>)}
-          <div class="mt hero" data-mt data-mhero><p class="mark"><ArchMark size={40} /></p><p class="mt-big">And everything<br />else, too.</p></div>
-          {more.slice(14).map(([icon, text]) => <div class="mt" data-mt><Icon name={icon} size={30} /><p>{text}</p></div>)}
-        </div>
-      </div>
-      <div class="veil"></div>
-    </section>
-
-    <!-- 13 · Montage and the end. -->
-    <section class="shot center" data-shot="montage">
-      {montage.map((w) => <p class="m-word" data-mword>{w}</p>)}
-    </section>
-    <section class="shot over high end" data-shot="end">
-      <p class="kick mono">Introducing</p>
-      <p class="mark"><ArchMark size={48} /></p>
-      <h2 class="name sm" data-split>Bridgetown</h2>
-      <p class="end-line">Your alerts, handled before you look.</p>
-      <p class="end-small mono">Built for Merkl Infra · macOS 14 or later · Early access</p>
-    </section>
-
-    <script>
-      import "./launch";
-    </script>
-  </body>
-</html>
+  <script>
+    import "./launch";
+  </script>
+</RigLayout>
 
 <style>
-  :global(html.launch),
-  :global(html.launch body) {
-    width: 100vw;
-    height: 100vh;
-    overflow: hidden;
+  :global(html.launch) {
     background: #000;
     color: var(--night-ink);
-    cursor: none;
   }
 
   :global(html.launch) {
@@ -924,22 +845,6 @@ const more: [string, string][] = [
     --hair: rgb(255 255 255 / 0.12);
     --hair-strong: rgb(255 255 255 / 0.2);
     --card: #0b0b0c;
-  }
-
-  .scene {
-    position: fixed;
-    inset: 0;
-    width: 100vw;
-    height: 100vh;
-  }
-
-  .flood {
-    position: fixed;
-    inset: 0;
-    z-index: 1;
-    background: var(--day);
-    opacity: 0;
-    pointer-events: none;
   }
 
   .mono {
