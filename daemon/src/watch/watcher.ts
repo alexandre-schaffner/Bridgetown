@@ -70,12 +70,10 @@ const signalOf = (alert: Alert, now: Date): string | undefined => {
   return VAGUE_KINDS.has(alertKind(alert)) ? undefined : primary
 }
 
-/** A recent Slack alert someone is acting on (suggested, escalated or handed to an agent) about this signal. */
-export const coveredBySlack = (signal: string, alerts: ReadonlyArray<Alert>, now: Date): Alert | undefined =>
-  alerts.find(
+/** Of the Slack alerts of the last `COVERED_HOURS`, one someone is acting on (suggested, escalated or handed to an agent) about this signal. */
+export const coveredBySlack = (signal: string, recent: ReadonlyArray<Alert>, now: Date): Alert | undefined =>
+  recent.find(
     (alert) =>
-      alert.source !== "watch" &&
-      Date.parse(alert.receivedAt) >= now.getTime() - COVERED_HOURS * 3_600_000 &&
       (alert.sessionId !== null || alert.triage.decision === "auto" || alert.triage.decision === "suggest" || alert.triage.decision === "escalate") &&
       signalOf(alert, now) === signal,
   )
@@ -184,7 +182,9 @@ export const WatcherLive = Layer.effect(Watcher)(
         const m = panel === undefined ? null : measure(panel, spec.stepSeconds, now, panelSpec.source)
         return m === null ? [] : [{ m, panelSpec }]
       })
-      const recent = measured.some(({ m }) => anomalyOf(m) !== null) ? yield* store.recentAlerts(200) : []
+      const recent = measured.some(({ m }) => anomalyOf(m) !== null)
+        ? yield* store.slackAlertsSince(new Date(now.getTime() - COVERED_HOURS * 3_600_000).toISOString())
+        : []
       // One signal that cannot be raised or settled (a store or Jev hiccup) leaves the others to this tick.
       for (const { m, panelSpec } of measured) {
         const anomaly = anomalyOf(m)

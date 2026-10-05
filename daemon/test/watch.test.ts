@@ -10,7 +10,7 @@ import { Store } from "../src/store/store.ts"
 import type { JevShape } from "../src/triage/jev.ts"
 import { detect, findingOf, formatValue, RECENT_STEPS } from "../src/watch/detect.ts"
 import { coveredBySlack, Watcher } from "../src/watch/watcher.ts"
-import { makeSession } from "./fixtures/records.ts"
+import { makeAlert, makeSession } from "./fixtures/records.ts"
 import { makeWorld, noGrafana, verdict } from "./fixtures/world.ts"
 
 const STEP = 300
@@ -112,9 +112,8 @@ describe("coveredBySlack", () => {
     expect(coveredBySlack("api_5xx", [slackAlert({})], NOW)?.id).toBe("C1:1")
   })
 
-  test("not when Jev ignored it, it is old, or it is about something else", () => {
+  test("not when Jev ignored it, or it is about something else", () => {
     expect(coveredBySlack("api_5xx", [slackAlert({ triage: { decision: "ignore", reason: "", jev: null } })], NOW)).toBeUndefined()
-    expect(coveredBySlack("api_5xx", [slackAlert({ receivedAt: new Date(NOW.getTime() - 3 * 3_600_000).toISOString() })], NOW)).toBeUndefined()
     expect(coveredBySlack("db_waiting", [slackAlert({})], NOW)).toBeUndefined()
   })
 
@@ -192,6 +191,49 @@ describe("Watcher.tick", () => {
     const before = reads
     await tick()
     expect(reads).toBe(before)
+  })
+})
+
+describe("Watcher.tick with a Slack alert on the signal", () => {
+  let judged = 0
+  const jev: JevShape = {
+    judge: () => Effect.sync(() => void judged++).pipe(Effect.as(verdict())),
+    judgeInbox: () => Effect.die("unused"),
+    judgeFinding: () => Effect.die("unused"),
+    judgeLogPatterns: () => Effect.die("unused"),
+  }
+  const world = makeWorld({ jev, grafana: risingApi5xx() })
+  afterAll(() => world.dispose())
+  const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString()
+  const slack = (id: string, overrides: Partial<Alert>) => makeAlert({ id, source: "generic", channelName: "alert-dev", receivedAt: minutesAgo(30), ...overrides })
+
+  test("an alert of the last 2 hours covers the rise, however many came in after it", async () => {
+    const findings = await world.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store
+        yield* store.putAlert(slack("C1:5xx", { title: "merkl-api 5xx on /v4/opportunities", triage: { decision: "suggest", reason: "", jev: null } }))
+        for (let i = 0; i < 250; i++) yield* store.putAlert(slack(`C1:noise${i}`, { title: `Noise ${i}`, receivedAt: minutesAgo(10), triage: { decision: "ignore", reason: "", jev: null } }))
+        yield* (yield* Hub).patchStatus({ grafanaMcp: "up" })
+        yield* (yield* Watcher).tick
+        return (yield* store.alertsByFingerprint("watch:api_5xx", new Date(0).toISOString())).length
+      }),
+    )
+    expect(findings).toBe(0)
+    expect(judged).toBe(0)
+  })
+
+  test("one older than that does not", async () => {
+    const findings = await world.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store
+        yield* store.deleteActionsWhere(() => true)
+        yield* store.pruneRows({ actionIds: [], sessionIds: [], alertIds: ["C1:5xx"] })
+        yield* store.putAlert(slack("C1:old5xx", { title: "merkl-api 5xx on /v4/opportunities", receivedAt: minutesAgo(3 * 60), triage: { decision: "suggest", reason: "", jev: null } }))
+        yield* (yield* Watcher).tick
+        return (yield* store.alertsByFingerprint("watch:api_5xx", new Date(0).toISOString())).length
+      }),
+    )
+    expect(findings).toBe(1)
   })
 })
 

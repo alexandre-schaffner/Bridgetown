@@ -46,6 +46,8 @@ export interface StoreShape {
   readonly appendAlertEvent: (id: string, text: string, disposition?: Disposition["kind"]) => Effect.Effect<void, AdapterError>
   readonly alertHash: (id: string) => Effect.Effect<string | undefined, AdapterError>
   readonly recentAlerts: (limit: number) => Effect.Effect<ReadonlyArray<Alert>, AdapterError>
+  /** Every alert from Slack (not a watch finding) received at or after `since` (ISO), newest first. */
+  readonly slackAlertsSince: (since: string) => Effect.Effect<ReadonlyArray<Alert>, AdapterError>
   readonly alertsByFingerprint: (fingerprint: string, since: string) => Effect.Effect<ReadonlyArray<Alert>, AdapterError>
   readonly getSession: (id: string) => Effect.Effect<Session | undefined, AdapterError>
   /** Raw write. Only `SessionRepo` calls it; everything else changes sessions through the repo. */
@@ -172,6 +174,11 @@ const StoreImpl = Layer.effect(Store)(
           Effect.mapError(sqlError("recent alerts")),
           Effect.flatMap(decodeRows("decode alert", Alert)),
         ),
+      slackAlertsSince: (since) =>
+        sql<{ readonly json: string }>`
+          SELECT json FROM alerts WHERE received_at >= ${since} AND json_extract(json, '$.source') != 'watch'
+          ORDER BY received_at DESC
+        `.pipe(Effect.mapError(sqlError("slack alerts since")), Effect.flatMap(decodeRows("decode alert", Alert))),
       alertsByFingerprint: (fingerprint, since) =>
         sql<{ readonly json: string }>`
           SELECT json FROM alerts WHERE fingerprint = ${fingerprint} AND received_at >= ${since}
