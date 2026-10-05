@@ -1,9 +1,7 @@
 ---
-// The frame renderer, for development only: the arch scene at offline quality, one exact frame
-// per call (scripts/render.ts). .context tooling drives it to pre-render the hero.
+// The frame renderer, served by `astro dev` only (astro.config.mjs): the arch scene at offline
+// quality, one exact frame per call (render.ts), to pre-render the hero.
 import "../styles/global.css";
-
-if (import.meta.env.PROD) return Astro.redirect("/");
 ---
 
 <!doctype html>
@@ -16,7 +14,7 @@ if (import.meta.env.PROD) return Astro.redirect("/");
   <body>
     <canvas data-scene></canvas>
     <script>
-      import "../scripts/render";
+      import "./render";
     </script>
   </body>
 </html>

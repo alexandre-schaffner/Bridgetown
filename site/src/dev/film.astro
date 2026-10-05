@@ -1,14 +1,12 @@
 ---
-// The film rig, for development only: the site's own components played on a timeline, to be
-// recorded (scripts/film.ts; .context tooling records it). `?cut=keynote` is the product film
-// at 1920 × 1080; `?cut=island` is the short notch recording at 1600 × 1000.
+// The film rig, served by `astro dev` only (astro.config.mjs): the site's own components played
+// on a timeline, to be recorded (film.ts). `?cut=keynote` is the product film at 1920 × 1080;
+// `?cut=island` is the short notch recording at 1600 × 1000.
 import "../styles/global.css";
 import ArchMark from "../components/ArchMark.astro";
 import MacScreen from "../components/MacScreen.astro";
 import Journey from "../components/Journey.astro";
 import Outcomes from "../components/Outcomes.astro";
-
-if (import.meta.env.PROD) return Astro.redirect("/");
 ---
 
 <!doctype html>
@@ -104,7 +102,7 @@ if (import.meta.env.PROD) return Astro.redirect("/");
     <div class="flood" data-flood></div>
 
     <script>
-      import "../scripts/film";
+      import "./film";
     </script>
   </body>
 </html>

@@ -3,8 +3,8 @@
 // resample. The flood to day is left out; the page lays it over the frames, in its theme.
 
 import * as THREE from "three";
-import { createArchScene, type LightName } from "./scene";
-import { heroView } from "./view";
+import { createArchScene, type LightName } from "../scripts/scene";
+import { heroView } from "../scripts/view";
 
 declare global {
   interface Window {

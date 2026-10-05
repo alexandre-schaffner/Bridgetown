@@ -1,14 +1,12 @@
 ---
-// The launch film rig, for development only: every feature, one shot each, cut to a 120 BPM
-// grid (scripts/launch.ts directs it; .context tooling records it at 1920 × 1080 and scores it
-// from the cues the director reports). Drawn at a fixed 1920 × 1080, in pixels.
+// The launch film rig, served by `astro dev` only (astro.config.mjs): every feature, one shot
+// each, cut to a 120 BPM grid (launch.ts directs it, and reports the cues its score is built
+// from). Drawn at a fixed 1920 × 1080, in pixels.
 import "../styles/global.css";
 import ArchMark from "../components/ArchMark.astro";
 import Icon from "../components/Icon.astro";
 import MacScreen from "../components/MacScreen.astro";
 import { areaPath, linePath, series } from "../lib/spark";
-
-if (import.meta.env.PROD) return Astro.redirect("/");
 
 // Triage: what Jev answers for each message, and where the policy sends it.
 const triage = [
@@ -903,7 +901,7 @@ const more: [string, string][] = [
     </section>
 
     <script>
-      import "../scripts/launch";
+      import "./launch";
     </script>
   </body>
 </html>

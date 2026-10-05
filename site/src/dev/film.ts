@@ -1,12 +1,14 @@
 // The film rig's director. Plays the keynote (or the short island recording) once, in real
 // time, from the site's own scene and components, and reports when it is done so the
 // recorder can stop. Cuts: keynote (the film), launch (30 seconds), island (the short
-// recording). Nothing here ships: pages/film.astro redirects in production.
+// recording).
 
 import { gsap } from "gsap";
 import * as THREE from "three";
-import { createArchScene, restView, type LightName, type View } from "./scene";
-import { createIsland } from "./island";
+import { createArchScene, type LightName } from "../scripts/scene";
+import { createIsland } from "../scripts/island";
+import { restView, type View } from "../scripts/view";
+import "./rig";
 
 const cut = new URLSearchParams(location.search).get("cut") ?? "keynote";
 document.documentElement.classList.add(`cut-${cut}`);

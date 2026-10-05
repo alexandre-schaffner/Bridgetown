@@ -1,12 +1,13 @@
 // The launch film's director. Every feature gets a shot, cut to a 120 BPM grid (a beat is half a
 // second, a bar two). Plays once in real time and reports when it is done, plus the cues the
-// score is built from (.context tooling). Nothing here ships: pages/launch.astro redirects in
-// production.
+// score is built from.
 
 import { gsap } from "gsap";
 import * as THREE from "three";
-import { createArchScene, restView, type LightName, type View } from "./scene";
-import { createIsland } from "./island";
+import { createArchScene, type LightName } from "../scripts/scene";
+import { createIsland } from "../scripts/island";
+import { restView, type View } from "../scripts/view";
+import "./rig";
 
 type CueKind =
   | "tick" // a notification lands
