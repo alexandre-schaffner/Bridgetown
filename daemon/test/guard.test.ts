@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { type GuardContext, refusal } from "../src/sessions/guard.ts"
+import { execFileSync } from "node:child_process"
+import { mkdtempSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { type GuardContext, readScript, refusal } from "../src/sessions/guard.ts"
 import { parseShell } from "../src/sessions/shell.ts"
 
 const branch = "fix-bt-merkl-admin-v0-6-0"
@@ -10,6 +14,8 @@ const files: Record<string, string> = {
   "/w/ok.sh": "#!/bin/sh\nbun type && bun test\n",
   "/w/plain": "git push origin main\n",
   "/w/tool.ts": "#!/usr/bin/env bun\nconsole.log('kubectl')\n",
+  "/w/envshebang.sh": "#!/usr/bin/env -S bash -euo pipefail\nkubectl delete pod api-0\n",
+  "/w/py.py": "#!/usr/bin/env python3\nkubectl = 1\n",
   "/tmp/y.sh": "gcloud logging read\n",
 }
 const context: GuardContext = { branch, cwd: worktree, daemonPort: 47621, readFile: (path) => files[path] }
@@ -142,9 +148,83 @@ describe("guard", () => {
     "cat <<EOF | sh\nkubectl get pods\nEOF",
     "cat <<EOF\n$(kubectl get pods)\nEOF",
     "echo 'unterminated",
+    // gh/git policy holes the audit found (dynamic args, denylist gaps, tag/push holes).
+    'gh pr "$(echo merge)" 1',
+    "X=merge; gh pr $X 1",
+    "gh api -X $M repos/o/r/pulls/1/merge",
+    "git push $F fix-bt-merkl-admin-v0-6-0",
+    "echo 'pr merge 1' | xargs gh",
+    "echo 'push origin HEAD:main' | xargs git",
+    "gh secret set FOO -b bar",
+    "gh variable set FOO -b bar",
+    "gh repo delete Merkl/monorepo --yes",
+    "gh run delete 1",
+    "gh cache delete --all",
+    "gh pr edit 1 --base release",
+    "gh pr edit 1 --add-reviewer octocat",
+    "gh extension install foo/gh-bar",
+    "gh auth token",
+    "gh auth status --show-token",
+    "git tag --sort=refname admin-v9.9.9",
+    "git tag --format='%(refname)' admin-v9.9.9",
+    "git tag --column admin-v9.9.9",
+    "git mktag",
+    "git update-ref refs/tags/admin-v9.9.9 HEAD",
+    "git -c push.followTags=true push origin fix-bt-merkl-admin-v0-6-0",
+    "git config push.followTags true",
+    "git subtree push --prefix=apps origin main",
+    "git push https://other.host/x HEAD:fix-bt-merkl-admin-v0-6-0",
+    "git credential fill",
+    "git rebase --exec 'gh pr merge 1' main",
+    "git submodule foreach 'gh pr merge 1'",
+    "git bisect run ./x.sh",
+    "git difftool -x 'gh pr merge 1'",
+    "git filter-branch --tree-filter 'gh pr merge 1' HEAD",
+    'git -c core.pager="gh pr merge 1" log',
+    'git config core.fsmonitor "gh pr merge 1"',
+    'curl -X PUT -H "Authorization: token t" https://nocturlab.ghe.com/api/v3/repos/Merkl/monorepo/pulls/1/merge',
+    // Wrapper / quoting / shell coverage.
+    "command git push -v origin HEAD:main",
+    "env -S'gh pr merge 1'",
+    "env -iS'gh pr merge 1'",
+    "tcsh -c 'gh pr merge 1'",
+    "fish -c 'gh pr merge 1'",
+    "csh -c 'gh pr merge 1'",
+    "noglob gh pr merge 1",
+    "nocorrect gh pr merge 1",
+    "=gh pr merge 1",
+    '$"gh" pr merge 1',
+    "$'\\u0067h' pr merge 1",
+    "trap 'gh pr merge 1' EXIT",
+    "npx --call='gh pr merge 1'",
+    "npm exec -c 'gh pr merge 1'",
+    "pnpm dlx -c 'gh pr merge 1'",
+    "bun exec 'gh pr merge 1'",
+    "arch -arm64 gh pr merge 1",
+    "script -q /dev/null gh pr merge 1",
+    "parallel gh pr merge ::: 1",
+    "setsid gh pr merge 1",
+    "bun --cwd x run db:migrate",
+    "bun run --filter api db:migrate",
+    "pnpm -F api migrate",
+    "npm --prefix x run migrate",
+    "find . -execdir gh pr {} \\;",
+    "alias g=git",
+    "alias g=gh; g pr merge 1",
+    "let 'a[$(gh pr merge 1)]'",
+    "declare -i y='$(gh pr merge 1)'",
+    // Env assignments that would run a later command the guard never sees.
+    "BASH_ENV=./x.sh bash -c true",
+    "GIT_SSH_COMMAND='gh pr merge 1' git fetch",
+    "GIT_PAGER='gh pr merge 1' git log",
+    'NODE_OPTIONS="--require ./x.js" bun test',
+    // ./envshebang.sh runs by path with an `env -S bash` shebang: still shell, still checked.
+    "./envshebang.sh",
+    // Deep nesting is reported, not crashed through (fail closed).
+    `echo ${"$(".repeat(5000)}gh pr merge 1${")".repeat(5000)}`,
   ]
   for (const command of bypasses) {
-    test(`denies bypass: ${JSON.stringify(command)}`, () => expect(refusal(command, context)).toBeDefined())
+    test(`denies bypass: ${JSON.stringify(command).slice(0, 80)}`, () => expect(refusal(command, context)).toBeDefined())
   }
 
   const stillAllowed = [
@@ -165,6 +245,36 @@ describe("guard", () => {
     "timeout 60 bun test",
     "xargs -n1 echo < files.txt",
     "find . -name '*.ts' -exec grep -l foo {} +",
+    // The read-only / own-PR gh and git commands an agent needs stay allowed.
+    "gh pr view 1 --comments",
+    "gh pr diff 1",
+    "gh pr checks 1234",
+    "gh pr comment 1 --body 'done'",
+    "gh pr edit 1 --add-label bug",
+    "gh run view 291250187 --log",
+    "gh run download 291250187",
+    "gh workflow view deploy.yml",
+    "gh issue view 5",
+    "gh repo view",
+    "gh search issues repo:Merkl/monorepo",
+    "gh auth status",
+    "gh api repos/Merkl/monorepo/pulls/1/comments",
+    "git tag --sort=-creatordate",
+    "git tag --contains HEAD",
+    "git config --get remote.origin.url",
+    "git -c color.ui=always log --oneline -5",
+    "git rebase origin/main",
+    "git submodule update --init",
+    `git push origin HEAD:${branch}`,
+    "git fetch origin main && git checkout -b " + branch + "-2 origin/main",
+    // Legitimate wrappers and env, and a python script run by path (the guard cannot read it).
+    "nice -n 10 bun test",
+    "env NODE_ENV=test bun test",
+    "FOO=bar bun run build",
+    "bun run build",
+    "./py.py",
+    "setsid bun test",
+    "parallel bun test ::: a b",
   ]
   for (const command of stillAllowed) {
     test(`allows: ${JSON.stringify(command)}`, () => expect(refusal(command, context)).toBeUndefined())
@@ -190,5 +300,33 @@ describe("shell parser", () => {
   test("unbalanced input is reported", () => {
     expect(parseShell("echo \"open")._tag).toBe("Unparsable")
     expect(parseShell("echo $(open")._tag).toBe("Unparsable")
+  })
+  test("deep nesting is reported, not thrown, so the guard fails closed", () => {
+    const deep = `echo ${"$(".repeat(5000)}x${")".repeat(5000)}`
+    const parsed = parseShell(deep)
+    expect(parsed._tag).toBe("Unparsable")
+    if (parsed._tag === "Unparsable") expect(parsed.reason).toBe("too deeply nested")
+  })
+  test("sibling substitutions do not accumulate nesting", () => {
+    expect(parseShell(`echo ${"$(a) ".repeat(500)}`)._tag).toBe("Parsed")
+  })
+})
+
+describe("readScript", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bt-readscript-"))
+  test("reads a regular file", () => {
+    const file = join(dir, "ok.sh")
+    writeFileSync(file, "echo hi\n")
+    expect(readScript(file)).toBe("echo hi\n")
+  })
+  test("refuses devices and FIFOs instead of blocking the event loop", () => {
+    expect(readScript("/dev/zero")).toBeUndefined()
+    expect(readScript("/dev/stdin")).toBeUndefined()
+    const fifo = join(dir, "pipe")
+    execFileSync("mkfifo", [fifo])
+    expect(readScript(fifo)).toBeUndefined()
+  })
+  test("a missing file reads as undefined", () => {
+    expect(readScript(join(dir, "nope"))).toBeUndefined()
   })
 })
