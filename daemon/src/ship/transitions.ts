@@ -13,6 +13,8 @@ import type { CiState, PullRequest } from "./github.ts"
 export const MAX_CI_ROUNDS = 3
 /** A deploy with no tracker progress for this long (outside approval) is handed to you. */
 export const DEPLOY_TIMEOUT_MS = 3 * 60 * 60_000
+/** Approval is slow by design, but not this slow: a release nobody approved for a day is handed to you. */
+export const APPROVAL_TIMEOUT_MS = 24 * 60 * 60_000
 /** A merge GitHub took (a merge queue) but has not done in this long is offered to you again. */
 export const MERGE_QUEUE_TIMEOUT_MS = 60 * 60_000
 
@@ -124,6 +126,16 @@ export type DeployStep =
   | { readonly _tag: "Deployed" }
   | { readonly _tag: "Progress"; readonly activity: string }
 
+/**
+ * Whether `tag`'s release tracker reports this session's own deploy: it cut that release (or re-ran it) and the
+ * deploy has not landed. Before a release, `release.tag` is only the prefix the agent named, which can be a full tag:
+ * the tracker of that tag (the failure being fixed) says nothing about this session.
+ */
+export const followsDeploy = (session: Session, tag: string): boolean =>
+  session.release?.tag === tag &&
+  !session.milestones.deployed &&
+  (session.status === "deploying" || session.milestones.released || session.deployStage !== null)
+
 /** A deploying session, given the tracker's state. Only a changed state moves it: a tracker edit never re-sends the agent. */
 export const deployTransition = (session: Session, state: ReleaseState): DeployStep => {
   if (sameReleaseState(session.deployStage, state)) return { _tag: "Unchanged" }
@@ -150,11 +162,20 @@ export const deployTransition = (session: Session, state: ReleaseState): DeployS
   }
 }
 
-/** A deploy that went quiet. Waiting for the reviewers' approval is slow by design and never counts. */
-export const deployStalled = (session: Session, nowMs: number): boolean =>
-  session.status === "deploying" &&
-  session.deployStage?._tag !== "AwaitingApproval" &&
-  nowMs - Date.parse(session.updatedAt) > DEPLOY_TIMEOUT_MS
+/** A deploy that went quiet, as the hand-off that says so; `null` while it is moving. Waiting for approval gets a day. */
+export const deployStalled = (session: Session, nowMs: number): Extract<Escalation, { _tag: "HandOff" }> | null => {
+  if (session.status !== "deploying") return null
+  const tag = session.release?.tag ?? "the release"
+  const quiet = nowMs - Date.parse(session.updatedAt)
+  if (session.deployStage?._tag === "AwaitingApproval") {
+    return quiet > APPROVAL_TIMEOUT_MS
+      ? { _tag: "HandOff", activity: "No release approval for 24h", title: "Release not approved", detail: `${tag} has been waiting for approval for a day.` }
+      : null
+  }
+  return quiet > DEPLOY_TIMEOUT_MS
+    ? { _tag: "HandOff", activity: "No deploy progress for 3h", title: "Deploy stalled", detail: `No tracker update for ${tag} in 3 hours.` }
+    : null
+}
 
 /** `admin`, `states-exporter`: what may stand before `-vX.Y.Z` in a release tag. */
 const RELEASE_PREFIX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/

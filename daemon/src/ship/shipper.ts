@@ -23,6 +23,7 @@ import {
   deployStalled,
   deployTransition,
   type Escalation,
+  followsDeploy,
   MAX_CI_ROUNDS,
   mergedResolution,
   needsReviewRequest,
@@ -263,20 +264,19 @@ export const ShipperLive = Layer.effect(Shipper)(
       const tag = alert.fields.tag
       const state = releaseState(alert.fields.stages)
       for (const session of yield* store.activeSessions()) {
-        if (session.release?.tag !== tag || session.status === "running" || session.status === "preparing") continue
-        if (yield* runner.busy(session.id)) continue
+        if (!followsDeploy(session, tag) || (yield* runner.busy(session.id))) continue
         const step = deployTransition(session, state)
         switch (step._tag) {
           case "Unchanged":
             continue
           case "Failed":
-            yield* escalate(session, step.escalation, deployFailedPrompt(alert, session.branch ?? "fix-bt"), { deployStage: state })
+            yield* escalate(session, step.escalation, deployFailedPrompt(alert, session.branch ?? "fix-bt"), { deployStage: state, tracker: alert.id })
             continue
           case "Deployed":
             yield* finishDeploy(session, alert)
             continue
           case "Progress":
-            yield* repo.patch(session.id, { activity: step.activity, deployStage: state })
+            yield* repo.patch(session.id, { activity: step.activity, deployStage: state, tracker: alert.id })
             continue
         }
       }
@@ -293,9 +293,8 @@ export const ShipperLive = Layer.effect(Shipper)(
             Effect.catch((error) => hub.patchStatus({ error: `CI check: ${error.message}` })),
           )
         }
-        if (deployStalled(session, Date.now())) {
-          yield* handOff(session.id, { activity: "No deploy progress for 3h", title: "Deploy stalled", detail: `No tracker update for ${session.release?.tag ?? "the release"} in 3 hours.` })
-        }
+        const stalled = deployStalled(session, Date.now())
+        if (stalled !== null) yield* handOff(session.id, stalled)
       }
     })
 
@@ -359,6 +358,7 @@ export const ShipperLive = Layer.effect(Shipper)(
         ...(tag === null ? { resolution: "re-ran failed jobs, outcome not tracked" } : {}),
         release: tag === null ? session.release : { image: "", tag, version: "" },
         deployStage: null,
+        tracker: tag === null ? null : session.alertId,
       })
       if (alert !== undefined) yield* thread.post(alert, Messages.reranJobs)
     })

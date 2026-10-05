@@ -7,6 +7,7 @@ import { type Alert, type Channel, channelLabel, type Claimant, claimHeadline, i
 import { Hub } from "../hub.ts"
 import { SessionRunner } from "../sessions/runner.ts"
 import { Shipper } from "../ship/shipper.ts"
+import { followsDeploy } from "../ship/transitions.ts"
 import { Claims } from "../slack/claims.ts"
 import { SlackClient, type SlackError, type SlackMessage } from "../slack/client.ts"
 import { SlackMe } from "../slack/me.ts"
@@ -194,7 +195,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
       const history = (yield* store.alertsByFingerprint(parsed.fingerprint, daysAgo(7))).filter((a) => a.id !== id)
       const active = yield* store.activeSessions()
       const releaseTag = parsed.fields._tag === "release" ? parsed.fields.tag : null
-      const shipping = releaseTag === null ? undefined : active.find((s) => s.release?.tag === releaseTag)
+      const shipping = releaseTag === null ? undefined : active.find((s) => followsDeploy(s, releaseTag))
       const outcome =
         shipping !== undefined
           ? { _tag: "Attach" as const, sessionId: shipping.id, reason: `Release cut by session ${shipping.id}` }
@@ -216,11 +217,32 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
       if (alert !== undefined && alert.sessionId === null) yield* act(alert)
     })
 
+    /**
+     * The trackers of deploys in flight, read on their own. A tracker is edited in place for hours, long after newer
+     * posts pushed it out of the channel's newest messages. `seen`: the messages this poll already read.
+     */
+    const refreshTrackers = (seen: ReadonlySet<string>) =>
+      Effect.gen(function* () {
+        for (const session of yield* store.activeSessions()) {
+          const tracker = session.tracker
+          if (tracker === null || seen.has(tracker) || session.release === null || !followsDeploy(session, session.release.tag)) continue
+          const alert = yield* store.getAlert(tracker)
+          if (alert === undefined) continue
+          const channel = { id: alert.channelId, name: alert.channelName, enabled: true }
+          // `oldest` and `latest` are both inclusive: exactly that message.
+          yield* slack.latest(alert.channelId, 1, alert.ts, alert.ts).pipe(
+            Effect.flatMap(([message]) => (message === undefined ? Effect.void : ingest(channel, message, 0))),
+            Effect.catch((error) => hub.patchStatus({ error: `#${channel.name} tracker: ${error.message}` })),
+          )
+        }
+      })
+
     const pollOnce = Effect.gen(function* () {
       if ((yield* hub.status).slack === "missing_token") return
       yield* me.identity
       const since = yield* horizon(store, "since")
       const enabled = (yield* hub.settings).channels.filter((c) => c.enabled)
+      const seen = new Set<string>()
       let failures = 0
       for (const channel of enabled) {
         const messages = yield* slack.latest(channel.id, HISTORY_LIMIT).pipe(
@@ -231,9 +253,11 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
           }),
         )
         for (const message of [...messages].reverse()) {
+          seen.add(`${channel.id}:${message.ts}`)
           yield* ingest(channel, message, since).pipe(Effect.catch((error) => hub.patchStatus({ error: `#${channel.name}: ${error.message}` })))
         }
       }
+      yield* refreshTrackers(seen)
       yield* hub.patchStatus({ slack: failures === enabled.length && failures > 0 ? "error" : "ok", lastPollAt: now() })
     }).pipe(polling.withPermits(1))
 

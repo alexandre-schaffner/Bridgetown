@@ -26,7 +26,7 @@ const queued: Session = {
   activity: "Queued", diagnosis: null, outcome: null, recommendation: null, prUrl: null, branch: "fix-bt-x", worktree: null,
   repoPath: "/r", claudeSessionId: null, model: "m", effort: "high", ciRounds: 0, costUsd: 0, slackThreadUrl: null,
   release: null, milestones: NO_MILESTONES, rootCauseFound: null, resolution: null, pushbacks: 0, component: null,
-  review: null, critiqueRounds: 0, critique: null, mergeRequestedAt: null, releaseTag: null, deployStage: null, startedAt: "2026-10-01T00:00:00.000Z", updatedAt: "2026-10-01T00:00:00.000Z",
+  review: null, critiqueRounds: 0, critique: null, mergeRequestedAt: null, releaseTag: null, deployStage: null, tracker: null, startedAt: "2026-10-01T00:00:00.000Z", updatedAt: "2026-10-01T00:00:00.000Z",
 }
 
 let server: BoundServer

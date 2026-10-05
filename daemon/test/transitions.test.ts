@@ -3,11 +3,13 @@ import { NO_MILESTONES } from "../src/domain/model.ts"
 import { nextTagFrom, type PullRequest } from "../src/ship/github.ts"
 import {
   afterMerge,
+  APPROVAL_TIMEOUT_MS,
   type CiStep,
   ciTransition,
   DEPLOY_TIMEOUT_MS,
   deployStalled,
   deployTransition,
+  followsDeploy,
   MAX_CI_ROUNDS,
   MERGE_QUEUE_TIMEOUT_MS,
   needsReviewRequest,
@@ -102,12 +104,34 @@ describe("deployTransition (M3: only a changed release state moves the session)"
 })
 
 describe("deployStalled reads the stored stage, not the status line", () => {
-  const old = new Date(Date.now() - DEPLOY_TIMEOUT_MS - 60_000).toISOString()
-  test("quiet for 3h outside approval is stalled; approval never is", () => {
-    expect(deployStalled(makeSession("deploying", { updatedAt: old }), Date.now())).toBe(true)
-    expect(deployStalled(makeSession("deploying", { updatedAt: old, deployStage: { _tag: "AwaitingApproval" }, activity: "anything" }), Date.now())).toBe(false)
-    expect(deployStalled(makeSession("deploying", { updatedAt: new Date().toISOString() }), Date.now())).toBe(false)
-    expect(deployStalled(makeSession("ci", { updatedAt: old }), Date.now())).toBe(false)
+  const ago = (ms: number) => new Date(NOW - ms - 60_000).toISOString()
+  const approval = { _tag: "AwaitingApproval" } as const
+  const release = { image: "", tag: "admin-v0.6.1", version: "" }
+  test("quiet for 3h outside approval is stalled", () => {
+    expect(deployStalled(makeSession("deploying", { updatedAt: ago(DEPLOY_TIMEOUT_MS), release }), NOW)).toMatchObject({ title: "Deploy stalled", detail: "No tracker update for admin-v0.6.1 in 3 hours." })
+    expect(deployStalled(makeSession("deploying", { updatedAt: new Date(NOW).toISOString() }), NOW)).toBeNull()
+    expect(deployStalled(makeSession("ci", { updatedAt: ago(DEPLOY_TIMEOUT_MS) }), NOW)).toBeNull()
+  })
+  test("approval gets a day, then it is handed to you too", () => {
+    expect(deployStalled(makeSession("deploying", { updatedAt: ago(DEPLOY_TIMEOUT_MS), deployStage: approval, activity: "anything" }), NOW)).toBeNull()
+    expect(deployStalled(makeSession("deploying", { updatedAt: ago(APPROVAL_TIMEOUT_MS), deployStage: approval, release }), NOW)).toMatchObject({ title: "Release not approved" })
+  })
+})
+
+describe("followsDeploy: a tracker moves only the session shipping its tag", () => {
+  const tag = "admin-v0.6.0"
+  const release = { image: "merkl-admin", tag, version: "" }
+  test("before a release, an agent-named full tag is only a prefix", () => {
+    for (const status of ["ci", "critiquing", "awaiting_merge", "awaiting_release", "waiting"] as const) {
+      expect([status, followsDeploy(makeSession(status, { release }), tag)]).toEqual([status, false])
+    }
+  })
+  test("a cut release, a re-run, and a deploy it already followed (handed back meanwhile)", () => {
+    expect(followsDeploy(makeSession("deploying", { release }), tag)).toBe(true)
+    expect(followsDeploy(makeSession("waiting", { release, milestones: { ...NO_MILESTONES, merged: true, released: true } }), tag)).toBe(true)
+    expect(followsDeploy(makeSession("waiting", { release, deployStage: { _tag: "Failed", stage: "Build", detail: "" } }), tag)).toBe(true)
+    expect(followsDeploy(makeSession("deploying", { release }), "admin-v0.6.1")).toBe(false)
+    expect(followsDeploy(makeSession("waiting", { release, milestones: { ...NO_MILESTONES, released: true, deployed: true } }), tag)).toBe(false)
   })
 })
 
