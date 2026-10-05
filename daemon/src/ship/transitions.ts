@@ -1,6 +1,7 @@
 import type { Phase, Session } from "../domain/model.ts"
 import { type ReleaseState, sameReleaseState } from "../domain/release.ts"
 import type { CiState, PullRequest } from "./github.ts"
+import { prLabel } from "./review.ts"
 
 /**
  * The ship flow's decisions, pure: given a session and what GitHub or the
@@ -196,5 +197,4 @@ export const afterMerge = (session: Session): AfterMerge => {
 }
 
 /** "merged #3244" for a merged session with nothing to ship. */
-export const mergedResolution = (prUrl: string | null): string =>
-  `merged ${prUrl === null ? "" : `#${prUrl.split("/").pop() ?? ""}`}`.trim()
+export const mergedResolution = (prUrl: string | null): string => `merged ${prUrl === null ? "" : prLabel(prUrl)}`.trim()

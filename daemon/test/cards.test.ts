@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { PullRequest } from "../src/ship/github.ts"
 import { mergeDetail, releaseDetail } from "../src/ship/cards.ts"
+import { mergedResolution } from "../src/ship/transitions.ts"
 import { makeSession } from "./fixtures/records.ts"
 
 const PR = "https://nocturlab.ghe.com/Merkl/monorepo/pull/3352"
@@ -41,6 +42,11 @@ describe("release card", () => {
 
   test("says when it is the first release", () => {
     expect(releaseDetail(PR, "states-exporter-v0.1.0", "states-exporter")).toContain("This is the first states-exporter release.")
+  })
+
+  test("a resolution names the PR by number", () => {
+    expect(mergedResolution(PR)).toBe("merged #3352")
+    expect(mergedResolution(null)).toBe("merged")
   })
 
   test("keeps a link it can't read a number from", () => {
