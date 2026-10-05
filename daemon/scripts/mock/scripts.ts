@@ -1,6 +1,6 @@
 import type { SessionResult } from "../../src/sessions/output.ts"
 import type { Script, Step, Turn } from "./agent.ts"
-import { pr, SESSION } from "./fixtures.ts"
+import { ASK, pr, RUNNING_NOTE, SESSION } from "./fixtures.ts"
 
 /** What the scripted agent does in each turn. */
 
@@ -18,7 +18,7 @@ const running = (extra: boolean): Script => ({
     text("412 errors in 30 minutes, all from `OpportunityService.computeApr` when `campaign.rewardToken` is null."),
     read("packages/api/src/services/opportunity.ts"),
     text("Root cause: campaigns created since v1.35.9 can have a null reward token until their first distribution."),
-    { kind: "report", phase: "fix", note: "Guarding computeApr against campaigns without a reward token" },
+    { kind: "report", phase: "fix", note: RUNNING_NOTE },
     ...(extra ? [{ kind: "ask", question: "Roll back merkl-api to v1.35.8 while I finish the fix?", options: ["Roll back", "Keep investigating", "Both"] } satisfies Step] : []),
   ],
   loop: [
@@ -39,11 +39,7 @@ const asking: Script = {
     bash("bun run scripts/keeper-status.ts --chain arbitrum"),
     text("eth_estimateGas has returned 429 from the primary Arbitrum RPC for 2 hours, so every root update attempt fails before it is sent."),
     read("packages/keeper/src/config/rpc.ts"),
-    {
-      kind: "ask",
-      question: "The keeper's Arbitrum RPC is rate-limiting it. Switch the keeper to the fallback provider and re-submit the pending root?",
-      options: ["Switch and re-submit", "Only re-submit", "Leave it to on-call"],
-    },
+    { kind: "ask", question: ASK.question, options: ASK.options },
   ],
   loop: [
     edit("packages/keeper/src/config/rpc.ts"),
