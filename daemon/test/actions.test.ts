@@ -1,9 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { Actions } from "../src/actions/actions.ts"
-import { RETRY } from "../src/actions/queue.ts"
 import { SlackApiError } from "../src/domain/errors.ts"
-import type { Action, Alert, Session } from "../src/domain/model.ts"
+import { type Action, type Alert, RETRY, type Session } from "../src/domain/model.ts"
 import { Hub } from "../src/hub.ts"
 import { Store } from "../src/store/store.ts"
 import { makeAlert, makeSession } from "./fixtures/records.ts"
@@ -109,6 +108,17 @@ describe("resolve", () => {
     expect(out.error).toMatchObject({ _tag: "SlackApiError", code: "not_posted" })
     expect(out.cards).toContain("a_rep")
     expect(out.status).toBe("waiting")
+  })
+
+  test("a hand-off card of a session you since messaged back to work: the card goes, the session keeps running", async () => {
+    const out = await world.runPromise(Effect.gen(function* () {
+      const running = makeSession("running", { id: "s_moved", alertId: "C1:moved" })
+      yield* seed({ id: "C1:moved", sessionId: "s_moved" }, card({ id: "a_moved", kind: "review", sessionId: "s_moved", alertId: "C1:moved" }), running)
+      const failure = yield* (yield* Actions).resolve("a_moved", null).pipe(Effect.flip)
+      const store = yield* Store
+      return { failure: failure._tag, status: (yield* store.getSession("s_moved"))?.status, cards: (yield* store.listActions()).map((a) => a.id) }
+    }))
+    expect(out).toEqual({ failure: "Conflict", status: "running", cards: [] })
   })
 
   test("an unknown action is NotFound", async () => {

@@ -1,12 +1,13 @@
 import { Context, Effect, Layer } from "effect"
 import { ActionQueue } from "../actions/queue.ts"
-import type { AdapterError, GitHubError } from "../domain/errors.ts"
+import { type AdapterError, Conflict, type GitHubError } from "../domain/errors.ts"
+import { now } from "../domain/ids.ts"
 import type { Alert, Session } from "../domain/model.ts"
 import { releaseState } from "../domain/release.ts"
 import { Hub } from "../hub.ts"
 import { ciFailedPrompt, deployFailedPrompt, reviewChangesPrompt } from "../sessions/prompts.ts"
 import { cannotResume, makeHandOff } from "../sessions/hand-off.ts"
-import { SessionRepo } from "../sessions/repo.ts"
+import { SessionRepo, withPatch } from "../sessions/repo.ts"
 import { SessionRunner } from "../sessions/runner.ts"
 import { removeWorktree } from "../sessions/worktree.ts"
 import { SlackThread } from "../slack/thread.ts"
@@ -15,7 +16,7 @@ import { mergeDetail, releaseDetail } from "./cards.ts"
 import { mergeOnce, releaseOnce } from "./gates.ts"
 import { ciState, GitHub, type PullRequest } from "./github.ts"
 import * as Messages from "./messages.ts"
-import { reviewRequestText, reviewRoute } from "./review.ts"
+import { prLabel, reviewRequestText, reviewRoute } from "./review.ts"
 import {
   afterMerge,
   ciTransition,
@@ -33,12 +34,12 @@ export interface ShipperShape {
   readonly tick: Effect.Effect<void, GitHubError>
   /** A release tracker message changed: moves the sessions shipping that tag. */
   readonly trackDeploy: (alert: Alert) => Effect.Effect<void, GitHubError>
-  /** The merge gate: merges at most once, then moves on to the release. */
-  readonly merge: (sessionId: string) => Effect.Effect<void, GitHubError>
-  /** The release gate: cuts at most one tag for the prefix. */
-  readonly release: (sessionId: string, prefix: string) => Effect.Effect<void, GitHubError>
-  /** Re-runs a failed workflow run on the agent's recommendation. */
-  readonly rerun: (sessionId: string, runId: string) => Effect.Effect<void, GitHubError>
+  /** The merge gate: merges at most once, then moves on to the release. `Conflict` unless the session is `awaiting_merge`. */
+  readonly merge: (sessionId: string) => Effect.Effect<void, GitHubError | Conflict>
+  /** The release gate: cuts at most one tag for the prefix. `Conflict` unless the session is `awaiting_release`. */
+  readonly release: (sessionId: string, prefix: string) => Effect.Effect<void, GitHubError | Conflict>
+  /** Re-runs a failed workflow run on the agent's recommendation. `Conflict` unless the session is `waiting` on it. */
+  readonly rerun: (sessionId: string, runId: string) => Effect.Effect<void, GitHubError | Conflict>
 }
 
 export class Shipper extends Context.Service<Shipper, ShipperShape>()("Shipper") {}
@@ -73,6 +74,9 @@ export const ShipperLive = Layer.effect(Shipper)(
         if (delivery === "refused") yield* handOff(session.id, cannotResume("send it back"), () => patch)
       })
 
+    /** After a move the shipper made: the session's cards its new state no longer offers go (`cardStands`). */
+    const settle = (session: Session | undefined) => (session === undefined ? Effect.void : queue.withdrawDead(session))
+
     /**
      * After the merge: resolve (nothing to ship), hand off (a prefix that cannot
      * be a tag), or offer the release. The merge card goes only once the step
@@ -84,7 +88,6 @@ export const ShipperLive = Layer.effect(Shipper)(
         const session = yield* repo.get(sessionId)
         if (session === undefined) return
         const step = afterMerge(session)
-        const dropMergeCards = queue.removeWhere((a) => a.sessionId === sessionId && a.kind === "merge")
         switch (step._tag) {
           case "NothingToRelease": {
             const merged = { ...session.milestones, merged: true }
@@ -95,7 +98,7 @@ export const ShipperLive = Layer.effect(Shipper)(
               resolution: mergedResolution(session.prUrl),
               milestones: merged,
             })
-            yield* dropMergeCards
+            yield* settle(done)
             if (done !== undefined) yield* postFor(done, Messages.merged(session.prUrl))
             return
           }
@@ -109,7 +112,7 @@ export const ShipperLive = Layer.effect(Shipper)(
               },
               (current) => ({ milestones: { ...current.milestones, merged: true } }),
             )
-            yield* dropMergeCards
+            yield* settle(yield* repo.get(sessionId))
             return
           }
           case "Release": {
@@ -132,7 +135,7 @@ export const ShipperLive = Layer.effect(Shipper)(
                 payload: tag,
               })
             }
-            yield* dropMergeCards
+            yield* settle(ready)
             return
           }
         }
@@ -238,6 +241,7 @@ export const ShipperLive = Layer.effect(Shipper)(
           worktree: null,
         })
         if (done === undefined) return
+        yield* settle(done)
         const origin = yield* store.getAlert(session.alertId)
         yield* thread.post(origin ?? alert, Messages.deployed(tag === "" ? alert.title : tag))
         if (session.worktree !== null) yield* removeWorktree(session.repoPath, session.worktree).pipe(Effect.ignore)
@@ -284,32 +288,37 @@ export const ShipperLive = Layer.effect(Shipper)(
       }
     })
 
+    /** A write that only lands while the session is still at the gate the click was for. */
+    const atGate = (sessionId: string, status: Session["status"], patch: Partial<Session>) =>
+      repo.modify(sessionId, (current) => (current.status === status ? withPatch(current, patch) : undefined))
+
+    const movedOn = (gate: string) => new Conflict({ message: `This session is no longer waiting ${gate}` })
+
     const merge = Effect.fn("Shipper.merge")(function* (sessionId: string) {
       const session = yield* repo.get(sessionId)
-      if (session === undefined || session.prUrl === null) return
-      const pr = `#${session.prUrl.split("/").pop() ?? ""}`
-      const merged = yield* mergeOnce(session, session.prUrl, {
-        // The status line says what is happening while `gh pr merge` runs, and goes back if GitHub said no.
-        save: (patch) =>
-          repo
-            .patch(sessionId, { ...patch, activity: patch.mergeRequestedAt === null ? session.activity : `Merging ${pr}…` })
-            .pipe(Effect.asVoid),
+      const prUrl = session?.prUrl ?? null
+      if (session === undefined || prUrl === null) return yield* movedOn("to merge")
+      // The status line says what is happening while `gh pr merge` runs, and goes back if GitHub said no.
+      const claimed = yield* atGate(sessionId, "awaiting_merge", { activity: `Merging ${prLabel(prUrl)}…` })
+      if (claimed === undefined) return yield* movedOn("to merge")
+      const merged = yield* mergeOnce(claimed, prUrl, {
         merge: github.mergePr,
         isMerged: (url) => github.viewPr(url).pipe(Effect.map((pr) => pr.mergedAt !== null)),
-      })
+      }).pipe(Effect.tapError(() => atGate(sessionId, "awaiting_merge", { activity: session.activity })))
       if (merged) yield* onMerged(sessionId)
-      else yield* repo.patch(sessionId, { activity: "Queued to merge" })
+      else yield* atGate(sessionId, "awaiting_merge", { mergeRequestedAt: now(), activity: "Queued to merge" })
     })
 
     const release = Effect.fn("Shipper.release")(function* (sessionId: string, prefix: string) {
       const session = yield* repo.get(sessionId)
-      if (session === undefined) return
+      if (session?.status !== "awaiting_release") return yield* movedOn("for its release")
       const notes = [session.diagnosis ?? session.title, "", `Fix: ${session.prUrl ?? "n/a"}`, "", "Shipped via Bridgetown."].join("\n")
       const tag = yield* releaseOnce(session, prefix, {
         save: (patch) =>
-          repo
-            .patch(sessionId, { ...patch, activity: patch.releaseTag === null || patch.releaseTag === undefined ? session.activity : `Cutting ${patch.releaseTag}…` })
-            .pipe(Effect.asVoid),
+          atGate(sessionId, "awaiting_release", {
+            ...patch,
+            activity: patch.releaseTag === null || patch.releaseTag === undefined ? session.activity : `Cutting ${patch.releaseTag}…`,
+          }).pipe(Effect.map((written) => written !== undefined)),
         nextTag: (p) => github.nextPatchTag(session.repoPath, p),
         tagExists: (t) => github.tagExists(session.repoPath, t),
         create: (t) => github.createRelease(t, notes),
@@ -327,9 +336,9 @@ export const ShipperLive = Layer.effect(Shipper)(
     })
 
     const rerun = Effect.fn("Shipper.rerun")(function* (sessionId: string, runId: string) {
-      yield* github.rerunFailedJobs(runId)
       const session = yield* repo.get(sessionId)
-      if (session === undefined) return
+      if (session?.status !== "waiting") return yield* movedOn("on a re-run")
+      yield* github.rerunFailedJobs(runId)
       const alert = yield* store.getAlert(session.alertId)
       const tag = alert?.fields._tag === "release" ? alert.fields.tag : null
       yield* repo.patch(sessionId, {

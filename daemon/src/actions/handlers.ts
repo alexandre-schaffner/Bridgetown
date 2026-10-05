@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { type AdapterError, type DaemonError, type NotFound, SlackApiError } from "../domain/errors.ts"
-import type { Action, ActionKind, Alert, Session } from "../domain/model.ts"
+import { type Action, type ActionKind, type Alert, RETRY, type Session } from "../domain/model.ts"
 import type { SessionRepoShape } from "../sessions/repo.ts"
 import type { SessionRunnerShape } from "../sessions/runner.ts"
 import type { ShipperShape } from "../ship/shipper.ts"
@@ -8,7 +8,6 @@ import { tagPrefix } from "../ship/transitions.ts"
 import { toMrkdwn } from "../slack/text.ts"
 import type { SlackThreadShape } from "../slack/thread.ts"
 import type { StoreShape } from "../store/store.ts"
-import { RETRY } from "./queue.ts"
 
 /** The honest one-line outcome of a session you close without a verified fix. Never "resolved". */
 export const closedResolution = (session: Session): string =>
@@ -44,9 +43,10 @@ export interface Resolution {
 }
 
 /**
- * What the primary button of each kind does. One exit protocol for all: a
- * handler that succeeds has done its work and the card goes; one that fails
- * leaves the card in place, so the user can try again.
+ * What the primary button of each kind does, once `cardStands` said the card is
+ * still live. One exit protocol for all: a handler that succeeds has done its
+ * work and the card goes; one that fails leaves the card in place, so the user
+ * can try again.
  */
 export type Handler = (resolution: Resolution) => Effect.Effect<void, DaemonError>
 
@@ -104,10 +104,11 @@ export const makeHandlers = (deps: HandlerDeps): Readonly<Record<ActionKind, Han
       )
     }),
 
+  // A retry card stands only on a failed session, a hand-off only on a waiting one (`cardStands`).
   review: ({ action, session }) =>
-    Effect.gen(function* () {
-      if (session === undefined) return
-      if (session.status === "failed" && action.payload === RETRY) return yield* deps.runner.retry(session.id)
-      if (session.status === "waiting" || session.status === "failed") yield* closeUnresolved(deps.repo, session.id)
-    }),
+    session === undefined
+      ? Effect.void
+      : action.payload === RETRY
+        ? deps.runner.retry(session.id)
+        : closeUnresolved(deps.repo, session.id).pipe(Effect.asVoid),
 })
