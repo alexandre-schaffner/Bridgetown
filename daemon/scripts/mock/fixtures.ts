@@ -333,12 +333,10 @@ export const buildFixtures = (options: WorldOptions) => {
     queued: alert(clock, { channel: UPTIME, minutesAgo: 0.5, title: "merkl-api · /v4/claims timing out in 2 regions", summary: "Better Stack: 2 of 5 regions timing out after 30s", source: "uptime", fields: { _tag: "uptime", target: "api.merkl.xyz/v4/claims", state: "incident" }, sessionId: STILL_SESSION.queued, triage: auto("Agent-resolvable uptime_incident (actionable 84% · agent 78%)", jev("uptime_incident", 0.84, 0.78, 0.1, "standard", 2.2)) }),
     preparing: alert(clock, { channel: DEV, minutesAgo: 1.2, title: "merkl-api · 5xx rate 1.9% on /v4/positions", summary: "Sentry: RangeError: Invalid time value in PositionService.since", source: "generic", sessionId: STILL_SESSION.preparing, triage: auto("Agent-resolvable runtime_error (actionable 86% · agent 80%)", jev("runtime_error", 0.86, 0.8, 0.05, "quick", 1.6)) }),
   }
-  const still: ReadonlyArray<Session> = options.static
-    ? [
-        { ...newSession(STILL_A.queued, STILL_SESSION.queued, options.repoPath), startedAt: ago(0.4), updatedAt: ago(0.4) },
-        session(STILL_A.preparing, "preparing", { started: 1, updated: 0.8 }, { activity: "Creating worktree…", claudeSessionId: null }),
-      ]
-    : []
+  const STILL_S = {
+    queued: { ...newSession(STILL_A.queued, STILL_SESSION.queued, options.repoPath), startedAt: ago(0.4), updatedAt: ago(0.4) },
+    preparing: session(STILL_A.preparing, "preparing", { started: 1, updated: 0.8 }, { activity: "Creating worktree…", claudeSessionId: null }),
+  } satisfies Record<keyof typeof STILL_SESSION, Session>
 
   const card = (spec: Omit<Action, "id" | "createdAt" | "url" | "options"> & { readonly url?: string | null; readonly options?: ReadonlyArray<string>; readonly minutesAgo: number }): Action => {
     const { minutesAgo, ...rest } = spec
@@ -383,7 +381,7 @@ export const buildFixtures = (options: WorldOptions) => {
       t(18, "tool", "Read packages/keeper/src/config/rpc.ts"),
       t(2, "status", `Asked: ${ASK.question}`),
     ],
-    [STILL_SESSION.preparing]: [t(1, "status", `Fetching origin/main and creating worktree on ${still[1]?.branch ?? "?"} (then bun install)…`)],
+    [STILL_SESSION.preparing]: [t(1, "status", `Fetching origin/main and creating worktree on ${STILL_S.preparing.branch} (then bun install)…`)],
   }
   const transcripts: Readonly<Record<string, ReadonlyArray<TranscriptEntry>>> = {
     ...(options.static ? stillTranscripts : {}),
@@ -501,7 +499,7 @@ export const buildFixtures = (options: WorldOptions) => {
     quietHours: { enabled: true, start: "22:00", end: "08:00" },
   }
 
-  const sessions: ReadonlyArray<Session> = [...Object.values(S), ...still]
+  const sessions: ReadonlyArray<Session> = [...Object.values(S), ...(options.static ? Object.values(STILL_S) : [])]
   /** Each session's alert says it started, and (once over) how it ended, as the real repo writes it. */
   const alerts: ReadonlyArray<Alert> = [...Object.values(A), ...(options.static ? Object.values(STILL_A) : [])].map((a) => {
     const s = sessions.find((x) => x.id === a.sessionId)
