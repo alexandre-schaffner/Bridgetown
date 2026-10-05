@@ -1,5 +1,5 @@
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
-import { type Cause, Effect, Exit, Queue, Stream } from "effect"
+import { type Cause, Effect, Exit, FiberSet, Queue, Stream } from "effect"
 import { AdapterError, errorMessage } from "../domain/errors.ts"
 import type { Session } from "../domain/model.ts"
 import type { HubShape } from "../hub.ts"
@@ -42,16 +42,15 @@ export interface TurnDeps {
   readonly repo: SessionRepoShape
   readonly asks: AsksShape
   readonly agent: AgentShape
-  /** The Promise boundary for the SDK's tool callbacks; fibers it starts belong to the runner's scope. */
-  readonly runPromise: <A, E>(effect: Effect.Effect<A, E>) => Promise<A>
   readonly onEnd: (id: string) => (end: TurnEnd) => Effect.Effect<void, AdapterError>
   readonly onFailure: (id: string, reason: string) => Effect.Effect<void>
 }
 
 export const makeTurns = (deps: TurnDeps) => {
-  const { store, thread, repo, asks, runPromise } = deps
+  const { store, thread, repo, asks } = deps
 
-  const toolsFor = (session: Session): ToolCallbacks => ({
+  /** The SDK's tool callbacks, each run on a fiber of the turn (`runPromise`), so none outlives it. */
+  const toolsFor = (session: Session, runPromise: <A, E>(effect: Effect.Effect<A, E>) => Promise<A>): ToolCallbacks => ({
     slackContext: (minutes) =>
       runPromise(
         Effect.gen(function* () {
@@ -82,18 +81,20 @@ export const makeTurns = (deps: TurnDeps) => {
    * stop, shutdown) aborts the query and kills the CLI. Otherwise it never ends
    * without an outcome: its result is applied, or the session fails (the CLI
    * failed or exited without a result, the result could not be applied, a
-   * defect). No `ask` outlives it.
+   * defect). Nothing its tools started outlives it: an open `ask` ends with it.
    */
   const runTurn = (id: string, session: Session, input: TurnInput, resume: boolean): Effect.Effect<void> =>
     Effect.scoped(
       Effect.gen(function* () {
         yield* repo.log(id, "status", resume ? "Resumed with a follow-up" : "Session started")
+        const runPromise = yield* FiberSet.makeRuntimePromise()
         const abort = yield* Effect.acquireRelease(
           Effect.sync(() => new AbortController()),
           (controller, exit) => (Exit.isSuccess(exit) ? Effect.void : Effect.sync(() => controller.abort())),
         )
         const onRefused = (what: string, reason: string) => {
-          void runPromise(repo.log(id, "error", `Refused: ${truncate(what, 120)} — ${reason}`).pipe(Effect.ignore))
+          // Rejected once the turn is over; nobody awaits it, and an unhandled rejection would end the daemon.
+          runPromise(repo.log(id, "error", `Refused: ${truncate(what, 120)} — ${reason}`).pipe(Effect.ignore)).catch(() => undefined)
         }
         const end = { seen: false }
         const sink: EventSink = {
@@ -107,7 +108,7 @@ export const makeTurns = (deps: TurnDeps) => {
         }
         const messages = deps.agent.query({
           prompt: Stream.toAsyncIterable(Stream.fromQueue(input)),
-          options: sdkOptions({ session, abort, resume, tools: toolsFor(session), onRefused }),
+          options: sdkOptions({ session, abort, resume, tools: toolsFor(session, runPromise), onRefused }),
         })
         yield* Stream.fromAsyncIterable(
           abortOnReturn(messages, abort),
@@ -129,7 +130,7 @@ export const makeTurns = (deps: TurnDeps) => {
     ).pipe(
       Effect.catch((error) => deps.onFailure(id, error.message)),
       Effect.catchDefect((defect) => deps.onFailure(id, errorMessage(defect))),
-      Effect.ensuring(Queue.end(input).pipe(Effect.andThen(asks.cancelFor(id)))),
+      Effect.ensuring(Queue.end(input)),
     )
 
   return { runTurn }

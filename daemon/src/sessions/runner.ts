@@ -1,4 +1,4 @@
-import { Context, Effect, Fiber, FiberMap, FiberSet, Layer, Option, Queue, SynchronizedRef } from "effect"
+import { Context, Effect, Fiber, FiberMap, Layer, Option, Queue, SynchronizedRef } from "effect"
 import { ActionQueue } from "../actions/queue.ts"
 import { MAX_CRITIQUE_ROUNDS } from "../critique/transitions.ts"
 import { type AdapterError, Conflict, errorMessage, NotFound } from "../domain/errors.ts"
@@ -124,8 +124,6 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
     const turns = yield* SynchronizedRef.make<Turns>({ live: new Map(), parked: new Map() })
     /** One fiber per session (preparing its worktree, or driving its turns), interrupted by a stop or when the layer shuts down. */
     const fibers = yield* FiberMap.make<string>()
-    /** The SDK tool callbacks' Promise boundary; what it runs is interrupted with the layer too. */
-    const runPromise = yield* FiberSet.makeRuntimePromise()
     // Parked turns and queued follow-ups only live here: when the daemon stops, the transcript says they went undelivered.
     yield* Effect.addFinalizer(() =>
       Effect.gen(function* () {
@@ -153,7 +151,6 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
       repo,
       asks,
       agent,
-      runPromise,
       onEnd: (id) => (end: TurnEnd) => (end._tag === "Failed" ? finishFailed(id, end.reason) : finalize(id, end.result)),
       onFailure: (id, reason) => finishFailed(id, reason).pipe(Effect.ignore),
     })
@@ -404,8 +401,8 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
             return [running, withParked(withLive(state, sessionId, undefined), sessionId, undefined)] as const
           }),
         )
-        // Outside the lock, which the turn's own cleanup takes. Interrupting aborts its query (the CLI exits, its
-        // asks are cancelled) or its worktree setup.
+        // Outside the lock, which the turn's own cleanup takes. Interrupting aborts its query (the CLI exits, an
+        // open ask goes with it) or its worktree setup.
         if (Option.isSome(fiber)) yield* Fiber.interrupt(fiber.value)
         yield* queue.removeWhere((action) => action.sessionId === sessionId)
       }),

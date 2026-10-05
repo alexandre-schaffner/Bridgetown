@@ -33,18 +33,19 @@ export const RESULT: SessionResult = {
   recommendation: null, recommendationDetail: null, releasePrefix: null,
 }
 
-/** An agent whose every turn plays `plays` once and then lets the CLI exit; `turns` counts the queries. */
+/** An agent whose every turn plays `plays` once and then lets the CLI exit; `turns` counts the queries. Aborting the query ends it, as it kills the CLI. */
 export const playingAgent = (plays: ReadonlyArray<Play>) => {
   const state = { turns: 0 }
   const agent: AgentShape = {
     query: ({ options }) => {
       state.turns += 1
+      const aborted = new Promise<"aborted">((resolve) => options.abortController?.signal.addEventListener("abort", () => resolve("aborted")))
       async function* run(): AsyncGenerator<SDKMessage> {
         const call = await toolsOf(options)
         for (const play of plays) {
           switch (play.kind) {
             case "tool":
-              await call(play.name, play.args)
+              if ((await Promise.race([call(play.name, play.args), aborted])) === "aborted") return
               break
             case "fire":
               void call(play.name, play.args).catch(() => undefined)

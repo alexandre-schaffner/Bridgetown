@@ -3,6 +3,7 @@ import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { Effect, Fiber } from "effect"
 import { NO_MILESTONES, type Session } from "../src/domain/model.ts"
 import { Asks } from "../src/sessions/asks.ts"
+import { recoverInterrupted } from "../src/sessions/recovery.ts"
 import { SessionRepo } from "../src/sessions/repo.ts"
 import { SessionRunner, type SessionRunnerShape } from "../src/sessions/runner.ts"
 import type { GitHubShape } from "../src/ship/github.ts"
@@ -10,6 +11,7 @@ import { Shipper } from "../src/ship/shipper.ts"
 import { Store } from "../src/store/store.ts"
 import { init, type Play, playingAgent, RESULT } from "./fixtures/agent.ts"
 import { makeAlert, makeSession } from "./fixtures/records.ts"
+import { scratchDir } from "./fixtures/tmp.ts"
 import { makeWorld } from "./fixtures/world.ts"
 
 const OWN_PR = "https://nocturlab.ghe.com/Merkl/monorepo/pull/3401"
@@ -35,7 +37,7 @@ const quietGitHub: GitHubShape = {
 const turnOf = async (
   plays: ReadonlyArray<Play>,
   session: Session = handedBack("s_turn"),
-  start: (runner: SessionRunnerShape) => Effect.Effect<unknown, unknown, Shipper> = (runner) => runner.message(session.id, "go"),
+  start: (runner: SessionRunnerShape) => Effect.Effect<unknown, unknown, Shipper | Store> = (runner) => runner.message(session.id, "go"),
   github: GitHubShape = quietGitHub,
 ) => {
   const { agent } = playingAgent(plays)
@@ -104,6 +106,53 @@ describe("a turn always ends", () => {
 })
 
 describe("asks", () => {
+  test("stopping an agent that asked takes the question down and leaves the session stopped", async () => {
+    const out = await turnOf(
+      [{ kind: "tool", name: "ask", args: { question: "Pin or revert?" } }],
+      handedBack("s_stop"),
+      (runner) =>
+        Effect.gen(function* () {
+          const store = yield* Store
+          yield* runner.message("s_stop", "go")
+          while ((yield* store.listActions()).length === 0) yield* Effect.sleep("5 millis")
+          yield* runner.stop("s_stop")
+        }),
+    )
+    expect(out.session?.status).toBe("stopped")
+    expect(out.cards).toEqual([])
+  })
+
+  test("a question still open when Bridgetown quits is found interrupted at the next start, with a Retry", async () => {
+    const home = scratchDir("bt-quit-")
+    const { agent } = playingAgent([{ kind: "tool", name: "ask", args: { question: "Pin or revert?" } }])
+    const world = makeWorld({ agent, home })
+    await world.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store
+        // A resumed turn: the session already has an outcome, so only its open question says it was mid-turn.
+        const session = handedBack("s_quit")
+        yield* store.putAlert(makeAlert({ id: session.alertId, sessionId: session.id }))
+        yield* store.putSession(session)
+        yield* (yield* SessionRunner).message(session.id, "go")
+        while ((yield* store.listActions()).length === 0) yield* Effect.sleep("5 millis")
+      }),
+    )
+    await world.dispose()
+    const reopened = makeWorld({ home })
+    try {
+      const out = await reopened.runPromise(
+        Effect.gen(function* () {
+          yield* recoverInterrupted
+          const store = yield* Store
+          return { status: (yield* store.getSession("s_quit"))?.status, cards: (yield* store.listActions()).map((a) => `${a.kind}: ${a.title}`) }
+        }),
+      )
+      expect(out).toEqual({ status: "failed", cards: ["review: Interrupted · t"] })
+    } finally {
+      await reopened.dispose()
+    }
+  })
+
   test("an answer to a session that moved on meanwhile leaves its status alone", async () => {
     const world = makeWorld()
     try {
