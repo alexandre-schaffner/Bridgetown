@@ -104,29 +104,31 @@ const addCommand = Effect.fn("addCommand")(function* (repoPath: string, branch: 
 })
 
 /**
+ * The repo pins another bun than this machine runs, or `null`. Checked on every setup, an install skipped or not:
+ * the menu bar's problem follows it, so a setup that did not look must not clear it.
+ */
+const bunMismatchOf = Effect.fn("bunMismatchOf")(function* (repoPath: string) {
+  const pinned = pinnedBunVersion(repoPath)
+  if (pinned === undefined) return null
+  const local = (yield* run(["bun", "--version"]).pipe(Effect.orElseSucceed(() => ({ exitCode: 1, stdout: "", stderr: "" })))).stdout.trim()
+  return local !== "" && pinned !== local
+    ? `The repo pins bun ${pinned} but this machine has bun ${local}. Run \`bun upgrade\` if installs or builds misbehave.`
+    : null
+})
+
+/**
  * Dependencies are best effort: a broken install (an outdated bun that cannot read
  * a newer lockfile, a flaky registry) becomes a warning, and the agent, which may
  * be there to fix exactly that, still starts.
  */
-const install = Effect.fn("install")(function* (path: string, repoPath: string) {
+const install = Effect.fn("install")(function* (path: string) {
   const modules = join(path, "node_modules")
-  if (!existsSync(join(path, "package.json")) || existsSync(join(modules, INSTALLED_MARKER))) return { warnings: [], bunMismatch: null }
-  const warnings: Array<string> = []
-  const pinned = pinnedBunVersion(repoPath)
-  const local = (yield* run(["bun", "--version"]).pipe(Effect.orElseSucceed(() => ({ exitCode: 1, stdout: "", stderr: "" })))).stdout.trim()
-  const bunMismatch =
-    pinned !== undefined && local !== "" && pinned !== local
-      ? `The repo pins bun ${pinned} but this machine has bun ${local}. Run \`bun upgrade\` if installs or builds misbehave.`
-      : null
-  if (bunMismatch !== null) warnings.push(bunMismatch)
+  if (!existsSync(join(path, "package.json")) || existsSync(join(modules, INSTALLED_MARKER))) return []
   const result = yield* run(["bun", "install"], { cwd: path, timeoutMs: INSTALL_TIMEOUT_MS })
-  if (result.exitCode === 0) {
-    mkdirSync(modules, { recursive: true })
-    writeFileSync(join(modules, INSTALLED_MARKER), "")
-  } else {
-    warnings.push(`\`bun install\` failed (exit ${result.exitCode}); dependencies are missing:\n${tail(result.stderr || result.stdout)}`)
-  }
-  return { warnings, bunMismatch }
+  if (result.exitCode !== 0) return [`\`bun install\` failed (exit ${result.exitCode}); dependencies are missing:\n${tail(result.stderr || result.stdout)}`]
+  mkdirSync(modules, { recursive: true })
+  writeFileSync(join(modules, INSTALLED_MARKER), "")
+  return []
 })
 
 const create = Effect.fn("Worktrees.create")(function* (repoPath: string, branch: string) {
@@ -140,8 +142,10 @@ const create = Effect.fn("Worktrees.create")(function* (repoPath: string, branch
     if (existsSync(path)) yield* deleteDir(path)
     yield* runOk(yield* addCommand(repoPath, branch, path), { cwd: repoPath })
   }
-  const installed = yield* install(path, repoPath)
-  const worktree: Worktree = { path, warnings: [...warnings, ...installed.warnings], bunMismatch: installed.bunMismatch }
+  const bunMismatch = yield* bunMismatchOf(repoPath)
+  if (bunMismatch !== null) warnings.push(bunMismatch)
+  warnings.push(...(yield* install(path)))
+  const worktree: Worktree = { path, warnings, bunMismatch }
   return worktree
 })
 
