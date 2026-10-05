@@ -109,9 +109,12 @@ final class DaemonProcess {
         }
     }
 
-    /// Restart after secrets changed, or retry after the port was taken. No-op when attached.
+    /// Restart after secrets changed, or retry after the port was taken or a `stop`. No-op
+    /// when attached.
     func restart() {
         guard mode.canManage else { return }
+        // Wanted back: from here a crash is restarted again, even after a `stop`.
+        stopping = false
         consecutiveFailures = 0
         restartTask?.cancel()
         if let process, process.isRunning {
@@ -130,7 +133,11 @@ final class DaemonProcess {
     func stop(completion: @escaping () -> Void) -> Bool {
         stopping = true
         restartTask?.cancel()
-        guard let process, process.isRunning else { return false }
+        guard let process, process.isRunning else {
+            // A restart it was waiting for is called off.
+            if case .restarting = state { state = .idle }
+            return false
+        }
         onStopped = completion
         signalStop(process)
         let pid = process.processIdentifier

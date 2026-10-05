@@ -145,6 +145,43 @@ import Testing
         #expect(DaemonProcess(environment: [:]).logURL.path.hasSuffix("/Library/Logs/Bridgetown/daemon.log"))
     }
 
+    /// A real child (`sleep`), its log in a temp dir, the Keychain kept out of it.
+    @MainActor @Test func aDaemonRestartedAfterAStopIsRestartedWhenItDies() async throws {
+        Keychain.inMemory = [:]
+        let logs = FileManager.default.temporaryDirectory.appending(path: "bt-daemon-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: logs) }
+        let daemon = DaemonProcess(environment: ["BRIDGETOWN_DAEMON_CMD": "sleep 30", "BRIDGETOWN_LOG_DIR": logs.path])
+        daemon.start()
+        await withCheckedContinuation { done in
+            if !daemon.stop(completion: { done.resume() }) { done.resume() }
+        }
+        daemon.restart()
+        guard case let .running(pid) = daemon.state else {
+            Issue.record("not running after restart: \(daemon.state)")
+            return
+        }
+        kill(pid, SIGKILL)
+        for _ in 0..<150 where daemon.state == .running(pid: pid) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(daemon.state == .restarting(after: .seconds(1)))
+        daemon.stop {}
+    }
+
+    @MainActor @Test func stoppingWhileARestartWaitsCallsItOff() async throws {
+        Keychain.inMemory = [:]
+        let logs = FileManager.default.temporaryDirectory.appending(path: "bt-daemon-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: logs) }
+        let daemon = DaemonProcess(environment: ["BRIDGETOWN_DAEMON_CMD": "false", "BRIDGETOWN_LOG_DIR": logs.path])
+        daemon.start()
+        for _ in 0..<150 where daemon.state != .restarting(after: .seconds(1)) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(daemon.state == .restarting(after: .seconds(1)))
+        #expect(daemon.stop {} == false)
+        #expect(daemon.state == .idle)
+    }
+
     @Test func secretsLineIsOneJSONObject() throws {
         let line = try DaemonProcess.Secrets(apiToken: "tok", slackUserToken: "xoxp-1", typesafeApiKey: "").line()
         #expect(line.last == UInt8(ascii: "\n"))
