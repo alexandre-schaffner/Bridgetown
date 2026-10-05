@@ -1,106 +1,151 @@
 import SwiftUI
 
+/// The app's own line, in the band beside the notch: how Bridgetown is doing, in one
+/// sentence, and its menu. Healthy services say nothing; whatever is wrong is listed by
+/// `ProblemList`.
 struct HeaderView: View {
-    @Environment(Store.self) private var store
-    @Environment(DaemonProcess.self) private var daemon
-    @Environment(\.openSettings) private var openSettings
     let now: Date
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 8) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 7) {
-                        BrandMark(size: 20)
-                        Text("Bridgetown")
-                            .font(.geist(15, .semibold))
-                            .tracking(-0.4)
-                        if store.snapshot?.status.dryRun == true {
-                            Text("Dry run")
-                                .font(.geist(10, .medium))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .overlay(PixelStroke(radius: Ink.tagRadius, style: Ink.outline))
-                                .help("Agents run, but nothing is posted to Slack")
-                        }
-                    }
-                    if let status = store.snapshot?.status, store.connection == .connected {
-                        HealthStrip(status: status, now: now)
-                    } else {
-                        Text(subtitle)
-                            .font(.geist(11))
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .contentTransition(.numericText())
-                    }
-                }
-                Spacer(minLength: 0)
-                if let paused = store.snapshot?.status.paused {
-                    IconButton(
-                        systemName: paused ? "play.circle" : "pause.circle",
-                        help: paused ? "Resume auto-start" : "Pause auto-start",
-                        size: 16
-                    ) { store.setPaused(!paused) }
-                    .accessibilityIdentifier("header.pause")
-                }
-                IconButton(systemName: "gearshape", help: "Settings", size: 14, action: showSettings)
-                    .accessibilityIdentifier("header.settings")
-            }
+        HStack(spacing: 8) {
+            StatusSummary(now: now)
+            Spacer(minLength: 0)
+            AppMenu()
+        }
+    }
+}
 
-            ForEach(problems) { problem in
-                ProblemLine(problem: problem) { fix(problem.fix) }
+/// "Polled 2m ago · 1 of 15 resolved in 24h", or what the connection is doing. A pause or a
+/// dry run leads, since either changes what the rest means.
+struct StatusSummary: View {
+    @Environment(Store.self) private var store
+    @Environment(DaemonProcess.self) private var daemon
+    let now: Date
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if let status = store.snapshot?.status, store.connection == .connected {
+                if status.paused {
+                    Text("Paused")
+                        .foregroundStyle(.primary)
+                        .help("Alerts are still triaged, but no agent starts on its own")
+                    Button("Resume") { store.setPaused(false) }
+                        .buttonStyle(.link)
+                        .foregroundStyle(Ink.blue)
+                        .accessibilityIdentifier("header.resume")
+                    dot
+                }
+                if status.dryRun {
+                    Text("Dry run")
+                        .foregroundStyle(.primary)
+                        .help("Agents run, but nothing is posted to Slack")
+                    dot
+                }
+                Text(connectedLine(status))
+                    .foregroundStyle(.tertiary)
+            } else {
+                Text(connectionLine)
+                    .foregroundStyle(.secondary)
             }
         }
-        .padding(.horizontal, Metrics.inset)
-        .padding(.top, 14)
-        .padding(.bottom, 12)
+        .font(.geist(11))
+        .monospacedDigit()
+        .lineLimit(1)
+        .contentTransition(.numericText())
+    }
+
+    private var dot: some View { Text("·").foregroundStyle(.tertiary) }
+
+    private func connectedLine(_ status: Status) -> String {
+        var parts: [String] = []
+        if let poll = status.lastPollAt {
+            let rel = Format.relative(poll, now: now)
+            parts.append(rel == "now" ? "Polled now" : "Polled \(rel) ago")
+        }
+        if let sessions = store.snapshot?.metrics?.sessions, sessions.started > 0 {
+            parts.append("\(sessions.resolved) of \(sessions.started) resolved in 24h")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private var connectionLine: String {
+        switch daemon.state {
+        case .missing: "Daemon not installed"
+        case .portInUse: "Daemon couldn't start"
+        case .restarting: "Restarting daemon…"
+        default: store.connection == .rejected ? "Not connected" : "Connecting…"
+        }
+    }
+}
+
+/// Settings, pause, logs and quit: everything about the app itself, one click away and
+/// out of sight. ⌘Q and ⌘, work without opening it.
+struct AppMenu: View {
+    @Environment(Store.self) private var store
+    @Environment(DaemonProcess.self) private var daemon
+    @Environment(\.openSettings) private var openSettings
+
+    var body: some View {
+        Menu {
+            items
+            Divider()
+            Button("Quit Bridgetown") { NSApp.terminate(nil) }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 13, weight: .medium))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .foregroundStyle(.secondary)
+        .hoverHighlight(radius: 6)
+        .fixedSize()
+        .help("Settings, logs, quit")
+        .accessibilityLabel("Bridgetown menu")
+        .accessibilityIdentifier("header.menu")
+        // The same items as named actions: VoiceOver and an e2e run reach them without
+        // opening the menu.
+        .accessibilityActions { items }
+        .background {
+            // Shortcuts need a button in the hierarchy; these draw nothing.
+            Group {
+                Button("Settings", action: showSettings).keyboardShortcut(",")
+                Button("Quit Bridgetown") { NSApp.terminate(nil) }.keyboardShortcut("q")
+            }
+            .opacity(0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+
+    @ViewBuilder
+    private var items: some View {
+        Button("Settings…", action: showSettings)
+        if let paused = store.snapshot?.status.paused {
+            Button(paused ? "Resume auto-start" : "Pause auto-start") { store.setPaused(!paused) }
+        }
+        Button("Open logs", action: openLogs)
     }
 
     private func showSettings() {
         SystemActions.showSettings(openSettings)
     }
 
-    private func fix(_ fix: Problem.Fix?) {
-        switch fix {
-        case .openSettings?: showSettings()
-        case .restartDaemon?: daemon.restart()
-        case nil: break
-        }
+    private func openLogs() {
+        SystemActions.openLogs(daemon.logURL)
     }
+}
 
-    // MARK: Subtitle
+/// Everything wrong right now, one line each with its fix. Nothing when all is well.
+struct ProblemList: View {
+    @Environment(Store.self) private var store
+    @Environment(DaemonProcess.self) private var daemon
+    @Environment(\.openSettings) private var openSettings
 
-    private var subtitle: String {
-        guard let snap = store.snapshot else {
-            switch daemon.state {
-            case .missing: return "Daemon not installed"
-            case .portInUse: return "Daemon couldn't start"
-            case .restarting: return "Restarting daemon…"
-            default: return store.connection == .rejected ? "Not connected" : "Connecting…"
-            }
-        }
-        var parts: [String] = []
-        let running = snap.activeSessions.count
-        let waiting = snap.actions.count
-        if snap.status.paused { parts.append("Paused") }
-        if running > 0 { parts.append("\(running) running") }
-        if waiting > 0 { parts.append("\(waiting) \(waiting == 1 ? "needs" : "need") you") }
-        if running == 0 && waiting == 0 {
-            if !snap.status.paused { parts.append("All quiet") }
-            if let poll = snap.status.lastPollAt {
-                let rel = Format.relative(poll, now: now)
-                parts.append(rel == "now" ? "checked just now" : "checked \(rel) ago")
-            }
-        }
-        return parts.joined(separator: " · ")
-    }
-
-    // MARK: Problems
-
-    private var problems: [Problem] {
-        Problem.list(
+    var body: some View {
+        let problems = Problem.list(
             connection: store.connection,
             daemonState: daemon.state,
             daemonMode: daemon.mode,
@@ -109,6 +154,22 @@ struct HeaderView: View {
             flash: store.flash,
             status: store.snapshot?.status
         )
+        if !problems.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(problems) { problem in
+                    ProblemLine(problem: problem) { fix(problem.fix) }
+                }
+            }
+            .padding(.horizontal, Metrics.inset)
+        }
+    }
+
+    private func fix(_ fix: Problem.Fix?) {
+        switch fix {
+        case .openSettings?: SystemActions.showSettings(openSettings)
+        case .restartDaemon?: daemon.restart()
+        case nil: break
+        }
     }
 }
 
@@ -191,80 +252,6 @@ struct Problem: Identifiable, Equatable {
             out.append(.init(id: "error", text: error, severity: .error))
         }
         return out
-    }
-}
-
-/// The daemon's dependencies at a glance: a dot per service, then when Slack was last
-/// polled. A healthy service is a quiet gray dot; only trouble gets colour (the problem
-/// lines below say what's wrong and how to fix it).
-private struct HealthStrip: View {
-    let status: Status
-    let now: Date
-
-    private struct Service: Identifiable {
-        enum Health { case ok, warning, error, unknown }
-        let name: String
-        let health: Health
-        let help: String
-        var id: String { name }
-    }
-
-    private var services: [Service] {
-        [
-            Service(
-                name: "Slack",
-                health: status.slack == .ok ? .ok : status.slack == .error ? .error : status.slack == .missing_token ? .warning : .unknown,
-                help: status.slack == .ok ? "Slack: polling" : status.slack == .missing_token ? "Slack: token missing" : "Slack: failing"
-            ),
-            Service(
-                name: "Jev",
-                health: status.jev == .ok ? .ok : status.jev == .unknown ? .unknown : .warning,
-                help: status.jev == .ok ? "Jev: triaging" : "Jev: unavailable, triage uses rules only"
-            ),
-            Service(
-                name: "GitHub",
-                health: status.github == .ok ? .ok : status.github == .blocked ? .warning : .unknown,
-                help: status.github == .blocked ? "GitHub Enterprise blocks this network" : status.github == .ok ? "GitHub: reachable" : "GitHub: not checked yet"
-            ),
-            Service(
-                name: "Grafana",
-                health: status.grafanaMcp == .up ? .ok : status.grafanaMcp == .down ? .warning : .unknown,
-                help: status.grafanaMcp == .up ? "Grafana MCP: up, sessions can read prod logs" : "Grafana MCP: down, sessions can't read prod logs"
-            ),
-        ]
-    }
-
-    var body: some View {
-        HStack(spacing: 10) {
-            ForEach(services) { service in
-                HStack(spacing: 5) {
-                    dot(service.health)
-                    Text(service.name)
-                        .foregroundStyle(service.health == .ok ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
-                }
-                .help(service.help)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(service.help)
-            }
-            if let poll = status.lastPollAt {
-                let rel = Format.relative(poll, now: now)
-                Text(rel == "now" ? "· polled now" : "· polled \(rel) ago")
-                    .foregroundStyle(.tertiary)
-                    .monospacedDigit()
-            }
-        }
-        .font(.geist(11.5, .medium))
-        .lineLimit(1)
-    }
-
-    @ViewBuilder
-    private func dot(_ health: Service.Health) -> some View {
-        switch health {
-        case .ok: Circle().fill(Ink.faint).frame(width: 6, height: 6)
-        case .warning: Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 9)).foregroundStyle(Ink.amber)
-        case .error: Image(systemName: "exclamationmark.octagon.fill").font(.system(size: 9)).foregroundStyle(Ink.red)
-        case .unknown: Circle().strokeBorder(Color.secondary, lineWidth: 1).frame(width: 6, height: 6)
-        }
     }
 }
 
