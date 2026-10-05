@@ -164,19 +164,30 @@ export const deployTransition = (session: Session, state: ReleaseState): DeployS
   }
 }
 
-/** A deploy that went quiet, as the hand-off that says so; `null` while it is moving. Waiting for approval gets a day. */
+/**
+ * A deploy that went quiet, as the hand-off that says so; `null` while it is moving. Waiting for approval gets a day.
+ * A failure the tracker reported is no stall: it sits here only when its send-back never ran (a restart dropped the
+ * turn parked for a slot), and the hand-off says that.
+ */
 export const deployStalled = (session: Session, nowMs: number): Extract<Escalation, { _tag: "HandOff" }> | null => {
   if (session.status !== "deploying") return null
   const tag = session.release?.tag ?? "the release"
   const quiet = nowMs - Date.parse(session.updatedAt)
-  if (session.deployStage?._tag === "AwaitingApproval") {
-    return quiet > APPROVAL_TIMEOUT_MS
-      ? { _tag: "HandOff", activity: "No release approval for 24h", title: "Release not approved", detail: `${tag} has been waiting for approval for a day.` }
-      : null
+  const stage = session.deployStage
+  switch (stage?._tag) {
+    case "AwaitingApproval":
+      return quiet > APPROVAL_TIMEOUT_MS
+        ? { _tag: "HandOff", activity: "No release approval for 24h", title: "Release not approved", detail: `${tag} has been waiting for approval for a day.` }
+        : null
+    case "Failed":
+      return quiet > DEPLOY_TIMEOUT_MS
+        ? { _tag: "HandOff", activity: `${stage.stage} failed, not taken up`, title: "Deploy failed", detail: `${stage.stage} failed for ${tag} (${stage.detail}), and no agent turn took it up.` }
+        : null
+    default:
+      return quiet > DEPLOY_TIMEOUT_MS
+        ? { _tag: "HandOff", activity: "No deploy progress for 3h", title: "Deploy stalled", detail: `No tracker update for ${tag} in 3 hours.` }
+        : null
   }
-  return quiet > DEPLOY_TIMEOUT_MS
-    ? { _tag: "HandOff", activity: "No deploy progress for 3h", title: "Deploy stalled", detail: `No tracker update for ${tag} in 3 hours.` }
-    : null
 }
 
 /** `admin`, `states-exporter`: what may stand before `-vX.Y.Z` in a release tag. */

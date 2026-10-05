@@ -116,6 +116,16 @@ describe("deployStalled reads the stored stage, not the status line", () => {
     expect(deployStalled(makeSession("deploying", { updatedAt: ago(DEPLOY_TIMEOUT_MS), deployStage: approval, activity: "anything" }), NOW)).toBeNull()
     expect(deployStalled(makeSession("deploying", { updatedAt: ago(APPROVAL_TIMEOUT_MS), deployStage: approval, release }), NOW)).toMatchObject({ title: "Release not approved" })
   })
+  test("a failure the tracker reported is not called a silent tracker", () => {
+    const failed = { _tag: "Failed", stage: "Production", detail: "2 attempts failed" } as const
+    expect(deployStalled(makeSession("deploying", { updatedAt: ago(DEPLOY_TIMEOUT_MS / 2), deployStage: failed, release }), NOW)).toBeNull()
+    expect(deployStalled(makeSession("deploying", { updatedAt: ago(DEPLOY_TIMEOUT_MS), deployStage: failed, release }), NOW)).toEqual({
+      _tag: "HandOff",
+      activity: "Production failed, not taken up",
+      title: "Deploy failed",
+      detail: "Production failed for admin-v0.6.1 (2 attempts failed), and no agent turn took it up.",
+    })
+  })
 })
 
 describe("followsDeploy: a tracker moves only the session shipping its tag", () => {
