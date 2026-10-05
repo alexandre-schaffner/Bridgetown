@@ -194,7 +194,8 @@ export const ShipperLive = Layer.effect(Shipper)(
           case "Merged":
             return yield* onMerged(sessionId)
           case "Closed":
-            yield* repo.patch(sessionId, { status: "stopped", activity: "PR closed", resolution: "PR closed without merging" })
+            // Someone closed it on GitHub: closed without a fix, not stopped by you.
+            yield* settle(yield* repo.patch(sessionId, { status: "closed", activity: "PR closed on GitHub", resolution: "PR closed without merging" }))
             return
           case "Wait":
             if (step.activity === null || step.activity === session.activity) return yield* syncCi

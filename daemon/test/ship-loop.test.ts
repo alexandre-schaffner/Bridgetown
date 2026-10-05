@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Deferred, Effect, Fiber } from "effect"
 import { Actions } from "../src/actions/actions.ts"
 import type { Action, Session } from "../src/domain/model.ts"
+import { progressOf } from "../src/domain/progress.ts"
 import type { GitHubShape, PullRequest } from "../src/ship/github.ts"
 import { Shipper } from "../src/ship/shipper.ts"
 import { Store } from "../src/store/store.ts"
@@ -113,6 +114,21 @@ describe("the merge gate is read again every tick", () => {
     try {
       const out = await world.runPromise(seed(shipping("ci", { review: reviewed, milestones: { ...shipping("ci").milestones, ciGreen: false } })).pipe(Effect.andThen(afterTick)))
       expect(out.session).toMatchObject({ status: "ci", milestones: { ciGreen: true } })
+    } finally {
+      await world.dispose()
+    }
+  })
+})
+
+describe("a PR closed on GitHub", () => {
+  test("closes the session as such, never 'Stopped by you', and its Merge card goes", async () => {
+    const { github } = fakeGitHub({ current: { state: "CLOSED" } })
+    const world = makeWorld({ github })
+    try {
+      const out = await world.runPromise(seed(shipping("awaiting_merge"), [mergeCard()]).pipe(Effect.andThen(afterTick)))
+      expect(out.session).toMatchObject({ status: "closed", resolution: "PR closed without merging" })
+      expect(out.session === undefined ? null : progressOf(out.session).headline).toBe("Closed · PR closed without merging")
+      expect(out.cards).toEqual([])
     } finally {
       await world.dispose()
     }
