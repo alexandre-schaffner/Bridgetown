@@ -20,7 +20,8 @@ $(ICON): scripts/app-icon.swift
 	mkdir -p $(@D)
 	swift scripts/app-icon.swift $@
 
-# Release build assembled into an ad-hoc signed, menu-bar-only .app.
+# Release build assembled into a .app with no Dock icon (LSUIElement: the notch island is
+# the app), signed with SIGN_IDENTITY when that certificate is there, ad hoc otherwise.
 app: $(ICON)
 	swift build -c release --package-path app
 	rm -rf $(APP)
