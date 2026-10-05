@@ -92,8 +92,8 @@ struct StatusSummary: View {
     }
 
     private var connectionLine: String {
-        switch daemon.state {
-        case .missing: "Daemon not installed"
+        if daemon.mode == .missing { return "Daemon not installed" }
+        return switch daemon.state {
         case .portInUse: "Daemon couldn't start"
         case .restarting: "Restarting daemon…"
         default:
@@ -247,7 +247,7 @@ struct Problem: Identifiable, Equatable {
                 out.append(.init(id: "daemon", text: text, severity: .error))
             case let .disconnected(reason):
                 out.append(.init(id: "daemon", text: "Daemon disconnected · \(reason)", severity: .error))
-            case .connecting where daemonState == .missing:
+            case .connecting where daemonMode == .missing:
                 out.append(.init(id: "daemon", text: "No daemon bundled. Set BRIDGETOWN_DAEMON_CMD or BRIDGETOWN_ATTACH=1.", severity: .error))
             case .connecting:
                 if let reason = lastConnectError, daemonMode == .attach {

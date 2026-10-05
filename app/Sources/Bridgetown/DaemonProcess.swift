@@ -31,15 +31,14 @@ final class DaemonProcess {
         }
     }
 
+    /// The child we manage; attached or missing, it stays `idle`.
     enum State: Equatable {
         case idle
         case running(pid: Int32)
+        /// Launched again after `after`: it stopped on its own, or `restart` asked (`.zero`).
         case restarting(after: Duration)
-        case attached
-        case missing
         /// Exit 98: something else holds the port. Not restarted until asked to.
         case portInUse
-        case failed(String)
     }
 
     static let defaultPort = 47621
@@ -57,6 +56,10 @@ final class DaemonProcess {
     /// `BRIDGETOWN_LOG_DIR` (an e2e run keeps it with its shots).
     let logURL: URL
     private(set) var state: State = .idle
+    /// How the last run ended on its own ("exit 1", "signal 9"), or why it couldn't launch.
+    private(set) var lastExit: String?
+    /// Runs in a row that ended on their own within 30s of launching (or didn't launch).
+    private var consecutiveFailures = 0
 
     #if DEBUG
     /// Added to the child's environment at its next launch: an e2e run picks the mock's
@@ -68,16 +71,23 @@ final class DaemonProcess {
     /// Our end of the child's stdin. Closing it tells the daemon to exit.
     @ObservationIgnored private var stdin: FileHandle?
     @ObservationIgnored private var restartTask: Task<Void, Never>?
-    @ObservationIgnored private var consecutiveFailures = 0
+    @ObservationIgnored private var killTask: Task<Void, Never>?
     @ObservationIgnored private var launchedAt = Date.distantPast
-    @ObservationIgnored private var stopping = false
-    @ObservationIgnored private var restartRequested = false
-    @ObservationIgnored private var onStopped: (() -> Void)?
+    /// Set while we end the child on purpose: what to do once it has gone.
+    @ObservationIgnored private var then: Then?
 
-    init(environment env: [String: String] = ProcessInfo.processInfo.environment) {
+    private enum Then {
+        case relaunch
+        case finish(() -> Void)
+    }
+
+    init(
+        environment env: [String: String] = ProcessInfo.processInfo.environment,
+        bundled: URL? = Bundle.main.url(forResource: "bridgetown-daemon", withExtension: nil)
+    ) {
         let port = env["BRIDGETOWN_PORT"].flatMap(Int.init) ?? Self.defaultPort
 
-        mode = Self.mode(environment: env, bundled: Bundle.main.url(forResource: "bridgetown-daemon", withExtension: nil))
+        mode = Self.mode(environment: env, bundled: bundled)
 
         let logDir = env["BRIDGETOWN_LOG_DIR"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
         logURL = (logDir ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Logs/Bridgetown"))
@@ -85,9 +95,6 @@ final class DaemonProcess {
 
         let token = mode == .attach ? (env["BRIDGETOWN_API_TOKEN"] ?? "") : Self.randomToken()
         endpoint = DaemonEndpoint(port: port, token: token)
-
-        // Writing secrets to a child that already died must fail the write, not kill the app.
-        signal(SIGPIPE, SIG_IGN)
     }
 
     /// What to run: an explicit switch in the environment, then the bundle's daemon.
@@ -100,67 +107,58 @@ final class DaemonProcess {
 
     // MARK: Lifecycle
 
+    /// Whether it has stopped on its own again and again, soon after each launch.
+    var keepsExiting: Bool { consecutiveFailures >= 2 }
+
     func start() {
-        stopping = false
-        switch mode {
-        case .attach: state = .attached
-        case .missing: state = .missing
-        case .command, .bundled: launch()
-        }
+        guard mode.canManage else { return }
+        launch()
     }
 
     /// Restart after secrets changed, or retry after the port was taken or a `stop`. No-op
-    /// when attached.
+    /// when attached, and while a stop or restart is under way.
     func restart() {
-        guard mode.canManage else { return }
-        // Wanted back: from here a crash is restarted again, even after a `stop`.
-        stopping = false
+        guard mode.canManage, then == nil else { return }
         consecutiveFailures = 0
         restartTask?.cancel()
-        if let process, process.isRunning {
-            // The termination handler sees `restartRequested` and relaunches immediately.
-            restartRequested = true
-            signalStop(process)
-        } else {
-            launch()
-        }
+        guard let process else { return launch() }
+        state = .restarting(after: .zero)
+        terminate(process, then: .relaunch)
     }
 
-    /// Ends the child without blocking: closes its stdin, sends SIGTERM, and SIGKILLs it
-    /// after 2s. Calls `completion` once it's gone. Returns false when nothing was
-    /// running, in which case `completion` is not called.
+    /// Ends the child without blocking (`terminate`) and calls `completion` once it's gone.
+    /// Returns false when nothing was running, in which case `completion` is not called.
     @discardableResult
     func stop(completion: @escaping () -> Void) -> Bool {
-        stopping = true
         restartTask?.cancel()
-        guard let process, process.isRunning else {
+        guard let process else {
             // A restart it was waiting for is called off.
             if case .restarting = state { state = .idle }
             return false
         }
-        onStopped = completion
-        signalStop(process)
-        let pid = process.processIdentifier
-        Task { [weak self] in
-            try? await Task.sleep(for: .seconds(2))
-            guard let self, self.process?.processIdentifier == pid else { return }
-            kill(pid, SIGKILL)
-            // The termination handler normally finishes the stop; don't hang quit if it doesn't.
-            try? await Task.sleep(for: .milliseconds(500))
-            self.finishStop()
-        }
+        var done = completion
+        if case let .finish(earlier)? = then { done = { earlier(); completion() } }
+        terminate(process, then: .finish(done))
         return true
     }
 
-    private func signalStop(_ process: Process) {
+    /// Closes the child's stdin and sends SIGTERM, then SIGKILL if it is still there 2s
+    /// later; `then` runs once it has gone.
+    private func terminate(_ process: Process, then: Then) {
+        self.then = then
         closeStdin()
         process.terminate()
-    }
-
-    private func finishStop() {
-        let done = onStopped
-        onStopped = nil
-        done?()
+        let pid = process.processIdentifier
+        killTask?.cancel()
+        killTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            kill(pid, SIGKILL)
+            // The termination handler normally takes it from here; don't hang if it doesn't.
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            self?.didTerminate(pid: pid, status: SIGKILL, reason: .uncaughtSignal)
+        }
     }
 
     // MARK: Spawning
@@ -170,7 +168,8 @@ final class DaemonProcess {
         switch mode {
         case let .command(cmd):
             p.executableURL = URL(fileURLWithPath: "/bin/sh")
-            // `exec` so SIGTERM and the stdin pipe reach the daemon, not an intermediate shell.
+            // `exec` so SIGTERM and the stdin pipe reach the daemon, not an intermediate
+            // shell; so it is one command (`bun ~/bridgetown/daemon/src/main.ts`), not a list.
             p.arguments = ["-c", "exec \(cmd)"]
         case let .bundled(url):
             p.executableURL = url
@@ -196,6 +195,8 @@ final class DaemonProcess {
         }
         let input = Pipe()
         p.standardInput = input
+        // Writing to a child that already died must fail the write, not kill the app.
+        _ = fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
 
         p.terminationHandler = { [weak self] proc in
             let status = proc.terminationStatus
@@ -208,8 +209,9 @@ final class DaemonProcess {
             try p.run()
         } catch {
             try? log?.close()
-            process = nil
-            state = .failed(error.userMessage)
+            let why = "couldn't launch: \(error.userMessage)"
+            appendLog("--- \(why) ---\n")
+            lastExit = why
             scheduleRestart()
             return
         }
@@ -243,26 +245,28 @@ final class DaemonProcess {
     private func didTerminate(pid: Int32, status: Int32, reason: Process.TerminationReason) {
         guard process?.processIdentifier == pid else { return }  // a stale child
         process = nil
+        killTask?.cancel()
         closeStdin()
-        if stopping {
-            state = .idle
-            finishStop()
-            return
-        }
-        if restartRequested {
-            restartRequested = false
-            launch()
-            return
-        }
         let how = reason == .uncaughtSignal ? "signal \(status)" : "exit \(status)"
         appendLog("--- daemon stopped (\(how)) ---\n")
-        if reason == .exit, status == Self.portInUseStatus {
-            // Restarting can't help while another process holds the port.
-            state = .portInUse
-            return
+        let then = self.then
+        self.then = nil
+        switch then {
+        case let .finish(done)?:
+            state = .idle
+            done()
+        case .relaunch?:
+            launch()
+        case nil:
+            lastExit = how
+            if reason == .exit, status == Self.portInUseStatus {
+                // Restarting can't help while another process holds the port.
+                state = .portInUse
+                return
+            }
+            if Date().timeIntervalSince(launchedAt) > 30 { consecutiveFailures = 0 }
+            scheduleRestart()
         }
-        if Date().timeIntervalSince(launchedAt) > 30 { consecutiveFailures = 0 }
-        scheduleRestart()
     }
 
     private func scheduleRestart() {
@@ -273,8 +277,8 @@ final class DaemonProcess {
         restartTask?.cancel()
         restartTask = Task { [weak self] in
             try? await Task.sleep(for: delay)
-            guard !Task.isCancelled, let self, !self.stopping else { return }
-            self.launch()
+            guard !Task.isCancelled else { return }
+            self?.launch()
         }
     }
 

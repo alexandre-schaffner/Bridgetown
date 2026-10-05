@@ -182,6 +182,64 @@ import Testing
         #expect(daemon.state == .idle)
     }
 
+    /// A child that ignores SIGTERM and its stdin closing is killed 2s later, so a restart
+    /// can't wedge with the old one still holding the port.
+    @MainActor @Test func aRestartKillsAChildThatWontGo() async throws {
+        Keychain.inMemory = [:]
+        let logs = FileManager.default.temporaryDirectory.appending(path: "bt-daemon-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: logs) }
+        let daemon = DaemonProcess(environment: [
+            "BRIDGETOWN_DAEMON_CMD": "perl -e '$SIG{TERM} = \"IGNORE\"; sleep 30'", "BRIDGETOWN_LOG_DIR": logs.path,
+        ])
+        daemon.start()
+        guard case let .running(stubborn) = daemon.state else {
+            Issue.record("not running: \(daemon.state)")
+            return
+        }
+        try await Task.sleep(for: .milliseconds(200))  // perl has set its handler
+        daemon.restart()
+        #expect(daemon.state == .restarting(after: .zero))
+        for _ in 0..<200 where daemon.state == .restarting(after: .zero) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        guard case let .running(next) = daemon.state else {
+            Issue.record("not relaunched: \(daemon.state)")
+            return
+        }
+        #expect(next != stubborn)
+        #expect(kill(stubborn, 0) != 0)
+        daemon.stop {}
+        kill(next, SIGKILL)
+    }
+
+    /// Stopping on its own soon after each launch is how a daemon that can't start looks;
+    /// the second time in a row it says so, with how the last run ended.
+    @MainActor @Test func aDaemonThatKeepsExitingSaysHow() async throws {
+        Keychain.inMemory = [:]
+        let logs = FileManager.default.temporaryDirectory.appending(path: "bt-daemon-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: logs) }
+        let daemon = DaemonProcess(environment: ["BRIDGETOWN_DAEMON_CMD": "sh -c 'exit 3'", "BRIDGETOWN_LOG_DIR": logs.path])
+        daemon.start()
+        for _ in 0..<150 where !daemon.keepsExiting {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(daemon.keepsExiting)
+        #expect(daemon.lastExit == "exit 3")
+        daemon.stop {}
+    }
+
+    @MainActor @Test func aDaemonThatCantLaunchIsLoggedAndRetried() throws {
+        let logs = FileManager.default.temporaryDirectory.appending(path: "bt-daemon-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: logs) }
+        let daemon = DaemonProcess(environment: ["BRIDGETOWN_LOG_DIR": logs.path], bundled: logs.appending(path: "bridgetown-daemon"))
+        daemon.start()
+        #expect(daemon.state == .restarting(after: .seconds(1)))
+        #expect(daemon.lastExit?.hasPrefix("couldn't launch") == true)
+        let log = try String(contentsOf: daemon.logURL, encoding: .utf8)
+        #expect(log.contains("couldn't launch"))
+        daemon.stop {}
+    }
+
     @Test func secretsLineIsOneJSONObject() throws {
         let line = try DaemonProcess.Secrets(apiToken: "tok", slackUserToken: "xoxp-1", typesafeApiKey: "").line()
         #expect(line.last == UInt8(ascii: "\n"))

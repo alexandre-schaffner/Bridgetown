@@ -73,7 +73,7 @@ struct Glance: Equatable {
         let connected = store.connection == .connected
         working = connected ? store.activeSessions.count : 0
         waiting = connected ? store.actions.count : 0
-        trouble = daemon.state == .missing || daemon.state == .portInUse || store.connection == .rejected
+        trouble = daemon.mode == .missing || daemon.state == .portInUse || store.connection == .rejected
             || (store.snapshot != nil && !connected)
     }
 }
