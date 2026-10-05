@@ -56,10 +56,8 @@ describe("decideOutcome", () => {
     expect(decide({ result: result({ outcome: "fix_pr" }) }).fail).toBe("The agent reported a fix but opened no PR")
   })
 
-  test("inbox items get a draft reply and post nothing themselves", () => {
-    const d = decide({ alert: inboxAlert, result: result({ outcome: "recommendation" }) })
-    expect(cardKinds(d)).toEqual(["reply"])
-    expect(d.post).toBeNull()
+  test("inbox items get a draft reply", () => {
+    expect(cardKinds(decide({ alert: inboxAlert, result: result({ outcome: "recommendation" }) }))).toEqual(["reply"])
     expect(cardKinds(decide({ alert: inboxAlert, result: result() }))).toEqual(["handoff:Needs you"])
   })
 

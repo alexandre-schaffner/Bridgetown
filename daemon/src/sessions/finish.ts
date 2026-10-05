@@ -79,7 +79,7 @@ export const makeFinish = ({ store, thread, repo, queue, github, hub, sendBack }
         )
       }
       if (decision.sendBack !== null) yield* sendBack(id, decision.sendBack)
-      if (decision.post !== null && alert !== undefined) yield* thread.post(alert, decision.post)
+      if (decision.post !== null && alert !== undefined) yield* thread.postUpdate(alert, decision.post)
     })
 
   return { finishFailed, finalize }

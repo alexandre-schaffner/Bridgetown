@@ -44,7 +44,7 @@ export interface FinalizeInput {
 export interface Finalized {
   readonly patch: Partial<Session>
   readonly cards: ReadonlyArray<CardRequest>
-  /** Posted in the alert's thread. */
+  /** Bridgetown's update in the alert's thread (`SlackThread.postUpdate`, which keeps it out of an inbox item's). */
   readonly post: string | null
   /** Another turn, before anything reaches the user. */
   readonly sendBack: string | null
@@ -102,7 +102,6 @@ export const decideOutcome = ({ session, result, alert, pushed, head, adversaria
     }
   }
   const inbox = alert?.fields._tag === "inbox" ? alert.fields : undefined
-  const forAlert = (text: string): string | null => (alert === undefined || inbox !== undefined ? null : text)
   const card = (action: Omit<NewAction, "sessionId" | "alertId" | "options">): CardRequest => ({
     _tag: "Card",
     action: { ...action, options: [], sessionId: session.id, alertId: alert?.id ?? session.alertId },
@@ -130,8 +129,7 @@ export const decideOutcome = ({ session, result, alert, pushed, head, adversaria
       ...none,
       cards: [...reply, { _tag: "HandOff", title: SENT_BACK_TITLES[sentBack], detail: result.recommendationDetail ?? result.diagnosis }],
       patch: { ...verdict, status: "waiting", activity: result.summary },
-      post:
-        result.outcome === "recommendation" ? forAlert(Messages.recommendation(result.summary, result.recommendationDetail ?? result.recommendation ?? "")) : null,
+      post: result.outcome === "recommendation" ? Messages.recommendation(result.summary, result.recommendationDetail ?? result.recommendation ?? "") : null,
     }
   }
 
@@ -155,7 +153,7 @@ export const decideOutcome = ({ session, result, alert, pushed, head, adversaria
     return {
       ...none,
       cards: reply,
-      post: newPr ? forAlert(Messages.fixPr(prUrl, result.summary)) : null,
+      post: newPr ? Messages.fixPr(prUrl, result.summary) : null,
       patch: {
         ...verdict,
         milestones: {
@@ -200,7 +198,7 @@ export const decideOutcome = ({ session, result, alert, pushed, head, adversaria
         ...none,
         patch: waiting,
         cards: [...reply, ...next],
-        post: forAlert(Messages.recommendation(result.summary, result.recommendationDetail ?? result.recommendation ?? "")),
+        post: Messages.recommendation(result.summary, result.recommendationDetail ?? result.recommendation ?? ""),
       }
     }
     case "no_action":
@@ -209,7 +207,7 @@ export const decideOutcome = ({ session, result, alert, pushed, head, adversaria
           ...none,
           cards: reply,
           patch: { ...verdict, status: "resolved", phase: "done", activity: result.summary, resolution: "no action needed" },
-          post: forAlert(Messages.noActionNeeded(result.summary)),
+          post: Messages.noActionNeeded(result.summary),
         }
       }
       return {
