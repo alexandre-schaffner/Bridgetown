@@ -163,6 +163,8 @@ private struct PatternRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isLink)
         .accessibilityHint("Opens its lines in Grafana")
+        // What the click does, for VoiceOver and AXPress: a tap gesture answers neither.
+        .accessibilityAction { SystemActions.open(pattern.link) }
         .contextMenu { menu }
     }
 

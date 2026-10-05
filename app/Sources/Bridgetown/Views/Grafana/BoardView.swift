@@ -226,6 +226,9 @@ private struct MiniPanel: View {
         .accessibilityLabel(panel.title)
         .accessibilityValue(panel.latest.map(panel.unit.format) ?? "No data")
         .accessibilityAddTraits(.isButton)
+        // What a click does, for VoiceOver and AXPress (a tap gesture answers neither):
+        // shut, it opens; open, its header and chart close it.
+        .accessibilityAction { onSelect() }
         .accessibilityAction(named: "Open in Grafana") { SystemActions.open(panel.link) }
     }
 

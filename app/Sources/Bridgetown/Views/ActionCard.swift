@@ -163,6 +163,8 @@ struct ActionCard: View {
         .accessibilityAction(named: Text(action.primaryLabel)) {
             if action.isOneClick { store.resolve(action) } else { onToggle?() }
         }
+        // The selection mark shows only under the pointer; this picks the row without one.
+        .accessibilityAction(named: pick?.selected == true ? "Deselect" : "Select") { pick?.toggle() }
     }
 
     /// The row's button on hover, over an opaque end of the row that fades in from the
