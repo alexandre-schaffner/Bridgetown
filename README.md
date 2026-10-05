@@ -71,10 +71,10 @@ make dev-app
 
 Click the notch to open the app. The demo includes running investigations, questions, review and CI states, merge and release gates, and completed sessions. Actions run against the local mock services.
 
-For the app in a regular window:
+To watch the island's motion at the notch on its own (hover, banner, open, close):
 
 ```sh
-make dev-app ARGS=--preview-window
+make dev-app ARGS=--island-demo
 ```
 
 ## Connect your workspace
@@ -115,6 +115,7 @@ Run these from the repository root:
 | `make all` | Compile the daemon and assemble `build/Bridgetown.app` |
 | `make dmg` | Package the built app as `build/Bridgetown.dmg` |
 | `make test-app` | Run Swift tests |
+| `make e2e` | Draw and lint every screen off screen against a static mock, into `.context/e2e/` |
 | `bun test --cwd daemon` | Run daemon tests |
 | `bun run --cwd daemon check` | Type-check the daemon |
 | `bun install --cwd site` | Install landing-page dependencies |
