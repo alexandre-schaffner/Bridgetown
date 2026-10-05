@@ -9,6 +9,7 @@ import {
   deployStalled,
   deployTransition,
   MAX_CI_ROUNDS,
+  MERGE_QUEUE_TIMEOUT_MS,
   needsReviewRequest,
   sendBackOrHandOff,
 } from "../src/ship/transitions.ts"
@@ -19,6 +20,7 @@ const pr = (overrides: Partial<PullRequest> = {}): PullRequest => ({
   reviewDecision: null, latestReviews: [], statusCheckRollup: [], ...overrides,
 })
 const red = { _tag: "Red" as const, failing: [{ name: "lint", url: "https://x/1" }] }
+const NOW = Date.parse("2026-10-05T12:00:00.000Z")
 const shipping = (overrides = {}) => makeSession("ci", { prUrl: "https://ghe/pull/7", ...overrides })
 
 describe("CI-round budget", () => {
@@ -35,7 +37,13 @@ describe("ciTransition", () => {
   const rows: ReadonlyArray<readonly [string, ReturnType<typeof shipping>, PullRequest, Parameters<typeof ciTransition>[2], CiStep["_tag"], string | null]> = [
     ["merged wins", shipping(), pr({ mergedAt: "now" }), red, "Merged", null],
     ["closed PR", shipping(), pr({ state: "CLOSED" }), { _tag: "Green" }, "Closed", null],
-    ["awaiting merge waits for GitHub", shipping({ status: "awaiting_merge" }), pr(), red, "Wait", null],
+    ["waiting to merge, CI went red", shipping({ status: "awaiting_merge" }), pr({ reviewDecision: "APPROVED" }), red, "BackToCi", "CI went red on #7"],
+    ["waiting to merge, CI running again", shipping({ status: "awaiting_merge" }), pr({ reviewDecision: "APPROVED" }), { _tag: "Pending" }, "BackToCi", "CI running again on #7"],
+    ["waiting to merge, changes requested", shipping({ status: "awaiting_merge" }), pr({ reviewDecision: "CHANGES_REQUESTED" }), { _tag: "Green" }, "BackToCi", "Changes requested on #7"],
+    ["waiting to merge, approval dismissed", shipping({ status: "awaiting_merge" }), pr({ reviewDecision: "REVIEW_REQUIRED" }), { _tag: "Green" }, "BackToCi", "#7 needs a review again"],
+    ["waiting to merge, still ready", shipping({ status: "awaiting_merge" }), pr({ reviewDecision: "APPROVED" }), { _tag: "Green" }, "ReadyToMerge", "#7 approved and green, ready to merge"],
+    ["waiting to merge, GitHub took it", shipping({ status: "awaiting_merge", mergeRequestedAt: new Date(NOW - 60_000).toISOString() }), pr({ reviewDecision: "APPROVED" }), { _tag: "Green" }, "Wait", null],
+    ["waiting to merge, GitHub dropped it", shipping({ status: "awaiting_merge", mergeRequestedAt: new Date(NOW - MERGE_QUEUE_TIMEOUT_MS - 60_000).toISOString() }), pr({ reviewDecision: "APPROVED" }), { _tag: "Green" }, "ReadyToMerge", "#7 approved and green, ready to merge"],
     ["pending", shipping(), pr(), { _tag: "Pending" }, "Wait", "CI running on #7"],
     ["red, round 1", shipping(), pr(), red, "Red", "CI red — fixing (round 1)"],
     ["red, budget spent", shipping({ ciRounds: MAX_CI_ROUNDS }), pr(), red, "Red", "CI still red after 3 rounds"],
@@ -46,15 +54,19 @@ describe("ciTransition", () => {
   ]
   for (const [label, session, pull, ci, tag, activity] of rows) {
     test(label, () => {
-      const step = ciTransition(session, pull, ci)
+      const step = ciTransition(session, pull, ci, NOW)
       expect(step._tag).toBe(tag)
       const shown =
-        step._tag === "Wait" || step._tag === "ReadyToMerge" ? step.activity : step._tag === "Red" || step._tag === "ChangesRequested" ? step.escalation.activity : null
+        step._tag === "Wait" || step._tag === "ReadyToMerge" || step._tag === "BackToCi"
+          ? step.activity
+          : step._tag === "Red" || step._tag === "ChangesRequested"
+            ? step.escalation.activity
+            : null
       expect(shown).toBe(activity)
     })
   }
   test("changes requested share the CI budget", () => {
-    const step = ciTransition(shipping({ ciRounds: MAX_CI_ROUNDS }), pr({ reviewDecision: "CHANGES_REQUESTED", latestReviews: [review] }), { _tag: "Green" })
+    const step = ciTransition(shipping({ ciRounds: MAX_CI_ROUNDS }), pr({ reviewDecision: "CHANGES_REQUESTED", latestReviews: [review] }), { _tag: "Green" }, NOW)
     expect(step).toMatchObject({ _tag: "ChangesRequested", escalation: { _tag: "HandOff", title: "Changes requested" } })
   })
   test("review requested once, unless approved; dry run records it once", () => {

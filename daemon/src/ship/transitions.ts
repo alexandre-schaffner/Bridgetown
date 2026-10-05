@@ -13,6 +13,8 @@ import type { CiState, PullRequest } from "./github.ts"
 export const MAX_CI_ROUNDS = 3
 /** A deploy with no tracker progress for this long (outside approval) is handed to you. */
 export const DEPLOY_TIMEOUT_MS = 3 * 60 * 60_000
+/** A merge GitHub took (a merge queue) but has not done in this long is offered to you again. */
+export const MERGE_QUEUE_TIMEOUT_MS = 60 * 60_000
 
 /** Another round for the agent, or the user once the budget is spent. */
 export type Escalation =
@@ -44,6 +46,8 @@ export type CiStep =
   | { readonly _tag: "Red"; readonly failing: Extract<CiState, { _tag: "Red" }>["failing"]; readonly escalation: Escalation }
   | { readonly _tag: "ChangesRequested"; readonly review: Review; readonly escalation: Escalation }
   | { readonly _tag: "ReadyToMerge"; readonly activity: string }
+  /** Waiting to merge no longer holds (CI not green, a review that blocks it): back to the CI loop, without its Merge card. */
+  | { readonly _tag: "BackToCi"; readonly activity: string }
 
 /** Once CI is green, a review is requested once (and an unsent one retried), unless the PR is already approved. */
 export const needsReviewRequest = (session: Session, pr: PullRequest, dryRun: boolean): boolean =>
@@ -53,11 +57,26 @@ export const needsReviewRequest = (session: Session, pr: PullRequest, dryRun: bo
   // In dry run the unsent request is recorded once instead of every tick.
   !(dryRun && session.review !== null)
 
+const readyToMerge = (pr: PullRequest): CiStep => ({ _tag: "ReadyToMerge", activity: `#${pr.number} approved and green, ready to merge` })
+
+/**
+ * A session waiting to merge, read again every tick: it stays only while CI is green and no review blocks the PR.
+ * A merge GitHub took (`mergeRequestedAt`) is GitHub's to finish; one it has plainly dropped is offered again.
+ */
+const atMergeGate = (session: Session, pr: PullRequest, ci: CiState, nowMs: number): CiStep => {
+  if (ci._tag === "Red") return { _tag: "BackToCi", activity: `CI went red on #${pr.number}` }
+  if (ci._tag === "Pending") return { _tag: "BackToCi", activity: `CI running again on #${pr.number}` }
+  if (pr.reviewDecision === "CHANGES_REQUESTED") return { _tag: "BackToCi", activity: `Changes requested on #${pr.number}` }
+  if (pr.reviewDecision === "REVIEW_REQUIRED") return { _tag: "BackToCi", activity: `#${pr.number} needs a review again` }
+  const queued = session.mergeRequestedAt !== null && nowMs - Date.parse(session.mergeRequestedAt) < MERGE_QUEUE_TIMEOUT_MS
+  return queued ? { _tag: "Wait", activity: null } : readyToMerge(pr)
+}
+
 /** A session in `ci` or `awaiting_merge`, given its PR and that PR's checks. */
-export const ciTransition = (session: Session, pr: PullRequest, ci: CiState): CiStep => {
+export const ciTransition = (session: Session, pr: PullRequest, ci: CiState, nowMs: number): CiStep => {
   if (pr.mergedAt !== null) return { _tag: "Merged" }
   if (pr.state === "CLOSED") return { _tag: "Closed" }
-  if (session.status === "awaiting_merge") return { _tag: "Wait", activity: null }
+  if (session.status === "awaiting_merge") return atMergeGate(session, pr, ci, nowMs)
   switch (ci._tag) {
     case "Pending":
       return { _tag: "Wait", activity: `CI running on #${pr.number}` }
@@ -93,7 +112,7 @@ export const ciTransition = (session: Session, pr: PullRequest, ci: CiState): Ci
       if (pr.reviewDecision === "REVIEW_REQUIRED") {
         return { _tag: "Wait", activity: `CI green — waiting for review in #${session.review?.channelName ?? "approvals"}` }
       }
-      return { _tag: "ReadyToMerge", activity: `#${pr.number} approved and green, ready to merge` }
+      return readyToMerge(pr)
     }
   }
 }

@@ -81,25 +81,27 @@ export const ShipperLive = Layer.effect(Shipper)(
      * After the merge: resolve (nothing to ship), hand off (a prefix that cannot
      * be a tag), or offer the release. The merge card goes only once the step
      * that can fail has succeeded, so a failure leaves it (and the next tick
-     * retries).
+     * retries). A merge click and the ship tick can both see the merge; only the
+     * first to record it moves the session, so the release is offered once.
      */
     const onMerged = (sessionId: string) =>
       Effect.gen(function* () {
         const session = yield* repo.get(sessionId)
-        if (session === undefined) return
+        if (session === undefined || session.milestones.merged) return
         const step = afterMerge(session)
+        const merged = (current: Session): Partial<Session> | undefined =>
+          current.milestones.merged ? undefined : { milestones: { ...current.milestones, merged: true } }
+        const recordMerged = (patch: Partial<Session>) =>
+          repo.modify(sessionId, (current) => {
+            const first = merged(current)
+            return first === undefined ? undefined : withPatch(current, { ...patch, ...first })
+          })
         switch (step._tag) {
           case "NothingToRelease": {
-            const merged = { ...session.milestones, merged: true }
-            const done = yield* repo.patch(sessionId, {
-              status: "resolved",
-              phase: "done",
-              activity: "Merged, nothing to release",
-              resolution: mergedResolution(session.prUrl),
-              milestones: merged,
-            })
+            const done = yield* recordMerged({ status: "resolved", phase: "done", activity: "Merged, nothing to release", resolution: mergedResolution(session.prUrl) })
+            if (done === undefined) return
             yield* settle(done)
-            if (done !== undefined) yield* postFor(done, Messages.merged(session.prUrl))
+            yield* postFor(done, Messages.merged(session.prUrl))
             return
           }
           case "BadPrefix": {
@@ -110,32 +112,26 @@ export const ShipperLive = Layer.effect(Shipper)(
                 title: "Merged, not released",
                 detail: `"${step.prefix}" is not a release tag prefix (like admin or states-exporter). Cut the release yourself if one is needed.`,
               },
-              (current) => ({ milestones: { ...current.milestones, merged: true } }),
+              merged,
             )
             yield* settle(yield* repo.get(sessionId))
             return
           }
           case "Release": {
             const tag = yield* github.nextPatchTag(session.repoPath, step.prefix)
-            const ready = yield* repo.patch(sessionId, {
-              status: "awaiting_release",
-              phase: "deploy",
-              activity: `Merged, ready to cut ${tag}`,
-              milestones: { ...session.milestones, merged: true },
-            })
-            if (ready !== undefined && (yield* queue.forSession(sessionId, "release")).length === 0) {
-              yield* queue.put({
-                kind: "release",
-                title: `Ship ${session.title}`,
-                detail: releaseDetail(session.prUrl, tag, step.prefix),
-                primaryLabel: `Cut ${tag}`,
-                options: [],
-                sessionId,
-                alertId: session.alertId,
-                payload: tag,
-              })
-            }
+            const ready = yield* recordMerged({ status: "awaiting_release", phase: "deploy", activity: `Merged, ready to cut ${tag}` })
+            if (ready === undefined) return
             yield* settle(ready)
+            yield* queue.put({
+              kind: "release",
+              title: `Ship ${session.title}`,
+              detail: releaseDetail(session.prUrl, tag, step.prefix),
+              primaryLabel: `Cut ${tag}`,
+              options: [],
+              sessionId,
+              alertId: session.alertId,
+              payload: tag,
+            })
             return
           }
         }
@@ -189,7 +185,11 @@ export const ShipperLive = Layer.effect(Shipper)(
         if (session === undefined || session.prUrl === null || (session.status !== "ci" && session.status !== "awaiting_merge")) return
         // Past the review (or with it off) but still a draft: an earlier `gh pr ready` failed, and GitHub won't merge a draft.
         if (pr.isDraft === true && pr.state === "OPEN") yield* github.markReady(session.prUrl)
-        const step = ciTransition(session, pr, ci)
+        const step = ciTransition(session, pr, ci, Date.now())
+        // The stepper's CI step is what GitHub says now: green, or not (yet) after a new push or a red run.
+        const ciGreen = ci._tag === "Green"
+        const milestones = { ...session.milestones, ciGreen }
+        const syncCi = session.milestones.ciGreen === ciGreen ? Effect.void : repo.patch(sessionId, { milestones })
         switch (step._tag) {
           case "Merged":
             return yield* onMerged(sessionId)
@@ -197,21 +197,31 @@ export const ShipperLive = Layer.effect(Shipper)(
             yield* repo.patch(sessionId, { status: "stopped", activity: "PR closed", resolution: "PR closed without merging" })
             return
           case "Wait":
-            if (step.activity !== null) yield* repo.patch(sessionId, { activity: step.activity })
+            if (step.activity === null || step.activity === session.activity) return yield* syncCi
+            yield* repo.patch(sessionId, { activity: step.activity, milestones })
+            return
+          case "BackToCi":
+            yield* settle(yield* repo.patch(sessionId, { status: "ci", activity: step.activity, mergeRequestedAt: null, milestones }))
             return
           case "Red":
+            yield* syncCi
             return yield* escalate(session, step.escalation, ciFailedPrompt(step.failing, session.ciRounds + 1, MAX_CI_ROUNDS))
           case "ChangesRequested":
+            yield* syncCi
             return yield* escalate(session, step.escalation, reviewChangesPrompt(step.review.author.login, step.review.body), {
               review: session.review === null ? null : { ...session.review, handledReviewId: step.review.id },
             })
           case "ReadyToMerge": {
-            const ready = yield* repo.patch(sessionId, {
-              status: "awaiting_merge",
-              activity: step.activity,
-              milestones: { ...session.milestones, prOpened: true, ciGreen: true },
-            })
-            if (ready === undefined || (yield* queue.forSession(sessionId, "merge")).length > 0) return
+            // Staying at the gate keeps its card. Arriving there (from CI, or after a merge GitHub took and dropped) puts a fresh one.
+            if (session.status === "awaiting_merge" && session.mergeRequestedAt === null && (yield* queue.forSession(sessionId, "merge")).length > 0) return
+            // Only onto the row as read: a merge click may just have handed the PR to GitHub.
+            const ready = yield* repo.modify(sessionId, (current) =>
+              current.updatedAt !== session.updatedAt
+                ? undefined
+                : withPatch(current, { status: "awaiting_merge", activity: step.activity, mergeRequestedAt: null, milestones: { ...milestones, prOpened: true } }),
+            )
+            if (ready === undefined) return
+            yield* queue.removeWhere((a) => a.sessionId === sessionId && a.kind === "merge")
             yield* queue.put({
               kind: "merge",
               title: `Merge ${pr.title}`,
