@@ -295,12 +295,10 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
           if (session === undefined) return ["refused", state] as const
           const live = state.live.get(id)
           if (live !== undefined) {
-            if (yield* Queue.offer(live.input, userMessage(text, "next"))) {
-              // The running turn takes the text, so its result answers it, and no claim is coming to write the patch.
-              if (Object.keys(patch).length > 0) yield* repo.patch(id, patch)
-              return ["sent", state] as const
-            }
-            // The next turn's claim writes the patch: written now, the ending turn's result would read (and clear) `sentBack`.
+            // Only plain text joins a running turn. Text that comes with a patch (a send-back, a review round) asks for
+            // a result of its own, and the running turn's may already be out: it waits for the next turn, whose claim
+            // writes the patch, so only the result that answers it reads (and clears) `sentBack`.
+            if (Object.keys(patch).length === 0 && (yield* Queue.offer(live.input, userMessage(text, "next")))) return ["sent", state] as const
             yield* Queue.offer(live.followUps, { text, patch, reopen })
             yield* repo.log(id, "status", "Queued for after the current turn")
             return ["queued", state] as const

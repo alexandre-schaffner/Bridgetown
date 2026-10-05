@@ -214,7 +214,7 @@ describe("stop and retry", () => {
 })
 
 describe("deliveries", () => {
-  test("a send-back into a live turn still records its patch", async () => {
+  test("a send-back waits for the running turn to end; a plain message joins it", async () => {
     const { agent, texts } = recordingAgent()
     const world = makeWorld({ agent })
     try {
@@ -224,10 +224,15 @@ describe("deliveries", () => {
       }))
       await until(() => texts().includes("go"))
       const out = await world.runPromise(Effect.gen(function* () {
-        const delivery = yield* (yield* SessionRunner).continueWith("s_patch", "CI red", { ciRounds: 2 })
-        return { delivery, ciRounds: (yield* (yield* Store).getSession("s_patch"))?.ciRounds }
+        const runner = yield* SessionRunner
+        const sendBack = yield* runner.continueWith("s_patch", "CI red", { ciRounds: 2, sentBack: "ci" })
+        const followUp = yield* runner.continueWith("s_patch", "Pierre followed up")
+        return { sendBack, followUp, session: yield* (yield* Store).getSession("s_patch") }
       }))
-      expect(out).toEqual({ delivery: "sent", ciRounds: 2 })
+      await until(() => texts().includes("Pierre followed up"))
+      // The running turn's result may already be out: it must not be taken for the answer to the send-back.
+      expect(out).toMatchObject({ sendBack: "queued", followUp: "sent", session: { ciRounds: 0, sentBack: null } })
+      expect(texts()).not.toContain("CI red")
     } finally {
       await world.dispose()
     }
