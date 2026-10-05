@@ -1,4 +1,4 @@
-// The film rig's director. Plays the keynote, the 30-second launch cut or the short island
+// The film rig's director. Plays the keynote, the 32-second launch cut or the short island
 // recording once, from the site's own scene and components, and reports when it is done so the
 // recorder can stop (rig.ts). `?cut=keynote` (the default), `launch` or `island`.
 

@@ -38,13 +38,16 @@ export async function devServer() {
 /** Chromium drawing WebGL in software, as on any machine. */
 export const launchBrowser = () => chromium.launch({ args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
 
-/** Pipes PNG frames into ffmpeg, which writes an H.264 `out`; `close()` waits for it to finish. */
-export function encoder(out: string, fps: number, { width }: { width?: number } = {}) {
+/**
+ * Pipes PNG frames into ffmpeg, which writes an H.264 `out` (at `size`, if the frames are another);
+ * `close()` waits for it to finish.
+ */
+export function encoder(out: string, fps: number, size?: { width: number; height: number }) {
   const ffmpeg = spawn(
     "ffmpeg",
     [
       ...["-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", String(fps), "-i", "-"],
-      ...(width ? ["-vf", `scale=${width}:-2:flags=lanczos`] : []),
+      ...(size ? ["-vf", `scale=${size.width}:${size.height}:flags=lanczos`] : []),
       ...["-c:v", "libx264", "-preset", "slow", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart", out],
     ],
     { stdio: ["pipe", "inherit", "inherit"] },

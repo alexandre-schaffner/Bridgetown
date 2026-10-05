@@ -6,13 +6,14 @@
 // usage: bun scripts/record.ts <film> [--fps 60] [--from <s>] [--to <s>] [--out <file>]
 //                                     [--poster <s>] [--stills <dir> [--every <s>]]
 //   film/keynote   the keynote, 1920 × 1080                          → public/media/keynote.mp4
-//   film/launch    its 30-second cut, 1920 × 1080                    → public/media/launch.mp4
+//   film/launch    its 32-second cut, 1920 × 1080                    → public/media/launch.mp4
 //   film/island    the notch recording, 1600 × 996, saved 1280 wide  → public/media/island.mp4
 //   launch         the launch film, every feature, 1920 × 1080       → .context/films/launch.mp4,
 //                  with launch.cues.json beside it: the cues its score is built from
-//   --poster <s>   also writes the frame at <s> seconds as <out>-poster.jpg
+//   --poster <s>   also writes the frame at <s> seconds as <out>-poster.jpg, at the saved size
 //   --stills <dir> writes a PNG every --every seconds (default 1) instead of a video
 
+import sharp from "sharp";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { FilmRig } from "../src/dev/protocol";
@@ -50,6 +51,10 @@ const poster = option("--poster");
 const stills = option("--stills");
 const every = Number(option("--every") ?? 1);
 const out = resolve(SITE, option("--out") ?? film.out);
+/** The film and its poster as saved: as wide as saveWidth, the height kept even for H.264. */
+const saved = film.saveWidth
+  ? { width: film.saveWidth, height: 2 * Math.round((film.height * film.saveWidth) / film.width / 2) }
+  : undefined;
 
 const server = await devServer();
 const browser = await launchBrowser();
@@ -81,7 +86,7 @@ try {
   });
 
   mkdirSync(stills ?? dirname(out), { recursive: true });
-  const video = stills ? null : encoder(out, fps, { width: film.saveWidth });
+  const video = stills ? null : encoder(out, fps, saved);
   let nextStill = from;
   for (let frame = 0; ; frame++) {
     const t = frame / fps;
@@ -93,7 +98,10 @@ try {
         nextStill += every;
       }
       if (poster && Math.abs(t - Number(poster)) < 0.5 / fps) {
-        await page.screenshot({ path: out.replace(/\.mp4$/, "-poster.jpg"), type: "jpeg", quality: 90 });
+        // As big as the film it stands in for.
+        const still = sharp(await page.screenshot({ type: "png" }));
+        if (saved) still.resize(saved);
+        await still.jpeg({ quality: 90 }).toFile(out.replace(/\.mp4$/, "-poster.jpg"));
       }
       if (frame % fps === 0) process.stdout.write(`\r${t.toFixed(0)}s`);
     }
