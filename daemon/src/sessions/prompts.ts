@@ -200,6 +200,16 @@ export const setupNotes = (warnings: ReadonlyArray<string>): string =>
 
 export const RETRY_PROMPT = "The previous attempt stopped unexpectedly. Check the state of your worktree and carry on from where you were."
 
+/** What the `slack_context` tool answers: the alert's thread, then what else its channel said around it. */
+export const slackContextText = (alert: Alert, replies: ReadonlyArray<string>, nearby: ReadonlyArray<string>, minutes: number): string =>
+  [
+    `Thread replies (${replies.length}):`,
+    ...replies.map((r) => `- ${r.slice(0, 1_500)}`),
+    "",
+    `${channelLabel(alert)} within ±${minutes} min (${nearby.length}):`,
+    ...nearby.map((m) => `- ${m}`),
+  ].join("\n")
+
 /** A teammate wrote again in the thread a session is handling. */
 export const followUpPrompt = (fromName: string, text: string): string =>
   [

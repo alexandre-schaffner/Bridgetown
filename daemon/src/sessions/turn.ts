@@ -8,6 +8,7 @@ import { truncate } from "../slack/text.ts"
 import type { StoreShape } from "../store/store.ts"
 import { abortOnReturn, type AgentShape } from "./agent.ts"
 import type { AsksShape } from "./asks.ts"
+import { slackContextText } from "./prompts.ts"
 import type { SessionRepoShape } from "./repo.ts"
 import { type EventSink, handleMessage, type TurnEnd } from "./sdk-events.ts"
 import { sdkOptions } from "./sdk-options.ts"
@@ -56,15 +57,7 @@ export const makeTurns = (deps: TurnDeps) => {
         Effect.gen(function* () {
           const alert = yield* store.getAlert(session.alertId)
           if (alert === undefined) return "The alert is no longer stored."
-          const replies = yield* thread.replies(alert)
-          const around = yield* thread.nearby(alert, minutes)
-          return [
-            `Thread replies (${replies.length}):`,
-            ...replies.map((r) => `- ${r.slice(0, 1_500)}`),
-            "",
-            `#${alert.channelName} within ±${minutes} min (${around.length}):`,
-            ...around.map((m) => `- ${m}`),
-          ].join("\n")
+          return slackContextText(alert, yield* thread.replies(alert), yield* thread.nearby(alert, minutes), minutes)
         }).pipe(Effect.orElseSucceed(() => "Slack context is unavailable right now.")),
       ),
     report: (phase, note, prUrl) =>
