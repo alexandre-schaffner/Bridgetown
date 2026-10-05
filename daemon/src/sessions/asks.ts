@@ -19,7 +19,7 @@ export interface AsksShape {
   readonly answer: (actionId: string, text: string) => Effect.Effect<boolean, AdapterError>
   /** Your message to a session blocked on `ask` answers it, card and all. False when the session asked nothing. */
   readonly answerSession: (sessionId: string, text: string) => Effect.Effect<boolean, AdapterError>
-  /** Unblocks every call of the session with "no answer" (it was stopped). */
+  /** Unblocks every call of the session with "no answer" and takes their cards down: its turn is over. */
   readonly cancelFor: (sessionId: string) => Effect.Effect<void>
 }
 
@@ -45,11 +45,15 @@ export const AsksLive = Layer.effect(Asks)(
         return [taken, new Map([...current].filter(([, waiting]) => !pick(waiting)))]
       })
 
+    /** Back to `running`, only from the `waiting` the ask set: a session that moved on since keeps its status. */
+    const resume = (sessionId: string, activity: string) =>
+      repo.modify(sessionId, (current) => (current.status === "waiting" ? { ...current, status: "running", activity } : undefined))
+
     const reply = (waiting: Pending, text: string) =>
       Effect.gen(function* () {
         yield* Deferred.succeed(waiting.reply, text)
         yield* repo.log(waiting.sessionId, "status", `You answered: ${text}`)
-        yield* repo.patch(waiting.sessionId, { status: "running", activity: "Continuing with your answer" })
+        yield* resume(waiting.sessionId, "Continuing with your answer")
       })
 
     const ask = Effect.fn("Asks.ask")(function* (session: Session, question: string, options: ReadonlyArray<string>) {
@@ -65,14 +69,15 @@ export const AsksLive = Layer.effect(Asks)(
       })
       const waiting: Pending = { actionId: card.id, sessionId: session.id, reply: yield* Deferred.make<string | undefined>() }
       yield* SynchronizedRef.update(pending, (current) => new Map([...current, [card.id, waiting]]))
-      yield* repo.patch(session.id, { status: "waiting", activity: `Asked: ${truncate(question, 100)}` })
+      const activity = `Asked: ${truncate(question, 100)}`
+      yield* repo.modify(session.id, (current) => (current.status === "running" ? { ...current, status: "waiting", activity } : undefined))
       yield* repo.log(session.id, "status", `Asked: ${question}`)
       const answered = yield* Deferred.await(waiting.reply).pipe(Effect.timeoutOption(ASK_TIMEOUT))
       if (Option.isSome(answered)) return answered.value
       // Timed out, unless an answer got there first.
       if ((yield* take((w) => w.actionId === card.id)).length === 0) return yield* Deferred.await(waiting.reply)
       yield* queue.remove(card.id)
-      yield* repo.patch(session.id, { status: "running", activity: "No answer — continuing" })
+      yield* resume(session.id, "No answer — continuing")
       return undefined
     }, Effect.catch(() => Effect.succeed(undefined)))
 
@@ -96,7 +101,12 @@ export const AsksLive = Layer.effect(Asks)(
         }),
       cancelFor: (sessionId) =>
         take((w) => w.sessionId === sessionId).pipe(
-          Effect.flatMap((taken) => Effect.forEach(taken, (waiting) => Deferred.succeed(waiting.reply, undefined), { discard: true })),
+          Effect.flatMap((taken) =>
+            Effect.forEach(taken, (waiting) => Deferred.succeed(waiting.reply, undefined).pipe(Effect.andThen(queue.remove(waiting.actionId))), {
+              discard: true,
+            }),
+          ),
+          Effect.ignore,
         ),
     }
   }),

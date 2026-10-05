@@ -9,7 +9,7 @@ import type { StoreShape } from "../store/store.ts"
 import { abortOnReturn, type AgentShape } from "./agent.ts"
 import type { AsksShape } from "./asks.ts"
 import type { SessionRepoShape } from "./repo.ts"
-import { handleMessage, type TurnEnd } from "./sdk-events.ts"
+import { type EventSink, handleMessage, type TurnEnd } from "./sdk-events.ts"
 import { sdkOptions } from "./sdk-options.ts"
 import type { ToolCallbacks } from "./tools.ts"
 
@@ -79,8 +79,10 @@ export const makeTurns = (deps: TurnDeps) => {
 
   /**
    * One SDK query, consumed as a stream until the CLI exits. Interrupting it (a
-   * stop, shutdown) aborts the query and kills the CLI; a failure that was not
-   * an abort fails the session.
+   * stop, shutdown) aborts the query and kills the CLI. Otherwise the turn ends
+   * the session's turn one way or the other: its result is applied, or the
+   * session fails (the CLI failed or exited without a result, the result could
+   * not be applied, a defect). No `ask` outlives it.
    */
   const runTurn = (id: string, session: Session, input: TurnInput, resume: boolean): Effect.Effect<void> =>
     Effect.scoped(
@@ -93,7 +95,16 @@ export const makeTurns = (deps: TurnDeps) => {
         const onRefused = (what: string, reason: string) => {
           void runPromise(repo.log(id, "error", `Refused: ${truncate(what, 120)} — ${reason}`).pipe(Effect.ignore))
         }
-        const sink = { repo, hub: deps.hub, closeInput: () => void Queue.endUnsafe(input), onEnd: deps.onEnd(id) }
+        const end = { seen: false }
+        const sink: EventSink = {
+          repo,
+          hub: deps.hub,
+          closeInput: () => void Queue.endUnsafe(input),
+          onEnd: (turnEnd) => {
+            end.seen = true
+            return deps.onEnd(id)(turnEnd)
+          },
+        }
         const messages = deps.agent.query({
           prompt: Stream.toAsyncIterable(Stream.fromQueue(input)),
           options: sdkOptions({ session, abort, resume, tools: toolsFor(session), onRefused }),
@@ -101,11 +112,24 @@ export const makeTurns = (deps: TurnDeps) => {
         yield* Stream.fromAsyncIterable(
           abortOnReturn(messages, abort),
           (cause) => new AdapterError({ adapter: "claude", operation: "query", message: errorMessage(cause), cause }),
-        ).pipe(Stream.runForEach((message) => handleMessage(id, message, sink).pipe(Effect.ignore)))
+        ).pipe(
+          Stream.runForEach((message) => {
+            const handled = handleMessage(id, message, sink)
+            if (message.type === "result") return handled
+            // A message Bridgetown could not take in (an odd shape from the user's own CLI) costs a transcript line, not the turn.
+            const skipped = (reason: string) => repo.log(id, "error", `Skipped an SDK ${message.type} message: ${reason}`).pipe(Effect.ignore)
+            return handled.pipe(
+              Effect.catch((error) => skipped(error.message)),
+              Effect.catchDefect((defect) => skipped(errorMessage(defect))),
+            )
+          }),
+        )
+        if (!end.seen) yield* deps.onFailure(id, "The agent exited without a result")
       }),
     ).pipe(
-      Effect.ensuring(Queue.end(input)),
       Effect.catch((error) => deps.onFailure(id, error.message)),
+      Effect.catchDefect((defect) => deps.onFailure(id, errorMessage(defect))),
+      Effect.ensuring(Queue.end(input).pipe(Effect.andThen(asks.cancelFor(id)))),
     )
 
   return { runTurn }
