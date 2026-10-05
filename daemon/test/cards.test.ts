@@ -16,8 +16,13 @@ const passed = { reviewer: "codex" as const, sha: "abc", findings: [], response:
 describe("merge card", () => {
   test("names who approved, what passed and the second review", () => {
     const session = makeSession("awaiting_merge", { prUrl: PR, critique: passed })
-    const detail = mergeDetail(session, pr({ latestReviews: [review("julien", "APPROVED")], statusCheckRollup: [check, check, check, check] }))
+    const detail = mergeDetail(session, pr({ headRefOid: "abc", latestReviews: [review("julien", "APPROVED")], statusCheckRollup: [check, check, check, check] }))
     expect(detail).toBe("#3352 · approved by julien · CI green, 4 checks · Codex passed")
+  })
+
+  test("a pass on an earlier head is not claimed for the one being merged", () => {
+    const session = makeSession("awaiting_merge", { prUrl: PR, critique: passed })
+    expect(mergeDetail(session, pr({ headRefOid: "def", statusCheckRollup: [check] }))).toBe("#3352 · CI green, 1 check")
   })
 
   test("claims no approval when nobody approved (a repo that requires none)", () => {

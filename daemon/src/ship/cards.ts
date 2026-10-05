@@ -1,4 +1,4 @@
-import { critiquePassed, REVIEWER_NAMES, type Session } from "../domain/model.ts"
+import { passedAt, REVIEWER_NAMES, type Session } from "../domain/model.ts"
 import type { PullRequest } from "./github.ts"
 import { prLabel } from "./review.ts"
 
@@ -18,7 +18,8 @@ export const mergeDetail = (session: Session, pr: PullRequest): string => {
     // Ready to merge also covers repos that require no approval: say who only when someone did.
     ...(approvers.length > 0 ? [`approved by ${approvers.join(", ")}`] : []),
     checks > 0 ? `CI green, ${checks === 1 ? "1 check" : `${checks} checks`}` : "CI green",
-    ...(critique !== null && critiquePassed(critique) ? [`${REVIEWER_NAMES[critique.reviewer]} passed`] : []),
+    // Only a pass on the head being merged: one on an earlier head (pushed again with the review off) is no evidence.
+    ...(critique !== null && passedAt(critique, pr.headRefOid ?? null) ? [`${REVIEWER_NAMES[critique.reviewer]} passed`] : []),
   ].join(" · ")
 }
 
