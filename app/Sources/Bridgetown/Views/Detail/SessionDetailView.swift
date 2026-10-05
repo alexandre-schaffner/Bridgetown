@@ -7,6 +7,7 @@ struct SessionDetailView: View {
     @ViewState private var transcript = Loadable<[TranscriptEntry]>()
     @ViewState private var message = ""
     @ViewState private var confirmingStop = false
+    @Environment(\.now) private var now
 
     /// The card this session has in "Needs you": its next step, offered here too.
     private var action: Action? { store.snapshot?.actions.first { $0.sessionId == session.id } }
@@ -90,7 +91,7 @@ struct SessionDetailView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
-                Text(session.meta(now: AppClock.now))
+                Text(session.meta(now: now))
                     .font(.geist(12))
                     .monospacedDigit()
                     .foregroundStyle(.tertiary)

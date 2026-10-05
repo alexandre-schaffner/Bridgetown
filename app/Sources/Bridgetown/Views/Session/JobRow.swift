@@ -6,8 +6,8 @@ import SwiftUI
 struct JobRow: View {
     @Environment(Store.self) private var store
     let session: Session
-    let now: Date
     var pick: RowPick?
+    @Environment(\.now) private var now
     @ViewState private var hovering = false
 
     var body: some View {

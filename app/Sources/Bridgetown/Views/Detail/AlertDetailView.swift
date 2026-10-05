@@ -9,6 +9,7 @@ struct AlertDetailView: View {
     let alertId: String
 
     @ViewState private var detail = Loadable<AlertDetail>()
+    @Environment(\.now) private var now
 
     private var alert: AlertView? { store.snapshot?.alert(id: alertId) ?? detail.value?.alert }
 
@@ -43,14 +44,12 @@ struct AlertDetailView: View {
             DetailTopBar(title: alert?.title ?? "", lineLimit: 2)
             Hairline()
             if let alert, detail.value != nil || detail.error != nil {
-                TimelineView(.periodic(from: .now, by: 30)) { _ in
-                    PaneScrollView {
-                        content(alert, now: AppClock.now)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 14)
-                    }
-                    .accessibilityIdentifier("pane.detail")
+                PaneScrollView {
+                    content(alert)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
                 }
+                .accessibilityIdentifier("pane.detail")
                 Hairline()
                 bottomBar(alert)
             } else if let error = detail.error {
@@ -65,10 +64,10 @@ struct AlertDetailView: View {
 
     // MARK: Content
 
-    private func content(_ alert: AlertView, now: Date) -> some View {
+    private func content(_ alert: AlertView) -> some View {
         VStack(alignment: .leading, spacing: 18) {
-            summary(alert, now: now)
-            DetailSection(title: "How it ended") { howItEnded(alert, now: now) }
+            summary(alert)
+            DetailSection(title: "How it ended") { howItEnded(alert) }
             GrafanaSection(alertId: alert.id)
             DetailSection(title: "Jev's call") { jevsCall(alert) }
             if !events.isEmpty {
@@ -96,7 +95,7 @@ struct AlertDetailView: View {
         }
     }
 
-    private func summary(_ alert: AlertView, now: Date) -> some View {
+    private func summary(_ alert: AlertView) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             // With a session, "How it ended" says where it stands.
             if session == nil {
@@ -125,10 +124,10 @@ struct AlertDetailView: View {
     // MARK: How it ended
 
     @ViewBuilder
-    private func howItEnded(_ alert: AlertView, now: Date) -> some View {
+    private func howItEnded(_ alert: AlertView) -> some View {
         if let session {
             let canOpen = store.snapshot?.session(id: session.id) != nil
-            SessionRow(session: session, now: now, onOpen: canOpen ? { store.show(.session(session.id)) } : nil)
+            SessionRow(session: session, onOpen: canOpen ? { store.show(.session(session.id)) } : nil)
         } else {
             // Every outcome but `session` means no agent ran. The daemon's sentence says
             // what happened instead; without one, say just that.

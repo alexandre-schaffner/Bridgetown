@@ -20,6 +20,7 @@ struct BoardView: View {
     @ViewState private var pinned: String?
     /// The panel opened in place, if any.
     @ViewState private var expanded: String?
+    @Environment(\.now) private var now
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -80,7 +81,7 @@ struct BoardView: View {
             }
             Text("· counts per \(board.stepLabel)")
             Spacer(minLength: 0)
-            Text("Grafana · \(Format.ago(board.fetchedAt, now: AppClock.now))")
+            Text("Grafana · \(Format.ago(board.fetchedAt, now: now))")
         }
         .font(.geist(11.5).monospacedDigit())
         .foregroundStyle(.tertiary)
@@ -90,7 +91,7 @@ struct BoardView: View {
     /// "Last hour", "Last 6h", or "03:00 – 12:00" around an alert.
     private var window: String {
         let hours = Int((board.to.timeIntervalSince(board.from) / 3600).rounded())
-        if board.marker == nil, board.endsNow(at: AppClock.now) {
+        if board.marker == nil, board.endsNow(at: now) {
             return hours <= 1 ? "Last hour" : "Last \(hours)h"
         }
         return "\(board.from.formatted(Format.clock)) – \(board.to.formatted(Format.clock))"
@@ -103,6 +104,7 @@ private struct MiniPanel: View {
     let panel: Board.Panel
     let board: Board
     @Binding var hover: Date?
+    @Environment(\.now) private var now
     enum Layout {
         /// Half a grid row: title and value over the chart.
         case cell
@@ -259,7 +261,7 @@ private struct MiniPanel: View {
             Spacer(minLength: 4)
             Text(middle, format: Format.clock)
             Spacer(minLength: 4)
-            if board.endsNow(at: AppClock.now) {
+            if board.endsNow(at: now) {
                 Text("now")
             } else {
                 Text(board.to, format: Format.clock)
@@ -519,6 +521,7 @@ private struct MiniPanel: View {
 private struct DeployList: View {
     let deploys: [Board.Deploy]
     let limit: Int
+    @Environment(\.now) private var now
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -537,7 +540,7 @@ private struct DeployList: View {
                         .foregroundStyle(deploy.status == .failed ? AnyShapeStyle(Ink.red) : AnyShapeStyle(.secondary))
                         .lineLimit(1)
                     Spacer(minLength: 4)
-                    Text(Format.relative(deploy.at, now: AppClock.now))
+                    Text(Format.relative(deploy.at, now: now))
                         .font(Typo.rowTime)
                         .monospacedDigit()
                         .foregroundStyle(.tertiary)

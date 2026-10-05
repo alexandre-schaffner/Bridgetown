@@ -6,7 +6,6 @@ import SwiftUI
 /// its logs, as the last sweep grouped them, suspicious patterns first.
 struct TelemetryPanel: View {
     @Environment(Store.self) private var store
-    let now: Date
 
     enum Mode: String, CaseIterable, Identifiable {
         case incidents = "Incidents"
@@ -28,7 +27,7 @@ struct TelemetryPanel: View {
                 case .incidents: board("incidents")
                 case .infra: board("infra")
                 case .database: board("database")
-                case .logs: LogSweepView(now: now)
+                case .logs: LogSweepView()
                 }
             }
             .id(mode)

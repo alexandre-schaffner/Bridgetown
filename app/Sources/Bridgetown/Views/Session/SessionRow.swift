@@ -5,7 +5,7 @@ import SwiftUI
 struct SessionRow: View {
     @Environment(Store.self) private var store
     let session: Session
-    let now: Date
+    @Environment(\.now) private var now
     /// Tapping the card. Nil when there's nothing to open (the session has aged out of
     /// the snapshot), and the card is not a button then.
     var onOpen: (() -> Void)?

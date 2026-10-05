@@ -4,13 +4,12 @@ import SwiftUI
 /// sentence, and its menu. Healthy services say nothing; whatever is wrong is listed by
 /// `ProblemList`.
 struct HeaderView: View {
-    let now: Date
     /// How far the status line may run: up to the wings beside the notch, not under them.
     let room: CGFloat
 
     var body: some View {
         HStack(spacing: 8) {
-            StatusSummary(now: now)
+            StatusSummary()
                 .frame(maxWidth: max(0, room), alignment: .leading)
             Spacer(minLength: 0)
             AppMenu()
@@ -24,7 +23,7 @@ struct HeaderView: View {
 struct StatusSummary: View {
     @Environment(Store.self) private var store
     @Environment(DaemonProcess.self) private var daemon
-    let now: Date
+    @Environment(\.now) private var now
 
     var body: some View {
         Group {

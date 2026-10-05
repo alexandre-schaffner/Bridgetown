@@ -7,12 +7,11 @@ import SwiftUI
 /// steady errors behind a button. Clicking a pattern opens its lines in Grafana Explore.
 struct LogSweepView: View {
     @Environment(Store.self) private var store
-    let now: Date
 
     var body: some View {
         PollingLoader(key: "logs", fetch: { try await store.logSweep() }) { loaded in
             if let sweep = loaded.value {
-                SweepContent(sweep: sweep, now: now)
+                SweepContent(sweep: sweep)
             } else if let error = loaded.error {
                 BoardMessage(symbol: "exclamationmark.triangle", text: "Couldn't load the log sweep · \(error)")
             } else {
@@ -30,7 +29,7 @@ struct LogSweepView: View {
 
 private struct SweepContent: View {
     let sweep: LogSweep
-    let now: Date
+    @Environment(\.now) private var now
     @ViewState private var showSteady = false
 
     var body: some View {

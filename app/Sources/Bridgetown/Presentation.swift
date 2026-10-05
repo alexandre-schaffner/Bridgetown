@@ -559,6 +559,20 @@ enum AppClock {
     #endif
 }
 
+private struct NowKey: EnvironmentKey {
+    static var defaultValue: Date { AppClock.now }
+}
+
+extension EnvironmentValues {
+    /// The time ages and durations are measured to: the open island's 30-second tick
+    /// (`IslandOpenView`). A view that reads it redraws on the tick even when nothing it
+    /// was given has changed, so no age freezes while its row stands still.
+    var now: Date {
+        get { self[NowKey.self] }
+        set { self[NowKey.self] = newValue }
+    }
+}
+
 // MARK: - Formatting
 
 enum Format {

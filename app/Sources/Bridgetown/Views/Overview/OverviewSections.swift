@@ -32,7 +32,6 @@ extension Snapshot {
 struct NeedsYouSection: View {
     @Environment(Store.self) private var store
     let snapshot: Snapshot
-    var now: Date = AppClock.now
     @ViewState private var expandedAction: String?
     @ViewState private var selection = RowSelection()
     @ViewState private var confirmingClose = false
@@ -56,7 +55,6 @@ struct NeedsYouSection: View {
                         ActionCard(
                             action: action,
                             expanded: expandedAction == action.id,
-                            now: now,
                             pick: $selection.pick(action.id, in: order)
                         ) {
                             Haptics.perform(.alignment, "needsYou.toggle")
@@ -172,7 +170,6 @@ private struct GroupRow: View {
 struct AgentsSection: View {
     @Environment(Store.self) private var store
     let running: [Session]
-    let now: Date
     @ViewState private var selection = RowSelection()
     @ViewState private var confirmingStop = false
 
@@ -188,7 +185,7 @@ struct AgentsSection: View {
             VStack(spacing: 0) {
                 ForEach(running) { session in
                     Hairline()
-                    JobRow(session: session, now: now, pick: $selection.pick(session.id, in: order))
+                    JobRow(session: session, pick: $selection.pick(session.id, in: order))
                         .transition(.opacity)
                 }
                 Hairline()
@@ -229,7 +226,6 @@ struct AgentsSection: View {
 struct RecentSection: View {
     @Environment(Store.self) private var store
     let snapshot: Snapshot
-    let now: Date
     @ViewState private var showAll = false
     @ViewState private var showQuiet = false
     @ViewState private var selection = RowSelection()
@@ -285,7 +281,7 @@ struct RecentSection: View {
     }
 
     private func row(_ alert: AlertView, order: [String]) -> some View {
-        AlertRow(alert: alert, session: snapshot.session(id: alert.sessionId), now: now, pick: $selection.pick(alert.id, in: order))
+        AlertRow(alert: alert, session: snapshot.session(id: alert.sessionId), pick: $selection.pick(alert.id, in: order))
             .transition(.opacity)
     }
 

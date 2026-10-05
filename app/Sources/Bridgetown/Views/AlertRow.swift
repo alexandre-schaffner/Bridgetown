@@ -6,8 +6,8 @@ struct AlertRow: View {
     @Environment(Store.self) private var store
     let alert: AlertView
     let session: Session?
-    let now: Date
     var pick: RowPick?
+    @Environment(\.now) private var now
     @ViewState private var hovering = false
 
     /// The time column: "now", "59m", "23h", "Oct 12" right-aligned, so the times read down.

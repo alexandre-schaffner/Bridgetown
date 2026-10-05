@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import Bridgetown
 
@@ -248,6 +249,14 @@ import Testing
         let morning = try #require(Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 4, hour: 2, minute: 5)))
         #expect(afternoon.formatted(Format.clock) == "14:05")
         #expect(morning.formatted(Format.clock) == "02:05")
+    }
+
+    /// A view outside the island's tick reads the app's clock when it draws, not a time
+    /// fixed when the app started.
+    @Test func viewsReadTheAppClockByDefault() {
+        let before = AppClock.now
+        let read = EnvironmentValues().now
+        #expect(read >= before && read.timeIntervalSince(before) < 1)
     }
 
     @Test func aBoardEndsNowWithinTenMinutes() throws {

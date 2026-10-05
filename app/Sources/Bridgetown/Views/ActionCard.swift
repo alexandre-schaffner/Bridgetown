@@ -8,8 +8,6 @@ struct ActionCard: View {
     var expanded = true
     /// Tapping the row; nil where the card can't collapse.
     var onToggle: (() -> Void)?
-    /// For the row's age.
-    var now: Date = AppClock.now
     /// The row's place in the list's selection, in the overview.
     var pick: RowPick?
     @ViewState private var hovering = false
@@ -17,11 +15,11 @@ struct ActionCard: View {
     /// Editable copy of a `reply` action's draft.
     @ViewState private var draft: String
     @ViewState private var confirmingClose = false
+    @Environment(\.now) private var now
 
-    init(action: Action, expanded: Bool = true, now: Date = AppClock.now, pick: RowPick? = nil, onToggle: (() -> Void)? = nil) {
+    init(action: Action, expanded: Bool = true, pick: RowPick? = nil, onToggle: (() -> Void)? = nil) {
         self.action = action
         self.expanded = expanded
-        self.now = now
         self.pick = pick
         self.onToggle = onToggle
         _draft = ViewState(initialValue: action.detail)
