@@ -3,9 +3,16 @@
 // are hidden from it.
 
 /**
+ * The spaces a line may break at. The no-break ones stay inside the word they join: between two
+ * inline blocks a line breaks even at a no-break space.
+ */
+const BREAKS = /([^\S\u00a0\u2007\u202f]+)/;
+
+/**
  * Wraps every word of `el` in a `.w` that never breaks, keeping <br> and inline elements, and
  * returns the parts that move, in reading order: each word's `.wi`, or each letter's `.ch`.
- * Splitting an element again returns the parts it already has.
+ * Words joined by a no-break space are one `.w`. Splitting an element again returns the parts
+ * it already has.
  */
 export function splitText(el: HTMLElement, unit: "words" | "chars"): HTMLElement[] {
   const part = unit === "words" ? "wi" : "ch";
@@ -15,9 +22,9 @@ export function splitText(el: HTMLElement, unit: "words" | "chars"): HTMLElement
       for (const child of [...node.childNodes]) {
         if (child instanceof Text) {
           const frag = document.createDocumentFragment();
-          for (const piece of child.data.split(/(\s+)/)) {
-            // Spaces (a no-break one too) stay text between the words, so lines break as before.
-            if (!piece || /^\s+$/.test(piece)) {
+          for (const piece of child.data.split(BREAKS)) {
+            // Spaces stay text between the words, so lines break where they did.
+            if (!piece || BREAKS.test(piece)) {
               frag.append(piece);
               continue;
             }

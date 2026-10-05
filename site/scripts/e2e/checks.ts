@@ -44,6 +44,29 @@ export const CHECKS: Check[] = [
     },
   },
   {
+    name: "Split into letters, the headline never breaks at its no-break space",
+    viewport: LAPTOP,
+    motion: "no-preference",
+    async run(page) {
+      // “you&nbsp;look.” shares a line however narrow the heading gets. Layout offsets, not
+      // boxes: the letters may still be rising into place.
+      const torn = await page.evaluate(() => {
+        const h1 = document.querySelector<HTMLElement>("h1")!;
+        const chars = [...h1.querySelectorAll<HTMLElement>(".ch")];
+        const text = chars.map((c) => c.textContent).join("");
+        const u = chars[text.lastIndexOf("you") + 2]!;
+        const l = chars[text.lastIndexOf("look.")]!;
+        h1.style.maxWidth = "none";
+        for (let w = 1200; w >= 160; w -= 4) {
+          h1.style.width = `${w}px`;
+          if (u.offsetTop !== l.offsetTop) return w;
+        }
+        return null;
+      });
+      expect(torn === null, `at ${torn}px wide, the heading breaks between “you” and “look.”`);
+    },
+  },
+  {
     name: "Under Reduce Motion, a nav link lands on the light's stage and focuses it",
     viewport: LAPTOP,
     motion: "reduce",
