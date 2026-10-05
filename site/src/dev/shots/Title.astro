@@ -1,0 +1,22 @@
+---
+// The name over the arch, then the promise.
+import ArchMark from "../../components/ArchMark.astro";
+---
+
+<section class="shot over high" data-shot="title">
+  <p class="mark"><ArchMark size={56} /></p>
+  <h1 class="name">Bridgetown</h1>
+</section>
+
+<section class="shot over low" data-shot="tagline">
+  <p class="tag-line">Your alerts, handled <span class="dim">before you look.</span></p>
+</section>
+
+<style>
+  .tag-line {
+    font-size: 72px;
+    font-weight: 600;
+    letter-spacing: -0.04em;
+    color: var(--hi);
+  }
+</style>

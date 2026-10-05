@@ -55,7 +55,8 @@ const title = "Bridgetown: your alerts, handled before you look";
       <!-- The live arch, for the light and the closing chapters (scripts/scene.ts). -->
       <canvas data-scene></canvas>
       <!-- The hero, pre-rendered: its first frame, the opening loop, the scrubbed frames, then the
-           flood to day and a live grain over them (scripts/hero-frames.ts). -->
+           flood to day and a live grain over them (scripts/hero-frames.ts). The picture picks
+           the frame set for the screen; the scrubbed frames follow its choice. -->
       <div class="hero-media" data-hero-media>
         <picture>
           <source media="(max-aspect-ratio: 1/1)" srcset="/hero/p/000.webp" />
@@ -64,7 +65,7 @@ const title = "Bridgetown: your alerts, handled before you look";
         </picture>
         <canvas data-hero-frames></canvas>
         <video data-hero-loop muted playsinline loop preload="auto"></video>
-        <div class="flood" data-flood></div>
+        <div class="flood"></div>
         <div class="grain"></div>
       </div>
     </div>
@@ -120,7 +121,7 @@ const title = "Bridgetown: your alerts, handled before you look";
     overflow: hidden;
     background: #050608;
     transition: opacity 300ms linear;
-    animation: arrive 2.8s var(--ease-out) both;
+    animation: hero-arrive 2.8s var(--ease-out) both;
   }
 
   :global(.hero-away) .hero-media {
@@ -136,7 +137,7 @@ const title = "Bridgetown: your alerts, handled before you look";
   }
 
   /* The light comes up and the camera settles, as the live scene's arrival did. */
-  @keyframes arrive {
+  @keyframes hero-arrive {
     from {
       filter: brightness(0);
       transform: scale(1.07);
@@ -187,11 +188,11 @@ const title = "Bridgetown: your alerts, handled before you look";
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 1.4 -.2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
     opacity: calc(0.16 * (1 - var(--flood, 0)));
     mix-blend-mode: overlay;
-    animation: grain 0.6s steps(6) infinite;
+    animation: hero-grain 0.6s steps(6) infinite;
     pointer-events: none;
   }
 
-  @keyframes grain {
+  @keyframes hero-grain {
     0% {
       transform: translate(0, 0);
     }

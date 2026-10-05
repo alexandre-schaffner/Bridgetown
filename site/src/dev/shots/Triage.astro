@@ -1,0 +1,247 @@
+---
+// Triage: Jev's answers for each message, the route the policy gives it, and your threshold.
+
+const triage = [
+  {
+    from: "#alert-api",
+    who: "Monitor",
+    text: "5xx rate 3.1% on /v4/orders over 5 minutes",
+    answers: [["Needs action now", 93], ["An agent can fix it", 86], ["A teammate is on it", 5]],
+    route: ["Agent starts", "blue"],
+  },
+  {
+    from: "Direct message",
+    who: "Priya",
+    text: "Should we ship the pricing change today, or hold it for Monday?",
+    answers: [["Waiting on you", 96], ["An agent can do it", 4], ["Already answered", 2]],
+    route: ["Needs you", "amber"],
+  },
+  {
+    from: "#eng-api",
+    who: "Jonas",
+    text: "@alex the orders page 500s when region is empty, can you take a look?",
+    answers: [["Waiting on you", 91], ["An agent can do it", 78], ["Already answered", 3]],
+    route: ["Agent drafts, you send", "blue"],
+  },
+  {
+    from: "#alert-billing",
+    who: "Monitor",
+    text: "Invoice job failed 3 times in a row",
+    answers: [["Needs action now", 88], ["An agent can fix it", 71], ["A teammate is on it", 82]],
+    route: ["Sam is on it", "grey"],
+  },
+  {
+    from: "#alert-releases",
+    who: "Deploy bot",
+    text: "web v2.15.0 deployed to production",
+    answers: null,
+    route: ["Filtered by a rule", "grey"],
+  },
+] as const;
+---
+
+<section class="shot" data-shot="triage">
+  <div class="cam">
+    <div class="triage">
+      <header class="t-head">
+        <p class="eyebrow"><span class="jev">Jev</span> TypeSafe System One · one call per message</p>
+        <p class="eyebrow right">Rules first · then Jev · then your policy</p>
+      </header>
+      <ol class="t-log">
+        <li class="t-cols mono"><span>Message</span><span>Jev’s answers</span><span>Route</span></li>
+        {
+          triage.map((row) => (
+            <li class="t-row" data-trow>
+              <div class="t-msg">
+                <p class="t-meta"><span class="mono">{row.from}</span><span>{row.who}</span></p>
+                <p class="t-text">{row.text}</p>
+              </div>
+              <div class="t-answers">
+                {row.answers ? (
+                  row.answers.map(([q, p]) => (
+                    <div class="t-a" style={`--p:${p / 100}`}>
+                      <span class="q">{q}</span>
+                      <span class="bar"><i /></span>
+                      <span class="pct mono" data-pct={p}>0%</span>
+                    </div>
+                  ))
+                ) : (
+                  <p class="t-rule mono">Matched a rule: a successful deploy.<br />No model call.</p>
+                )}
+              </div>
+              <p class="t-route" data-troute>
+                <i class={`dot dot-${row.route[1]}`} />
+                <span>{row.route[0]}</span>
+              </p>
+            </li>
+          ))
+        }
+      </ol>
+      <div class="policy">
+        <span class="p-label">Start an agent when Jev is at least</span>
+        <span class="p-track"><i data-pfill></i><b data-pthumb></b></span>
+        <span class="p-val mono" data-pval>75%</span>
+        <span class="p-label dim">sure it can finish the job</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .triage {
+    position: absolute;
+    left: 140px;
+    right: 140px;
+    top: 120px;
+  }
+
+  .t-head {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 28px;
+  }
+
+  .eyebrow {
+    font-size: 20px;
+    color: var(--mid);
+  }
+
+  .jev {
+    display: inline-block;
+    margin-right: 10px;
+    padding: 3px 12px;
+    border-radius: 999px;
+    background: var(--hi);
+    color: #000;
+    font-weight: 600;
+  }
+
+  .t-log {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-top: 1px solid var(--hair-strong);
+  }
+
+  .t-cols,
+  .t-row {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr 360px;
+    gap: 60px;
+  }
+
+  .t-cols {
+    padding: 14px 0;
+    font-size: 16px;
+    color: var(--lo);
+    border-bottom: 1px solid var(--hair);
+  }
+
+  .t-row {
+    padding: 22px 0;
+    border-bottom: 1px solid var(--hair);
+    align-items: center;
+    opacity: 0.12;
+  }
+
+  .t-text {
+    margin-top: 6px;
+    font-size: 26px;
+    letter-spacing: -0.015em;
+    line-height: 1.3;
+    color: var(--hi);
+  }
+
+  .t-answers {
+    display: grid;
+    gap: 9px;
+  }
+
+  .t-a {
+    display: grid;
+    grid-template-columns: 210px 1fr 64px;
+    gap: 16px;
+    align-items: center;
+    font-size: 17px;
+    color: var(--mid);
+  }
+
+  .bar {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--hair);
+    overflow: hidden;
+  }
+
+  .bar i {
+    display: block;
+    height: 100%;
+    background: var(--hi);
+    transform-origin: 0 50%;
+    transform: scaleX(0);
+  }
+
+  .pct {
+    text-align: right;
+    color: var(--hi);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .t-rule {
+    font-size: 17px;
+    color: var(--lo);
+    line-height: 1.5;
+  }
+
+  .t-route {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 26px;
+    font-weight: 560;
+    letter-spacing: -0.015em;
+    color: var(--hi);
+  }
+
+  .policy {
+    display: grid;
+    grid-template-columns: auto 520px 80px auto;
+    gap: 24px;
+    align-items: center;
+    margin-top: 34px;
+    font-size: 20px;
+    color: var(--mid);
+  }
+
+  .p-track {
+    position: relative;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--hair-strong);
+  }
+
+  .p-track i {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 55.5%;
+    border-radius: 2px;
+    background: var(--hi);
+  }
+
+  .p-track b {
+    position: absolute;
+    left: 55.5%;
+    top: 50%;
+    width: 24px;
+    height: 24px;
+    margin: -12px 0 0 -12px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 2px 10px rgb(0 0 0 / 0.6);
+  }
+
+  .p-val {
+    color: var(--hi);
+    font-size: 26px;
+  }
+</style>

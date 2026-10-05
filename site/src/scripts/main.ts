@@ -1,89 +1,21 @@
-// The page's choreography. Lenis smooths the scroll; ScrollTrigger reports where each
-// chapter is; one ticker turns that into the camera, the light, the island's steps and
-// everything that draws or brightens on the way. Without this script every chapter still
-// reads top to bottom, unpinned and fully shown.
+// The page's choreography: what moves with more than one chapter. ScrollTrigger reports where
+// each chapter is; one ticker turns that into the camera, the light, the hero's frames and
+// the outcomes brightening on the way. Widgets that keep to their own chapter run from their
+// component (Nav, Recording, Notch, Triage, Watch, Safety, Film). Without script every
+// chapter still reads top to bottom, unpinned and fully shown.
 
-import Lenis from "lenis";
 import { gsap } from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
 import type { Color } from "three";
-import type { ArchScene, LightName, View } from "./scene";
-import { heroView as heroPath, restView } from "./view";
+import { $, $$, cssRGB } from "../lib/dom";
+import { clamp, band, inOut, lerp, smooth } from "../lib/math";
+import { splitText } from "../lib/split";
 import { createHeroFrames } from "./hero-frames";
-import { createIsland } from "./island";
-
-gsap.registerPlugin(ScrollTrigger);
-
-const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-const finePointer = matchMedia("(pointer: fine)").matches;
-const $ = <T extends Element = HTMLElement>(s: string, root: ParentNode = document) => root.querySelector<T>(s);
-const $$ = <T extends Element = HTMLElement>(s: string, root: ParentNode = document) => [
-  ...root.querySelectorAll<T>(s),
-];
-
-const clamp = (v: number, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, v));
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-const smooth = (a: number, b: number, v: number) => {
-  const t = clamp((v - a) / (b - a));
-  return t * t * (3 - 2 * t);
-};
-const inOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
-/** 0 before a, up to 1 by b, held to c, back to 0 by d. */
-const band = (p: number, a: number, b: number, c: number, d: number) => smooth(a, b, p) * (1 - smooth(c, d, p));
-
-// MARK: Scroll
-
-let lenis: Lenis | null = null;
-if (!reduced) {
-  lenis = new Lenis({ lerp: 0.09, wheelMultiplier: 0.95, touchMultiplier: 1.4 });
-  lenis.on("scroll", ScrollTrigger.update);
-  gsap.ticker.add((t) => lenis!.raf(t * 1000));
-  gsap.ticker.lagSmoothing(0);
-  (window as unknown as { __lenis: Lenis }).__lenis = lenis;
-}
-
-for (const a of $$<HTMLAnchorElement>('a[href^="#"]')) {
-  a.addEventListener("click", (e) => {
-    const id = a.getAttribute("href")!;
-    const target = id === "#top" ? document.body : $(id);
-    if (!target) return;
-    e.preventDefault();
-    if (lenis) {
-      // A long way off, cut to a screen short of it and glide the rest: gliding through every
-      // chapter between would scrub the hero, the reel and the light all at once.
-      // Chapters that open on a run of dusk land past it, on the stage (data-land="stage").
-      const run = target.dataset.land === "stage" ? parseFloat(getComputedStyle(target).paddingTop) : 0;
-      const to = target.getBoundingClientRect().top + lenis.scroll + run;
-      const gap = to - lenis.scroll;
-      if (Math.abs(gap) > innerHeight * 2) lenis.scrollTo(to - Math.sign(gap) * innerHeight, { immediate: true });
-      lenis.scrollTo(to, { duration: 1.1, easing: (t) => 1 - (1 - t) ** 4 });
-    } else target.scrollIntoView();
-    history.replaceState(null, "", id);
-  });
-}
-
-// The nav steps aside while you read down, and comes back when you scroll up.
-let lastY = 0;
-let lastScrollAt = 0;
-const onScrollNav = (y: number) => {
-  document.documentElement.classList.toggle("nav-hidden", y > lastY && y > 200);
-  lastY = y;
-  lastScrollAt = performance.now();
-};
-if (lenis) lenis.on("scroll", ({ scroll }: { scroll: number }) => onScrollNav(scroll));
-else addEventListener("scroll", () => onScrollNav(scrollY), { passive: true });
+import { createReel } from "./reel";
+import type { ArchScene, LightName } from "./scene";
+import { finePointer, reduced, ScrollTrigger, sinceScroll } from "./scroll";
+import { heroWhite, restView, type View } from "./view";
 
 // MARK: Scene
-
-/** A CSS colour as sRGB components, through a canvas so oklch() resolves like the page's. */
-function cssRGB(name: string): [number, number, number] {
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  const c = document.createElement("canvas").getContext("2d")!;
-  c.fillStyle = value;
-  c.fillRect(0, 0, 1, 1);
-  const [r, g, b] = c.getImageData(0, 0, 1, 1).data;
-  return [r! / 255, g! / 255, b! / 255];
-}
 
 // The hero is pre-rendered; the live scene (and three.js, in its own chunk) is only needed for
 // the light and the closing chapters. Setting it up costs the main thread real time (parsing,
@@ -103,8 +35,8 @@ const atRest = () =>
   new Promise<void>((resolve) => {
     const check = () => {
       if (urgent) resolve();
-      else if (performance.now() - lastScrollAt < 450) setTimeout(check, 150);
-      else idle(() => (urgent || performance.now() - lastScrollAt >= 450 ? resolve() : check()));
+      else if (sinceScroll() < 450) setTimeout(check, 150);
+      else idle(() => (urgent || sinceScroll() >= 450 ? resolve() : check()));
     };
     check();
   });
@@ -154,14 +86,12 @@ watchFor(["#light", "#download"], "150% 0px", () => {
   void loadScene();
 });
 
+// The theme switch (Nav) changed what day is: the flood follows.
+addEventListener("themechange", () => scene?.setDay(dayColor(cssRGB("--day"))));
+
 // The pre-rendered hero.
 const heroMedia = $("[data-hero-media]");
-const heroFrames =
-  heroMedia &&
-  createHeroFrames($<HTMLCanvasElement>("[data-hero-frames]", heroMedia)!, $<HTMLVideoElement>("[data-hero-loop]", heroMedia)!, {
-    reducedMotion: reduced,
-  });
-
+const heroFrames = heroMedia && createHeroFrames(heroMedia, { reducedMotion: reduced });
 
 if (finePointer && !reduced) {
   addEventListener("pointermove", (e) => {
@@ -199,55 +129,6 @@ if (finePointer && !reduced) {
   });
 }
 
-// MARK: Theme
-
-// Light, dark, or whatever the system says; remembered. The new theme opens as a circle
-// from the switch, and the hero's flood follows it.
-const themeSwitch = $("[data-theme-switch]");
-if (themeSwitch) {
-  themeSwitch.hidden = false;
-  const root = document.documentElement;
-  const system = matchMedia("(prefers-color-scheme: dark)");
-  const buttons = $$<HTMLButtonElement>("[data-theme-option]", themeSwitch);
-  const resolve = (choice: string) => choice === "dark" || (choice === "system" && system.matches);
-  const sync = () => {
-    const choice = root.dataset.theme ?? "light";
-    buttons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.themeOption === choice)));
-    if (scene) scene.setDay(dayColor(cssRGB("--day")));
-  };
-  const apply = (choice: string, from?: HTMLElement) => {
-    const flip = () => {
-      root.dataset.theme = choice;
-      root.classList.toggle("theme-dark", resolve(choice));
-      sync();
-    };
-    try {
-      localStorage.setItem("bridgetown-theme", choice);
-    } catch {
-      // Private mode: the choice lasts for this visit.
-    }
-    if (resolve(choice) === root.classList.contains("theme-dark") || reduced || !document.startViewTransition || !from) {
-      flip();
-      return;
-    }
-    const r = from.getBoundingClientRect();
-    const x = r.left + r.width / 2;
-    const y = r.top + r.height / 2;
-    const radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
-    document.startViewTransition(flip).ready.then(() => {
-      document.documentElement.animate(
-        { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
-        { duration: 900, easing: "cubic-bezier(0.65, 0, 0.35, 1)", pseudoElement: "::view-transition-new(root)" },
-      );
-    });
-  };
-  buttons.forEach((b) => b.addEventListener("click", () => apply(b.dataset.themeOption!, b)));
-  system.addEventListener("change", () => {
-    if (root.dataset.theme === "system") apply("system");
-  });
-  sync();
-}
-
 // MARK: Hero
 
 const hero = $("[data-hero]")!;
@@ -265,17 +146,7 @@ ScrollTrigger.create({
 // The headline arrives letter by letter out of a blur, as the light comes up behind it.
 const title = $("[data-split]", hero);
 if (title && !reduced) {
-  const words = title.innerHTML.split(/(\s+|&nbsp;)/);
-  title.innerHTML = words
-    .map((w) =>
-      /^\s+$|^&nbsp;$/.test(w)
-        ? w
-        : `<span class="w" style="display:inline-block;white-space:nowrap">${[...w]
-            .map((ch) => `<span class="ch" style="display:inline-block">${ch}</span>`)
-            .join("")}</span>`,
-    )
-    .join("");
-  gsap.from($$(".ch", title), {
+  gsap.from(splitText(title, "chars"), {
     yPercent: 40,
     opacity: 0,
     filter: "blur(12px)",
@@ -297,8 +168,6 @@ if (title && !reduced) {
   });
 }
 
-const intro = { t: 1 };
-
 function playBeats(p: number) {
   const shows = [1 - smooth(0.06, 0.15, p), band(p, 0.2, 0.26, 0.38, 0.45), band(p, 0.49, 0.55, 0.66, 0.73)];
   beats.forEach((el, i) => {
@@ -313,149 +182,7 @@ function playBeats(p: number) {
   heroStage.style.setProperty("--scrim", (1 - smooth(0.72, 0.84, p)).toFixed(3));
 }
 
-// MARK: Recording
-
-// The clip grows from between the two halves of its line to fill the screen, and plays
-// only while you can see it.
-const recording = $("[data-recording]");
-if (recording) {
-  const video = $<HTMLVideoElement>("[data-clip-video]", recording)!;
-  const toggle = $<HTMLButtonElement>("[data-clip-toggle]", recording)!;
-  let userPaused = reduced;
-  const setPaused = (paused: boolean) => {
-    toggle.classList.toggle("paused", paused);
-    toggle.setAttribute("aria-label", paused ? "Play the recording" : "Pause the recording");
-  };
-  setPaused(userPaused);
-  toggle.addEventListener("click", () => {
-    userPaused = !video.paused;
-    if (userPaused) video.pause();
-    else void video.play();
-    setPaused(userPaused);
-  });
-  new IntersectionObserver(
-    ([e]) => {
-      if (e!.isIntersecting && !userPaused) void video.play().catch(() => setPaused(true));
-      else video.pause();
-    },
-    { threshold: 0.25 },
-  ).observe(video);
-
-  if (!reduced) {
-    const halves = $$("[data-half]", recording);
-    ScrollTrigger.create({
-      trigger: recording,
-      start: "top bottom",
-      end: "bottom bottom",
-      onUpdate: (s) => {
-        // The first stretch is the approach; the pin starts once the section reaches the top.
-        const total = recording.offsetHeight;
-        const y = s.progress * total;
-        const p = clamp((y - innerHeight * 0.75) / (total - innerHeight * 1.2));
-        const grow = inOut(clamp(p / 0.8));
-        recording.style.setProperty("--grow", lerp(0.34, 1, grow).toFixed(4));
-        recording.style.setProperty("--caption", smooth(0.75, 0.95, p).toFixed(3));
-        halves.forEach((h) => (h.style.opacity = (1 - smooth(0.25, 0.65, p)).toFixed(3)));
-      },
-    });
-  } else {
-    recording.style.setProperty("--grow", "1");
-    recording.style.setProperty("--caption", "1");
-  }
-}
-
-// MARK: Film
-
-const film = $<HTMLDialogElement>("[data-film]");
-if (film) {
-  const video = $<HTMLVideoElement>("[data-film-video]", film)!;
-  for (const b of $$("[data-open-film]")) {
-    b.addEventListener("click", () => {
-      const name = b.dataset.openFilm || "launch";
-      if (video.dataset.film !== name) {
-        video.dataset.film = name;
-        video.poster = `/media/${name}-poster.jpg`;
-        video.src = `/media/${name}.mp4`;
-      }
-      film.showModal();
-      lenis?.stop();
-      void video.play().catch(() => {});
-    });
-  }
-  film.addEventListener("close", () => {
-    video.pause();
-    lenis?.start();
-  });
-  // A click on the backdrop closes it.
-  film.addEventListener("click", (e) => {
-    if (e.target === film) film.close();
-  });
-}
-
-// MARK: Notch
-
-const notch = $("[data-notch]");
-if (notch) {
-  const island = createIsland(notch, { reducedMotion: reduced });
-  const tryIt = $("[data-try]", notch);
-  if (tryIt) tryIt.hidden = false;
-  const steps = $$("[data-step]", notch);
-  const cuts = [0, 0.22, 0.46, 0.7, 1];
-  ScrollTrigger.create({
-    trigger: notch,
-    start: "top 60%",
-    end: "bottom bottom",
-    onToggle: (s) => island.setVisible(s.isActive),
-    onUpdate: (s) => {
-      // Pinning starts at "top top"; the first stretch before it is the approach.
-      const pinStart = innerHeight * 0.6;
-      const total = notch.offsetHeight - innerHeight + pinStart;
-      const p = clamp((s.progress * total - pinStart) / (total - pinStart));
-      const step = cuts.findIndex((c, i) => p >= c && p < (cuts[i + 1] ?? 2));
-      island.setStep(Math.max(0, step));
-      steps.forEach((el, i) => el.style.setProperty("--fill", clamp((p - cuts[i]!) / (cuts[i + 1]! - cuts[i]!)).toFixed(3)));
-    },
-  });
-  island.setVisible(true);
-
-  // The machine rises into place as the day arrives.
-  if (!reduced) {
-    gsap.fromTo(
-      $("[data-mac]", notch),
-      { y: 120, scale: 0.9, rotateX: 22, transformPerspective: 1400, transformOrigin: "50% 0%", opacity: 0.4 },
-      {
-        y: 0,
-        scale: 1,
-        rotateX: 0,
-        opacity: 1,
-        ease: "none",
-        scrollTrigger: { trigger: notch, start: "top bottom", end: "top top", scrub: true },
-      },
-    );
-  }
-}
-
 // MARK: Reveals
-
-/** Adds `.in` once an element is well into view; `stagger` spaces siblings out. */
-function revealOnView(els: HTMLElement[], { threshold = 0.35, stagger = 90 } = {}) {
-  const io = new IntersectionObserver(
-    (entries) => {
-      const arriving = entries.filter((e) => e.isIntersecting);
-      arriving.forEach((e, i) => {
-        const el = e.target as HTMLElement;
-        el.style.transitionDelay = reduced ? "" : `${i * stagger}ms`;
-        el.classList.add("in");
-        io.unobserve(el);
-      });
-    },
-    { threshold },
-  );
-  els.forEach((el) => io.observe(el));
-}
-
-revealOnView($$("[data-row]"), { threshold: 0.5, stagger: 160 });
-revealOnView($$("[data-rule]"), { threshold: 0.6, stagger: 80 });
 
 // Headings rise out of a mask as their section arrives: once, quietly.
 if (!reduced) {
@@ -482,151 +209,75 @@ if (!reduced) {
   }
 }
 
-// MARK: Policy
-
-// The threshold re-routes the messages, as the app's policy does with the one you set.
-const policy = $("[data-policy]");
-if (policy) {
-  const input = $<HTMLInputElement>("[data-threshold]", policy)!;
-  const out = $("[data-threshold-out]", policy)!;
-  const rows = $$("[data-row]");
-  const decide = (row: HTMLElement, t: number): [string, string] | null => {
-    const agent = Number(row.dataset.agent);
-    const other = Number(row.dataset.other);
-    if (row.dataset.kind === "alert") {
-      if (other >= 50) return null;
-      return agent >= t ? ["Agent starts", "blue"] : ["Suggested to you", "amber"];
-    }
-    if (row.dataset.kind === "inbox") return agent >= t ? ["Agent drafts, you send", "blue"] : ["Needs you", "amber"];
-    return null;
-  };
-  const apply = (animate: boolean) => {
-    const t = Number(input.value);
-    out.textContent = `${t}%`;
-    input.style.setProperty("--fill", `${((t - 50) / 45) * 100}%`);
-    for (const row of rows) {
-      row.style.setProperty("--threshold", `${t}%`);
-      const next = decide(row, t);
-      if (!next) continue;
-      const route = $("[data-route]", row)!;
-      const label = $("span", route)!;
-      const dot = $(".dot", route)!;
-      if (label.textContent === next[0]) continue;
-      label.textContent = next[0];
-      dot.className = `dot dot-${next[1]}`;
-      if (animate && !reduced) {
-        label.animate(
-          [
-            { opacity: 0, transform: "translateY(40%)", filter: "blur(4px)" },
-            { opacity: 1, transform: "none", filter: "blur(0)" },
-          ],
-          { duration: 420, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
-        );
-        dot.animate([{ transform: "scale(0)" }, { transform: "scale(1.5)" }, { transform: "none" }], { duration: 500 });
-      }
-    }
-  };
-  input.addEventListener("input", () => apply(true));
-  apply(false);
-}
-
 // MARK: Journey
 
+// Wide screens pin the chapter and slide its reel past by scroll; narrow ones stack the
+// frames, each playing as it scrolls into view.
 const journey = $("[data-journey]");
-const wide = matchMedia("(min-width: 981px)");
 if (journey) {
   const pin = $("[data-journey-pin]", journey)!;
-  const track = $("[data-track]", journey)!;
-  const frames = $$(".frame", track);
-  const rail = $$("[data-rail]", journey);
-  const panels = frames.map((f) => f.querySelector<HTMLElement>(".panel"));
-  let distance = 0;
-  /** Each frame's centre on the untranslated track, measured once per layout, never while scrolling. */
-  let centers: number[] = [];
-
+  const reel = createReel(journey, { tilt: !reduced });
+  let sideways = false;
   const layout = () => {
-    if (!wide.matches) {
+    sideways = reel.sideways;
+    if (!sideways) {
       journey.style.height = "";
       pin.style.position = "";
-      track.style.transform = "";
+      reel.reset();
       return;
     }
-    distance = Math.max(0, track.scrollWidth - innerWidth);
-    journey.style.height = `${distance + innerHeight}px`;
+    reel.measure();
+    journey.style.height = `${reel.distance + innerHeight}px`;
     pin.style.position = "sticky";
     pin.style.top = "0";
-    const shift = track.getBoundingClientRect().left - (track.style.transform ? lastShift : 0);
-    centers = frames.map((f) => shift + f.offsetLeft + f.offsetWidth / 2);
   };
-  let lastShift = 0;
   layout();
   // Before every measure (load, late fonts, resize), so the reel's length is never stale.
   ScrollTrigger.addEventListener("refreshInit", layout);
-
-  const played = new Set<Element>();
-  const play = (frame: Element) => {
-    if (played.has(frame)) return;
-    played.add(frame);
-    frame.classList.add("played");
-  };
-
-  ScrollTrigger.create({
+  const slide = ScrollTrigger.create({
     trigger: journey,
     start: "top top",
     end: "bottom bottom",
-    onUpdate: (s) => {
-      if (!wide.matches) return;
-      lastShift = -s.progress * distance;
-      track.style.transform = `translate3d(${lastShift.toFixed(1)}px,0,0)`;
-      const mid = innerWidth / 2;
-      let nearest = 0;
-      let best = Infinity;
-      frames.forEach((f, i) => {
-        const d = ((centers[i] ?? 0) + lastShift - mid) / innerWidth;
-        if (Math.abs(d) < best) {
-          best = Math.abs(d);
-          nearest = i;
-        }
-        // Depth: frames turn slightly away as they leave the middle, their panels lagging behind.
-        const panel = panels[i];
-        if (panel && !reduced) {
-          panel.style.transform = `perspective(1600px) translateX(${(d * -60).toFixed(1)}px) rotateY(${(d * -14).toFixed(2)}deg)`;
-        }
-        if (d < 0.3) play(f);
-      });
-      rail.forEach((r, i) => r.classList.toggle("done", i <= nearest));
-    },
+    onUpdate: (s) => sideways && reel.seek(s.progress),
   });
-
-  // Narrow screens: each frame plays as it scrolls into view.
+  // A frame coming into view plays: stacked, that frame; in a row, whatever the reel has near
+  // its middle. Scroll alone misses that when it stops exactly at the start (the nav's link
+  // lands there), since the progress never moves off 0.
   const io = new IntersectionObserver(
-    (entries) => entries.forEach((e) => e.isIntersecting && !wide.matches && play(e.target)),
+    (entries) => {
+      if (!entries.some((e) => e.isIntersecting)) return;
+      if (sideways) reel.seek(slide.progress);
+      else entries.forEach((e) => e.isIntersecting && e.target.classList.add("played"));
+    },
     { threshold: 0.4 },
   );
-  frames.forEach((f) => io.observe(f));
+  $$(".frame", journey).forEach((f) => io.observe(f));
 }
 
 // MARK: Light
 
 const lightSection = $("[data-light]");
 let lightP = 0;
-const LIGHT_ORDER: LightName[] = ["rest", "working", "needs-you", "paused"];
-let pickedLight: LightName | null = null;
-let pickedAt = -1;
+/** What the light chapter shows: the state scrolling has reached, or the one you picked. */
+let stageLight: LightName = "rest";
 if (lightSection) {
+  const ORDER: LightName[] = ["rest", "working", "needs-you", "paused"];
   const items = $$("[data-light-state]", lightSection);
-  const mark = (name: LightName) =>
+  let reached = 0;
+  let picked: { name: LightName; at: number } | null = null;
+  const show = (name: LightName) => {
+    stageLight = name;
     items.forEach((el) => {
       const on = el.dataset.lightState === name;
       el.classList.toggle("on", on);
       el.querySelector("button")?.setAttribute("aria-pressed", String(on));
     });
+  };
   // A picked light holds until scrolling moves on to the next state.
   for (const b of $$<HTMLButtonElement>("[data-light-pick]", lightSection)) {
     b.addEventListener("click", () => {
-      pickedLight = b.dataset.lightPick as LightName;
-      pickedAt = Math.min(LIGHT_ORDER.length - 1, Math.floor(lightP * LIGHT_ORDER.length));
-      mark(pickedLight);
+      picked = { name: b.dataset.lightPick as LightName, at: reached };
+      show(picked.name);
     });
   }
   // The section runs up and down through 70svh of dusk either side of its pinned stage.
@@ -636,9 +287,9 @@ if (lightSection) {
     end: () => `bottom-=${innerHeight * 0.7} bottom`,
     onUpdate: (s) => {
       lightP = s.progress;
-      const i = Math.min(LIGHT_ORDER.length - 1, Math.floor(s.progress * LIGHT_ORDER.length));
-      if (pickedLight && i !== pickedAt) pickedLight = null;
-      mark(pickedLight ?? LIGHT_ORDER[i]!);
+      reached = Math.min(ORDER.length - 1, Math.floor(s.progress * ORDER.length));
+      if (picked && reached !== picked.at) picked = null;
+      show(picked?.name ?? ORDER[reached]!);
     },
   });
 }
@@ -667,12 +318,18 @@ if (finale) {
   });
 
   // The light answers the button: blue lamps come on while your pointer is on it.
-  const button = $("button", finale);
+  const button = $("[data-download]", finale);
   const wake = (on: boolean) => scene?.setLight(on ? "working" : "rest", on ? 0.5 : 1.2);
   button?.addEventListener("pointerenter", () => wake(true));
   button?.addEventListener("pointerleave", () => wake(false));
   button?.addEventListener("focus", () => wake(true));
   button?.addEventListener("blur", () => wake(false));
+}
+
+// The light comes to rest as a download starts (Hero, Nav, Finale), the way it does when a
+// session is done.
+for (const link of $$("[data-download]")) {
+  link.addEventListener("click", () => scene?.setLight("rest", 0.4));
 }
 
 function finaleView(p: number): View {
@@ -685,25 +342,9 @@ function finaleView(p: number): View {
   return v;
 }
 
-// MARK: Outcomes and watch
+// MARK: Ticker
 
 const outcomes = $$("[data-outcome]");
-const watch = $("[data-watch]");
-const line = watch ? $<SVGPathElement>("[data-line]", watch) : null;
-if (watch) {
-  ScrollTrigger.create({
-    trigger: $("[data-chart]", watch),
-    start: "top 85%",
-    end: "center 45%",
-    onUpdate: (s) => {
-      line?.style.setProperty("--draw", (1 - s.progress).toFixed(4));
-      if (s.progress > 0.985) watch.classList.add("risen");
-      else if (s.progress < 0.9) watch.classList.remove("risen");
-    },
-  });
-}
-
-// MARK: Ticker
 
 /** How much of a section is on screen, in pixels. */
 const onScreen = (el: Element | null) => {
@@ -721,7 +362,6 @@ if (outcomes[0]) {
 
 let lastLight: LightName | null = null;
 let lastHeroP = -1;
-let lastIntro = -1;
 gsap.ticker.add(() => {
   // Reads first, all of them, so no write below forces a layout in between.
   const h = onScreen(hero);
@@ -737,10 +377,9 @@ gsap.ticker.add(() => {
     : [];
 
   // Then writes.
-  if (h > 0 && (heroP !== lastHeroP || intro.t !== lastIntro)) {
+  if (h > 0 && heroP !== lastHeroP) {
     playBeats(heroP);
     lastHeroP = heroP;
-    lastIntro = intro.t;
   }
   lit.forEach((v, i) => v && outcomes[i]!.style.setProperty("--lit", v));
 
@@ -750,7 +389,7 @@ gsap.ticker.add(() => {
   if (heroLeads && heroFrames) {
     heroFrames.render(heroP);
     heroFrames.setResting(heroP < 0.004);
-    const white = heroPath(heroP, innerWidth / innerHeight).white;
+    const white = heroWhite(heroP);
     heroMedia!.style.setProperty("--flood", Math.min(1, white * 1.4).toFixed(3));
     heroMedia!.style.setProperty("--reach", (white * 160).toFixed(1));
   } else heroFrames?.setResting(false);
@@ -763,7 +402,7 @@ gsap.ticker.add(() => {
   let light: LightName;
   if (l >= f) {
     view = lightView(lightP);
-    light = pickedLight ?? LIGHT_ORDER[Math.min(LIGHT_ORDER.length - 1, Math.floor(lightP * LIGHT_ORDER.length))]!;
+    light = stageLight;
   } else {
     view = finaleView(finaleP);
     light = "rest";
@@ -785,8 +424,6 @@ gsap.ticker.add(() => {
   }
 });
 
-
-
 // MARK: Buttons
 
 // The light pills lean toward the pointer a little.
@@ -800,11 +437,4 @@ if (finePointer && !reduced) {
     });
     b.addEventListener("pointerleave", () => gsap.to(b, { x: 0, y: 0, duration: 0.7, ease: "elastic.out(1, 0.5)" }));
   }
-}
-
-// MARK: Download
-
-// The light comes to rest as the download starts, the way it does when a session is done.
-for (const link of $$<HTMLAnchorElement>("[data-download]")) {
-  link.addEventListener("click", () => scene?.setLight("rest", 0.4));
 }

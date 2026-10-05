@@ -1,0 +1,64 @@
+---
+// The launch film rig, served by `astro dev` only (astro.config.mjs): every feature, one shot
+// each (shots/), cut to a 120 BPM grid by launch.ts, which also reports the cues its score is
+// built from. Drawn at a fixed 1920 × 1080, in pixels; the shots share launch.css.
+import RigLayout from "./RigLayout.astro";
+import Ask from "./shots/Ask.astro";
+import Board from "./shots/Board.astro";
+import Calibrate from "./shots/Calibrate.astro";
+import Chapter from "./shots/Chapter.astro";
+import Depth from "./shots/Depth.astro";
+import End from "./shots/End.astro";
+import Gates from "./shots/Gates.astro";
+import Health from "./shots/Health.astro";
+import Light from "./shots/Light.astro";
+import Logs from "./shots/Logs.astro";
+import More from "./shots/More.astro";
+import Noise from "./shots/Noise.astro";
+import Notch from "./shots/Notch.astro";
+import Outcomes from "./shots/Outcomes.astro";
+import Pipe from "./shots/Pipe.astro";
+import Safety from "./shots/Safety.astro";
+import Session from "./shots/Session.astro";
+import Settings from "./shots/Settings.astro";
+import Team from "./shots/Team.astro";
+import Title from "./shots/Title.astro";
+import Triage from "./shots/Triage.astro";
+import Turn from "./shots/Turn.astro";
+import Watch from "./shots/Watch.astro";
+import "./launch.css";
+---
+
+<!-- Shots stack in this order, which shows where one leaves over another; launch.ts plays them
+     in its own. -->
+<RigLayout title="launch film" rig="launch">
+  <Noise />
+  <Turn />
+  <Title />
+  <Chapter shot="ch-triage" kick="01 · Triage">One question<br />for every message.</Chapter>
+  <Chapter shot="ch-agents" kick="02 · Agents">Agents take it<br /><span class="dim">all the way.</span></Chapter>
+  <Chapter shot="ch-watch" kick="03 · Watch">It watches prod.<br /><span class="dim">Even when Slack is quiet.</span></Chapter>
+  <Triage />
+  <Depth />
+  <Calibrate />
+  <Pipe />
+  <Notch />
+  <Gates />
+  <Ask />
+  <Watch />
+  <Logs />
+  <Health />
+  <Team />
+  <Safety />
+  <Outcomes />
+  <Light />
+  <Session />
+  <Board />
+  <Settings />
+  <More />
+  <End />
+
+  <script>
+    import "./launch";
+  </script>
+</RigLayout>

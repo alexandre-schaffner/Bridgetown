@@ -11,8 +11,8 @@ import Icon from "./Icon.astro";
       <span class="half right" data-half="right">working.</span>
     </h2>
 
-    <figure class="clip" data-clip>
-      <div class="frame" data-clip-frame>
+    <figure class="clip">
+      <div class="frame">
         <video
           data-clip-video
           muted
@@ -29,20 +29,72 @@ import Icon from "./Icon.astro";
           <span class="play"><Icon name="play" size={14} stroke={2.2} /></span>
         </button>
       </div>
-      <figcaption class="caption" data-clip-caption>
+      <figcaption class="caption">
         <p>
           Twenty seconds of a morning, recorded: tests run, a merge becomes yours, you settle it from the notch, and the
           terminal never loses focus.
         </p>
-        <button class="film-link" type="button" data-open-film="keynote">
+        <a class="film-link" href="/media/keynote.mp4" data-open-film>
           <span class="disc"><Icon name="play" size={12} stroke={2.4} /></span>
           Watch the keynote
           <span class="faint">1:13</span>
-        </button>
+        </a>
       </figcaption>
     </figure>
   </div>
 </section>
+
+<script>
+  import { $, $$ } from "../lib/dom";
+  import { clamp, inOut, lerp, smooth } from "../lib/math";
+  import { reduced, ScrollTrigger } from "../scripts/scroll";
+
+  // The clip grows from between the two halves of its line to fill the screen, and plays
+  // only while you can see it.
+  const recording = $("[data-recording]");
+  if (recording) {
+    const video = $<HTMLVideoElement>("[data-clip-video]", recording)!;
+    const toggle = $<HTMLButtonElement>("[data-clip-toggle]", recording)!;
+    let userPaused = reduced;
+    const setPaused = (paused: boolean) => {
+      toggle.classList.toggle("paused", paused);
+      toggle.setAttribute("aria-label", paused ? "Play the recording" : "Pause the recording");
+    };
+    setPaused(userPaused);
+    toggle.addEventListener("click", () => {
+      userPaused = !video.paused;
+      if (userPaused) video.pause();
+      else void video.play();
+      setPaused(userPaused);
+    });
+    new IntersectionObserver(
+      ([e]) => {
+        if (e!.isIntersecting && !userPaused) void video.play().catch(() => setPaused(true));
+        else video.pause();
+      },
+      { threshold: 0.25 },
+    ).observe(video);
+
+    if (!reduced) {
+      const halves = $$("[data-half]", recording);
+      ScrollTrigger.create({
+        trigger: recording,
+        start: "top bottom",
+        end: "bottom bottom",
+        onUpdate: (s) => {
+          // The first stretch is the approach; the pin starts once the section reaches the top.
+          const total = recording.offsetHeight;
+          const y = s.progress * total;
+          const p = clamp((y - innerHeight * 0.75) / (total - innerHeight * 1.2));
+          const grow = inOut(clamp(p / 0.8));
+          recording.style.setProperty("--grow", lerp(0.34, 1, grow).toFixed(4));
+          recording.style.setProperty("--caption", smooth(0.75, 0.95, p).toFixed(3));
+          halves.forEach((h) => (h.style.opacity = (1 - smooth(0.25, 0.65, p)).toFixed(3)));
+        },
+      });
+    }
+  }
+</script>
 
 <style>
   .recording {
@@ -115,9 +167,16 @@ import Icon from "./Icon.astro";
     transition: opacity 300ms var(--ease-out);
   }
 
+  /* Where nothing hovers, the clip's only pause control stays in sight. */
   .frame:hover .toggle,
   .toggle:focus-visible {
     opacity: 1;
+  }
+
+  @media (hover: none) {
+    .toggle {
+      opacity: 1;
+    }
   }
 
   .toggle .play,
@@ -151,12 +210,10 @@ import Icon from "./Icon.astro";
     align-items: center;
     gap: 0.625rem;
     padding: 0.375rem 1rem 0.375rem 0.375rem;
-    border: 0;
     border-radius: 999px;
-    background: transparent;
     box-shadow: inset 0 0 0 1px var(--line-strong);
     font-weight: 520;
-    cursor: pointer;
+    text-decoration: none;
     transition: background-color 200ms var(--ease-out);
   }
 
@@ -180,75 +237,76 @@ import Icon from "./Icon.astro";
     font-weight: 400;
   }
 
-  /* With script, pinned while the clip grows; the line parts around it. */
-  :global(html.js) .recording {
-    height: 280svh;
-    padding: 0;
-  }
-
-  :global(html.js) .pin {
-    /* The clip at full size; the line is sized so both halves fit beside it at its smallest. */
-    --clip-w: min(100cqw - 2 * var(--gutter), 96rem, (100svh - 12rem) * 1600 / 996);
-    position: sticky;
-    top: 0;
-    height: 100svh;
-    align-content: center;
-    width: 100%;
-    overflow: hidden;
-    container-type: inline-size;
-  }
-
-  /* Each half hugs the clip's edge, a little apart from it, and is pushed out as it grows. */
-  :global(html.js) .line {
-    position: absolute;
-    inset: 0;
-    align-items: center;
-    flex-wrap: nowrap;
-    gap: 0;
-    font-size: min(var(--t-h1), (50cqw - var(--gutter) - var(--clip-w) * 0.17) / 4.3);
-    pointer-events: none;
-  }
-
-  :global(html.js) .half {
-    flex: 1 1 0;
-  }
-
-  :global(html.js) .half.left {
-    text-align: right;
-    translate: calc(-1 * (var(--clip-w) * var(--grow, 0.34) / 2 + 0.3em)) 0;
-  }
-
-  :global(html.js) .half.right {
-    text-align: left;
-    translate: calc(var(--clip-w) * var(--grow, 0.34) / 2 + 0.3em) 0;
-  }
-
-  :global(html.js) .clip {
-    width: var(--clip-w);
-    transform: scale(var(--grow, 0.34));
-    transform-origin: 50% 50%;
-  }
-
-  :global(html.js) .caption {
-    opacity: var(--caption, 0);
-    translate: 0 calc((1 - var(--caption, 0)) * 1rem);
-  }
-
-  @media (max-width: 760px) {
-    :global(html.js) .line {
-      flex-direction: column;
-      justify-content: space-between;
-      padding-block: 18svh;
+  /* With script, pinned while the clip grows; the line parts around it. Under Reduce Motion
+     nothing grows, and the chapter keeps the plain layout above. */
+  @media (prefers-reduced-motion: no-preference) {
+    :global(html.js) .recording {
+      height: 280svh;
+      padding: 0;
     }
-    :global(html.js) .line {
-      font-size: var(--t-h1);
+
+    :global(html.js) .pin {
+      /* The clip at full size; the line is sized so both halves fit beside it at its smallest. */
+      --clip-w: min(100cqw - 2 * var(--gutter), 96rem, (100svh - 12rem) * 1600 / 996);
+      position: sticky;
+      top: 0;
+      height: 100svh;
+      align-content: center;
+      width: 100%;
+      overflow: hidden;
+      container-type: inline-size;
     }
+
+    /* Each half hugs the clip's edge, a little apart from it, and is pushed out as it grows. */
+    :global(html.js) .line {
+      position: absolute;
+      inset: 0;
+      align-items: center;
+      flex-wrap: nowrap;
+      gap: 0;
+      font-size: min(var(--t-h1), (50cqw - var(--gutter) - var(--clip-w) * 0.17) / 4.3);
+      pointer-events: none;
+    }
+
     :global(html.js) .half {
-      flex: none;
+      flex: 1 1 0;
     }
-    :global(html.js) .half.left,
+
+    :global(html.js) .half.left {
+      text-align: right;
+      translate: calc(-1 * (var(--clip-w) * var(--grow, 0.34) / 2 + 0.3em)) 0;
+    }
+
     :global(html.js) .half.right {
-      translate: 0 0;
+      text-align: left;
+      translate: calc(var(--clip-w) * var(--grow, 0.34) / 2 + 0.3em) 0;
+    }
+
+    :global(html.js) .clip {
+      width: var(--clip-w);
+      transform: scale(var(--grow, 0.34));
+      transform-origin: 50% 50%;
+    }
+
+    :global(html.js) .caption {
+      opacity: var(--caption, 0);
+      translate: 0 calc((1 - var(--caption, 0)) * 1rem);
+    }
+
+    @media (max-width: 760px) {
+      :global(html.js) .line {
+        flex-direction: column;
+        justify-content: space-between;
+        padding-block: 18svh;
+        font-size: var(--t-h1);
+      }
+      :global(html.js) .half {
+        flex: none;
+      }
+      :global(html.js) .half.left,
+      :global(html.js) .half.right {
+        translate: 0 0;
+      }
     }
   }
 </style>
