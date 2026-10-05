@@ -1,11 +1,14 @@
 ---
 // Day. The four ways a session ends, each a different fact that looks different. Words
-// brighten as they cross the middle of the screen.
+// brighten as they cross the middle of the screen. Each carries the app's glyph for it
+// (app/Sources/Bridgetown/Presentation.swift), so no two ends share a mark.
+import Icon from "./Icon.astro";
+
 const outcomes = [
-  { word: "Resolved", dot: "green", evidence: "Deployed api v1.35.12. The release tracker confirmed it at 10:31." },
-  { word: "Closed", dot: "grey", evidence: "Root cause not found. Nothing shipped, and the card says so." },
-  { word: "Failed", dot: "red", evidence: "e2e failed twice after the fix. Handed back to you with the logs." },
-  { word: "Stopped", dot: "grey", evidence: "You stopped it during Fix. Its worktree is kept for you." },
+  { word: "Resolved", glyph: "circle-check", tint: "green", evidence: "Deployed api v1.35.12. The release tracker confirmed it at 10:31." },
+  { word: "Closed", glyph: "circle-minus", tint: "grey", evidence: "Root cause not found. Nothing shipped, and the card says so." },
+  { word: "Failed", glyph: "octagon-x", tint: "red", evidence: "e2e failed twice after the fix. Handed back to you with the logs." },
+  { word: "Stopped", glyph: "circle-stop", tint: "faint", evidence: "You stopped it during Fix. Its worktree is kept for you." },
 ];
 ---
 
@@ -24,7 +27,7 @@ const outcomes = [
         outcomes.map((o) => (
           <li data-outcome>
             <span class="word">
-              <i class:list={["dot", `dot-${o.dot}`]} aria-hidden="true" />
+              <Icon name={o.glyph} size={24} stroke={2} class={`glyph ${o.tint}`} />
               {o.word}
             </span>
             <span class="evidence">{o.evidence}</span>
@@ -79,14 +82,28 @@ const outcomes = [
     letter-spacing: -0.04em;
   }
 
-  .word .dot {
-    width: clamp(0.75rem, 1.2vw, 1.125rem);
-    height: clamp(0.75rem, 1.2vw, 1.125rem);
+  .word :global(.glyph) {
+    flex: none;
+    width: clamp(1.25rem, 2vw, 1.875rem);
+    height: auto;
+    /* Optically on the word's x-height, not its cap height. */
+    translate: 0 0.04em;
   }
 
-  .dot-grey {
-    color: transparent;
-    box-shadow: inset 0 0 0 2px var(--ink-faint);
+  .word :global(.green) {
+    color: var(--green);
+  }
+
+  .word :global(.red) {
+    color: var(--red);
+  }
+
+  .word :global(.grey) {
+    color: var(--ink-dim);
+  }
+
+  .word :global(.faint) {
+    color: var(--ink-faint);
   }
 
   .evidence {

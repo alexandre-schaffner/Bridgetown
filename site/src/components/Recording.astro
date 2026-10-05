@@ -1,14 +1,15 @@
 ---
-// Day, first thing through the arch: twenty seconds of a morning, recorded. The clip starts
-// small between the two halves of the line and grows to fill the screen as you scroll.
+// Day, first thing through the arch: twenty seconds of a morning, recorded. The clip comes up
+// out of the hero's light, small between the two halves of the line, and grows to fill the
+// screen as you scroll.
 import Icon from "./Icon.astro";
 ---
 
 <section class="recording day" id="recording" data-recording aria-labelledby="recording-title">
   <div class="pin">
     <h2 id="recording-title" class="line">
-      <span class="half left" data-half="left">You keep</span>
-      <span class="half right" data-half="right">working.</span>
+      <span class="half left">You keep</span>
+      <span class="half right">working.</span>
     </h2>
 
     <figure class="clip" data-clip>
@@ -34,11 +35,6 @@ import Icon from "./Icon.astro";
           Twenty seconds of a morning, recorded: tests run, a merge becomes yours, you settle it from the notch, and the
           terminal never loses focus.
         </p>
-        <button class="film-link" type="button" data-open-film="keynote">
-          <span class="disc"><Icon name="play" size={12} stroke={2.4} /></span>
-          Watch the keynote
-          <span class="faint">1:13</span>
-        </button>
       </figcaption>
     </figure>
   </div>
@@ -120,6 +116,13 @@ import Icon from "./Icon.astro";
     opacity: 1;
   }
 
+  /* Without hover, there is no other way to find it. */
+  @media (hover: none) {
+    .toggle {
+      opacity: 1;
+    }
+  }
+
   .toggle .play,
   .toggle:global(.paused) .pause {
     display: none;
@@ -146,44 +149,22 @@ import Icon from "./Icon.astro";
     color: var(--ink-dim);
   }
 
-  .film-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.625rem;
-    padding: 0.375rem 1rem 0.375rem 0.375rem;
-    border: 0;
-    border-radius: 999px;
-    background: transparent;
-    box-shadow: inset 0 0 0 1px var(--line-strong);
-    font-weight: 520;
-    cursor: pointer;
-    transition: background-color 200ms var(--ease-out);
-  }
-
-  .film-link:hover {
-    background: var(--line);
-  }
-
-  .disc {
-    display: grid;
-    place-items: center;
-    width: 2rem;
-    height: 2rem;
-    border-radius: 50%;
-    background: var(--ink);
-    color: var(--day);
-  }
-
-  .faint {
-    color: var(--ink-faint);
-    font-variant-numeric: tabular-nums;
-    font-weight: 400;
-  }
-
-  /* With script, pinned while the clip grows; the line parts around it. */
+  /* With script, pinned while the clip grows; the line parts around it. Its first 160svh lie
+     over the end of the hero and are see-through, so the light you walk into is what the line
+     and the screen come out of (scripts/main.ts). The next chapter slides over its last 100svh. */
   :global(html.js) .recording {
-    height: 280svh;
+    --enter: 1;
+    height: 450svh;
+    margin-top: -160svh;
     padding: 0;
+    background: none;
+  }
+
+  :global(html.js) .recording::before {
+    content: "";
+    position: absolute;
+    inset: 160svh 0 0;
+    background: var(--day);
   }
 
   :global(html.js) .pin {
@@ -196,6 +177,7 @@ import Icon from "./Icon.astro";
     width: 100%;
     overflow: hidden;
     container-type: inline-size;
+    transform-origin: 50% 30%;
   }
 
   /* Each half hugs the clip's edge, a little apart from it, and is pushed out as it grows. */
@@ -211,22 +193,42 @@ import Icon from "./Icon.astro";
 
   :global(html.js) .half {
     flex: 1 1 0;
+    opacity: calc(var(--enter) * (1 - var(--out, 0)));
+    filter: blur(calc((1 - var(--enter)) * 14px));
   }
 
+  /* Out of the light, the halves part from the middle as the screen opens between them. */
   :global(html.js) .half.left {
     text-align: right;
-    translate: calc(-1 * (var(--clip-w) * var(--grow, 0.34) / 2 + 0.3em)) 0;
+    translate: calc(-1 * (var(--clip-w) * var(--grow, 0.34) / 2 + 0.3em) * (0.55 + 0.45 * var(--enter))) 0;
   }
 
   :global(html.js) .half.right {
     text-align: left;
-    translate: calc(var(--clip-w) * var(--grow, 0.34) / 2 + 0.3em) 0;
+    translate: calc((var(--clip-w) * var(--grow, 0.34) / 2 + 0.3em) * (0.55 + 0.45 * var(--enter))) 0;
   }
 
   :global(html.js) .clip {
     width: var(--clip-w);
-    transform: scale(var(--grow, 0.34));
+    opacity: var(--enter);
+    transform: scale(calc(var(--grow, 0.34) * (0.6 + 0.4 * var(--enter))));
     transform-origin: 50% 50%;
+  }
+
+  /* The screen develops out of the white. */
+  :global(html.js) .frame::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--day);
+    opacity: calc(1 - var(--enter));
+    pointer-events: none;
+  }
+
+  :global(html.js) .frame {
+    box-shadow:
+      0 1px 2px oklch(0.19 0.008 255 / calc(0.1 * var(--enter))),
+      0 50px 100px -50px oklch(0.19 0.008 255 / calc(0.55 * var(--enter)));
   }
 
   :global(html.js) .caption {

@@ -1,6 +1,8 @@
 ---
 // Day. Two things a team needs to trust it: one owner per alert, and agents that can't
 // reach anything they shouldn't. The second is a spec sheet, rules drawn in as it arrives.
+import Icon from "./Icon.astro";
+
 const rules = [
   {
     title: "No secrets in reach",
@@ -44,7 +46,7 @@ const rules = [
     </div>
     <div class="thread" aria-label="An alert thread in Slack, claimed by a teammate's Bridgetown">
       <div class="msg">
-        <span class="av bot" aria-hidden="true">M</span>
+        <span class="av bot" aria-hidden="true"><Icon name="activity" size={16} stroke={2} /></span>
         <div>
           <p><b>Monitor</b> <span class="faint">#alerts-api · 10:02</span></p>
           <p>5xx rate 3.1% on /v4/orders over 5 minutes</p>
@@ -104,9 +106,7 @@ const rules = [
     padding: 1.5rem;
     border-radius: 16px;
     background: var(--day);
-    box-shadow:
-      0 0 0 1px var(--line),
-      0 24px 48px -32px oklch(0.19 0.008 255 / 0.3);
+    box-shadow: 0 0 0 1px var(--line);
     font-size: 0.9375rem;
   }
 
