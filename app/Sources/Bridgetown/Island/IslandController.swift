@@ -2,7 +2,8 @@ import AppKit
 import Observation
 import SwiftUI
 
-/// Bridgetown in the notch: the app's only way in, there is no menu bar item.
+/// Bridgetown in the notch: there is no menu bar item, so the island is always there to
+/// click, and opening the app again opens it too (`AppDelegate`).
 ///
 /// A transparent panel above the menu bar holds the island (`IslandView`). It lets the
 /// pointer through everywhere but the island itself, so it never blocks the menu bar or
@@ -223,7 +224,7 @@ final class IslandController {
     /// yet; opening from here makes the first click count either way.
     private func pressed(_ event: NSEvent) {
         let point = NSEvent.mouseLocation
-        if model.presentation != .open, event.type == .leftMouseDown, model.isTarget, hitFrame.contains(point) {
+        if model.presentation != .open, event.type == .leftMouseDown, hitFrame.contains(point) {
             open()
             return
         }
@@ -248,7 +249,7 @@ final class IslandController {
         guard let panel, panel.isVisible else { return }
         let point = NSEvent.mouseLocation
         // The pointer can sit on the screen's top row, a hair above the frame's open edge.
-        let inside = model.isTarget && hitFrame.contains(point)
+        let inside = hitFrame.contains(point)
         panel.ignoresMouseEvents = !inside
         guard model.presentation != .open else { return }
         guard inside else {

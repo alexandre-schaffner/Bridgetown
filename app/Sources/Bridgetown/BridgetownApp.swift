@@ -78,6 +78,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
+    /// Opening Bridgetown again (Finder, Spotlight, `open -a`) unfolds the island: with no
+    /// Dock icon or menu bar item, that is the way in when you can't see where it hangs.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        island.open()
+        return false
+    }
+
     /// Route SIGTERM/SIGINT through `terminate` so the daemon child is cleaned up.
     private func installSignalHandlers() {
         for sig in [SIGTERM, SIGINT] {
