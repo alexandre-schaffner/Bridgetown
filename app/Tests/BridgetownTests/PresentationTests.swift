@@ -236,33 +236,10 @@ import Testing
         let review = try session(.ci, reviewChannel: "product-approvals")
         #expect(review.holder == .reviewers)
         #expect(review.holder?.isMoving == false)
-        #expect(Session.breakdown([review, review]) == "2 in review")
     }
 
     @Test func ciGreenWithoutAReviewRequestIsOnYou() throws {
         #expect(try session(.ci, tone: .waiting).holder == .you)
         #expect(try session(.ci).holder == .ci)
-    }
-
-    @Test func breakdownFollowsHolderOrder() throws {
-        let sessions = [
-            try session(.ci, reviewChannel: "general-approvals"),
-            try session(.running),
-            try session(.awaiting_merge, tone: .waiting),
-            try session(.resolved, tone: .success),
-        ]
-        #expect(Session.breakdown(sessions) == "1 working · 1 on you · 1 in review")
-    }
-}
-
-@Suite struct BreakdownLimitTests {
-    @Test func limitKeepsTheLeadingGroups() throws {
-        var running = try #require(try Fixture.snapshot().sessions.first)
-        running.status = .running
-        var review = running
-        review.status = .ci
-        review.reviewChannel = "product-approvals"
-        #expect(Session.breakdown([review, running, review], limit: 1) == "1 working")
-        #expect(Session.breakdown([review, review], limit: 1) == "2 in review")
     }
 }

@@ -24,6 +24,10 @@ final class IslandController {
     private var resignTask: Task<Void, Never>?
     private var hoverTask: Task<Void, Never>?
 
+    /// Pointer onto the island, then a click: the hover tap and the open tap within this
+    /// are one gesture (measured 260–370ms apart), so the open one is dropped.
+    private static let hoverToClick: TimeInterval = 0.8
+
     #if DEBUG
     /// Set before `start()` by an e2e run, which renders the island itself (`E2ESurfaces`):
     /// no panel at the notch, so no event monitors, no observers, never key. The model is
@@ -96,7 +100,9 @@ final class IslandController {
             model.presentation = .open
             model.hovering = false
         }
-        Haptics.perform(.levelChange, "island.open")
+        // The hover tap plays 90ms after the pointer arrives; a click that follows it is
+        // the same reach for the island, so it doesn't tap again.
+        Haptics.perform(.levelChange, "island.open", gap: Self.hoverToClick)
         panel?.keyable = true
         panel?.makeKey()
         trackPointer()

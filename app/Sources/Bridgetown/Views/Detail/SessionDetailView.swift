@@ -8,7 +8,6 @@ struct SessionDetailView: View {
     @ViewState private var message = ""
     @ViewState private var confirmingStop = false
 
-    private var alert: AlertView? { store.snapshot?.alert(id: session.alertId) }
     /// The card this session has in "Needs you": its next step, offered here too.
     private var action: Action? { store.snapshot?.actions.first { $0.sessionId == session.id } }
 
@@ -30,16 +29,6 @@ struct SessionDetailView: View {
                         ActionCard(action: action)
                     }
                     GrafanaSection(alertId: session.alertId)
-                    if let jev = alert?.triage.jev {
-                        DetailSection(title: "Jev verdict") { JevScores(jev: jev).bleedInset() }
-                    } else if let alert {
-                        DetailSection(title: "Triage") {
-                            Text(alert.triage.reason)
-                                .font(.geist(13))
-                                .foregroundStyle(.secondary)
-                                .bleedInset()
-                        }
-                    }
                     let diagnosis = session.diagnosis.flatMap { $0.isEmpty ? nil : $0 }
                     if diagnosis != nil || session.rootCauseFound == false {
                         DetailSection(title: "Diagnosis") {

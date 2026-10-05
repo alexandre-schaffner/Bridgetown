@@ -1,28 +1,31 @@
 import SwiftUI
 
 /// The island open: the whole app laid out wide under the notch, in three columns you read
-/// left to right. Status and prod; what needs you; what the agents are doing and what came
-/// in. A session or alert opens in place of the last two, the status column staying put.
+/// left to right. Prod; what needs you; what the agents are doing and what came in. A
+/// session or alert opens in place of the last two, the prod column staying put.
 ///
 /// The notch's own band keeps the wings from the resting island, so opening reads as the
-/// same object unfolding.
+/// same object unfolding. Beside them, the app's status line and its menu.
 struct IslandOpenView: View {
     @Environment(Store.self) private var store
     let model: IslandModel
 
-    /// The status column: the header, the stats and the prod board.
-    static let statusWidth: CGFloat = 380
+    /// The prod column: what's wrong, if anything, then the prod board.
+    static let prodWidth: CGFloat = 380
+    /// The status line's inset from the band's left edge, and its gap before the wings.
+    private static let bandInset: CGFloat = 16
+    private static let wingGap: CGFloat = 8
 
     var body: some View {
         let geometry = model.geometry
-        VStack(spacing: 0) {
-            band(notch: geometry.notch)
-            Hairline()
-            // Only schedules the redraw: the time itself is the app's clock.
-            TimelineView(.periodic(from: .now, by: 30)) { _ in
+        // Only schedules the redraw: the time itself is the app's clock.
+        TimelineView(.periodic(from: .now, by: 30)) { _ in
+            VStack(spacing: 0) {
+                band(geometry, now: AppClock.now)
+                Hairline()
                 HStack(alignment: .top, spacing: 0) {
                     status(now: AppClock.now)
-                        .frame(width: Self.statusWidth)
+                        .frame(width: Self.prodWidth)
                     Hairline(vertical: true)
                     main(now: AppClock.now)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -34,35 +37,32 @@ struct IslandOpenView: View {
         .stage()
     }
 
-    private func band(notch: CGSize) -> some View {
-        ZStack {
+    private func band(_ geometry: NotchGeometry, now: Date) -> some View {
+        let notch = geometry.notch
+        // The wings sit centred; the status line stops short of the left one.
+        let beside = (geometry.openWidth - notch.width) / 2 - IslandModel.wing
+        return ZStack {
             GlanceWings(glance: model.glance, notch: notch, hovering: false)
-            HStack {
-                Spacer(minLength: 0)
-                FooterView()
-            }
+            HeaderView(now: now, room: beside - Self.bandInset - Self.wingGap)
+                .padding(.leading, Self.bandInset)
+                .padding(.trailing, 10)
         }
         .frame(height: notch.height)
     }
 
     private func status(now: Date) -> some View {
-        VStack(spacing: 0) {
-            HeaderView(now: now)
-            Hairline()
-            PaneScrollView {
-                Group {
-                    if let snap = store.snapshot {
-                        TelemetryPanel(snapshot: snap, now: now)
-                    } else {
-                        ConnectingState()
-                    }
+        PaneScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                ProblemList()
+                // Before the first snapshot the main column says what's happening.
+                if store.snapshot != nil {
+                    TelemetryPanel(now: now)
                 }
-                // Bottom only: the stats sit straight under the header, and they and the
-                // charts run to the column's edges.
-                .padding(.bottom, Metrics.inset)
             }
-            .accessibilityIdentifier("pane.status")
+            // Vertical only: the charts run to the column's edges.
+            .padding(.vertical, Metrics.inset)
         }
+        .accessibilityIdentifier("pane.status")
     }
 
     private func main(now: Date) -> some View {
@@ -102,9 +102,7 @@ struct IslandOpenView: View {
                             } else {
                                 AgentsSection(running: running, now: now)
                             }
-                            if !snap.alerts.isEmpty {
-                                RecentSection(snapshot: snap, now: now)
-                            }
+                            RecentSection(snapshot: snap, now: now)
                         }
                         .padding(.vertical, Metrics.inset)
                     }

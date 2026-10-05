@@ -11,9 +11,9 @@ import OSLog
 /// - `.generic`: you moved somewhere, into a session or back out.
 /// - `.levelChange`: the island opening under your click.
 ///
-/// One gesture, one tap: a second one within `minimumGap` (hovering the island and
-/// pressing it at once, a click that both selects and navigates) is dropped, since two
-/// taps that close together feel like a stutter, not two events.
+/// One gesture, one tap: a second one within `minimumGap` (a click that both selects and
+/// navigates) is dropped, since two taps that close together feel like a stutter, not two
+/// events. A call can ask for a wider gap when what came before is likely the same gesture.
 @MainActor
 enum Haptics {
     private static let log = Logger(subsystem: "xyz.merkl.bridgetown", category: "haptics")
@@ -26,12 +26,17 @@ enum Haptics {
     #endif
 
     /// `source` names the call site in the log (`log stream --predicate 'category == "haptics"'`).
-    static func perform(_ pattern: NSHapticFeedbackManager.FeedbackPattern, _ source: StaticString) {
+    /// `gap`: how long after the last tap this one is dropped.
+    static func perform(
+        _ pattern: NSHapticFeedbackManager.FeedbackPattern,
+        _ source: StaticString,
+        gap: TimeInterval = minimumGap
+    ) {
         #if DEBUG
         if muted { return }
         #endif
         let now = Date()
-        if let last, now.timeIntervalSince(last) < minimumGap {
+        if let last, now.timeIntervalSince(last) < gap {
             log.debug("\(source, privacy: .public) pattern=\(pattern.rawValue) dropped: too close to the last")
             return
         }
