@@ -163,7 +163,7 @@ struct AppMenu: View {
     }
 
     private func openLogs() {
-        SystemActions.openLogs(daemon.logURL)
+        SystemActions.openLogs(daemon.log)
     }
 }
 

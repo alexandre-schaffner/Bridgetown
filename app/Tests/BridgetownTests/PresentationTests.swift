@@ -141,8 +141,8 @@ import Testing
     }
 
     @MainActor @Test func theLogGoesToTheRunWhenItAsks() {
-        #expect(DaemonProcess(environment: ["BRIDGETOWN_LOG_DIR": "/tmp/run"]).logURL.path == "/tmp/run/daemon.log")
-        #expect(DaemonProcess(environment: [:]).logURL.path.hasSuffix("/Library/Logs/Bridgetown/daemon.log"))
+        #expect(DaemonProcess(environment: ["BRIDGETOWN_LOG_DIR": "/tmp/run"]).log.url.path == "/tmp/run/daemon.log")
+        #expect(DaemonProcess(environment: [:]).log.url.path.hasSuffix("/Library/Logs/Bridgetown/daemon.log"))
     }
 
     /// A real child (`sleep`), its log in a temp dir, the Keychain kept out of it.
@@ -235,9 +235,32 @@ import Testing
         daemon.start()
         #expect(daemon.state == .restarting(after: .seconds(1)))
         #expect(daemon.lastExit?.hasPrefix("couldn't launch") == true)
-        let log = try String(contentsOf: daemon.logURL, encoding: .utf8)
+        let log = try String(contentsOf: daemon.log.url, encoding: .utf8)
         #expect(log.contains("couldn't launch"))
         daemon.stop {}
+    }
+
+    /// Its output goes through the app to `daemon.log`, both streams.
+    @MainActor @Test func theDaemonsOutputReachesTheLog() async throws {
+        Keychain.inMemory = [:]
+        let logs = FileManager.default.temporaryDirectory.appending(path: "bt-daemon-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: logs) }
+        let daemon = DaemonProcess(environment: [
+            "BRIDGETOWN_DAEMON_CMD": "sh -c 'echo on stdout; echo on stderr >&2; exec sleep 30'", "BRIDGETOWN_LOG_DIR": logs.path,
+        ])
+        daemon.start()
+        var log = ""
+        // The launch line quotes the command; the output is what ends in a newline.
+        for _ in 0..<150 where !(log.contains("on stdout\n") && log.contains("on stderr\n")) {
+            try await Task.sleep(for: .milliseconds(20))
+            log = (try? String(contentsOf: daemon.log.url, encoding: .utf8)) ?? ""
+        }
+        #expect(log.contains("starting daemon"))
+        #expect(log.contains("on stdout\n"))
+        #expect(log.contains("on stderr\n"))
+        await withCheckedContinuation { done in
+            if !daemon.stop(completion: { done.resume() }) { done.resume() }
+        }
     }
 
     @Test func secretsLineIsOneJSONObject() throws {

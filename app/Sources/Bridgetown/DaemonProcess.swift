@@ -3,8 +3,8 @@ import Observation
 import Security
 
 /// Owns the daemon child process: resolves what to run, spawns it with the API token and
-/// secrets on its stdin (docs/API.md "Launch"), pipes output to `logURL`, restarts it with
-/// backoff when it dies, and terminates it on quit.
+/// secrets on its stdin (docs/API.md "Launch"), relays its output to `log`, restarts it
+/// with backoff when it dies, and terminates it on quit.
 ///
 /// The stdin pipe stays open for the daemon's lifetime. The daemon exits when it closes,
 /// so it never outlives the app, even after a crash.
@@ -54,7 +54,7 @@ final class DaemonProcess {
     let endpoint: DaemonEndpoint
     /// The child's stdout and stderr: `daemon.log` in ~/Library/Logs/Bridgetown, or in
     /// `BRIDGETOWN_LOG_DIR` (an e2e run keeps it with its shots).
-    let logURL: URL
+    let log: LogFile
     private(set) var state: State = .idle
     /// How the last run ended on its own ("exit 1", "signal 9"), or why it couldn't launch.
     private(set) var lastExit: String?
@@ -90,8 +90,8 @@ final class DaemonProcess {
         mode = Self.mode(environment: env, bundled: bundled)
 
         let logDir = env["BRIDGETOWN_LOG_DIR"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
-        logURL = (logDir ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Logs/Bridgetown"))
-            .appending(path: "daemon.log")
+        log = LogFile(url: (logDir ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Logs/Bridgetown"))
+            .appending(path: "daemon.log"))
 
         let token = mode == .attach ? (env["BRIDGETOWN_API_TOKEN"] ?? "") : Self.randomToken()
         endpoint = DaemonEndpoint(port: port, token: token)
@@ -186,12 +186,18 @@ final class DaemonProcess {
         #endif
         p.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
 
-        let log = openLog()
-        if let log {
-            let header = "\n--- \(Date().formatted(.iso8601)) starting daemon (\(describe(mode))) on port \(endpoint.port) ---\n"
-            log.write(Data(header.utf8))
-            p.standardOutput = log
-            p.standardError = log
+        log.append("\n--- \(Date().formatted(.iso8601)) starting daemon (\(describe(mode))) on port \(endpoint.port) ---\n")
+        // Through us rather than straight to the file, so the log can be rotated under a
+        // daemon that runs for weeks.
+        let output = Pipe()
+        p.standardOutput = output
+        p.standardError = output
+        output.fileHandleForReading.readabilityHandler = { [log] handle in
+            let data = handle.availableData
+            guard data.isEmpty else { return log.append(data) }
+            // End of file: the daemon, and anything it started that kept its output, is gone.
+            handle.readabilityHandler = nil
+            try? handle.close()
         }
         let input = Pipe()
         p.standardInput = input
@@ -208,16 +214,17 @@ final class DaemonProcess {
         do {
             try p.run()
         } catch {
-            try? log?.close()
+            output.fileHandleForReading.readabilityHandler = nil
             let why = "couldn't launch: \(error.userMessage)"
-            appendLog("--- \(why) ---\n")
+            log.append("--- \(why) ---\n")
             lastExit = why
             scheduleRestart()
             return
         }
-        // The child has its own copies of the log and of stdin's read end; ours would
-        // leak an fd per restart. (Closing a handle Process already closed is a no-op.)
-        try? log?.close()
+        // The child has its own copies of the output's write end and of stdin's read end:
+        // ours would leak an fd per restart, and the output would never reach its end.
+        // (Closing a handle Process already closed is a no-op.)
+        try? output.fileHandleForWriting.close()
         try? input.fileHandleForReading.close()
         process = p
         stdin = input.fileHandleForWriting
@@ -233,7 +240,7 @@ final class DaemonProcess {
             try input.fileHandleForWriting.write(contentsOf: secrets.line())
         } catch {
             // It died before reading; the termination handler restarts it.
-            appendLog("--- couldn't send secrets to the daemon: \(error.userMessage) ---\n")
+            log.append("--- couldn't send secrets to the daemon: \(error.userMessage) ---\n")
         }
     }
 
@@ -248,7 +255,7 @@ final class DaemonProcess {
         killTask?.cancel()
         closeStdin()
         let how = reason == .uncaughtSignal ? "signal \(status)" : "exit \(status)"
-        appendLog("--- daemon stopped (\(how)) ---\n")
+        log.append("--- daemon stopped (\(how)) ---\n")
         let then = self.then
         self.then = nil
         switch then {
@@ -332,30 +339,4 @@ final class DaemonProcess {
         try? stdin?.write(contentsOf: Data((line + "\n").utf8))
     }
     #endif
-
-    // MARK: Log file
-
-    private func openLog() -> FileHandle? {
-        let fm = FileManager.default
-        let dir = logURL.deletingLastPathComponent()
-        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        // Keep one previous log once the current one passes 10 MB.
-        if let size = (try? fm.attributesOfItem(atPath: logURL.path))?[.size] as? Int, size > 10_000_000 {
-            let old = logURL.appendingPathExtension("1")
-            try? fm.removeItem(at: old)
-            try? fm.moveItem(at: logURL, to: old)
-        }
-        if !fm.fileExists(atPath: logURL.path) {
-            fm.createFile(atPath: logURL.path, contents: nil)
-        }
-        guard let handle = try? FileHandle(forWritingTo: logURL) else { return nil }
-        _ = try? handle.seekToEnd()
-        return handle
-    }
-
-    private func appendLog(_ line: String) {
-        guard let h = openLog() else { return }
-        h.write(Data(line.utf8))
-        try? h.close()
-    }
 }

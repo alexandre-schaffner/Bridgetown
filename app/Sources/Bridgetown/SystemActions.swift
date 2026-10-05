@@ -41,17 +41,13 @@ enum SystemActions {
         return .handled
     }
 
-    /// The daemon's log (`DaemonProcess.logURL`) in Console, created if it isn't there yet.
-    static func openLogs(_ url: URL) {
+    /// The daemon's log in Console, created if it isn't there yet.
+    static func openLogs(_ log: LogFile) {
         #if DEBUG
-        if let sink { return sink(.openLogs, url.path) }
+        if let sink { return sink(.openLogs, log.url.path) }
         #endif
-        let fm = FileManager.default
-        if !fm.fileExists(atPath: url.path) {
-            try? fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            fm.createFile(atPath: url.path, contents: nil)
-        }
-        NSWorkspace.shared.open(url)
+        log.create()
+        NSWorkspace.shared.open(log.url)
     }
 
     /// The app forward, then its Settings window (SwiftUI's `openSettings`).
