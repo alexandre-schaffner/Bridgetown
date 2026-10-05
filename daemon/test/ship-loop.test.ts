@@ -14,9 +14,9 @@ const PR = "https://ghe/pull/3345"
 const green = [{ name: "lint", status: "COMPLETED", conclusion: "SUCCESS" }]
 const red = [{ name: "lint", status: "COMPLETED", conclusion: "FAILURE", detailsUrl: "https://x/1" }]
 
-/** GitHub as the test sets it: the PR's state, and a tag lookup that waits for `tagLookup` when given. */
+/** GitHub as the test sets it: the PR's state, and a tag lookup that waits for `tagLookup` when given. Counts the merges and lookups. */
 const fakeGitHub = (pr: { current: Partial<PullRequest> }, tagLookup?: Deferred.Deferred<void>) => {
-  const calls = { merge: 0 }
+  const calls = { merge: 0, nextTag: 0 }
   const github: GitHubShape = {
     viewPr: (url) =>
       Effect.sync(() => ({
@@ -25,7 +25,11 @@ const fakeGitHub = (pr: { current: Partial<PullRequest> }, tagLookup?: Deferred.
       })),
     mergePr: () => Effect.sync(() => void calls.merge++),
     rerunFailedJobs: () => Effect.void,
-    nextPatchTag: (_repo, prefix) => (tagLookup === undefined ? Effect.void : Deferred.await(tagLookup)).pipe(Effect.as(`${prefix}-v2.15.1`)),
+    nextPatchTag: (_repo, prefix) =>
+      Effect.sync(() => void calls.nextTag++).pipe(
+        Effect.andThen(tagLookup === undefined ? Effect.void : Deferred.await(tagLookup)),
+        Effect.as(`${prefix}-v2.15.1`),
+      ),
     tagExists: () => Effect.succeed(false),
     createRelease: () => Effect.void,
     branchHead: () => Effect.succeed(null),
@@ -147,7 +151,8 @@ describe("the merge is recorded once", () => {
           yield* seed(shipping("awaiting_merge"), [mergeCard()])
           const click = yield* (yield* Actions).resolve("a_merge", null).pipe(Effect.forkChild)
           const tick = yield* (yield* Shipper).tick.pipe(Effect.forkChild)
-          yield* Effect.sleep("20 millis")
+          // Both saw the merge and are looking up the tag: the moment the guard is for.
+          while (calls.nextTag < 2) yield* Effect.sleep("5 millis")
           yield* Deferred.succeed(lookup, undefined)
           yield* Fiber.join(click)
           yield* Fiber.join(tick)
