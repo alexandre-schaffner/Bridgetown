@@ -5,9 +5,6 @@ import { type Action, RETRY, type Session } from "../domain/model.ts"
 import { Hub } from "../hub.ts"
 import { Store } from "../store/store.ts"
 
-/** The mock daemon's fixtures still import it from here. */
-export { RETRY }
-
 export type NewAction = Omit<Action, "id" | "createdAt" | "url"> & { readonly url?: string | null }
 
 /** "Needs you": every card goes in and out through here, so each kind is shaped (and deduped) the same way. */

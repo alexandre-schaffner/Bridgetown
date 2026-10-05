@@ -1,6 +1,5 @@
-import { RETRY } from "../../src/actions/queue.ts"
 import { DEFAULT_CHANNELS, DEFAULT_SETTINGS } from "../../src/config.ts"
-import { type Action, type Alert, type AlertFields, type AlertSource, type Channel, type Disposition, NO_MILESTONES, type Session, type Settings, type TranscriptEntry, type Triage, triageEvent, WATCH_CHANNEL } from "../../src/domain/model.ts"
+import { type Action, type Alert, type AlertFields, type AlertSource, type Channel, type Disposition, NO_MILESTONES, RETRY, type Session, type Settings, type TranscriptEntry, type Triage, triageEvent, WATCH_CHANNEL } from "../../src/domain/model.ts"
 import { newSession } from "../../src/sessions/new-session.ts"
 import { sessionEndEvent } from "../../src/sessions/repo.ts"
 import { releaseDetail } from "../../src/ship/cards.ts"
