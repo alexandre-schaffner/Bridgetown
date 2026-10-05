@@ -53,8 +53,9 @@ env BRIDGETOWN_DAEMON_CMD="bun $ROOT/daemon/scripts/mock/main.ts" BRIDGETOWN_POR
   ${ONLY:+--e2e-only "$ONLY"} ${BASELINE:+--e2e-baseline "$BASELINE"} ${SERVE:+--e2e-serve} \
   2>"$RUN/app.log" || status=$?
 
-# The newest five runs stay.
-ls -1d "$E2E"/2*/ 2>/dev/null | sort -r | tail -n +6 | while read -r old; do rm -rf "$old"; done
+# The newest five app runs stay. A run is the app's when it has app.log: make e2e-site keeps
+# its own five, as <run>/site/, in the same directory.
+ls -1 "$E2E"/2*/app.log 2>/dev/null | sed 's#/app.log$##' | sort -r | tail -n +6 | while read -r old; do rm -rf "$old"; done
 echo "e2e: $RUN/index.md (exit $status)"
 sed -n 3p "$RUN/index.md" 2>/dev/null || true
 exit "$status"
