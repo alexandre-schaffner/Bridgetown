@@ -10,7 +10,7 @@ Claude investigates. Codex reviews. You make the call.
 
 </div>
 
-![Bridgetown overview in a MacBook mockup, showing production signals, decisions waiting on you, and active agents](docs/images/bridgetown-overview.png)
+![Bridgetown overview showing production signals, decisions waiting on you, and active agents](docs/images/bridgetown-overview.png)
 
 Bridgetown is a macOS notch app. It watches Slack alerts, mentions, and DMs, gives the work an agent can handle to Claude, and brings the decisions that need you to the surface. Agents investigate in separate worktrees, prepare fixes, and follow them through review, CI, and deployment. You approve merges, releases, and replies.
 
@@ -44,9 +44,9 @@ Slack alerts + mentions + DMs     Grafana metrics + logs
 
 Codex reviews the fix before the PR leaves draft. Blocking findings return to the same Claude session for a fix or an evidence-backed rebuttal. The app keeps resolved, closed without a fix, failed, and stopped sessions distinct.
 
-![Bridgetown session in a MacBook mockup, with a reviewed pull request ready to merge and production charts beside it](docs/images/bridgetown-session.png)
+![Bridgetown session with a reviewed pull request ready to merge and production charts beside it](docs/images/bridgetown-session.png)
 
-<sub>Both app captures use local demo data. The MacBook frames are generated mockups.</sub>
+<sub>Screenshots from the running SwiftUI app with local demo data.</sub>
 
 ## Try it locally
 
