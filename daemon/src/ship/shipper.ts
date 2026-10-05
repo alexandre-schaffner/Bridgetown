@@ -269,7 +269,7 @@ export const ShipperLive = Layer.effect(Shipper)(
           case "Unchanged":
             continue
           case "Failed":
-            yield* escalate(session, step.escalation, deployFailedPrompt(alert, session.branch ?? "fix-bt"), "deploy", { deployStage: state, tracker: alert.id })
+            yield* escalate(session, step.escalation, deployFailedPrompt(alert, session), "deploy", { deployStage: state, tracker: alert.id })
             continue
           case "Deployed":
             yield* finishDeploy(session, alert)

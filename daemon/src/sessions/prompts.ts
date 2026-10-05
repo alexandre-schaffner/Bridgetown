@@ -1,5 +1,5 @@
 import { GH_HOST } from "../config.ts"
-import { type Alert, type AlertKind, channelLabel } from "../domain/model.ts"
+import { type Alert, type AlertKind, channelLabel, type Session } from "../domain/model.ts"
 import type { SessionResult } from "./output.ts"
 
 const playbooks = (deploymentRepo: string): Readonly<Record<AlertKind, string>> => ({
@@ -134,11 +134,25 @@ export const ciFailedPrompt = (failing: ReadonlyArray<{ readonly name: string; r
     "If the failure is unrelated to your change (flaky or infrastructure), do not change code; say so. Finish with the structured result again.",
   ].join("\n")
 
-export const deployFailedPrompt = (alert: Alert, branch: string): string =>
-  [
-    ...untrusted("Your fix was merged and released, but the deployment failed (untrusted tracker data):", JSON.stringify({ title: alert.title, fields: alert.fields, raw: alert.raw }, null, 2), "json"),
-    `Diagnose this new failure the same way. Your first PR is merged, so start a fresh branch: \`git fetch origin main && git checkout -b ${branch}-2 origin/main\`, then open a follow-up PR (or recommend a revert). Finish with the structured result.`,
-  ].join("\n")
+/**
+ * The deploy the session follows failed. After its own release the fix is merged, so a follow-up PR starts from main;
+ * after the re-run it recommended, nothing of the agent's has shipped and the failure was not the flake it looked like.
+ */
+export const deployFailedPrompt = (alert: Alert, session: Pick<Session, "branch" | "milestones">): string => {
+  const tracker = JSON.stringify({ title: alert.title, fields: alert.fields, raw: alert.raw }, null, 2)
+  const branch = session.branch ?? "fix-bt"
+  return (
+    session.milestones.merged
+      ? [
+          ...untrusted("Your fix was merged and released, but the deployment failed (untrusted tracker data):", tracker, "json"),
+          `Diagnose this new failure the same way. Your first PR is merged, so start a fresh branch: \`git fetch origin main && git checkout -b ${branch}-2 origin/main\`, then open a follow-up PR (or recommend a revert). Finish with the structured result.`,
+        ]
+      : [
+          ...untrusted("The failed jobs were re-run as you recommended, and the deployment failed again (untrusted tracker data):", tracker, "json"),
+          `It may not be flaky after all. Diagnose it the same way, working on your branch \`${branch}\`: fix it with a PR, or recommend what a person should do. Finish with the structured result.`,
+        ]
+  ).join("\n")
+}
 
 export const reviewChangesPrompt = (reviewer: string, body: string): string =>
   [

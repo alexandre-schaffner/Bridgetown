@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { Alert } from "../src/domain/model.ts"
-import { followUpPrompt, inboxPrompt, slackContextText } from "../src/sessions/prompts.ts"
+import { type Alert, NO_MILESTONES } from "../src/domain/model.ts"
+import { deployFailedPrompt, followUpPrompt, inboxPrompt, slackContextText } from "../src/sessions/prompts.ts"
 
 const alert = { title: "t", raw: "please take a look", fields: { _tag: "inbox" as const, threadTs: null }, permalink: null } as unknown as Alert
 
@@ -34,5 +34,20 @@ describe("slack_context", () => {
       "Thread replies (1):\n- a reply\n\n#alert-dev within ±20 min (1):\n- a neighbour",
     )
     expect(slackContextText(finding, [], [], 20)).toContain("\nGrafana within ±20 min (0):")
+  })
+})
+
+describe("a failed deploy sent back", () => {
+  const tracker = { title: "merkl-admin v0.6.1 · Production deploy failed", fields: { _tag: "generic" }, raw: "" } as unknown as Alert
+  test("after the agent's own release: a follow-up PR from a fresh branch off main", () => {
+    const prompt = deployFailedPrompt(tracker, { branch: "fix-bt-admin-ab12", milestones: { ...NO_MILESTONES, merged: true, released: true } })
+    expect(prompt).toContain("Your fix was merged and released")
+    expect(prompt).toContain("git checkout -b fix-bt-admin-ab12-2 origin/main")
+  })
+  test("after the re-run it recommended: not the flake it looked like, and the work stays on its own branch", () => {
+    const prompt = deployFailedPrompt(tracker, { branch: "fix-bt-admin-ab12", milestones: NO_MILESTONES })
+    expect(prompt).toContain("The failed jobs were re-run as you recommended, and the deployment failed again")
+    expect(prompt).toContain("working on your branch `fix-bt-admin-ab12`")
+    expect(prompt).not.toContain("-2 origin/main")
   })
 })
