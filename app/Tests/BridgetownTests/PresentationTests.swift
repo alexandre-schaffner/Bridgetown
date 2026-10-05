@@ -57,14 +57,8 @@ import Testing
 }
 
 @Suite struct HeaderProblemsTests {
-    private func problems(
-        connection: Store.Connection = .connected,
-        daemon: DaemonProcess.State = .running(pid: 1),
-        mode: DaemonProcess.Mode = .bundled(URL(fileURLWithPath: "/x")),
-        status: Status? = nil
-    ) -> [Problem] {
-        Problem.list(connection: connection, daemonState: daemon, daemonMode: mode, port: 47621,
-                     lastConnectError: nil, flash: nil, status: status)
+    private func problems(health: DaemonHealth = .connected, attached: Bool = false, status: Status? = nil) -> [Problem] {
+        Problem.list(health: health, attached: attached, port: 47621, flash: nil, status: status)
     }
 
     @Test func githubBlockedIsShown() throws {
@@ -75,25 +69,79 @@ import Testing
     }
 
     @Test func portInUseByAnotherDaemon() {
-        let lines = problems(connection: .rejected, daemon: .portInUse)
+        let lines = problems(health: .portInUse(byAnotherDaemon: true))
         #expect(lines.count == 1)
         #expect(lines[0].text.hasPrefix("Another Bridgetown daemon is running on port 47621"))
         #expect(lines[0].fix == .restartDaemon("Retry"))
     }
 
     @Test func portInUseBySomethingElse() {
-        let lines = problems(connection: .connecting, daemon: .portInUse)
+        let lines = problems(health: .portInUse(byAnotherDaemon: false))
         #expect(lines.first?.text.hasPrefix("Port 47621 is in use") == true)
     }
 
     @Test func rejectedTokenWhenAttached() {
-        let lines = problems(connection: .rejected, mode: .attach)
+        let lines = problems(health: .rejected, attached: true)
         #expect(lines.first?.text.contains("BRIDGETOWN_API_TOKEN") == true)
+    }
+
+    @Test func aDaemonThatKeepsStoppingPointsAtItsLog() {
+        let lines = problems(health: .keepsExiting("exit 1"))
+        #expect(lines.count == 1)
+        #expect(lines[0].text.contains("exit 1"))
+        #expect(lines[0].fix == .openLogs("Open logs"))
+    }
+
+    @Test func startingSaysNothingUnlessAttached() {
+        #expect(problems(health: .starting(lastError: "Daemon not reachable")).isEmpty)
+        #expect(problems(health: .restarting).isEmpty)
+        #expect(problems(health: .starting(lastError: "Daemon not reachable"), attached: true).first?.severity == .warning)
     }
 
     @Test func statusProblemsOnlyWhileConnected() throws {
         let status = try Fixture.snapshot().status
-        #expect(!problems(connection: .disconnected("gone"), status: status).contains { $0.id == "github" })
+        #expect(!problems(health: .disconnected("gone"), status: status).contains { $0.id == "github" })
+    }
+}
+
+@Suite struct DaemonHealthTests {
+    private let bundled = DaemonProcess.Mode.bundled(URL(fileURLWithPath: "/x"))
+
+    @Test func aDaemonStillStartingIsNotTrouble() {
+        let health = DaemonHealth(mode: bundled, state: .running(pid: 1), connection: .connecting, lastConnectError: "Daemon not reachable")
+        #expect(health == .starting(lastError: "Daemon not reachable"))
+        #expect(!health.isTrouble)
+    }
+
+    /// Saving tokens restarts the daemon: its stream closing on the way is not trouble.
+    @Test func aRestartIsNotTrouble() {
+        let health = DaemonHealth(mode: bundled, state: .restarting(after: .zero), connection: .disconnected("Daemon closed the connection"))
+        #expect(health == .restarting)
+        #expect(!health.isTrouble)
+    }
+
+    @Test func aDaemonThatWontStayUpIsTrouble() {
+        for state in [DaemonProcess.State.restarting(after: .seconds(2)), .running(pid: 1)] {
+            let health = DaemonHealth(mode: bundled, state: state, exiting: "exit 1", connection: .connecting)
+            #expect(health == .keepsExiting("exit 1"))
+            #expect(health.isTrouble)
+        }
+    }
+
+    /// Once reached, a stream that drops while the daemon runs is a lost connection, however
+    /// it started.
+    @Test func aDroppedStreamToARunningDaemonIsDisconnected() {
+        let health = DaemonHealth(mode: bundled, state: .running(pid: 1), exiting: "exit 1", connection: .disconnected("Daemon timed out"))
+        #expect(health == .disconnected("Daemon timed out"))
+        #expect(health.isTrouble)
+    }
+
+    @Test func blockersComeFirst() {
+        #expect(DaemonHealth(mode: .missing, state: .idle, connection: .connecting) == .notBundled)
+        #expect(DaemonHealth(mode: bundled, state: .portInUse, connection: .rejected) == .portInUse(byAnotherDaemon: true))
+        #expect(DaemonHealth(mode: bundled, state: .portInUse, connection: .connecting) == .portInUse(byAnotherDaemon: false))
+        #expect(DaemonHealth(mode: .attach, state: .idle, connection: .rejected) == .rejected)
+        #expect(DaemonHealth(mode: .attach, state: .idle, connection: .connected) == .connected)
     }
 }
 

@@ -61,6 +61,9 @@ final class DaemonProcess {
     /// Runs in a row that ended on their own within 30s of launching (or didn't launch).
     private var consecutiveFailures = 0
 
+    /// Called each time a child is launched: a new daemon to connect to.
+    @ObservationIgnored var onLaunch: (() -> Void)?
+
     #if DEBUG
     /// Added to the child's environment at its next launch: an e2e run picks the mock's
     /// world and clock with it, and restarts to change them.
@@ -230,6 +233,7 @@ final class DaemonProcess {
         stdin = input.fileHandleForWriting
         launchedAt = Date()
         state = .running(pid: p.processIdentifier)
+        onLaunch?()
 
         let secrets = Secrets(
             apiToken: endpoint.token,

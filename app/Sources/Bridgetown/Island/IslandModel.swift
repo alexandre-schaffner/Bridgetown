@@ -57,7 +57,7 @@ struct Glance: Equatable {
     var working = 0
     /// "Needs you" actions (right wing, first).
     var waiting = 0
-    /// Lost the daemon, or it can't start.
+    /// Lost the daemon, or it can't start (`DaemonHealth.isTrouble`).
     var trouble = false
 
     var isEmpty: Bool { working == 0 && waiting == 0 && !trouble }
@@ -70,11 +70,10 @@ struct Glance: Equatable {
 
     @MainActor
     init(store: Store, daemon: DaemonProcess) {
-        let connected = store.connection == .connected
-        working = connected ? store.activeSessions.count : 0
-        waiting = connected ? store.actions.count : 0
-        trouble = daemon.mode == .missing || daemon.state == .portInUse || store.connection == .rejected
-            || (store.snapshot != nil && !connected)
+        let health = DaemonHealth(daemon: daemon, store: store)
+        working = health == .connected ? store.activeSessions.count : 0
+        waiting = health == .connected ? store.actions.count : 0
+        trouble = health.isTrouble
     }
 }
 

@@ -29,7 +29,7 @@ final class Store {
     private(set) var busy: Set<String> = []
     /// Last failed user action, shown briefly in the header.
     private(set) var flash: String?
-    /// Why the first connection hasn't succeeded yet (while still `.connecting`).
+    /// Why this connection hasn't succeeded yet (while still `.connecting`).
     private(set) var lastConnectError: String?
 
     /// Called with (previous, next) on every snapshot change. Used for notifications.
@@ -46,23 +46,27 @@ final class Store {
 
     // MARK: Connection
 
+    /// Starts over on `endpoint`: at launch, and each time the app launches its daemon again.
     func connect(to endpoint: DaemonEndpoint) {
         streamTask?.cancel()
         let client = DaemonClient(endpoint: endpoint)
         self.client = client
         connection = .connecting
+        lastConnectError = nil
         streamTask = Task { [weak self] in
             var attempt = 0
+            var reached = false
             while !Task.isCancelled {
                 guard let self else { return }
                 do {
                     try await client.streamSnapshots { snap in
                         attempt = 0
+                        reached = true
                         self.apply(snap)
                         if self.connection != .connected { self.connection = .connected }
                     }
                     // Clean close: the daemon went away or restarted.
-                    self.markDisconnected("Daemon closed the connection")
+                    self.markDisconnected("Daemon closed the connection", reached: reached)
                 } catch is CancellationError {
                     return
                 } catch {
@@ -70,7 +74,7 @@ final class Store {
                     if case DaemonError.http(401, _) = error {
                         self.connection = .rejected
                     } else {
-                        self.markDisconnected(error.userMessage)
+                        self.markDisconnected(error.userMessage, reached: reached)
                     }
                 }
                 attempt += 1
@@ -81,10 +85,15 @@ final class Store {
         }
     }
 
-    private func markDisconnected(_ reason: String) {
-        // Stay "connecting" until we've ever had a snapshot, so launch doesn't flash an error.
-        connection = snapshot == nil ? .connecting : .disconnected(reason)
-        if snapshot == nil { lastConnectError = reason }
+    /// Until this connection has worked once, a failed try is part of connecting, so a
+    /// daemon that is still starting doesn't flash an error.
+    private func markDisconnected(_ reason: String, reached: Bool) {
+        if reached {
+            connection = .disconnected(reason)
+        } else {
+            connection = .connecting
+            lastConnectError = reason
+        }
     }
 
     private func apply(_ next: Snapshot) {
@@ -96,8 +105,6 @@ final class Store {
         onSnapshot?(previous, shown)
         if case let .session(id) = route, shown.session(id: id) == nil { back() }
     }
-
-    var isConnected: Bool { connection == .connected }
 
     // MARK: Navigation
 

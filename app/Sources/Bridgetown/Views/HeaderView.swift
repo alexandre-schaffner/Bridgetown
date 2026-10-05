@@ -92,17 +92,15 @@ struct StatusSummary: View {
     }
 
     private var connectionLine: String {
-        if daemon.mode == .missing { return "Daemon not installed" }
-        return switch daemon.state {
+        switch DaemonHealth(daemon: daemon, store: store) {
+        case .notBundled: "Daemon not installed"
         case .portInUse: "Daemon couldn't start"
+        case .keepsExiting: "Daemon keeps stopping"
         case .restarting: "Restarting daemon…"
-        default:
-            switch store.connection {
-            case .rejected: "Not connected"
-            // The store keeps retrying; the problem line below says why it dropped.
-            case .disconnected: "Reconnecting…"
-            case .connecting, .connected: "Connecting…"
-            }
+        case .rejected: "Not connected"
+        // The store keeps retrying; the problem line below says why it dropped.
+        case .disconnected: "Reconnecting…"
+        case .starting, .connected: "Connecting…"
         }
     }
 }
@@ -175,11 +173,9 @@ struct ProblemList: View {
 
     var body: some View {
         let problems = Problem.list(
-            connection: store.connection,
-            daemonState: daemon.state,
-            daemonMode: daemon.mode,
+            health: DaemonHealth(daemon: daemon, store: store),
+            attached: daemon.mode == .attach,
             port: daemon.endpoint.port,
-            lastConnectError: store.lastConnectError,
             flash: store.flash,
             status: store.snapshot?.status
         )
@@ -197,6 +193,7 @@ struct ProblemList: View {
         switch fix {
         case .openSettings?: SystemActions.showSettings(openSettings)
         case .restartDaemon?: daemon.restart()
+        case .openLogs?: SystemActions.openLogs(daemon.log)
         case nil: break
         }
     }
@@ -207,10 +204,11 @@ struct Problem: Identifiable, Equatable {
     enum Fix: Equatable {
         case openSettings(String)
         case restartDaemon(String)
+        case openLogs(String)
 
         var label: String {
             switch self {
-            case let .openSettings(label), let .restartDaemon(label): label
+            case let .openSettings(label), let .restartDaemon(label), let .openLogs(label): label
             }
         }
     }
@@ -222,45 +220,35 @@ struct Problem: Identifiable, Equatable {
 
     /// Everything wrong right now, worst first: the daemon connection, the last failed
     /// action, then what the daemon reports about its own dependencies.
-    static func list(
-        connection: Store.Connection,
-        daemonState: DaemonProcess.State,
-        daemonMode: DaemonProcess.Mode,
-        port: Int,
-        lastConnectError: String?,
-        flash: String?,
-        status: Status?
-    ) -> [Problem] {
+    static func list(health: DaemonHealth, attached: Bool, port: Int, flash: String?, status: Status?) -> [Problem] {
         var out: [Problem] = []
-        if daemonState == .portInUse {
+        switch health {
+        case let .portInUse(byAnotherDaemon):
             // Our daemon exited 98. A 401 on that port means the holder is another daemon.
-            let text = connection == .rejected
+            let text = byAnotherDaemon
                 ? "Another Bridgetown daemon is running on port \(port). Quit it, then retry."
                 : "Port \(port) is in use by another process. Free it, then retry."
             out.append(.init(id: "daemon", text: text, severity: .error, fix: .restartDaemon("Retry")))
-        } else {
-            switch connection {
-            case .rejected:
-                let text = daemonMode == .attach
-                    ? "The daemon on port \(port) rejected the API token. Check BRIDGETOWN_API_TOKEN."
-                    : "Another Bridgetown daemon is running on port \(port)."
-                out.append(.init(id: "daemon", text: text, severity: .error))
-            case let .disconnected(reason):
-                out.append(.init(id: "daemon", text: "Daemon disconnected · \(reason)", severity: .error))
-            case .connecting where daemonMode == .missing:
-                out.append(.init(id: "daemon", text: "No daemon bundled. Set BRIDGETOWN_DAEMON_CMD or BRIDGETOWN_ATTACH=1.", severity: .error))
-            case .connecting:
-                if let reason = lastConnectError, daemonMode == .attach {
-                    out.append(.init(id: "daemon", text: "Waiting for daemon · \(reason)", severity: .warning))
-                }
-            case .connected:
-                break
-            }
+        case .rejected:
+            let text = attached
+                ? "The daemon on port \(port) rejected the API token. Check BRIDGETOWN_API_TOKEN."
+                : "Another Bridgetown daemon is running on port \(port)."
+            out.append(.init(id: "daemon", text: text, severity: .error))
+        case let .keepsExiting(exit):
+            out.append(.init(id: "daemon", text: "The daemon keeps stopping soon after it starts (\(exit))", severity: .error, fix: .openLogs("Open logs")))
+        case let .disconnected(reason):
+            out.append(.init(id: "daemon", text: "Daemon disconnected · \(reason)", severity: .error))
+        case .notBundled:
+            out.append(.init(id: "daemon", text: "No daemon bundled. Set BRIDGETOWN_DAEMON_CMD or BRIDGETOWN_ATTACH=1.", severity: .error))
+        case let .starting(lastError?) where attached:
+            out.append(.init(id: "daemon", text: "Waiting for daemon · \(lastError)", severity: .warning))
+        case .starting, .restarting, .connected:
+            break
         }
         if let flash {
             out.append(.init(id: "flash", text: flash, severity: .error))
         }
-        guard let status, connection == .connected else { return out }
+        guard let status, health == .connected else { return out }
         switch status.slack {
         case .missing_token: out.append(.init(id: "slack", text: "Slack token missing", severity: .warning, fix: .openSettings("Add token")))
         case .error: out.append(.init(id: "slack", text: "Slack is failing", severity: .error))

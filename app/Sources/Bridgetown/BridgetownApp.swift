@@ -63,9 +63,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func startDaemon() {
-        daemon.start()
-        if daemon.mode != .missing {
+        switch daemon.mode {
+        case .missing:
+            return
+        case .attach:
             store.connect(to: daemon.endpoint)
+        case .command, .bundled:
+            // Each launch is a new daemon: the stream starts over on it at once, and until it
+            // answers it is starting, not lost.
+            daemon.onLaunch = { [weak self] in
+                guard let self else { return }
+                store.connect(to: daemon.endpoint)
+            }
+            daemon.start()
         }
     }
 
