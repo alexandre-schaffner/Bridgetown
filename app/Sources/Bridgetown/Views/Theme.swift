@@ -1,7 +1,7 @@
 import CoreText
 import SwiftUI
 
-// The popover's identity: black, structure drawn with 1pt borders instead of fills,
+// The app's identity: black, structure drawn with 1pt borders instead of fills,
 // Geist for words and Geist Mono only for machine text (branches, logs), white for
 // the one primary action, and colour only on small status marks (PRODUCT.md): blue
 // for live work, amber for "needs you", green for verified outcomes, red for failure.
@@ -136,7 +136,7 @@ enum Typo {
 
 // MARK: Stage
 
-/// Paints the stage and pins the popover to its palette: always dark, with the
+/// Paints the stage and pins the island to its palette: always dark, with the
 /// hierarchical text styles (`.secondary`, `.tertiary`) remapped to readable greys.
 struct StageBackground: ViewModifier {
     func body(content: Content) -> some View {

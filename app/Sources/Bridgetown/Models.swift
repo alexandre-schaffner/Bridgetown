@@ -4,7 +4,7 @@ import Foundation
 // so optionals here decode `null` and are never missing.
 //
 // String enums decode leniently: an unrecognised value maps to `.unknown` instead of
-// failing the whole Snapshot, so a newer daemon can't blank the menu bar app.
+// failing the whole Snapshot, so a newer daemon can't blank the app.
 //
 // Labels, colours and symbols for these types live in Presentation.swift.
 

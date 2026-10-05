@@ -15,6 +15,10 @@ struct ClampedText: View {
     /// Sets the text in a quiet rounded block (raw messages), with the toggle outside it.
     var boxed = false
 
+    /// Accessibility keeps every line at its whole frame, cut off or not: while the text is
+    /// clamped its container says so with this, for the e2e lint (`E2ELint`).
+    nonisolated static let clipIdentifier = "clip"
+
     @ViewState private var expanded = false
     @ViewState private var fullHeight: CGFloat = 0
 
@@ -40,6 +44,8 @@ struct ClampedText: View {
                             .frame(height: clamped ? lineHeight : 0)
                     }
                 }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier(clamped ? Self.clipIdentifier : "")
                 .padding(boxed ? 8 : 0)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background {

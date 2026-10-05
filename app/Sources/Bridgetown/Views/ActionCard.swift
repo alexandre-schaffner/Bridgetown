@@ -9,7 +9,7 @@ struct ActionCard: View {
     /// Tapping the row; nil where the card can't collapse.
     var onToggle: (() -> Void)?
     /// For the row's age.
-    var now: Date = .now
+    var now: Date = AppClock.now
     /// The row's place in the list's selection, in the overview.
     var pick: RowPick?
     @ViewState private var hovering = false
@@ -19,7 +19,7 @@ struct ActionCard: View {
     @ViewState private var confirmingClose = false
     @FocusState private var replyFocused: Bool
 
-    init(action: Action, expanded: Bool = true, now: Date = .now, pick: RowPick? = nil, onToggle: (() -> Void)? = nil) {
+    init(action: Action, expanded: Bool = true, now: Date = AppClock.now, pick: RowPick? = nil, onToggle: (() -> Void)? = nil) {
         self.action = action
         self.expanded = expanded
         self.now = now
@@ -158,10 +158,16 @@ struct ActionCard: View {
         }
         .help(action.detail.isEmpty ? action.title : "\(action.title)\n\(Markdown.plain(action.detail))")
         .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("needsYou.row.\(action.id)")
         .accessibilityAddTraits(pick?.selected == true ? .isSelected : [])
         .accessibilityAction(named: "Expand") { onToggle?() }
         .accessibilityAction(named: Text(action.primaryLabel)) {
             if action.isOneClick { store.resolve(action) } else { onToggle?() }
+        }
+        // The selection mark shows only under the pointer; this picks the row without one,
+        // in the lists that pick.
+        .accessibilityActions {
+            if let pick { Button(pick.selected ? "Deselect" : "Select", action: pick.toggle) }
         }
     }
 
@@ -231,6 +237,7 @@ struct ActionCard: View {
         .overlay(alignment: .topTrailing) {
             if !action.inFlight {
                 IconButton(systemName: "xmark", help: dismissLabel, size: 9, weight: .semibold, action: requestDismiss)
+                    .accessibilityIdentifier("action.dismiss.\(action.id)")
                     .padding(6)
             }
         }

@@ -43,12 +43,13 @@ struct AlertDetailView: View {
             DetailTopBar(title: alert?.title ?? "", lineLimit: 2)
             Hairline()
             if let alert, detail.value != nil || detail.error != nil {
-                TimelineView(.periodic(from: .now, by: 30)) { context in
+                TimelineView(.periodic(from: .now, by: 30)) { _ in
                     PaneScrollView {
-                        content(alert, now: context.date)
+                        content(alert, now: AppClock.now)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 14)
                     }
+                    .accessibilityIdentifier("pane.detail")
                 }
                 Hairline()
                 bottomBar(alert)

@@ -63,6 +63,7 @@ struct SessionDetailView: View {
                 .padding(.vertical, 18)
                 .environment(\.fullBleed, true)
             }
+            .accessibilityIdentifier("pane.detail")
             Hairline()
             bottomBar
         }
@@ -100,7 +101,7 @@ struct SessionDetailView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
-                Text(session.meta(now: .now))
+                Text(session.meta(now: AppClock.now))
                     .font(.geist(12))
                     .monospacedDigit()
                     .foregroundStyle(.tertiary)
@@ -233,6 +234,7 @@ struct SessionDetailView: View {
                 .lineLimit(1...4)
                 .onSubmit(send)
                 .inputField()
+                .accessibilityIdentifier("session.message")
             Button(action: send) {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.geist(20))
@@ -242,6 +244,7 @@ struct SessionDetailView: View {
             .foregroundStyle(canSend ? Ink.text : Color.secondary)
             .disabled(!canSend)
             .help("Send to the agent")
+            .accessibilityIdentifier("session.send")
         }
     }
 
@@ -292,6 +295,7 @@ struct SessionDetailView: View {
                     }
                     .buttonStyle(.stage(.secondary, compact: true))
                     .disabled(store.isBusy(session.id))
+                    .accessibilityIdentifier("session.stop")
                 }
             }
         }

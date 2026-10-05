@@ -1,7 +1,6 @@
 import SwiftUI
 
-// The overview's parts, shared by its two layouts: one column in the preview window
-// (`PopoverView`), side by side in the open island (`IslandOpenView`).
+// The overview's parts, laid out side by side in the open island (`IslandOpenView`).
 
 extension Snapshot {
     /// Nothing waiting, running or received yet: the overview shows `EmptyState` instead.
@@ -33,7 +32,7 @@ extension Snapshot {
 struct NeedsYouSection: View {
     @Environment(Store.self) private var store
     let snapshot: Snapshot
-    var now: Date = .now
+    var now: Date = AppClock.now
     @ViewState private var expandedAction: String?
     @ViewState private var selection = RowSelection()
     @ViewState private var confirmingClose = false
@@ -283,6 +282,7 @@ struct RecentSection: View {
                         withAnimation(.snappy(duration: 0.2)) { showAll.toggle() }
                     }
                     .buttonStyle(.stage(.secondary, compact: true))
+                    .accessibilityIdentifier("recent.showMore")
                     .frame(maxWidth: .infinity)
                 }
             }
@@ -358,6 +358,7 @@ private struct QuietFold: View {
         }
         .buttonStyle(RowButtonStyle())
         .accessibilityLabel(open ? "Hide \(count) filtered or ignored alerts" : "Show \(count) filtered or ignored alerts")
+        .accessibilityIdentifier("recent.quietFold")
     }
 }
 
@@ -426,9 +427,11 @@ struct ConnectingState: View {
 }
 
 struct FooterView: View {
+    @Environment(DaemonProcess.self) private var daemon
+
     var body: some View {
         HStack {
-            Button("Open logs") { SystemActions.openLogs() }
+            Button("Open logs") { SystemActions.openLogs(daemon.logURL) }
             Spacer()
             Button("Quit Bridgetown") { NSApp.terminate(nil) }
                 .keyboardShortcut("q")

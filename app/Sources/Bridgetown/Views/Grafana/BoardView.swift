@@ -80,7 +80,7 @@ struct BoardView: View {
             }
             Text("· counts per \(board.stepLabel)")
             Spacer(minLength: 0)
-            Text("Grafana · \(Format.ago(board.fetchedAt, now: .now))")
+            Text("Grafana · \(Format.ago(board.fetchedAt, now: AppClock.now))")
         }
         .font(.geist(11.5).monospacedDigit())
         .foregroundStyle(.tertiary)
@@ -90,7 +90,7 @@ struct BoardView: View {
     /// "Last hour", "Last 6h", or "03:00 – 12:00" around an alert.
     private var window: String {
         let hours = Int((board.to.timeIntervalSince(board.from) / 3600).rounded())
-        if board.marker == nil, abs(board.to.timeIntervalSinceNow) < 600 {
+        if board.marker == nil, abs(board.to.timeIntervalSince(AppClock.now)) < 600 {
             return hours <= 1 ? "Last hour" : "Last \(hours)h"
         }
         return "\(board.from.formatted(Format.clock)) – \(board.to.formatted(Format.clock))"
@@ -223,9 +223,13 @@ private struct MiniPanel: View {
         .contextMenu { Button("Open in Grafana") { SystemActions.open(panel.link) } }
         .help(layout == .detail ? "" : "\(panel.title) · \(layout == .line ? "show above" : "show details")")
         .accessibilityElement(children: layout == .detail ? .contain : .ignore)
+        .accessibilityIdentifier("board.panel.\(panel.id)")
         .accessibilityLabel(panel.title)
         .accessibilityValue(panel.latest.map(panel.unit.format) ?? "No data")
         .accessibilityAddTraits(.isButton)
+        // What a click does, for VoiceOver and AXPress (a tap gesture answers neither):
+        // shut, it opens; open, its header and chart close it.
+        .accessibilityAction { onSelect() }
         .accessibilityAction(named: "Open in Grafana") { SystemActions.open(panel.link) }
     }
 
@@ -268,7 +272,7 @@ private struct MiniPanel: View {
             Spacer(minLength: 4)
             Text(middle, format: Format.clock)
             Spacer(minLength: 4)
-            if abs(board.to.timeIntervalSinceNow) < 600 {
+            if abs(board.to.timeIntervalSince(AppClock.now)) < 600 {
                 Text("now")
             } else {
                 Text(board.to, format: Format.clock)

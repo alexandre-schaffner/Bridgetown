@@ -24,6 +24,13 @@ final class IslandController {
     private var resignTask: Task<Void, Never>?
     private var hoverTask: Task<Void, Never>?
 
+    #if DEBUG
+    /// Set before `start()` by an e2e run, which renders the island itself (`E2ESurfaces`):
+    /// no panel at the notch, so no event monitors, no observers, never key. The model is
+    /// still driven as usual: open, close, banners and the glance.
+    var offscreen = false
+    #endif
+
     // Springs: opening overshoots a touch, as if the notch were elastic; closing doesn't.
     // Under Reduce Motion everything is a short ease with no bounce.
     static var opening: Animation { motion(.spring(response: 0.5, dampingFraction: 0.74)) }
@@ -43,11 +50,15 @@ final class IslandController {
 
     func start() {
         guard panel == nil else { return }
+        #if DEBUG
+        if offscreen { return observeGlance() }
+        #endif
         let panel = IslandPanel()
         panel.onCancel = { [weak self] in self?.close() }
         let root = IslandView(model: model) { [weak self] in self?.open() }
             .environment(store)
             .environment(daemon)
+            .environment(\.openURL, SystemActions.openLink)
         let host = FirstMouseHostingView(rootView: root)
         host.sizingOptions = []
         panel.contentView = host
@@ -96,7 +107,8 @@ final class IslandController {
         bannerTask?.cancel()
         withAnimation(Self.closing) {
             model.presentation = .resting
-            model.hovering = model.frame.contains(NSEvent.mouseLocation)
+            // Without a panel nothing is under the pointer, wherever it is on the screen.
+            model.hovering = panel != nil && model.frame.contains(NSEvent.mouseLocation)
         }
         trackPointer()
         resignKey()
@@ -143,18 +155,22 @@ final class IslandController {
 
     // MARK: Panel
 
-    /// Sizes the panel for the open island plus room for its whole shadow (it falls 14pt
-    /// and blurs 26pt, so it needs about 80 below and 60 aside; less cuts it off in a hard
-    /// line), hung from the top edge, centred on the notch.
+    /// The panel, hung from the top edge, centred on the notch.
     private func place() {
         model.geometry = .current()
         guard let panel else { return }
         let g = model.geometry
+        let size = Self.panelSize(g, glance: model.glance)
+        panel.setFrame(NSRect(x: g.centerX - size.width / 2, y: g.top - size.height, width: size.width, height: size.height), display: true)
+    }
+
+    /// The open island plus room for its whole shadow: it falls 14pt and blurs 26pt, so it
+    /// needs about 80 below and 60 aside; less cuts it off in a hard line.
+    static func panelSize(_ geometry: NotchGeometry, glance: Glance) -> CGSize {
         let side: CGFloat = 64
         let below: CGFloat = 88
-        let width = IslandModel.layout(.open, hovering: false, glance: model.glance, geometry: g).frameWidth + 2 * side
-        let height = g.notch.height + g.openHeight + below
-        panel.setFrame(NSRect(x: g.centerX - width / 2, y: g.top - height, width: width, height: height), display: true)
+        let width = IslandModel.layout(.open, hovering: false, glance: glance, geometry: geometry).frameWidth + 2 * side
+        return CGSize(width: width, height: geometry.notch.height + geometry.openHeight + below)
     }
 
     /// A key, non-activating panel keeps keyboard focus after it closes; ordering it out
@@ -257,7 +273,7 @@ final class IslandController {
 
 #if DEBUG
 extension IslandController {
-    /// Design review (`--island-demo`): hovering without a pointer.
+    /// Hovering without a pointer: `--island-demo`, and the e2e run's hover shots.
     func previewHover(_ hovering: Bool) {
         if hovering { Haptics.perform(.alignment, "island.previewHover") }
         withAnimation(Self.swell) { model.hovering = hovering }

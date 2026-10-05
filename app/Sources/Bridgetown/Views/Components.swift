@@ -1,28 +1,12 @@
 import AppKit
 import SwiftUI
 
-// Small shared building blocks for the popover. Spacing runs on a 4pt grid:
+// Small shared building blocks for the island's panes. Spacing runs on a 4pt grid:
 // 12 inside blocks, 24 between sections, 8 between related lines.
 
 enum Metrics {
-    static let width: CGFloat = 380
-    /// The popover's fixed height (see `PaneScrollView`). Design review overrides it
-    /// through the `popoverHeight` environment value.
-    static let height: CGFloat = 620
     static let inset: CGFloat = 12
     static let cardRadius: CGFloat = Ink.panelRadius
-}
-
-private struct PopoverHeightKey: EnvironmentKey {
-    static let defaultValue = Metrics.height
-}
-
-extension EnvironmentValues {
-    /// The popover's fixed height; `--preview-height` sets it for long content.
-    var popoverHeight: CGFloat {
-        get { self[PopoverHeightKey.self] }
-        set { self[PopoverHeightKey.self] = newValue }
-    }
 }
 
 // MARK: Hairline
@@ -277,9 +261,8 @@ struct ChannelChip: View {
 // MARK: Scroll area
 
 /// The scrolling middle of a fixed-height pane: fills the space between header and
-/// footer, content pinned to the top. The popover has a constant height because a
-/// MenuBarExtra window does not shrink when its content does, and a growing and
-/// shrinking window leaves blank bands around centred content.
+/// footer, content pinned to the top, so a column whose content shrinks never leaves blank
+/// bands around it.
 ///
 /// Scrolled, a soft shadow falls from the top edge, as if the content slid under what is
 /// above it; with more below, the bottom edge fades out. Neither shows when everything fits.
@@ -609,27 +592,11 @@ struct IconButton: View {
     }
 }
 
-// MARK: Material background (preview window only)
-
-struct VisualEffectBackground: NSViewRepresentable {
-    var material: NSVisualEffectView.Material = .popover
-
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let v = NSVisualEffectView()
-        v.material = material
-        v.blendingMode = .behindWindow
-        v.state = .active
-        return v
-    }
-
-    func updateNSView(_ v: NSVisualEffectView, context: Context) { v.material = material }
-}
-
 // MARK: Confirmation
 
 /// An inline "are you sure" for destructive actions, in place of the button that asked.
-/// Menu bar windows handle sheets and alerts badly, so this stays in the view. Cancels
-/// itself after 5 seconds.
+/// A sheet or alert would take the island's focus away, so this stays in the view.
+/// Cancels itself after 5 seconds.
 struct ConfirmButtons: View {
     let confirmLabel: String
     let onConfirm: () -> Void
@@ -664,7 +631,7 @@ struct Loadable<Value> {
         } catch is CancellationError {
             return self
         } catch let error as URLError where error.code == .cancelled {
-            // The view went away mid-request (the popover closed): not a failure.
+            // The view went away mid-request (the island closed): not a failure.
             return self
         } catch {
             return Loadable(value: value, error: value == nil ? error.userMessage : self.error)
@@ -673,7 +640,7 @@ struct Loadable<Value> {
 }
 
 /// Loads a value from the daemon and keeps it fresh: refetched every minute while on
-/// screen. Reopening the popover keeps the value it had; only a different key starts
+/// screen. Reopening the island keeps the value it had; only a different key starts
 /// over. A failed refetch keeps the last value.
 struct PollingLoader<Value, Content: View>: View {
     let key: String

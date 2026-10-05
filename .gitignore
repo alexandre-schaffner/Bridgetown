@@ -4,3 +4,4 @@ daemon/dist/
 app/.build/
 build/
 .DS_Store
+.context/

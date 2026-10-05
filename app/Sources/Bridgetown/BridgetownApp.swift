@@ -11,6 +11,7 @@ struct BridgetownApp: App {
             SettingsView()
                 .environment(app.store)
                 .environment(app.daemon)
+                .environment(\.openURL, SystemActions.openLink)
         }
     }
 }
@@ -23,7 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) lazy var island = IslandController(store: store, daemon: daemon)
 
     #if DEBUG
-    let preview = PreviewHarness(arguments: ProcessInfo.processInfo.arguments)
+    /// `--e2e …` or `--island-demo` (E2E/E2EHarness.swift); nil on a normal launch.
+    let harness = E2EHarness(arguments: ProcessInfo.processInfo.arguments)
     #endif
 
     private var signalSources: [DispatchSourceSignal] = []
@@ -34,7 +36,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         installSignalHandlers()
 
+        #if DEBUG
+        // Before anything starts: a run swaps out the clock, the Keychain, side effects,
+        // the daemon's environment and the island's panel, and posts no notifications.
+        harness?.configure(self)
+        if harness == nil { notifier.start() }
+        #else
         notifier.start()
+        #endif
         notifier.onOpen = { [weak self] in self?.island.open() }
         // Each new "Needs you" is both a notification and a banner under the notch.
         store.onSnapshot = { [weak self] _, next in
@@ -46,14 +55,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         island.start()
 
+        #if DEBUG
+        // It starts the daemon itself, once it has shown the app connecting.
+        if let harness { return harness.start(self) }
+        #endif
+        startDaemon()
+    }
+
+    func startDaemon() {
         daemon.start()
         if daemon.mode != .missing {
             store.connect(to: daemon.endpoint)
         }
-
-        #if DEBUG
-        preview.start(store: store, daemon: daemon, island: island, popoverHeight: preview.popoverHeight ?? Metrics.height)
-        #endif
     }
 
     /// Quit waits for the daemon to shut down (at most ~2.5s) without blocking the main

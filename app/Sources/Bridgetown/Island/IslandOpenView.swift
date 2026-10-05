@@ -10,21 +10,21 @@ struct IslandOpenView: View {
     @Environment(Store.self) private var store
     let model: IslandModel
 
-    /// The status column: the popover's width, with the same insets, so the prod board lays
-    /// out as it does there.
-    static let statusWidth = Metrics.width
+    /// The status column: the header, the stats and the prod board.
+    static let statusWidth: CGFloat = 380
 
     var body: some View {
         let geometry = model.geometry
         VStack(spacing: 0) {
             band(notch: geometry.notch)
             Hairline()
-            TimelineView(.periodic(from: .now, by: 30)) { context in
+            // Only schedules the redraw: the time itself is the app's clock.
+            TimelineView(.periodic(from: .now, by: 30)) { _ in
                 HStack(alignment: .top, spacing: 0) {
-                    status(now: context.date)
+                    status(now: AppClock.now)
                         .frame(width: Self.statusWidth)
                     Hairline(vertical: true)
-                    main(now: context.date)
+                    main(now: AppClock.now)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .clipped()
                 }
@@ -61,11 +61,12 @@ struct IslandOpenView: View {
                 // charts run to the column's edges.
                 .padding(.bottom, Metrics.inset)
             }
+            .accessibilityIdentifier("pane.status")
         }
     }
 
     private func main(now: Date) -> some View {
-        RouteContent(motion: .slide) { overview(now: now) }
+        RouteContent { overview(now: now) }
             .animation(.smooth(duration: 0.32), value: store.route)
     }
 
@@ -89,6 +90,7 @@ struct IslandOpenView: View {
                         // Vertical only: the sections' rows run to the column's edges.
                         .padding(.vertical, Metrics.inset)
                     }
+                    .accessibilityIdentifier("pane.needsYou")
                     Hairline(vertical: true)
                     PaneScrollView {
                         VStack(alignment: .leading, spacing: 24) {
@@ -106,6 +108,7 @@ struct IslandOpenView: View {
                         }
                         .padding(.vertical, Metrics.inset)
                     }
+                    .accessibilityIdentifier("pane.agents")
                 }
             }
         } else {

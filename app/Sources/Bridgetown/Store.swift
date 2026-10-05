@@ -14,7 +14,7 @@ final class Store {
         case rejected
     }
 
-    /// What the popover shows. Back always returns to the overview, so "Back" from a
+    /// What the open island shows. Back always returns to the overview, so "Back" from a
     /// session opened via an alert doesn't land on the alert.
     enum Route: Equatable {
         case overview

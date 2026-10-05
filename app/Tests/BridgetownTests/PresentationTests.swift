@@ -119,9 +119,10 @@ import Testing
             "TYPESAFE_API_KEY": "ts_1",
             "BRIDGETOWN_DAEMON_CMD": "bun src/main.ts",
             "BRIDGETOWN_ATTACH": "1",
+            "BRIDGETOWN_LOG_DIR": "/tmp/run",
         ]
         let env = DaemonProcess.childEnvironment(inherited: inherited, port: 47622, home: "/Users/me")
-        for key in ["BRIDGETOWN_API_TOKEN", "SLACK_USER_TOKEN", "TYPESAFE_API_KEY", "BRIDGETOWN_DAEMON_CMD", "BRIDGETOWN_ATTACH"] {
+        for key in ["BRIDGETOWN_API_TOKEN", "SLACK_USER_TOKEN", "TYPESAFE_API_KEY", "BRIDGETOWN_DAEMON_CMD", "BRIDGETOWN_ATTACH", "BRIDGETOWN_LOG_DIR"] {
             #expect(env[key] == nil, "\(key)")
         }
         #expect(env["BRIDGETOWN_SECRETS"] == "stdin")
@@ -129,6 +130,56 @@ import Testing
         #expect(env["HOME"] == "/Users/me")
         #expect(env["PATH"]?.hasSuffix(":/usr/bin") == true)
         #expect(env["PATH"]?.contains("/Users/me/.bun/bin") == true)
+    }
+
+    @Test func anExplicitSwitchBeatsTheBundledDaemon() {
+        let bundled = URL(fileURLWithPath: "/Applications/Bridgetown.app/Contents/Resources/bridgetown-daemon")
+        #expect(DaemonProcess.mode(environment: ["BRIDGETOWN_ATTACH": "1"], bundled: bundled) == .attach)
+        #expect(DaemonProcess.mode(environment: ["BRIDGETOWN_ATTACH": "1", "BRIDGETOWN_DAEMON_CMD": "bun main.ts"], bundled: bundled) == .command("bun main.ts"))
+        #expect(DaemonProcess.mode(environment: [:], bundled: bundled) == .bundled(bundled))
+        #expect(DaemonProcess.mode(environment: ["BRIDGETOWN_DAEMON_CMD": " "], bundled: nil) == .missing)
+    }
+
+    @MainActor @Test func theLogGoesToTheRunWhenItAsks() {
+        #expect(DaemonProcess(environment: ["BRIDGETOWN_LOG_DIR": "/tmp/run"]).logURL.path == "/tmp/run/daemon.log")
+        #expect(DaemonProcess(environment: [:]).logURL.path.hasSuffix("/Library/Logs/Bridgetown/daemon.log"))
+    }
+
+    /// A real child (`sleep`), its log in a temp dir, the Keychain kept out of it.
+    @MainActor @Test func aDaemonRestartedAfterAStopIsRestartedWhenItDies() async throws {
+        Keychain.inMemory = [:]
+        let logs = FileManager.default.temporaryDirectory.appending(path: "bt-daemon-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: logs) }
+        let daemon = DaemonProcess(environment: ["BRIDGETOWN_DAEMON_CMD": "sleep 30", "BRIDGETOWN_LOG_DIR": logs.path])
+        daemon.start()
+        await withCheckedContinuation { done in
+            if !daemon.stop(completion: { done.resume() }) { done.resume() }
+        }
+        daemon.restart()
+        guard case let .running(pid) = daemon.state else {
+            Issue.record("not running after restart: \(daemon.state)")
+            return
+        }
+        kill(pid, SIGKILL)
+        for _ in 0..<150 where daemon.state == .running(pid: pid) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(daemon.state == .restarting(after: .seconds(1)))
+        daemon.stop {}
+    }
+
+    @MainActor @Test func stoppingWhileARestartWaitsCallsItOff() async throws {
+        Keychain.inMemory = [:]
+        let logs = FileManager.default.temporaryDirectory.appending(path: "bt-daemon-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: logs) }
+        let daemon = DaemonProcess(environment: ["BRIDGETOWN_DAEMON_CMD": "false", "BRIDGETOWN_LOG_DIR": logs.path])
+        daemon.start()
+        for _ in 0..<150 where daemon.state != .restarting(after: .seconds(1)) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(daemon.state == .restarting(after: .seconds(1)))
+        #expect(daemon.stop {} == false)
+        #expect(daemon.state == .idle)
     }
 
     @Test func secretsLineIsOneJSONObject() throws {

@@ -3,22 +3,23 @@ import Observation
 import Security
 
 /// Owns the daemon child process: resolves what to run, spawns it with the API token and
-/// secrets on its stdin (docs/API.md "Launch"), pipes output to
-/// ~/Library/Logs/Bridgetown/daemon.log, restarts it with backoff when it dies, and
-/// terminates it on quit.
+/// secrets on its stdin (docs/API.md "Launch"), pipes output to `logURL`, restarts it with
+/// backoff when it dies, and terminates it on quit.
 ///
 /// The stdin pipe stays open for the daemon's lifetime. The daemon exits when it closes,
 /// so it never outlives the app, even after a crash.
 @MainActor
 @Observable
 final class DaemonProcess {
+    /// Chosen in this order (`mode(environment:bundled:)`): an explicit switch in the
+    /// environment beats the bundle.
     enum Mode: Equatable {
         /// `BRIDGETOWN_DAEMON_CMD`, run through `/bin/sh -c` (dev).
         case command(String)
-        /// `bridgetown-daemon` inside the app bundle's Resources.
-        case bundled(URL)
         /// `BRIDGETOWN_ATTACH=1`: an already-running daemon, not ours to manage.
         case attach
+        /// `bridgetown-daemon` inside the app bundle's Resources.
+        case bundled(URL)
         /// Nothing to run and not attaching.
         case missing
 
@@ -44,18 +45,24 @@ final class DaemonProcess {
     static let defaultPort = 47621
     /// The daemon's exit status when its port is taken.
     static let portInUseStatus: Int32 = 98
-    static let logURL = FileManager.default.homeDirectoryForCurrentUser
-        .appending(path: "Library/Logs/Bridgetown/daemon.log")
-
     /// Never handed to the child: secrets travel over stdin, and dev-only switches stay here.
     nonisolated static let strippedEnvironment: Set<String> = [
         "BRIDGETOWN_API_TOKEN", "SLACK_USER_TOKEN", "TYPESAFE_API_KEY",
-        "BRIDGETOWN_DAEMON_CMD", "BRIDGETOWN_ATTACH",
+        "BRIDGETOWN_DAEMON_CMD", "BRIDGETOWN_ATTACH", "BRIDGETOWN_LOG_DIR",
     ]
 
     let mode: Mode
     let endpoint: DaemonEndpoint
+    /// The child's stdout and stderr: `daemon.log` in ~/Library/Logs/Bridgetown, or in
+    /// `BRIDGETOWN_LOG_DIR` (an e2e run keeps it with its shots).
+    let logURL: URL
     private(set) var state: State = .idle
+
+    #if DEBUG
+    /// Added to the child's environment at its next launch: an e2e run picks the mock's
+    /// world and clock with it, and restarts to change them.
+    @ObservationIgnored var extraEnvironment: [String: String] = [:]
+    #endif
 
     @ObservationIgnored private var process: Process?
     /// Our end of the child's stdin. Closing it tells the daemon to exit.
@@ -70,21 +77,25 @@ final class DaemonProcess {
     init(environment env: [String: String] = ProcessInfo.processInfo.environment) {
         let port = env["BRIDGETOWN_PORT"].flatMap(Int.init) ?? Self.defaultPort
 
-        if let cmd = env["BRIDGETOWN_DAEMON_CMD"], !cmd.trimmingCharacters(in: .whitespaces).isEmpty {
-            mode = .command(cmd)
-        } else if let url = Bundle.main.url(forResource: "bridgetown-daemon", withExtension: nil) {
-            mode = .bundled(url)
-        } else if env["BRIDGETOWN_ATTACH"] == "1" {
-            mode = .attach
-        } else {
-            mode = .missing
-        }
+        mode = Self.mode(environment: env, bundled: Bundle.main.url(forResource: "bridgetown-daemon", withExtension: nil))
+
+        let logDir = env["BRIDGETOWN_LOG_DIR"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
+        logURL = (logDir ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Logs/Bridgetown"))
+            .appending(path: "daemon.log")
 
         let token = mode == .attach ? (env["BRIDGETOWN_API_TOKEN"] ?? "") : Self.randomToken()
         endpoint = DaemonEndpoint(port: port, token: token)
 
         // Writing secrets to a child that already died must fail the write, not kill the app.
         signal(SIGPIPE, SIG_IGN)
+    }
+
+    /// What to run: an explicit switch in the environment, then the bundle's daemon.
+    nonisolated static func mode(environment env: [String: String], bundled: URL?) -> Mode {
+        if let cmd = env["BRIDGETOWN_DAEMON_CMD"], !cmd.trimmingCharacters(in: .whitespaces).isEmpty { return .command(cmd) }
+        if env["BRIDGETOWN_ATTACH"] == "1" { return .attach }
+        if let bundled { return .bundled(bundled) }
+        return .missing
     }
 
     // MARK: Lifecycle
@@ -98,9 +109,12 @@ final class DaemonProcess {
         }
     }
 
-    /// Restart after secrets changed, or retry after the port was taken. No-op when attached.
+    /// Restart after secrets changed, or retry after the port was taken or a `stop`. No-op
+    /// when attached.
     func restart() {
         guard mode.canManage else { return }
+        // Wanted back: from here a crash is restarted again, even after a `stop`.
+        stopping = false
         consecutiveFailures = 0
         restartTask?.cancel()
         if let process, process.isRunning {
@@ -119,7 +133,11 @@ final class DaemonProcess {
     func stop(completion: @escaping () -> Void) -> Bool {
         stopping = true
         restartTask?.cancel()
-        guard let process, process.isRunning else { return false }
+        guard let process, process.isRunning else {
+            // A restart it was waiting for is called off.
+            if case .restarting = state { state = .idle }
+            return false
+        }
         onStopped = completion
         signalStop(process)
         let pid = process.processIdentifier
@@ -164,9 +182,12 @@ final class DaemonProcess {
             port: endpoint.port,
             home: FileManager.default.homeDirectoryForCurrentUser.path
         )
+        #if DEBUG
+        p.environment?.merge(extraEnvironment) { $1 }
+        #endif
         p.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
 
-        let log = Self.openLog()
+        let log = openLog()
         if let log {
             let header = "\n--- \(Date().formatted(.iso8601)) starting daemon (\(describe(mode))) on port \(endpoint.port) ---\n"
             log.write(Data(header.utf8))
@@ -210,7 +231,7 @@ final class DaemonProcess {
             try input.fileHandleForWriting.write(contentsOf: secrets.line())
         } catch {
             // It died before reading; the termination handler restarts it.
-            Self.appendLog("--- couldn't send secrets to the daemon: \(error.userMessage) ---\n")
+            appendLog("--- couldn't send secrets to the daemon: \(error.userMessage) ---\n")
         }
     }
 
@@ -234,7 +255,7 @@ final class DaemonProcess {
             return
         }
         let how = reason == .uncaughtSignal ? "signal \(status)" : "exit \(status)"
-        Self.appendLog("--- daemon stopped (\(how)) ---\n")
+        appendLog("--- daemon stopped (\(how)) ---\n")
         if reason == .exit, status == Self.portInUseStatus {
             // Restarting can't help while another process holds the port.
             state = .portInUse
@@ -300,9 +321,17 @@ final class DaemonProcess {
         return bytes.map { String(format: "%02x", $0) }.joined()
     }
 
+    #if DEBUG
+    /// One line on the child's stdin after the secrets: the mock daemon reads these as
+    /// commands (patch its status, crash with a code). The real daemon ignores them.
+    func sendControl(_ line: String) {
+        try? stdin?.write(contentsOf: Data((line + "\n").utf8))
+    }
+    #endif
+
     // MARK: Log file
 
-    private static func openLog() -> FileHandle? {
+    private func openLog() -> FileHandle? {
         let fm = FileManager.default
         let dir = logURL.deletingLastPathComponent()
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -320,7 +349,7 @@ final class DaemonProcess {
         return handle
     }
 
-    private static func appendLog(_ line: String) {
+    private func appendLog(_ line: String) {
         guard let h = openLog() else { return }
         h.write(Data(line.utf8))
         try? h.close()
