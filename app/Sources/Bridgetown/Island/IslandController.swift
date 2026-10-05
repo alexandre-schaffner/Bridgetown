@@ -48,6 +48,7 @@ final class IslandController {
         let root = IslandView(model: model) { [weak self] in self?.open() }
             .environment(store)
             .environment(daemon)
+            .environment(\.openURL, SystemActions.openLink)
         let host = FirstMouseHostingView(rootView: root)
         host.sizingOptions = []
         panel.contentView = host

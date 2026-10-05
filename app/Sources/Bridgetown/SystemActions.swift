@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 /// Side effects outside the app: URLs, the log file, Terminal takeover.
 @MainActor
@@ -17,6 +18,13 @@ enum SystemActions {
     static func open(_ urlString: String?) {
         guard let url = openableURL(urlString) else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    /// Links in text (Markdown from alerts and agents) go through `open` too: SwiftUI's own
+    /// action opens any scheme. Each root sets it as `\.openURL`.
+    static let openLink = OpenURLAction { url in
+        MainActor.assumeIsolated { open(url.absoluteString) }
+        return .handled
     }
 
     static func openLogs() {

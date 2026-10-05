@@ -11,6 +11,7 @@ struct BridgetownApp: App {
             SettingsView()
                 .environment(app.store)
                 .environment(app.daemon)
+                .environment(\.openURL, SystemActions.openLink)
         }
     }
 }
