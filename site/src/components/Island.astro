@@ -7,6 +7,7 @@ import ArchMark from "./ArchMark.astro";
 import Icon from "./Icon.astro";
 import { BOX_W, layoutFor, NOTCH, WING } from "../lib/notch";
 import { areaPath, linePath, series } from "../lib/spark";
+import { SERVICES } from "../lib/story";
 
 // Each layer is laid out where its presentation's shape will be: under the notch, in the box.
 const banner = layoutFor("banner");
@@ -115,10 +116,7 @@ const recent = [
         <header class="head">
           <p class="title"><ArchMark size={15} /> Bridgetown</p>
           <p class="services">
-            <span><i class="dot"></i>Slack</span>
-            <span><i class="dot"></i>Jev</span>
-            <span><i class="dot"></i>GitHub</span>
-            <span><i class="dot"></i>Grafana</span>
+            {SERVICES.map((s) => <span><i class="dot" />{s}</span>)}
             <span class="faint">· polled now</span>
           </p>
         </header>

@@ -1,12 +1,7 @@
 ---
 // Day. The four ways a session ends, each a different fact that looks different. Words
 // brighten as they cross the middle of the screen.
-const outcomes = [
-  { word: "Resolved", dot: "green", evidence: "Deployed api v1.35.12. The release tracker confirmed it at 10:31." },
-  { word: "Closed", dot: "grey", evidence: "Root cause not found. Nothing shipped, and the card says so." },
-  { word: "Failed", dot: "red", evidence: "e2e failed twice after the fix. Handed back to you with the logs." },
-  { word: "Stopped", dot: "grey", evidence: "You stopped it during Fix. Its worktree is kept for you." },
-];
+import { OUTCOMES } from "../lib/story";
 ---
 
 <section class="outcomes day" id="outcomes" aria-labelledby="outcomes-title">
@@ -21,7 +16,7 @@ const outcomes = [
 
     <ul class="list">
       {
-        outcomes.map((o) => (
+        OUTCOMES.map((o) => (
           <li data-outcome>
             <span class="word">
               <i class:list={["dot", `dot-${o.dot}`]} aria-hidden="true" />

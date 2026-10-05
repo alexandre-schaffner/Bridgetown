@@ -2,20 +2,10 @@
 // Day. One alert's whole path, Diagnose to Deploy, as a horizontal reel pinned in place.
 // Each step shows the thing that proves it happened. Two steps are yours.
 import Icon from "./Icon.astro";
-import { areaPath, linePath, series } from "../lib/spark";
+import { areaPath, linePath } from "../lib/spark";
+import { FIX, PATH, RISE } from "../lib/story";
 
-const rise = [...series(40, 12, 3, 9), 14, 22, 41, 63, 71, 69, 74, 72];
 const W = 520;
-
-const diff: [number, string, string][] = [
-  [41, "", "  const query = parseQuery(req)"],
-  [42, "del", "- const region = Number(query.region)"],
-  [42, "add", "+ if (!query.region) {"],
-  [43, "add", '+   return badRequest("region is required")'],
-  [44, "add", "+ }"],
-  [45, "add", "+ const region = Number(query.region)"],
-  [46, "", "  const orders = await findOrders(region)"],
-];
 const H = 120;
 ---
 
@@ -31,14 +21,12 @@ const H = 120;
 
     <ol class="rail wrap" aria-hidden="true">
       {
-        ["Diagnose", "Fix", "Draft PR", "Second review", "CI", "Review request", "Merge", "Release", "Deploy"].map(
-          (s, i) => (
-            <li data-rail class:list={[(i === 6 || i === 7) && "yours"]}>
-              <i />
-              <span>{s}</span>
-            </li>
-          ),
-        )
+        PATH.map(({ step, yours }) => (
+          <li data-rail class:list={[yours && "yours"]}>
+            <i />
+            <span>{step}</span>
+          </li>
+        ))
       }
     </ol>
 
@@ -53,8 +41,8 @@ const H = 120;
           <div class="panel">
             <p class="panel-head"><span>Route 5xx · /v4/orders</span><b>71</b></p>
             <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true" class="chart">
-              <path d={areaPath(rise, W, H, 8)} class="area" />
-              <path d={linePath(rise, W, H, 8)} class="line" pathLength="1" />
+              <path d={areaPath(RISE, W, H, 8)} class="area" />
+              <path d={linePath(RISE, W, H, 8)} class="line" pathLength="1" />
               <line x1={W * 0.82} x2={W * 0.82} y1="0" y2={H} class="deploy" />
             </svg>
             <p class="panel-sub"><span class="mono">api v1.35.11</span> deployed 4 min before the rise</p>
@@ -71,7 +59,7 @@ const H = 120;
           <p class="caption">It edits only its worktree, then runs the tests that cover the change.</p>
           <div class="panel code">
             <p class="panel-head mono"><span>src/routes/orders.ts</span><span class="faint">+4 −1</span></p>
-            <pre>{diff.map(([n, kind, text]) => (
+            <pre>{FIX.map(([n, kind, text]) => (
               <span class:list={["dl", kind]}><span class="ln">{n}</span>{text}{"\n"}</span>
             ))}</pre>
             <p class="panel-foot mono"><span class="ok">✓</span> 214 pass · 0 fail</p>
