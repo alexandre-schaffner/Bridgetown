@@ -128,6 +128,9 @@ extension Board.Panel {
 }
 
 extension Board {
+    /// The window runs up to about now (within ten minutes), rather than around an alert.
+    func endsNow(at now: Date) -> Bool { abs(to.timeIntervalSince(now)) < 600 }
+
     /// The panel to lead with: the one spiking hardest, or else the board's first.
     var lead: Board.Panel? {
         panels.filter { $0.spikeRatio != nil }.max { ($0.spikeRatio ?? 0) < ($1.spikeRatio ?? 0) } ?? panels.first
@@ -596,12 +599,13 @@ enum Format {
         name == "DM" || name == "group DM" || name == "Grafana" ? name : "#\(name)"
     }
 
-    /// "now", "4m", "2h", "3d", then a short date.
-    static func relative(_ date: Date, now: Date = AppClock.now) -> String {
+    /// "now", "4m", "2h", "3d", then a short date. Each unit counts whole ones, as a clock
+    /// does: 59m59s is "59m", not "60m".
+    static func relative(_ date: Date, now: Date) -> String {
         let s = max(0, now.timeIntervalSince(date))
         switch s {
         case ..<45: return "now"
-        case ..<3600: return "\(Int((s / 60).rounded()))m"
+        case ..<3600: return "\(max(1, Int(s / 60)))m"
         case ..<86_400: return "\(Int(s / 3600))h"
         case ..<(7 * 86_400): return "\(Int(s / 86_400))d"
         default: return date.formatted(.dateTime.month(.abbreviated).day())
@@ -615,8 +619,13 @@ enum Format {
         return now.timeIntervalSince(date) < 7 * 86_400 ? "\(r) ago" : r
     }
 
-    /// "14:05" for history and transcript lines.
-    static let clock: Date.FormatStyle = .dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)
+    /// "14:05" for history and transcript lines, and chart times: 24-hour whatever the
+    /// locale, since without its AM/PM a 12-hour "02:05" reads as the small hours.
+    static let clock = Date.VerbatimFormatStyle(
+        format: "\(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)):\(minute: .twoDigits)",
+        timeZone: .current,
+        calendar: .current
+    )
 
     static func percent(_ v: Double) -> String { "\(Int((v * 100).rounded()))%" }
 

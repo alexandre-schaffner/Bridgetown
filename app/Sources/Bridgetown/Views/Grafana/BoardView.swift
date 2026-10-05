@@ -90,7 +90,7 @@ struct BoardView: View {
     /// "Last hour", "Last 6h", or "03:00 – 12:00" around an alert.
     private var window: String {
         let hours = Int((board.to.timeIntervalSince(board.from) / 3600).rounded())
-        if board.marker == nil, abs(board.to.timeIntervalSince(AppClock.now)) < 600 {
+        if board.marker == nil, board.endsNow(at: AppClock.now) {
             return hours <= 1 ? "Last hour" : "Last \(hours)h"
         }
         return "\(board.from.formatted(Format.clock)) – \(board.to.formatted(Format.clock))"
@@ -259,7 +259,7 @@ private struct MiniPanel: View {
             Spacer(minLength: 4)
             Text(middle, format: Format.clock)
             Spacer(minLength: 4)
-            if abs(board.to.timeIntervalSince(AppClock.now)) < 600 {
+            if board.endsNow(at: AppClock.now) {
                 Text("now")
             } else {
                 Text(board.to, format: Format.clock)
@@ -537,7 +537,7 @@ private struct DeployList: View {
                         .foregroundStyle(deploy.status == .failed ? AnyShapeStyle(Ink.red) : AnyShapeStyle(.secondary))
                         .lineLimit(1)
                     Spacer(minLength: 4)
-                    Text(Format.relative(deploy.at))
+                    Text(Format.relative(deploy.at, now: AppClock.now))
                         .font(Typo.rowTime)
                         .monospacedDigit()
                         .foregroundStyle(.tertiary)

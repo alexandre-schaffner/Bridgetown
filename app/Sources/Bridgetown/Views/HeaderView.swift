@@ -82,8 +82,7 @@ struct StatusSummary: View {
     private func facts(_ status: Status) -> [String] {
         var parts: [String] = []
         if let poll = status.lastPollAt {
-            let rel = Format.relative(poll, now: now)
-            parts.append(rel == "now" ? "Polled now" : "Polled \(rel) ago")
+            parts.append("Polled \(Format.ago(poll, now: now))")
         }
         if let sessions = store.snapshot?.metrics?.sessions, sessions.started > 0 {
             parts.append("\(sessions.resolved) of \(sessions.started) resolved in 24h")

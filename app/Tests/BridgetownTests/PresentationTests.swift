@@ -222,6 +222,47 @@ import Testing
     }
 }
 
+@Suite struct TimeFormatTests {
+    private let now = Date(timeIntervalSince1970: 1_791_115_200)
+
+    private func ago(_ seconds: TimeInterval) -> Date { now.addingTimeInterval(-seconds) }
+
+    @Test func relativeCountsWholeUnits() {
+        #expect(Format.relative(ago(44), now: now) == "now")
+        #expect(Format.relative(ago(50), now: now) == "1m")
+        #expect(Format.relative(ago(3599), now: now) == "59m")
+        #expect(Format.relative(ago(3600), now: now) == "1h")
+        #expect(Format.relative(ago(6 * 86_400), now: now) == "6d")
+    }
+
+    @Test func agoNeverPutsAgoAfterADate() {
+        #expect(Format.ago(ago(10), now: now) == "just now")
+        #expect(Format.ago(ago(240), now: now) == "4m ago")
+        let old = Format.ago(ago(9 * 86_400), now: now)
+        #expect(!old.hasSuffix("ago"))
+        #expect(old == Format.relative(ago(9 * 86_400), now: now))
+    }
+
+    @Test func clockIsTwentyFourHourInAnyLocale() throws {
+        let afternoon = try #require(Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 4, hour: 14, minute: 5)))
+        let morning = try #require(Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 4, hour: 2, minute: 5)))
+        #expect(afternoon.formatted(Format.clock) == "14:05")
+        #expect(morning.formatted(Format.clock) == "02:05")
+    }
+
+    @Test func aBoardEndsNowWithinTenMinutes() throws {
+        let json = """
+        {"title":"Incidents","from":"2026-10-04T11:00:00Z","to":"2026-10-04T12:00:00Z","stepSeconds":120,
+         "marker":null,"fetchedAt":"2026-10-04T12:00:00Z","error":null,"panels":[],"deploys":[]}
+        """
+        var board = try JSON.decoder().decode(Board.self, from: Data(json.utf8))
+        board.to = now.addingTimeInterval(-300)
+        #expect(board.endsNow(at: now))
+        board.to = now.addingTimeInterval(-3600)
+        #expect(!board.endsNow(at: now))
+    }
+}
+
 @Suite struct SessionHolderTests {
     private func session(_ status: Session.State, tone: Tone = .live, reviewChannel: String? = nil) throws -> Session {
         var s = try #require(try Fixture.snapshot().sessions.first)
