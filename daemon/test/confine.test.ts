@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { mkdirSync, symlinkSync } from "node:fs"
+import { homedir } from "node:os"
 import { join } from "node:path"
 import { writeRefusal } from "../src/sessions/confine.ts"
 import { scratchDir } from "./fixtures/tmp.ts"
@@ -10,6 +11,8 @@ const outside = join(root, "elsewhere")
 mkdirSync(join(worktree, "src"), { recursive: true })
 mkdirSync(outside)
 symlinkSync(outside, join(worktree, "escape"))
+// A symlink inside the worktree pointing at a file that does not exist yet, outside the worktree.
+symlinkSync(join(homedir(), "Library", "LaunchAgents", "bt.plist"), join(worktree, "dangling"))
 
 describe("file writes stay in the worktree", () => {
   test("inside, existing or new, absolute or relative", () => {
@@ -30,6 +33,20 @@ describe("file writes stay in the worktree", () => {
   test("a symlink out of the worktree is followed", () => {
     expect(writeRefusal("Write", { file_path: join(worktree, "escape", "x") }, worktree)).toBeDefined()
     expect(writeRefusal("Write", { file_path: join(worktree, "escape", "new", "x") }, worktree)).toBeDefined()
+  })
+  test("a dangling symlink is judged by its target, not the missing link", () => {
+    expect(writeRefusal("Write", { file_path: join(worktree, "dangling") }, worktree)).toBeDefined()
+  })
+  test("`~`, leading whitespace and null bytes are normalised like the CLI, then refused", () => {
+    expect(writeRefusal("Edit", { file_path: "~/.zshrc" }, worktree)).toBeDefined()
+    expect(writeRefusal("Write", { file_path: "~/Projects/merkl/apps-deployment/values.yaml" }, worktree)).toBeDefined()
+    expect(writeRefusal("Write", { file_path: " /etc/hosts" }, worktree)).toBeDefined()
+    expect(writeRefusal("Write", { file_path: "\t/etc/hosts" }, worktree)).toBeDefined()
+    expect(writeRefusal("Write", { file_path: "foo\0.ts" }, worktree)).toBeDefined()
+  })
+  test("`~/` that expands to inside the worktree is allowed", () => {
+    // With the worktree at $HOME, a `~/x` write lands in it.
+    expect(writeRefusal("Write", { file_path: "~/notes.md" }, homedir())).toBeUndefined()
   })
   test("no worktree yet, or no path, is refused; reads and other tools are not checked", () => {
     expect(writeRefusal("Write", { file_path: join(worktree, "a") }, null)).toBeDefined()

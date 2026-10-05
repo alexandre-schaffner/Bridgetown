@@ -5,9 +5,9 @@ import { Schema } from "effect"
 import { daemonPort, GH_HOST } from "../config.ts"
 import type { Session } from "../domain/model.ts"
 import { childEnv } from "../secrets.ts"
-import { writeGuard, writeRefusal, WRITE_TOOLS } from "./confine.ts"
-import { bashGuard, type GuardContext, readScript, refusal } from "./guard.ts"
+import { readScript } from "./guard.ts"
 import { SESSION_RESULT_JSON_SCHEMA } from "./output.ts"
+import { type ToolGuard, toolGuard, toolRefusal } from "./tool-guard.ts"
 import { makeToolServer, TOOL_SERVER, type ToolCallbacks } from "./tools.ts"
 
 const MAX_TURNS = 400
@@ -69,24 +69,38 @@ export interface TurnSetup {
   readonly onRefused: (what: string, reason: string) => void
 }
 
+/**
+ * The built-in tools a session may use, named explicitly. An allowlist, not the
+ * `claude_code` preset: the preset hands the running CLI every tool it ships, and
+ * a new one (Monitor, Cron*, RemoteTrigger, Workflow…) can run shell commands or
+ * reach the network outside the gate. Only these appear, so nothing is unguarded.
+ */
+const SESSION_TOOLS: ReadonlyArray<string> = ["Bash", "Read", "Glob", "Grep", "Edit", "Write", "NotebookEdit", "WebSearch", "WebFetch", "TodoWrite"]
+
+/**
+ * `Task` is injected by the CLI regardless of the tools allowlist, and a subagent
+ * can run `isolation: "remote"` entirely outside this process and its gate. A
+ * single session investigates one alert and opens one PR; it needs no subagent,
+ * so `Task` is removed rather than left as an escape hatch.
+ */
+const SESSION_DISALLOWED_TOOLS: ReadonlyArray<string> = ["Task"]
+
 /** The SDK options for one turn: guards, write confinement, MCP servers, structured output, a scrubbed env. */
 export const sdkOptions = ({ session, abort, resume, tools, onRefused }: TurnSetup): Options => {
-  const guard: GuardContext = {
+  const guard: ToolGuard = {
     branch: session.branch ?? "",
     cwd: session.worktree ?? session.repoPath,
     daemonPort: daemonPort(),
     readFile: readScript,
+    worktree: session.worktree,
   }
-  // Everything the guards do not refuse runs: nobody is there to answer a permission prompt.
-  // The PreToolUse hooks are the real gate (they run before allow rules and permission modes); this is the second.
+  // Nobody is there to answer a permission prompt, so everything the gate does not refuse runs.
+  // The matcher-less PreToolUse hook is the real gate (it runs before allow rules and permission modes); canUseTool is the second, for tools a permission flow asks about.
   const canUseTool: CanUseTool = async (toolName, input) => {
-    if (toolName === "Bash" && typeof input.command === "string") {
-      const reason = refusal(input.command, guard)
-      if (reason !== undefined) return { behavior: "deny", message: reason }
-    }
-    const reason = writeRefusal(toolName, input, session.worktree)
-    if (reason !== undefined) return { behavior: "deny", message: reason }
-    return { behavior: "allow", updatedInput: input }
+    const reason = toolRefusal(guard, toolName, input)
+    if (reason === undefined) return { behavior: "allow", updatedInput: input }
+    onRefused(input.command ? String(input.command) : toolName, reason)
+    return { behavior: "deny", message: reason }
   }
   return {
     ...(session.worktree === null ? {} : { cwd: session.worktree }),
@@ -94,17 +108,15 @@ export const sdkOptions = ({ session, abort, resume, tools, onRefused }: TurnSet
     effort: effortOf(session.effort),
     abortController: abort,
     systemPrompt: { type: "preset", preset: "claude_code" },
-    tools: { type: "preset", preset: "claude_code" },
+    tools: [...SESSION_TOOLS],
+    disallowedTools: [...SESSION_DISALLOWED_TOOLS],
     settingSources: ["user", "project", "local"],
     permissionMode: "acceptEdits",
     canUseTool,
     strictMcpConfig: true,
     mcpServers: { ...repoMcpServers(session.repoPath), [TOOL_SERVER]: makeToolServer(tools) },
     hooks: {
-      PreToolUse: [
-        { matcher: "Bash", hooks: [bashGuard(guard, onRefused)] },
-        { matcher: WRITE_TOOLS.join("|"), hooks: [writeGuard(session.worktree, onRefused)] },
-      ],
+      PreToolUse: [{ hooks: [toolGuard(guard, onRefused)] }],
     },
     outputFormat: { type: "json_schema", schema: SESSION_RESULT_JSON_SCHEMA },
     persistSession: true,

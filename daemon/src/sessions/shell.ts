@@ -36,8 +36,12 @@ const SPECIAL_PARAMETER = /[0-9@*#?$!-]/
 /** Unquoted text that the shell would expand as a glob or brace pattern. */
 const PATTERN = /[*?]|\[[^\]]*\]|\{[^}]*(,|\.\.)[^}]*\}/
 
+/** Nesting (`$(…)`, subshells, `"…"`) past this many levels is reported rather than recursed into, so a pathological `$(` chain cannot blow the stack. Far above anything a real command reaches. */
+const MAX_NESTING = 256
+
 class Parser {
   private i = 0
+  private depth = 0
   private readonly heredocs: Array<Heredoc> = []
 
   constructor(
@@ -53,8 +57,14 @@ class Parser {
     return this.i >= this.source.length
   }
 
+  /** Enters one nesting level, failing before the recursion can overflow the stack. */
+  private enter(): void {
+    if (++this.depth > MAX_NESTING) throw new ParseError("too deeply nested")
+  }
+
   /** A complete list. `closer` is the `)` of an enclosing subshell or `$(…)`. */
   parseList(closer: ")" | undefined): void {
+    this.enter()
     let words: Array<Word> = []
     let redirectTarget = false
     const endCommand = () => {
@@ -88,7 +98,10 @@ class Parser {
         this.i++
         endCommand()
         // A stray `)` is a `case` pattern; inside a subshell it closes it.
-        if (closer === ")") return
+        if (closer === ")") {
+          this.depth--
+          return
+        }
       } else if (c === "<" || c === ">" || c === "&") {
         const redirection = this.readRedirection()
         if (redirection._tag === "Redirect") redirectTarget = redirection.target
@@ -104,6 +117,7 @@ class Parser {
     }
     if (closer !== undefined) throw new ParseError("unterminated (")
     endCommand()
+    this.depth--
   }
 
   /**
@@ -175,6 +189,9 @@ class Parser {
         text += this.readAnsiC()
         quoted = true
         plainDigits = false
+      } else if (c === "$" && this.peek(1) === '"') {
+        // `$"…"` is a locale-translated double-quoted string; the `$` is not an expansion.
+        this.i++
       } else if (c === '"') {
         this.i++
         const inner = this.readExpanding('"')
@@ -215,14 +232,24 @@ class Parser {
       if (this.peek() === "\\") {
         const next = this.peek(1)
         const simple: Record<string, string> = { n: "\n", t: "\t", r: "\r", "\\": "\\", "'": "'", '"': '"', a: "\x07", e: "\x1b", v: "\v", f: "\f", b: "\b" }
-        const hex = /^x([0-9A-Fa-f]{1,2})/.exec(this.source.slice(this.i + 1))
-        const octal = /^([0-7]{1,3})/.exec(this.source.slice(this.i + 1))
+        const rest = this.source.slice(this.i + 1)
+        const hex = /^x([0-9A-Fa-f]{1,2})/.exec(rest)
+        const unicode = /^(u[0-9A-Fa-f]{1,4}|U[0-9A-Fa-f]{1,8})/.exec(rest)
+        const octal = /^([0-7]{1,3})/.exec(rest)
+        const control = /^c(.)/s.exec(rest)
         if (hex !== null) {
           text += String.fromCharCode(parseInt(hex[1] ?? "0", 16))
           this.i += 1 + hex[0].length
+        } else if (unicode !== null) {
+          text += String.fromCodePoint(parseInt(unicode[0].slice(1), 16))
+          this.i += 1 + unicode[0].length
         } else if (octal !== null) {
           text += String.fromCharCode(parseInt(octal[1] ?? "0", 8))
           this.i += 1 + octal[0].length
+        } else if (control !== null) {
+          // `\cX` is Ctrl-X: the letter's code with the top bits cleared.
+          text += String.fromCharCode((control[1] ?? "").toUpperCase().charCodeAt(0) & 0x1f)
+          this.i += 1 + control[0].length
         } else {
           text += simple[next] ?? next
           this.i += 2
@@ -242,6 +269,7 @@ class Parser {
    * expanding heredoc body (by the end of input). Substitutions inside run.
    */
   readExpanding(terminator: '"' | "}" | undefined): { readonly text: string; readonly dynamic: boolean } {
+    this.enter()
     let text = ""
     let dynamic = false
     while (!this.done && this.peek() !== terminator) {
@@ -270,6 +298,7 @@ class Parser {
       if (this.done) throw new ParseError(`unterminated ${terminator === '"' ? '"' : "${"}`)
       this.i++
     }
+    this.depth--
     return { text, dynamic }
   }
 
@@ -327,6 +356,7 @@ class Parser {
   private tryArithmetic(skip = 2): boolean {
     const start = this.i
     const commands = this.commands.length
+    const nesting = this.depth
     this.i += skip
     let depth = 0
     try {
@@ -354,6 +384,7 @@ class Parser {
     }
     this.i = start
     this.commands.length = commands
+    this.depth = nesting
     return false
   }
 
