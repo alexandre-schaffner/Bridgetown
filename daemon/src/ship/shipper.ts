@@ -30,7 +30,7 @@ import {
 
 /** PR → CI → review → merge → release → deploy, driven by polling GitHub and reading the release tracker. */
 export interface ShipperShape {
-  /** One pass over shipping sessions: CI, reviews, merges, stalled deploys. */
+  /** One pass over shipping sessions: CI, reviews, merges, release cards, stalled deploys. */
   readonly tick: Effect.Effect<void, GitHubError>
   /** A release tracker message changed: moves the sessions shipping that tag. */
   readonly trackDeploy: (alert: Alert) => Effect.Effect<void, GitHubError>
@@ -80,12 +80,23 @@ export const ShipperLive = Layer.effect(Shipper)(
         if (delivery === "refused") yield* handOff(session.id, cannotResume("send it back"))
       })
 
-    /** After a move the shipper made: the session's cards its new state no longer offers go (`cardStands`). */
-    const settle = (session: Session | undefined) => (session === undefined ? Effect.void : queue.withdrawDead(session))
+    /** The release gate's card, for the tag the release would cut. */
+    const offerRelease = (session: Session, prefix: string, tag: string) =>
+      queue.put({
+        kind: "release",
+        title: `Ship ${session.title}`,
+        detail: releaseDetail(session.prUrl, tag, prefix),
+        primaryLabel: `Cut ${tag}`,
+        options: [],
+        sessionId: session.id,
+        alertId: session.alertId,
+        payload: tag,
+      })
 
     /**
      * After the merge: resolve (nothing to ship), hand off (a prefix that cannot
-     * be a tag), or offer the release. The merge card goes only once the step
+     * be a tag), or offer the release. The merge card goes (`SessionRepo`
+     * withdraws it as the session leaves `awaiting_merge`) only once the step
      * that can fail has succeeded, so a failure leaves it (and the next tick
      * retries). A merge click and the ship tick can both see the merge; only the
      * first to record it moves the session, so the release is offered once.
@@ -106,7 +117,6 @@ export const ShipperLive = Layer.effect(Shipper)(
           case "NothingToRelease": {
             const done = yield* recordMerged({ status: "resolved", phase: "done", activity: "Merged, nothing to release", resolution: mergedResolution(session.prUrl) })
             if (done === undefined) return
-            yield* settle(done)
             yield* postFor(done, Messages.merged(session.prUrl))
             return
           }
@@ -120,24 +130,13 @@ export const ShipperLive = Layer.effect(Shipper)(
               },
               merged,
             )
-            yield* settle(yield* repo.get(sessionId))
             return
           }
           case "Release": {
             const tag = yield* github.nextPatchTag(session.repoPath, step.prefix)
             const ready = yield* recordMerged({ status: "awaiting_release", phase: "deploy", activity: `Merged, ready to cut ${tag}` })
             if (ready === undefined) return
-            yield* settle(ready)
-            yield* queue.put({
-              kind: "release",
-              title: `Ship ${session.title}`,
-              detail: releaseDetail(session.prUrl, tag, step.prefix),
-              primaryLabel: `Cut ${tag}`,
-              options: [],
-              sessionId,
-              alertId: session.alertId,
-              payload: tag,
-            })
+            yield* offerRelease(ready, step.prefix, tag)
             return
           }
         }
@@ -200,7 +199,7 @@ export const ShipperLive = Layer.effect(Shipper)(
             return yield* onMerged(sessionId)
           case "Closed":
             // Someone closed it on GitHub: closed without a fix, not stopped by you.
-            yield* settle(yield* repo.patch(sessionId, { status: "closed", activity: "PR closed on GitHub", resolution: "PR closed without merging" }))
+            yield* repo.patch(sessionId, { status: "closed", activity: "PR closed on GitHub", resolution: "PR closed without merging" })
             return
           case "Wait": {
             const activity = step.activity ?? session.activity
@@ -208,7 +207,7 @@ export const ShipperLive = Layer.effect(Shipper)(
             return
           }
           case "BackToCi":
-            yield* settle(yield* repo.patch(sessionId, { status: "ci", activity: step.activity, mergeRequestedAt: null, milestones }))
+            yield* repo.patch(sessionId, { status: "ci", activity: step.activity, mergeRequestedAt: null, milestones })
             return
           case "Red":
             return yield* escalate(session, step.escalation, ciFailedPrompt(step.failing, session.ciRounds + 1, MAX_CI_ROUNDS), "ci", { milestones })
@@ -255,7 +254,6 @@ export const ShipperLive = Layer.effect(Shipper)(
           deployStage: { _tag: "Deployed" },
         })
         if (done === undefined) return
-        yield* settle(done)
         const origin = yield* store.getAlert(session.alertId)
         yield* thread.postUpdate(origin ?? alert, Messages.deployed(tag === "" ? alert.title : tag))
       })
@@ -283,18 +281,35 @@ export const ShipperLive = Layer.effect(Shipper)(
       }
     })
 
+    /**
+     * Back at the release gate without its card: a turn in between (your message, a teammate's follow-up) withdrew
+     * it, since a card stands only at its own stage (`cardStands`). The gate offers it again, as the merge gate does.
+     * Only onto the row as read, so a session that moved on meanwhile gets no card.
+     */
+    const reofferRelease = (session: Session) =>
+      Effect.gen(function* () {
+        const step = afterMerge(session)
+        if (step._tag !== "Release" || (yield* queue.forSession(session.id, "release")).length > 0) return
+        const tag = session.releaseTag ?? (yield* github.nextPatchTag(session.repoPath, step.prefix))
+        const back = yield* repo.modify(session.id, (current) =>
+          current.updatedAt !== session.updatedAt ? undefined : withPatch(current, { activity: `Merged, ready to cut ${tag}` }),
+        )
+        if (back !== undefined) yield* offerRelease(back, step.prefix, tag)
+      })
+
     const tick = Effect.gen(function* () {
       // GHE refusing this network is already shown once; every CI check would only repeat it.
       if ((yield* hub.status).github === "blocked") return
       const problems: Array<string> = []
+      const reported = (what: string) => <R>(effect: Effect.Effect<void, GitHubError, R>) =>
+        effect.pipe(
+          Effect.catchTag("GheBlocked", () => hub.patchStatus({ github: "blocked" })),
+          Effect.catch((error) => Effect.sync(() => void problems.push(`${what}: ${error.message}`))),
+        )
       for (const session of yield* store.activeSessions()) {
         if (yield* runner.busy(session.id)) continue
-        if (session.status === "ci" || session.status === "awaiting_merge") {
-          yield* checkCi(session.id).pipe(
-            Effect.catchTag("GheBlocked", () => hub.patchStatus({ github: "blocked" })),
-            Effect.catch((error) => Effect.sync(() => void problems.push(`CI check: ${error.message}`))),
-          )
-        }
+        if (session.status === "ci" || session.status === "awaiting_merge") yield* checkCi(session.id).pipe(reported("CI check"))
+        if (session.status === "awaiting_release") yield* reofferRelease(session).pipe(reported("Release card"))
         const stalled = deployStalled(session, Date.now())
         if (stalled !== null) yield* handOff(session.id, stalled)
       }

@@ -180,9 +180,9 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
           },
           { evenIfFinished: options.reopen === true },
         )
+        // Now running, the session's hand-off, re-run and gate cards are gone (`cardStands`, applied by the repo): the
+        // turn supersedes them, and a gate it comes back to offers its card again.
         if (session === undefined) return [undefined, state] as const
-        // The turn supersedes the last hand-off: its card would close, or re-run jobs for, a session that is working again.
-        yield* queue.removeWhere((action) => action.sessionId === id && (action.kind === "review" || action.kind === "rerun"))
         const input = yield* makeTurnInput(prompt)
         const followUps = state.live.get(id)?.followUps ?? (yield* Queue.unbounded<FollowUp>())
         const claimed: Claimed = { session, input, followUps, resume: options.resume }

@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { type AdapterError, NotFound } from "../domain/errors.ts"
 import { newId, now } from "../domain/ids.ts"
-import { type Action, cardStands, RETRY, type Session } from "../domain/model.ts"
+import { type Action, RETRY, type Session } from "../domain/model.ts"
 import { Hub } from "../hub.ts"
 import { Store } from "../store/store.ts"
 
@@ -26,8 +26,6 @@ export interface ActionQueueShape {
   readonly retryCard: (session: Session, title: string, detail: string) => Effect.Effect<void, AdapterError>
   readonly remove: (id: string) => Effect.Effect<void, AdapterError>
   readonly removeWhere: (predicate: (action: Action) => boolean) => Effect.Effect<void, AdapterError>
-  /** Removes the session's cards its state no longer offers (`cardStands`): what moves a session calls it with the row it wrote. */
-  readonly withdrawDead: (session: Session) => Effect.Effect<void, AdapterError>
 }
 
 export class ActionQueue extends Context.Service<ActionQueue, ActionQueueShape>()("ActionQueue") {}
@@ -93,7 +91,6 @@ export const ActionQueueLive = Layer.effect(ActionQueue)(
         }),
       remove: (id) => store.deleteAction(id).pipe(Effect.andThen(hub.notify)),
       removeWhere,
-      withdrawDead: (session) => removeWhere((a) => a.sessionId === session.id && !cardStands(a, session)),
     }
   }),
 )

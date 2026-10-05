@@ -125,6 +125,43 @@ describe("the merge gate is read again every tick", () => {
   })
 })
 
+describe("the release gate is offered again after a turn", () => {
+  test("back at the gate without its card (a turn took it): the card is put back, once", async () => {
+    const { github, calls } = fakeGitHub({ current: {} })
+    const world = makeWorld({ github })
+    const merged = { ...shipping("awaiting_release").milestones, merged: true }
+    try {
+      const out = await world.runPromise(
+        Effect.gen(function* () {
+          yield* seed(shipping("awaiting_release", { milestones: merged, activity: "Answered the teammate" }))
+          const first = yield* afterTick
+          const second = yield* afterTick
+          return { session: second.session, first: first.cards.map((c) => c.primaryLabel), second: second.cards.map((c) => c.primaryLabel) }
+        }),
+      )
+      expect(out.first).toEqual(["Cut app-v2.15.1"])
+      expect(out.second).toEqual(["Cut app-v2.15.1"])
+      expect(out.session).toMatchObject({ status: "awaiting_release", activity: "Merged, ready to cut app-v2.15.1" })
+      expect(calls.nextTag).toBe(1)
+    } finally {
+      await world.dispose()
+    }
+  })
+
+  test("a release already being cut keeps its tag on the card", async () => {
+    const { github, calls } = fakeGitHub({ current: {} })
+    const world = makeWorld({ github })
+    const merged = { ...shipping("awaiting_release").milestones, merged: true }
+    try {
+      const out = await world.runPromise(seed(shipping("awaiting_release", { milestones: merged, releaseTag: "app-v2.15.0" })).pipe(Effect.andThen(afterTick)))
+      expect(out.cards.map((c) => c.primaryLabel)).toEqual(["Cut app-v2.15.0"])
+      expect(calls.nextTag).toBe(0)
+    } finally {
+      await world.dispose()
+    }
+  })
+})
+
 describe("a PR closed on GitHub", () => {
   test("closes the session as such, never 'Stopped by you', and its Merge card goes", async () => {
     const { github } = fakeGitHub({ current: { state: "CLOSED" } })

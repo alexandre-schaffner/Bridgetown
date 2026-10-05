@@ -516,8 +516,9 @@ export const RETRY = "retry"
  * Whether the card still stands: its session is at the stage the card was offered for. A merge card is for
  * `awaiting_merge`, a release card for `awaiting_release`, a re-run or a hand-off for `waiting`, a retry for
  * `failed`. Once the session moved on (finished, back at work, past the gate) the card is dead: it must not act,
- * and it goes. Cards without a session, answers (their `ask` decides) and replies (still sendable after the session
- * ended) always stand.
+ * and it goes (`SessionRepo` withdraws it with the write that moved the session; a gate the session comes back to
+ * offers its card again). An answer lasts while its session is active (its `ask` decides). Cards without a session
+ * and replies (still sendable after the session ended) always stand.
  */
 export const cardStands = (action: Action, session: Session | undefined): boolean => {
   switch (action.kind) {
@@ -529,9 +530,10 @@ export const cardStands = (action: Action, session: Session | undefined): boolea
       return session?.status === "waiting"
     case "review":
       return session?.status === (action.payload === RETRY ? "failed" : "waiting")
+    case "answer":
+      return session !== undefined && isActive(session)
     case "investigate":
     case "escalate":
-    case "answer":
     case "reply":
       return true
   }

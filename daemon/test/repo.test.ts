@@ -103,7 +103,7 @@ describe("SessionRepo: the finished guard", () => {
   })
 })
 
-describe("SessionRepo: cards end with their session", () => {
+describe("SessionRepo: a card goes once its session leaves the stage it was offered for", () => {
   const card = (sessionId: string, kind: Action["kind"], payload: string | null = null): Action => ({
     id: `a_${sessionId}_${kind}_${payload ?? ""}`, kind, title: kind, detail: "", primaryLabel: "Go", options: [], sessionId,
     alertId: null, payload, url: null, createdAt: "2026-10-01T00:00:00.000Z",
@@ -143,11 +143,27 @@ describe("SessionRepo: cards end with their session", () => {
     expect(left).toEqual(["reply:Thanks", `review:${RETRY}`])
   })
 
-  test("a write that does not end the session leaves its cards alone", async () => {
+  test("a write that does not move the session leaves its cards alone", async () => {
     const left = await cardsAfter(makeSession("awaiting_merge", { id: "s_wait", alertId: "C1:wait" }), [card("s_wait", "merge", "https://ghe/pull/1")], {
       activity: "still waiting",
     })
     expect(left).toEqual(["merge:https://ghe/pull/1"])
+  })
+
+  test("a session sent back to CI from the merge gate takes the Merge card with it", async () => {
+    const left = await cardsAfter(makeSession("awaiting_merge", { id: "s_back", alertId: "C1:back" }), [card("s_back", "merge", "https://ghe/pull/1")], {
+      status: "ci",
+    })
+    expect(left).toEqual([])
+  })
+
+  test("a turn starting takes the hand-off, re-run and gate cards; a reply and the turn's own answer stay", async () => {
+    const left = await cardsAfter(
+      makeSession("awaiting_release", { id: "s_turn", alertId: "C1:turn" }),
+      [card("s_turn", "release", "app-v1.0.1"), card("s_turn", "review"), card("s_turn", "rerun", "42"), card("s_turn", "reply", "Thanks"), card("s_turn", "answer")],
+      { status: "running" },
+    )
+    expect(left).toEqual(["answer:", "reply:Thanks"])
   })
 })
 
