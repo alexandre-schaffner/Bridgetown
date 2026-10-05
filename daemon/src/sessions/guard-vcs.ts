@@ -283,7 +283,7 @@ const TAG_WRITE_FLAGS = flags("-a", "--annotate", "-s", "--sign", "-u", "--local
 
 /** `git tag` may only list: no tag-name positional and no create/delete flag. `git tag --sort=x NAME` creates NAME. */
 const tagRefusal = (args: ReadonlyArray<Word>): string | undefined => {
-  const listing = args.some((arg) => arg.text === "-l" || arg.text === "--list")
+  const listing = args.some((arg) => arg.text === "-l" || arg.text === "--list" || /^-n[0-9]*$/.test(arg.text))
   const positional: Array<Word> = []
   for (let i = 0; i < args.length; i++) {
     const word = args[i]
