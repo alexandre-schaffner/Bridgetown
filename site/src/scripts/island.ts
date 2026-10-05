@@ -3,7 +3,17 @@
 // `.reveal` transition does it (a blur-fade that trails the shape, out quickly before it
 // closes). Scroll picks a step; each step plays in time, like the real thing would.
 
-import { layoutFor, notchPath, NOTCH, WING, type IslandLayout, type Presentation } from "../lib/notch";
+import {
+  BOX_W,
+  frameWidth,
+  layoutFor,
+  NOTCH,
+  notchPath,
+  SCREEN_W,
+  WING,
+  type IslandLayout,
+  type Presentation,
+} from "../lib/notch";
 
 /** SwiftUI's spring(response:dampingFraction:) as stiffness and damping, mass 1. */
 interface SpringSpec {
@@ -41,7 +51,6 @@ class Spring {
   }
 }
 
-const BOX_W = 1128;
 const sleep = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
     const t = setTimeout(resolve, ms);
@@ -79,15 +88,17 @@ export function createIsland(
   const mergeRow = island.querySelector<HTMLElement>("[data-action='merge']")!;
   const mergeBtn = island.querySelector<HTMLElement>("[data-btn='merge']")!;
   const cursor = root.querySelector<SVGElement>("[data-cursor]")!;
+  const hit = island.querySelector<HTMLButtonElement>("[data-island-hit]")!;
   const steps = [...root.querySelectorAll<HTMLElement>("[data-step]")];
 
-  // Fit the 1440-point screen to the bezel. Narrow screens zoom in on the notch instead,
-  // keeping the open island's width in view and letting the menu bar run off the sides.
+  // Fit the screen to the bezel (inside its 14px edges). Narrow screens zoom in on the notch
+  // instead, keeping the open island and a little either side in view and letting the menu bar
+  // run off the sides.
   const fit = () => {
     const inner = mac.clientWidth - 28;
-    const k = inner < 900 ? inner / 1160 : inner / 1440;
+    const k = inner < 900 ? inner / (BOX_W + 32) : inner / SCREEN_W;
     mac.style.setProperty("--k", String(k));
-    mac.style.setProperty("--ox", `${(inner - 1440 * k) / 2}px`);
+    mac.style.setProperty("--ox", `${(inner - SCREEN_W * k) / 2}px`);
   };
   fit();
   new ResizeObserver(fit).observe(mac);
@@ -116,8 +127,7 @@ export function createIsland(
       shoulder: Math.max(0, springs.shoulder.x),
       corner: Math.max(0, springs.corner.x),
     };
-    const frameW = layout.width + 2 * layout.shoulder;
-    const d = notchPath(layout, (BOX_W - frameW) / 2);
+    const d = notchPath(layout, (BOX_W - frameWidth(layout)) / 2);
     fill.setAttribute("d", d);
     edge.setAttribute("d", d);
     clip.style.clipPath = `path("${d}")`;
@@ -254,12 +264,12 @@ export function createIsland(
   };
   /** Where an element in the island sits, in the screen's unscaled coordinates. */
   const pointOf = (el: HTMLElement) => {
-    const k = screen.getBoundingClientRect().width / 1440;
     const s = screen.getBoundingClientRect();
+    const k = s.width / SCREEN_W;
     const r = el.getBoundingClientRect();
     return { x: (r.left - s.left + r.width * 0.55) / k, y: (r.top - s.top + r.height * 0.55) / k };
   };
-  const rightWing = { x: 720 + NOTCH.width / 2 + WING / 2, y: 16 };
+  const rightWing = { x: SCREEN_W / 2 + NOTCH.width / 2 + WING / 2, y: NOTCH.height / 2 };
 
   // MARK: Steps
 
@@ -352,24 +362,6 @@ export function createIsland(
   // MARK: Pointer
 
   // After the tour, the island answers the pointer: it swells under it and opens on a click.
-  const hit = document.createElement("button");
-  hit.type = "button";
-  hit.className = "island-hit";
-  hit.setAttribute("aria-label", "Open or close Bridgetown's island");
-  Object.assign(hit.style, {
-    position: "absolute",
-    top: "0",
-    left: "50%",
-    width: "300px",
-    height: "40px",
-    translate: "-50% 0",
-    zIndex: "7",
-    background: "transparent",
-    border: "0",
-    cursor: "pointer",
-    borderRadius: "0 0 16px 16px",
-  });
-  screen.append(hit);
   hit.addEventListener("pointerenter", () => {
     if (presentation !== "wings") return;
     hovering = true;
@@ -384,15 +376,7 @@ export function createIsland(
     controller.abort();
     showCursor(false);
     hovering = false;
-    if (presentation === "open") {
-      present("wings");
-      hit.style.height = "40px";
-      hit.style.width = "300px";
-    } else {
-      present("open");
-      hit.style.height = "40px";
-      hit.style.width = "1128px";
-    }
+    present(presentation === "open" ? "wings" : "open");
   });
 
   // Its buttons work too: each settles its row, and the island folds once nothing is left.

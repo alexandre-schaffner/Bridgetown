@@ -678,6 +678,42 @@ const CHECKS: Check[] = [
     },
   },
   {
+    name: "The island opens and folds on a click, a target for the pointer alone",
+    viewport: LAPTOP,
+    motion: "reduce",
+    async run(page) {
+      const hit = page.locator("[data-island-hit]");
+      expect(
+        await hit.evaluate((b: HTMLElement) => b.tabIndex === -1 && !!b.closest('[aria-hidden="true"]')),
+        "the hit target is in the tab order, or in the accessibility tree inside the screen's image",
+      );
+      // Once its width has finished changing (Reduce Motion still runs a 1ms transition).
+      const state = () =>
+        hit.evaluate(async (b: HTMLElement) => {
+          await new Promise(requestAnimationFrame);
+          await Promise.all(b.getAnimations().map((a) => a.finished));
+          return { open: b.closest("[data-island]")!.classList.contains("is-open"), width: b.offsetWidth };
+        });
+      // The end of the chapter, once its last step has opened the island and folded it away.
+      await page.evaluate(() => {
+        const notch = document.querySelector<HTMLElement>("#notch")!;
+        scrollTo(0, notch.offsetTop + notch.offsetHeight - innerHeight - 10);
+      });
+      const isOpen = (want: boolean) =>
+        page.waitForFunction((want) => document.querySelector("[data-island]")!.classList.contains("is-open") === want, want, {
+          timeout: 10_000,
+        });
+      await isOpen(true);
+      await isOpen(false);
+      await hit.click();
+      const opened = await state();
+      expect(opened.open && opened.width === 1128, `after a click it is ${JSON.stringify(opened)}, not open across the island`);
+      await hit.click();
+      const folded = await state();
+      expect(!folded.open && folded.width === 300, `after a second click it is ${JSON.stringify(folded)}, not folded`);
+    },
+  },
+  {
     name: "On a touch screen the recording's pause button is in sight",
     viewport: PHONE,
     motion: "no-preference",

@@ -5,7 +5,23 @@
 // The team and its services are made up.
 import ArchMark from "./ArchMark.astro";
 import Icon from "./Icon.astro";
+import { BOX_W, layoutFor, NOTCH, WING } from "../lib/notch";
 import { areaPath, linePath, series } from "../lib/spark";
+
+// Each layer is laid out where its presentation's shape will be: under the notch, in the box.
+const banner = layoutFor("banner");
+const open = layoutFor("open");
+const geometry = {
+  "--box-w": `${BOX_W}px`,
+  "--box-h": `${open.height}px`,
+  "--notch-w": `${NOTCH.width}px`,
+  "--notch-h": `${NOTCH.height}px`,
+  "--wing": `${WING}px`,
+  "--banner-w": `${banner.width}px`,
+  "--banner-h": `${banner.height - NOTCH.height}px`,
+  "--open-w": `${open.width}px`,
+  "--open-h": `${open.height - NOTCH.height}px`,
+};
 
 const BW = 150;
 const BH = 40;
@@ -57,8 +73,8 @@ const recent = [
 ];
 ---
 
-<div class="island" data-island aria-hidden="true">
-  <svg class="shape" width="1128" height="512" viewBox="0 0 1128 512" aria-hidden="true">
+<div class="island" data-island aria-hidden="true" style={geometry}>
+  <svg class="shape" width={BOX_W} height={open.height} viewBox={`0 0 ${BOX_W} ${open.height}`} aria-hidden="true">
     <defs>
       <linearGradient id="island-edge" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="#fff" stop-opacity="0"></stop>
@@ -220,19 +236,23 @@ const recent = [
     </div>
   </div>
 
-  <svg class="edge-svg" width="1128" height="512" viewBox="0 0 1128 512" aria-hidden="true">
+  <svg class="edge-svg" width={BOX_W} height={open.height} viewBox={`0 0 ${BOX_W} ${open.height}`} aria-hidden="true">
     <path class="edge" data-island-edge stroke="url(#island-edge)"></path>
   </svg>
+
+  <!-- After the tour the island answers the pointer: hover swells the wings, a click opens it
+       or folds it away. A flourish for the pointer only: the screen's label already says what
+       the island does. -->
+  <button class="hit" type="button" tabindex="-1" data-island-hit></button>
 </div>
 
 <style>
   .island {
-    --box-w: 1128px;
     position: absolute;
     top: 0;
     left: 50%;
     width: var(--box-w);
-    height: 512px;
+    height: var(--box-h);
     margin-left: calc(var(--box-w) / -2);
     color: var(--ui-text);
     font-size: 12px;
@@ -299,24 +319,24 @@ const recent = [
     top: 0;
     left: 0;
     right: 0;
-    height: 32px;
+    height: var(--notch-h);
   }
 
   .wing {
     position: absolute;
     top: 0;
-    height: 32px;
-    width: 38px;
+    height: var(--notch-h);
+    width: var(--wing);
     display: grid;
     place-items: center;
   }
 
   .wing.left {
-    left: calc(564px - 95px - 38px);
+    left: calc(var(--box-w) / 2 - var(--notch-w) / 2 - var(--wing));
   }
 
   .wing.right {
-    left: calc(564px + 95px);
+    left: calc(var(--box-w) / 2 + var(--notch-w) / 2);
     display: flex;
     justify-content: center;
     align-items: center;
@@ -362,7 +382,7 @@ const recent = [
     display: flex;
     gap: 18px;
     align-items: center;
-    height: 32px;
+    height: var(--notch-h);
     color: var(--ui-dim);
     font-size: 11.5px;
     opacity: 0;
@@ -375,10 +395,10 @@ const recent = [
 
   /* Banner. */
   .banner {
-    top: 32px;
-    left: calc(564px - 180px);
-    width: 360px;
-    height: 64px;
+    top: var(--notch-h);
+    left: calc((var(--box-w) - var(--banner-w)) / 2);
+    width: var(--banner-w);
+    height: var(--banner-h);
     display: grid;
     grid-template-columns: 30px minmax(0, 1fr) auto;
     align-items: center;
@@ -423,10 +443,10 @@ const recent = [
 
   /* Open. */
   .open {
-    top: 32px;
-    left: 14px;
-    width: 1100px;
-    height: 480px;
+    top: var(--notch-h);
+    left: calc((var(--box-w) - var(--open-w)) / 2);
+    width: var(--open-w);
+    height: var(--open-h);
     display: grid;
     grid-template-columns: 372px minmax(0, 1fr) minmax(0, 1fr);
     border-top: 0.5px solid var(--ui-hairline);
@@ -830,6 +850,26 @@ const recent = [
 
   .recent .age {
     align-self: start;
+  }
+
+  /* Around the wings, and across the whole island once it is open. */
+  .hit {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 300px;
+    height: calc(var(--notch-h) + 8px);
+    translate: -50% 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0 0 16px 16px;
+    background: transparent;
+    pointer-events: auto;
+    cursor: pointer;
+  }
+
+  .island:global(.is-open) .hit {
+    width: var(--box-w);
   }
 
   @media (prefers-reduced-motion: reduce) {
