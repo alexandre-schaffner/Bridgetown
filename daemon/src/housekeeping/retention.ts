@@ -63,10 +63,14 @@ const groupBy = <A>(rows: ReadonlyArray<A>, key: (row: A) => string | null): Rea
 /**
  * The rows to delete, pure. Cards older than `ROWS_MS` whose session is finished or gone expire.
  * Then finished sessions and alerts older than that, past the snapshot's newest, and that no card
- * still names, are candidates; the two sets shrink together until nothing kept points at a
- * deleted row: a session goes only with its alert and every alert attached to it, an alert only
- * with every session it started and the session it was attached to. So an active session keeps
- * its alerts however old, and no alert outlives its session to read "Filtered by a rule".
+ * names, are candidates; the two sets shrink together until nothing kept points at a deleted row:
+ * a session goes only with its alert and every alert attached to it, an alert only with every
+ * session it started and the session it was attached to. So an active session keeps its alerts
+ * however old, and no alert outlives its session to read "Filtered by a rule".
+ *
+ * A session goes only once nothing can bring it back while its branch and conversation are deleted:
+ * no card names it, not even one expiring now (a Retry is one click until the card is gone), and its
+ * worktree was reclaimed (so no message reopens it). Either way it goes a round later.
  */
 export const planPrune = ({ alerts, sessions, actions }: PruneRefs, nowMs: number): PrunePlan => {
   const cutoff = new Date(nowMs - ROWS_MS).toISOString()
@@ -79,13 +83,12 @@ export const planPrune = ({ alerts, sessions, actions }: PruneRefs, nowMs: numbe
     const session = a.sessionId === null ? undefined : sessionById.get(a.sessionId)
     return a.createdAt < cutoff && (session === undefined || !isActiveStatus(session.status))
   })
-  const expiredIds = new Set(expired.map((a) => a.id))
-  const named = new Set(actions.filter((a) => !expiredIds.has(a.id)).flatMap((a) => [a.sessionId, a.alertId]))
+  const named = new Set(actions.flatMap((a) => [a.sessionId, a.alertId]))
 
   const finished = sessions.filter((s) => !isActiveStatus(s.status))
   const recentSessions = newest(finished, (s) => s.updatedAt, SNAPSHOT_FINISHED_SESSIONS)
   const recentAlerts = newest(alerts, (a) => a.receivedAt, SNAPSHOT_ALERTS)
-  let doomedSessions = finished.filter((s) => s.updatedAt < cutoff && !recentSessions.has(s) && !named.has(s.id))
+  let doomedSessions = finished.filter((s) => s.updatedAt < cutoff && s.worktree === null && !recentSessions.has(s) && !named.has(s.id))
   let doomedAlerts = alerts.filter((a) => a.receivedAt < cutoff && !recentAlerts.has(a) && !named.has(a.id))
 
   // Each pass only removes candidates, so this ends.
@@ -105,5 +108,5 @@ export const planPrune = ({ alerts, sessions, actions }: PruneRefs, nowMs: numbe
     doomedAlerts = nextAlerts
     if (settled) break
   }
-  return { actionIds: [...expiredIds], sessions: doomedSessions, alertIds: doomedAlerts.map((a) => a.id) }
+  return { actionIds: expired.map((a) => a.id), sessions: doomedSessions, alertIds: doomedAlerts.map((a) => a.id) }
 }

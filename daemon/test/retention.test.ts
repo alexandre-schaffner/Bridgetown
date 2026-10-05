@@ -57,18 +57,23 @@ describe("planPrune", () => {
     ).toEqual({ sessions: [], alerts: [], cards: [] })
   })
 
-  test("what a card names survives; a month-old card of a finished or missing session expires", () => {
-    const refs = {
-      alerts: [alert("a1", OLD, "s1"), alert("a2", OLD), alert("a3", OLD)],
-      sessions: [session("s1", "a1", "failed", OLD), session("s2", "a3", "waiting", OLD)],
-      actions: [
-        card("c_retry", OLD, { sessionId: "s1", alertId: "a1" }),
-        card("c_recent", RECENT, { alertId: "a2" }),
-        card("c_live", OLD, { sessionId: "s2", alertId: "a3" }),
-        card("c_gone", OLD, { sessionId: "s_gone" }),
-      ],
-    }
-    expect(plan(refs)).toEqual({ sessions: ["s1"], alerts: ["a1"], cards: ["c_gone", "c_retry"] })
+  test("what a card names survives, even a card expiring now; a month-old card of a finished or missing session expires", () => {
+    const alerts = [alert("a1", OLD, "s1"), alert("a2", OLD), alert("a3", OLD)]
+    const sessions = [session("s1", "a1", "failed", OLD), session("s2", "a3", "waiting", OLD)]
+    const live = [card("c_recent", RECENT, { alertId: "a2" }), card("c_live", OLD, { sessionId: "s2", alertId: "a3" })]
+    const retry = card("c_retry", OLD, { sessionId: "s1", alertId: "a1" })
+    // Its Retry still works until the card is gone, so the session waits for the next round.
+    expect(plan({ alerts, sessions, actions: [...live, retry, card("c_gone", OLD, { sessionId: "s_gone" })] })).toEqual({
+      sessions: [],
+      alerts: [],
+      cards: ["c_gone", "c_retry"],
+    })
+    expect(plan({ alerts, sessions, actions: live })).toEqual({ sessions: ["s1"], alerts: ["a1"], cards: [] })
+  })
+
+  test("a session that still records its worktree waits until housekeeping reclaims it, since your message could reopen it", () => {
+    const kept = { ...session("s1", "a1", "closed", OLD), worktree: "/w" }
+    expect(plan({ alerts: [alert("a1", OLD, "s1")], sessions: [kept] })).toEqual({ sessions: [], alerts: [], cards: [] })
   })
 
   test("the newest 30 alerts and 20 finished sessions stay past a month", () => {

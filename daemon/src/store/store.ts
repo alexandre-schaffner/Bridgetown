@@ -67,7 +67,8 @@ export interface StoreShape {
   readonly pruneRefs: () => Effect.Effect<{ readonly alerts: ReadonlyArray<AlertRef>; readonly sessions: ReadonlyArray<SessionRef> }, AdapterError>
   /**
    * In one transaction: these cards; these sessions, unless one became active since it was planned; these
-   * alerts, unless a session still started from one; then every transcript line whose session is gone.
+   * alerts, unless a session still stored started from one or has it attached; then every transcript line
+   * whose session is gone.
    */
   readonly pruneRows: (rows: {
     readonly actionIds: ReadonlyArray<string>
@@ -256,7 +257,10 @@ const StoreImpl = Layer.effect(Store)(
               yield* sql`DELETE FROM sessions WHERE id IN ${sql.in(sessionIds)} AND status NOT IN ${sql.in(ACTIVE_STATUSES)}`
               yield* sql`
                 DELETE FROM alerts WHERE id IN ${sql.in(alertIds)}
-                AND NOT EXISTS (SELECT 1 FROM sessions WHERE json_extract(sessions.json, '$.alertId') = alerts.id)
+                AND NOT EXISTS (
+                  SELECT 1 FROM sessions
+                  WHERE json_extract(sessions.json, '$.alertId') = alerts.id OR sessions.id = json_extract(alerts.json, '$.sessionId')
+                )
               `
               yield* sql`DELETE FROM transcript WHERE session_id NOT IN (SELECT id FROM sessions)`
             }),

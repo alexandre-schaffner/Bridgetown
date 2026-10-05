@@ -47,6 +47,21 @@ describe("store pruning", () => {
     })
   })
 
+  test("an alert attached to a session that stays stays too", async () => {
+    const left = await world.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store
+        yield* store.putAlert(makeAlert({ id: "a_own", sessionId: "s_back" }))
+        yield* store.putAlert(makeAlert({ id: "a_follow_up", sessionId: "s_back" }))
+        // Retried after it was planned: active again, so the transaction keeps it.
+        yield* store.putSession(makeSession("queued", { id: "s_back", alertId: "a_own" }))
+        yield* store.pruneRows({ actionIds: [], sessionIds: ["s_back"], alertIds: ["a_own", "a_follow_up"] })
+        return yield* Effect.forEach(["a_own", "a_follow_up"], (id) => store.getAlert(id).pipe(Effect.map((a) => a?.id ?? null)))
+      }),
+    )
+    expect(left).toEqual(["a_own", "a_follow_up"])
+  })
+
   test("maintain gives the freed pages back", async () => {
     const run = <A>(effect: Effect.Effect<A, unknown, Store>) => world.runPromise(effect)
     await run(
