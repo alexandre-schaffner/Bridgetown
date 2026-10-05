@@ -39,7 +39,7 @@ final class Store {
     @ObservationIgnored private var streamTask: Task<Void, Never>?
     @ObservationIgnored private var flashTask: Task<Void, Never>?
 
-    @ObservationIgnored private var settingsTask: Task<Void, Never>?
+    @ObservationIgnored private var settingsDebounce: Task<Void, Never>?
     @ObservationIgnored private var pendingSettings = PendingSettings()
     /// The settings as the daemon last sent them.
     @ObservationIgnored private var serverSettings: Settings?
@@ -178,32 +178,39 @@ final class Store {
         guard pendingSettings.record(from: snap.settings, to: next) else { return }
         snapshot = withLocalSettings(snap)
 
-        settingsTask?.cancel()
-        settingsTask = Task { [weak self] in
-            if debounce { try? await Task.sleep(for: .milliseconds(400)) }
-            guard !Task.isCancelled, let self else { return }
-            await self.sendSettings()
+        // A later edit calls off the wait, never a request under way: that one would fail
+        // as "cancelled" and take back the fields it carried.
+        settingsDebounce?.cancel()
+        guard debounce else { return sendSettings() }
+        settingsDebounce = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            self?.sendSettings()
         }
     }
 
-    private func sendSettings() async {
-        guard let client, let send = pendingSettings.beginSend() else { return }
-        let result: Result<Snapshot, Error>
-        do {
-            result = .success(try await client.updateSettings(body: send.body))
-        } catch {
-            result = .failure(error)
-        }
-        pendingSettings.endSend(send.keys)
-        switch result {
-        case let .success(next):
-            apply(next)
-        case let .failure(error):
-            show(error.userMessage)
-            // Back to what the daemon last sent for these fields.
-            if let snap = snapshot, let server = serverSettings {
-                snapshot = withLocalSettings(snap.with(settings: server))
+    /// POSTs the unsent fields, unless a request is out: then they go once it is answered.
+    private func sendSettings() {
+        guard let client, let body = pendingSettings.beginSend() else { return }
+        Task {
+            let result: Result<Snapshot, Error>
+            do {
+                result = .success(try await client.updateSettings(body: body))
+            } catch {
+                result = .failure(error)
             }
+            pendingSettings.endSend()
+            switch result {
+            case let .success(next):
+                apply(next)
+            case let .failure(error):
+                show(error.userMessage)
+                // Back to what the daemon last sent for these fields.
+                if let snap = snapshot, let server = serverSettings {
+                    snapshot = withLocalSettings(snap.with(settings: server))
+                }
+            }
+            sendSettings()
         }
     }
 
@@ -290,13 +297,16 @@ private extension Snapshot {
 /// Settings edits the daemon hasn't confirmed. An edited field keeps its local value over
 /// any snapshot until the request carrying it has been answered, so an SSE echo of an
 /// older state never undoes a keystroke or a half-typed path.
+///
+/// One request at a time: edits made while one is out wait for its answer, so answers
+/// come back in the order they were sent and an older one never has the last word.
 struct PendingSettings {
     /// The settings as the user last edited them.
     private(set) var local: Settings?
     /// Edited fields not POSTed yet.
     private(set) var unsent: Set<Settings.CodingKeys> = []
-    /// Fields POSTed and not answered yet, with the number of requests carrying each.
-    private var sending: [Settings.CodingKeys: Int] = [:]
+    /// The fields of the request that is out, not answered yet.
+    private var sending: Set<Settings.CodingKeys> = []
 
     var isPending: Bool { !unsent.isEmpty || !sending.isEmpty }
 
@@ -310,26 +320,23 @@ struct PendingSettings {
         return true
     }
 
-    /// Takes the unsent fields for one request: their keys and the `POST /settings` body.
-    mutating func beginSend() -> (keys: Set<Settings.CodingKeys>, body: Data)? {
-        guard let local, !unsent.isEmpty, let body = try? local.patchBody(unsent) else { return nil }
-        let keys = unsent
+    /// Takes the unsent fields for the next request, as its `POST /settings` body. Nil
+    /// while a request is out: `endSend` makes way for the next.
+    mutating func beginSend() -> Data? {
+        guard sending.isEmpty, let local, !unsent.isEmpty, let body = try? local.patchBody(unsent) else { return nil }
+        sending = unsent
         unsent = []
-        for key in keys { sending[key, default: 0] += 1 }
-        return (keys, body)
+        return body
     }
 
-    /// The request carrying `keys` was answered (or failed).
-    mutating func endSend(_ keys: Set<Settings.CodingKeys>) {
-        for key in keys {
-            let left = (sending[key] ?? 1) - 1
-            sending[key] = left > 0 ? left : nil
-        }
+    /// The request that was out was answered (or failed).
+    mutating func endSend() {
+        sending = []
     }
 
     /// `server` with every unconfirmed field taken from the local edit.
     func shown(over server: Settings) -> Settings {
         guard let local else { return server }
-        return server.overlaid(unsent.union(sending.keys), from: local)
+        return server.overlaid(unsent.union(sending), from: local)
     }
 }
