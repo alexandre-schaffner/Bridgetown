@@ -17,7 +17,7 @@ type Pt = [number, number];
 const f = (n: number) => +n.toFixed(2);
 
 /**
- * The menu-bar mark as an SVG path in a `archWidth × archHeight` viewBox (y down): three
+ * The app's arch mark as an SVG path in an `archWidth × archHeight` viewBox (y down): three
  * ring stones (keystone in the middle, a little wider than on the icon so it reads small)
  * and two piers, with `joint` units cut between them.
  */

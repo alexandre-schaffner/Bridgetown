@@ -43,6 +43,7 @@ import { site } from "../site";
   if (form) {
     const input = $<HTMLInputElement>("input", form)!;
     const button = $<HTMLButtonElement>("button", form)!;
+    const label = button.textContent;
     const status = $("[role=status]", form)!;
     const say = (text: string, error = false) => {
       status.textContent = text;
@@ -78,7 +79,7 @@ import { site } from "../site";
         say("That didn't go through. Try again in a moment.", true);
       } finally {
         button.disabled = false;
-        button.textContent = "Request early access";
+        button.textContent = label;
       }
     });
   }
