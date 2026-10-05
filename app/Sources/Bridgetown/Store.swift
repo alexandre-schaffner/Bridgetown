@@ -53,28 +53,28 @@ final class Store {
         self.client = client
         connection = .connecting
         lastConnectError = nil
-        streamTask = Task { [weak self] in
+        // The store lives as long as the app, so the loop holds it.
+        streamTask = Task {
             var attempt = 0
             var reached = false
             while !Task.isCancelled {
-                guard let self else { return }
                 do {
                     try await client.streamSnapshots { snap in
                         attempt = 0
                         reached = true
-                        self.apply(snap)
-                        if self.connection != .connected { self.connection = .connected }
+                        apply(snap)
+                        if connection != .connected { connection = .connected }
                     }
                     // Clean close: the daemon went away or restarted.
-                    self.markDisconnected("Daemon closed the connection", reached: reached)
+                    markDisconnected("Daemon closed the connection", reached: reached)
                 } catch is CancellationError {
                     return
                 } catch {
                     if Task.isCancelled { return }
                     if case DaemonError.http(401, _) = error {
-                        self.connection = .rejected
+                        connection = .rejected
                     } else {
-                        self.markDisconnected(error.userMessage, reached: reached)
+                        markDisconnected(error.userMessage, reached: reached)
                     }
                 }
                 attempt += 1
@@ -169,8 +169,11 @@ final class Store {
     }
 
     func setPaused(_ paused: Bool) {
-        if var snap = snapshot { snap.status.paused = paused; snapshot = snap }  // optimistic
-        perform("pause") { try await $0.setPaused(paused) }
+        snapshot?.status.paused = paused  // optimistic
+        perform("pause", onFailure: { [weak self] in
+            // No snapshot may come to correct it, so put it back, unless one already has.
+            if self?.snapshot?.status.paused == paused { self?.snapshot?.status.paused = !paused }
+        }) { try await $0.setPaused(paused) }
     }
 
     // MARK: Settings
@@ -210,7 +213,7 @@ final class Store {
             case let .success(next):
                 apply(next)
             case let .failure(error):
-                show(error.userMessage)
+                report(error.userMessage)
                 // Back to what the daemon last sent for these fields.
                 if let snap = snapshot, let server = serverSettings {
                     snapshot = withLocalSettings(snap.with(settings: server))
@@ -228,43 +231,28 @@ final class Store {
 
     // MARK: Fetches
 
-    func alertDetail(id: String) async throws -> AlertDetail {
+    /// A read the views load and poll themselves: a board, an alert's detail, a transcript.
+    func fetch<T: Sendable>(_ read: @Sendable (DaemonClient) async throws -> T) async throws -> T {
         guard let client else { throw DaemonError.notConnected }
-        return try await client.alertDetail(id: id)
-    }
-
-    func board(view: String) async throws -> Board {
-        guard let client else { throw DaemonError.notConnected }
-        return try await client.board(view: view)
-    }
-
-    func alertBoard(alertId: String) async throws -> Board? {
-        guard let client else { throw DaemonError.notConnected }
-        return try await client.alertBoard(id: alertId)
-    }
-
-    func logSweep() async throws -> LogSweep {
-        guard let client else { throw DaemonError.notConnected }
-        return try await client.logs()
-    }
-
-    func transcript(for session: Session) async throws -> [TranscriptEntry] {
-        guard let client else { throw DaemonError.notConnected }
-        return try await client.transcript(sessionId: session.id)
+        return try await read(client)
     }
 
     // MARK: Plumbing
 
     /// Runs `call`, applies the Snapshot it returns, and flashes the error unless
-    /// `stillWorking` says the daemon is still on it.
+    /// `stillWorking` says the daemon is still on it. A key already in flight is a second
+    /// click on the same thing, so it sends nothing.
     private func perform(
         _ key: String,
         stillWorking: ((Error) -> Bool)? = nil,
         onSuccess: (() -> Void)? = nil,
+        onFailure: (() -> Void)? = nil,
         _ call: @escaping @Sendable (DaemonClient) async throws -> Snapshot
     ) {
+        guard !busy.contains(key) else { return }
         guard let client else {
-            show(DaemonError.notConnected.userMessage)
+            onFailure?()
+            report(DaemonError.notConnected.userMessage)
             return
         }
         busy.insert(key)
@@ -275,12 +263,14 @@ final class Store {
                 onSuccess?()
             } catch {
                 if stillWorking?(error) == true { return }
-                show(error.userMessage)
+                onFailure?()
+                report(error.userMessage)
             }
         }
     }
 
-    func show(_ message: String) {
+    /// Flashes `message` in the header for a few seconds: a user action that failed.
+    func report(_ message: String) {
         flash = message
         flashTask?.cancel()
         flashTask = Task { [weak self] in

@@ -10,7 +10,7 @@ struct LogSweepView: View {
     let now: Date
 
     var body: some View {
-        PollingLoader(key: "logs", fetch: { try await store.logSweep() }) { loaded in
+        PollingLoader(key: "logs", fetch: { try await store.fetch { try await $0.logs() } }) { loaded in
             if let sweep = loaded.value {
                 SweepContent(sweep: sweep, now: now)
             } else if let error = loaded.error {

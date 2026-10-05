@@ -53,7 +53,7 @@ struct TelemetryPanel: View {
 
     /// A board view of `GET /boards/:view`.
     private func board(_ view: String) -> some View {
-        PollingLoader(key: view, fetch: { try await store.board(view: view) }) { loaded in
+        PollingLoader(key: view, fetch: { try await store.fetch { try await $0.board(view: view) } }) { loaded in
             if let board = loaded.value ?? nil {
                 BoardView(board: board, rows: true)
             } else if let error = loaded.error {
