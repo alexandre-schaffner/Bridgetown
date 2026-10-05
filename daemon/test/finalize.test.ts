@@ -222,6 +222,14 @@ describe("decideOutcome", () => {
       expect(d.patch.status).toBe("ci")
     })
 
+    test("a fix with no follow-up PR after a failed deploy ships nothing: handed off, not back to a deploy that will not move", () => {
+      for (const prUrl of [null, "https://ghe/pull/1"]) {
+        const d = decide({ session: deployFailed, result: result({ outcome: "fix_pr", prUrl, diagnosis: "pushed to the merged branch" }) })
+        expect(d.patch.status).toBe("waiting")
+        expect(d.cards).toEqual([{ _tag: "HandOff", title: "Deploy failed", detail: "pushed to the merged branch" }])
+      }
+    })
+
     test("without a send-back the same answer is a side turn back to the deploy", () => {
       expect(decide({ session: { ...deployFailed, sentBack: null }, result: result({ outcome: "recommendation" }) }).patch.status).toBe("deploying")
     })

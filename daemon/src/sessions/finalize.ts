@@ -122,6 +122,19 @@ export const decideOutcome = ({ session, result, alert, pushed, head, adversaria
       ? [card({ kind: "reply", title: `Reply to ${inbox.fromName}`, detail: result.summary, primaryLabel: "Send reply", payload: result.summary })]
       : []
 
+  // Bridgetown sent the agent back and it found no fix, or none that ships (a failed deploy is only answered by a
+  // follow-up PR: the one it released cannot ship again). The ship flow cannot get past that on its own.
+  const sentBack = session.sentBack
+  if (sentBack !== null && (result.outcome !== "fix_pr" || (sentBack === "deploy" && (result.prUrl ?? session.prUrl) === session.prUrl))) {
+    return {
+      ...none,
+      cards: [...reply, { _tag: "HandOff", title: SENT_BACK_TITLES[sentBack], detail: result.recommendationDetail ?? result.diagnosis }],
+      patch: { ...verdict, status: "waiting", activity: result.summary },
+      post:
+        result.outcome === "recommendation" ? forAlert(Messages.recommendation(result.summary, result.recommendationDetail ?? result.recommendation ?? "")) : null,
+    }
+  }
+
   if (result.outcome === "fix_pr") {
     const prUrl = result.prUrl ?? (shipping === undefined ? null : session.prUrl)
     if (prUrl === null) return { ...none, cards: reply, patch: verdict, fail: "The agent reported a fix but opened no PR" }
@@ -158,17 +171,6 @@ export const decideOutcome = ({ session, result, alert, pushed, head, adversaria
         release,
       },
       markReady: review === null && shipTo === "ci" ? prUrl : null,
-    }
-  }
-
-  if (session.sentBack !== null) {
-    // Bridgetown sent the agent back and it found no fix: the ship flow cannot get past that on its own.
-    return {
-      ...none,
-      cards: [...reply, { _tag: "HandOff", title: SENT_BACK_TITLES[session.sentBack], detail: result.recommendationDetail ?? result.diagnosis }],
-      patch: { ...verdict, status: "waiting", activity: result.summary },
-      post:
-        result.outcome === "recommendation" ? forAlert(Messages.recommendation(result.summary, result.recommendationDetail ?? result.recommendation ?? "")) : null,
     }
   }
 
