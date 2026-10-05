@@ -5,7 +5,7 @@ ICON    := build/AppIcon.icns
 # ad-hoc signatures change every build. Override with SIGN_IDENTITY="<name>".
 SIGN_IDENTITY ?= Bridgetown Local Signing
 
-.PHONY: all app daemon icon dev-app test-app mock clean
+.PHONY: all app daemon icon dev-app test-app e2e mock clean
 
 all: daemon app
 
@@ -43,7 +43,7 @@ app: $(ICON)
 	@echo "built $(APP)"
 
 # Debug app attached to an already-running daemon (e.g. `make mock` in another shell).
-# Pass extra flags with ARGS, e.g. make dev-app ARGS=--preview-window
+# Pass extra flags with ARGS, e.g. make dev-app ARGS=--island-demo
 dev-app:
 	BRIDGETOWN_ATTACH=1 BRIDGETOWN_API_TOKEN=$${BRIDGETOWN_API_TOKEN:-dev} \
 		swift run --package-path app Bridgetown $(ARGS)
@@ -54,6 +54,13 @@ TESTING_PLUGINS := $(shell d="$$(dirname "$$(xcrun --find swift 2>/dev/null)")/.
 
 test-app:
 	swift test --package-path app $(if $(TESTING_PLUGINS),-Xswiftc -plugin-path -Xswiftc "$(TESTING_PLUGINS)")
+
+# The debug app on the static mock daemon, every screen in app/E2E/suite.json drawn off
+# screen and layout-linted, into .context/e2e/<run>/ (index.md, report.json, shots/,
+# issues/). ONLY='<glob>' picks shots, SUITE= another suite, BASELINE= the run to diff
+# against, SERVE=1 then stays up for an agent (scripts/e2e.sh).
+e2e:
+	scripts/e2e.sh
 
 # The real daemon on a throwaway store with Slack, Jev, the agent and GitHub faked
 # (daemon/scripts/mock/). 127.0.0.1:47621, token "dev"; BRIDGETOWN_PORT, MOCK_EXTRA=1,

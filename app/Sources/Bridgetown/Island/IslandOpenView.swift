@@ -10,9 +10,8 @@ struct IslandOpenView: View {
     @Environment(Store.self) private var store
     let model: IslandModel
 
-    /// The status column: the popover's width, with the same insets, so the prod board lays
-    /// out as it does there.
-    static let statusWidth = Metrics.width
+    /// The status column: the header, the stats and the prod board.
+    static let statusWidth: CGFloat = 380
 
     var body: some View {
         let geometry = model.geometry
@@ -67,7 +66,7 @@ struct IslandOpenView: View {
     }
 
     private func main(now: Date) -> some View {
-        RouteContent(motion: .slide) { overview(now: now) }
+        RouteContent { overview(now: now) }
             .animation(.smooth(duration: 0.32), value: store.route)
     }
 

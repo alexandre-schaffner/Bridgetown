@@ -1,7 +1,6 @@
 import SwiftUI
 
-// The overview's parts, shared by its two layouts: one column in the preview window
-// (`PopoverView`), side by side in the open island (`IslandOpenView`).
+// The overview's parts, laid out side by side in the open island (`IslandOpenView`).
 
 extension Snapshot {
     /// Nothing waiting, running or received yet: the overview shows `EmptyState` instead.

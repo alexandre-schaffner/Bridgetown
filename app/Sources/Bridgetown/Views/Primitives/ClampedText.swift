@@ -40,6 +40,10 @@ struct ClampedText: View {
                             .frame(height: clamped ? lineHeight : 0)
                     }
                 }
+                // Accessibility still has every line, at its whole frame: this marks them as
+                // clipped (E2EAccessibility.clipIdentifier).
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("clip")
                 .padding(boxed ? 8 : 0)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background {
