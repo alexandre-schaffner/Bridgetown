@@ -235,10 +235,11 @@ final class DaemonProcess {
         state = .running(pid: p.processIdentifier)
         onLaunch?()
 
+        let saved = Keychain.secrets() ?? [:]
         let secrets = Secrets(
             apiToken: endpoint.token,
-            slackUserToken: Keychain.read(.slackUserToken) ?? "",
-            typesafeApiKey: Keychain.read(.typesafeAPIKey) ?? ""
+            slackUserToken: saved[.slackUserToken] ?? "",
+            typesafeApiKey: saved[.typesafeAPIKey] ?? ""
         )
         do {
             try input.fileHandleForWriting.write(contentsOf: secrets.line())
