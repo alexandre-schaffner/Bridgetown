@@ -14,7 +14,7 @@
     "build": "bun build src/main.ts --compile --outfile dist/bridgetown-daemon"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.3.220",
+    "@anthropic-ai/claude-agent-sdk": "0.3.283",
     "@effect/platform-bun": "4.0.0",
     "@effect/sql-sqlite-bun": "4.0.0",
     "@typesafe-ai/sdk": "^0.6.0",
