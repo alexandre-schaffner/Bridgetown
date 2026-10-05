@@ -68,6 +68,27 @@ export const legacyReviewPosted = (session: Json): Json | undefined => {
   return { ...session, review: { ...fields, posted: typeof fields.permalink === "string" } }
 }
 
+/**
+ * Before `releasePrefix`, `release.tag` held the prefix the agent named until its release was cut, and the tag cut
+ * (or the one a re-run followed) after; `component` held that prefix again, or the alert's image. The prefix goes to
+ * `releasePrefix` and a tag to `releaseTag`; `release` and `component` go. `undefined` for a row already rewritten.
+ */
+export const legacyRelease = (session: Json): Json | undefined => {
+  if (!("release" in session) && !("component" in session)) return undefined
+  const { release, component: _component, ...rest } = session
+  const fields = typeof release === "object" && release !== null ? Object.fromEntries(Object.entries(release)) : {}
+  const tag = typeof fields.tag === "string" ? fields.tag.trim() : ""
+  const recorded = typeof session.releaseTag === "string" ? session.releaseTag : null
+  const milestones = typeof session.milestones === "object" && session.milestones !== null ? Object.fromEntries(Object.entries(session.milestones)) : {}
+  const prefix = tag.replace(/-v\d+\.\d+\.\d+.*$/, "")
+  if (tag === "") return { ...rest, releasePrefix: null, releaseTag: recorded }
+  // Cut: the prefix it was cut under, and the tag.
+  if (milestones.released === true) return { ...rest, releasePrefix: prefix, releaseTag: recorded ?? tag }
+  // Without a PR of its own, only a re-run set it: the tag that re-run follows.
+  if (typeof session.prUrl !== "string") return { ...rest, releasePrefix: null, releaseTag: recorded ?? tag }
+  return { ...rest, releasePrefix: prefix, releaseTag: recorded }
+}
+
 /** Rewrites the rows of `table` that `f` changes. */
 const rewrite = (table: "alerts" | "sessions", f: (row: Json) => Json | undefined) =>
   Effect.gen(function* () {
@@ -126,4 +147,5 @@ export const migrations = SqliteMigrator.fromRecord({
   "004_review_posted": rewrite("sessions", legacyReviewPosted),
   // One poll horizon for every channel, from before each channel kept its own (`since:<channel id>`): nothing reads it.
   "005_global_horizon": SqlClient.SqlClient.pipe(Effect.flatMap((sql) => sql`DELETE FROM kv WHERE key = 'since'`)),
+  "006_release_prefix": rewrite("sessions", legacyRelease),
 })

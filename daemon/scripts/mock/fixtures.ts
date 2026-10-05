@@ -262,35 +262,35 @@ export const buildFixtures = (options: WorldOptions) => {
       ? session(A.ask, "waiting", { started: 25, updated: 2 }, { activity: `Asked: ${truncate(ASK.question, 100)}`, costUsd: 0.31, milestones: { ...NO_MILESTONES, diagnosed: true } })
       : { ...newSession(A.ask, SESSION.ask, options.repoPath), startedAt: ago(25) },
     ci: session(A.ci, "ci", { started: 37, updated: 3 }, {
-      activity: "CI running on #3340", phase: "ci", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3340), ciRounds: 1, costUsd: 1.84, review: reviewed, component: "studio",
+      activity: "CI running on #3340", phase: "ci", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3340), ciRounds: 1, costUsd: 1.84, review: reviewed,
       diagnosis: "vite 6.4.0 (pulled in by a caret range) changed how `import.meta.glob` resolves eager imports, breaking the route manifest in apps/studio. Pinning vite to 6.3.5 restores it.",
-      release: { image: "merkl-studio", tag: "studio", version: "" }, milestones: shipped({}),
+      releasePrefix: "studio", milestones: shipped({}),
     }),
     merge: session(A.merge, "awaiting_merge", { started: 69, updated: 12 }, {
-      activity: "#3345 approved and green, ready to merge", phase: "ci", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3345), costUsd: 0.97, review: reviewed, component: "app",
+      activity: "#3345 approved and green, ready to merge", phase: "ci", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3345), costUsd: 0.97, review: reviewed,
       diagnosis: "The sparkline component imports `d3-shape` from a path that only exists in d3 v7; the lockfile resolved v6 after a dedupe. Import from the package root.",
-      release: { image: "merkl-app", tag: "app", version: "" }, milestones: shipped({ ciGreen: true }),
+      releasePrefix: "app", milestones: shipped({ ciGreen: true }),
     }),
     release: session(A.release, "awaiting_release", { started: 109, updated: 30 }, {
-      activity: "Merged, ready to cut dispute-v0.4.3", phase: "deploy", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3338), costUsd: 0.62, review: reviewed, component: "dispute",
+      activity: "Merged, ready to cut dispute-v0.4.3", phase: "deploy", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3338), costUsd: 0.62, review: reviewed,
       diagnosis: "The Dockerfile copies `bun.lockb`, which the repo replaced with `bun.lock`. Copy the new lockfile.",
-      release: { image: "merkl-dispute", tag: "dispute", version: "" }, milestones: shipped({ ciGreen: true, merged: true }), mergeRequestedAt: ago(31),
+      releasePrefix: "dispute", milestones: shipped({ ciGreen: true, merged: true }), mergeRequestedAt: ago(31),
     }),
     inFlight: session(A.inFlight, "awaiting_release", { started: 149, updated: 2 }, {
-      activity: "Merged, ready to cut indexer-v0.9.3", phase: "deploy", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3336), costUsd: 0.88, review: reviewed, component: "indexer",
+      activity: "Merged, ready to cut indexer-v0.9.3", phase: "deploy", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3336), costUsd: 0.88, review: reviewed,
       diagnosis: "Base image pulls hit Docker Hub's anonymous rate limit on the shared runner. Pull from the GHCR mirror instead.",
-      release: { image: "merkl-indexer", tag: "indexer", version: "" }, milestones: shipped({ ciGreen: true, merged: true }), mergeRequestedAt: ago(20),
+      releasePrefix: "indexer", milestones: shipped({ ciGreen: true, merged: true }), mergeRequestedAt: ago(20),
     }),
     deploying: session(A.deploying, "deploying", { started: 189, updated: 15 }, {
-      activity: "Waiting for release approval", phase: "deploy", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3333), costUsd: 1.21, review: reviewed, component: "api",
+      activity: "Waiting for release approval", phase: "deploy", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3333), costUsd: 1.21, review: reviewed,
       diagnosis: "The ETL job's new migration adds a NOT NULL column without a default; existing rows fail it. Added a default and a backfill.",
-      release: { image: "merkl-api", tag: "api-v1.35.11", version: "v1.35.11" }, milestones: shipped({ ciGreen: true, merged: true, released: true }),
+      releasePrefix: "api", milestones: shipped({ ciGreen: true, merged: true, released: true }),
       mergeRequestedAt: ago(40), releaseTag: "api-v1.35.11", deployStage: { _tag: "AwaitingApproval" },
     }),
     resolved: session(A.resolved, "resolved", { started: 297, updated: 250 }, {
-      activity: "Deployed admin-v0.6.1", phase: "done", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3329), costUsd: 1.31, review: reviewed, component: "admin", worktree: null,
+      activity: "Deployed admin-v0.6.1", phase: "done", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3329), costUsd: 1.31, review: reviewed, worktree: null,
       diagnosis: "A caret range let vite 6.4.0 in, which changed eager `import.meta.glob` resolution and emptied the route manifest. Pinned vite to 6.3.5.",
-      release: { image: "merkl-admin", tag: "admin-v0.6.1", version: "v0.6.1" }, milestones: shipped({ ciGreen: true, merged: true, released: true, deployed: true }),
+      releasePrefix: "admin", milestones: shipped({ ciGreen: true, merged: true, released: true, deployed: true }),
       resolution: "deployed admin-v0.6.1", mergeRequestedAt: ago(280), releaseTag: "admin-v0.6.1", deployStage: { _tag: "Deployed" },
     }),
     closed: session(A.closed, "closed", { started: 418, updated: 380 }, {
@@ -299,9 +299,9 @@ export const buildFixtures = (options: WorldOptions) => {
       milestones: { ...NO_MILESTONES },
     }),
     failedCi: session(A.failedCi, "failed", { started: 598, updated: 540 }, {
-      activity: "Agent stopped: error_max_turns", phase: "ci", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3302), ciRounds: 2, costUsd: 3.92, component: "states-exporter",
+      activity: "Agent stopped: error_max_turns", phase: "ci", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3302), ciRounds: 2, costUsd: 3.92,
       diagnosis: "The exporter's Dockerfile pins a Debian image whose apt mirror is gone; switching to bookworm fixes the build, but the integration test then times out against the staging RPC.",
-      release: { image: "merkl-states-exporter", tag: "states-exporter", version: "" }, milestones: shipped({}), resolution: "agent stopped: error_max_turns",
+      releasePrefix: "states-exporter", milestones: shipped({}), resolution: "agent stopped: error_max_turns",
     }),
     failedSetup: session(A.failedSetup, "failed", { started: 139.6, updated: 139 }, {
       activity: "Could not start: git fetch: The requested URL returned error: 403", worktree: null, claudeSessionId: null, costUsd: 0,
@@ -321,9 +321,9 @@ export const buildFixtures = (options: WorldOptions) => {
       diagnosis: "Couldn't reproduce the timeout: the same epoch computes in **212s** locally against an archive node.\n\nRuled out:\n- RPC latency (p99 180ms)\n- the campaign config (unchanged)\n- memory (61% peak)\n\nThe slow part in the failing run is `fetchPositions` for 3 Uniswap v4 pools (18k sequential calls); a cold cache on the engine pod is possible but unproven.",
     }),
     critique: session(A.critique, "critiquing", { started: 15, updated: 0.5 }, {
-      activity: "Waiting for review", phase: "critique", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3352), costUsd: 0.86, component: "api",
+      activity: "Waiting for review", phase: "critique", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3352), costUsd: 0.86,
       diagnosis: "Linea's RPC returns reward amounts as hex strings above 2^53; `Number()` in `RewardService.format` overflows to Infinity and JSON serialisation fails. Parse with BigInt.",
-      release: { image: "merkl-api", tag: "api", version: "" }, milestones: shipped({ critiqued: false }),
+      releasePrefix: "api", milestones: shipped({ critiqued: false }),
     }),
   } satisfies Record<keyof typeof SESSION, Session>
 

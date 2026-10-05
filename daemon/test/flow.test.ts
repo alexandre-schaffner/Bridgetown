@@ -123,7 +123,7 @@ describe("deploy tracker edits (M3)", () => {
       Effect.gen(function* () {
         const store = yield* Store
         const shipper = yield* Shipper
-        yield* seed(makeSession("deploying", { id: "s_dep", alertId: "C1:dep", ciRounds: MAX_CI_ROUNDS, release: { image: "", tag: "admin-v0.6.1", version: "" } }))
+        yield* seed(makeSession("deploying", { id: "s_dep", alertId: "C1:dep", ciRounds: MAX_CI_ROUNDS, releaseTag: "admin-v0.6.1" }))
         yield* shipper.trackDeploy(tracker("Build", "1 attempt failed"))
         const first = yield* store.getSession("s_dep")
         yield* shipper.trackDeploy(tracker("Build", "1 attempt failed · 👀"))

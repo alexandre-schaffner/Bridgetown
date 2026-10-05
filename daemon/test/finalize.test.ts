@@ -51,7 +51,9 @@ describe("decideOutcome", () => {
 
   test("fix PR records the release prefix and the evidence", () => {
     const d = decide({ pushed: true, head: "abc", result: result({ outcome: "fix_pr", prUrl: "https://ghe/pull/1", releasePrefix: "admin" }) })
-    expect(d.patch).toMatchObject({ prUrl: "https://ghe/pull/1", release: { image: "merkl-admin", tag: "admin" }, milestones: { diagnosed: true, fixed: true, prOpened: true } })
+    expect(d.patch).toMatchObject({ prUrl: "https://ghe/pull/1", releasePrefix: "admin", milestones: { diagnosed: true, fixed: true, prOpened: true } })
+    // A full tag is taken for its prefix.
+    expect(decide({ result: result({ outcome: "fix_pr", prUrl: "https://ghe/pull/1", releasePrefix: "admin-v0.6.0" }) }).patch.releasePrefix).toBe("admin")
     expect(d.fail).toBeNull()
     expect(decide({ result: result({ outcome: "fix_pr" }) }).fail).toBe("The agent reported a fix but opened no PR")
   })
@@ -73,11 +75,13 @@ describe("decideOutcome", () => {
   test("a CI round on the same PR keeps shipping state and does not re-post the PR", () => {
     const deploying = running({
       prUrl: "https://ghe/pull/1",
-      release: { image: "", tag: "admin-v0.6.1", version: "" },
+      releasePrefix: "admin",
+      releaseTag: "admin-v0.6.1",
       milestones: { ...NO_MILESTONES, prOpened: true, merged: true, released: true },
     })
-    const d = decide({ session: deploying, result: result({ outcome: "fix_pr", prUrl: "https://ghe/pull/1", releasePrefix: "admin" }) })
-    expect(d.patch).toMatchObject({ status: "deploying", release: { tag: "admin-v0.6.1" } })
+    const d = decide({ session: deploying, result: result({ outcome: "fix_pr", prUrl: "https://ghe/pull/1", releasePrefix: "api" }) })
+    expect(d.patch).toMatchObject({ status: "deploying", releasePrefix: "admin" })
+    expect(d.patch.releaseTag).toBeUndefined()
     expect(d.post).toBeNull()
   })
 
@@ -96,9 +100,16 @@ describe("decideOutcome", () => {
       mergeRequestedAt: null,
       releaseTag: null,
       deployStage: null,
+      tracker: null,
       milestones: { prOpened: true, ciGreen: false, merged: false, released: false },
     })
     expect(d.post).toContain("https://ghe/pull/2")
+  })
+
+  test("so does the first PR after a re-run that failed again: the re-run's deploy is no longer followed", () => {
+    const reran = running({ releaseTag: "admin-v0.6.0", tracker: "C1:tracker", sentBack: "deploy", deployStage: { _tag: "Failed", stage: "Build", detail: "" } })
+    const d = decide({ session: reran, result: result({ outcome: "fix_pr", prUrl: "https://ghe/pull/9", releasePrefix: "admin-v0.6.0" }) })
+    expect(d.patch).toMatchObject({ status: "ci", prUrl: "https://ghe/pull/9", releasePrefix: "admin", releaseTag: null, deployStage: null, tracker: null })
   })
 
   describe("adversarial review", () => {
@@ -251,7 +262,7 @@ describe("shipStatus", () => {
   test("where a shipping session goes back to", () => {
     expect(shipStatus(makeSession("running"))).toBeUndefined()
     expect(shipStatus(makeSession("running", { prUrl: "u" }))).toBe("ci")
-    expect(shipStatus(makeSession("running", { prUrl: "u", release: { image: "", tag: "admin", version: "" }, milestones: { ...NO_MILESTONES, merged: true } }))).toBe("awaiting_release")
+    expect(shipStatus(makeSession("running", { prUrl: "u", releasePrefix: "admin", milestones: { ...NO_MILESTONES, merged: true } }))).toBe("awaiting_release")
     expect(shipStatus(makeSession("running", { prUrl: "u", milestones: { ...NO_MILESTONES, merged: true, released: true } }))).toBe("deploying")
   })
 })

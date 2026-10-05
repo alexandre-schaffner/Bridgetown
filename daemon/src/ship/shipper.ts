@@ -36,8 +36,8 @@ export interface ShipperShape {
   readonly trackDeploy: (alert: Alert) => Effect.Effect<void, GitHubError>
   /** The merge gate: merges at most once, then moves on to the release. `Conflict` unless the session is `awaiting_merge`. */
   readonly merge: (sessionId: string) => Effect.Effect<void, GitHubError | Conflict>
-  /** The release gate: cuts at most one tag for the prefix. `Conflict` unless the session is `awaiting_release`. */
-  readonly release: (sessionId: string, prefix: string) => Effect.Effect<void, GitHubError | Conflict>
+  /** The release gate: cuts at most one tag for the session's prefix. `Conflict` unless the session is `awaiting_release` with a prefix. */
+  readonly release: (sessionId: string) => Effect.Effect<void, GitHubError | Conflict>
   /** Re-runs a failed workflow run on the agent's recommendation. `Conflict` unless the session is `waiting` on it. */
   readonly rerun: (sessionId: string, runId: string) => Effect.Effect<void, GitHubError | Conflict>
 }
@@ -146,8 +146,9 @@ export const ShipperLive = Layer.effect(Shipper)(
     const requestReview = (session: Session, pr: PullRequest) =>
       Effect.gen(function* () {
         if (session.prUrl === null) return
-        const route = reviewRoute(session.component)
         const alert = yield* store.getAlert(session.alertId)
+        // The prefix it ships under, else the image its release alert names.
+        const route = reviewRoute(session.releasePrefix ?? (alert?.fields._tag === "release" ? alert.fields.image : null))
         const result = yield* thread.postChannel(
           route.channelId,
           reviewRequestText({
@@ -244,7 +245,7 @@ export const ShipperLive = Layer.effect(Shipper)(
 
     const finishDeploy = (session: Session, alert: Alert) =>
       Effect.gen(function* () {
-        const tag = session.release?.tag ?? ""
+        const tag = session.releaseTag ?? ""
         const done = yield* repo.patch(session.id, {
           status: "resolved",
           phase: "done",
@@ -337,11 +338,13 @@ export const ShipperLive = Layer.effect(Shipper)(
       else yield* atGate(sessionId, "awaiting_merge", { mergeRequestedAt: now(), activity: "Queued to merge" })
     })
 
-    const release = Effect.fn("Shipper.release")(function* (sessionId: string, prefix: string) {
+    const release = Effect.fn("Shipper.release")(function* (sessionId: string) {
       const session = yield* repo.get(sessionId)
       if (session?.status !== "awaiting_release") return yield* movedOn("for its release")
+      const step = afterMerge(session)
+      if (step._tag !== "Release") return yield* movedOn("for its release")
       const notes = [session.diagnosis ?? session.title, "", `Fix: ${session.prUrl ?? "n/a"}`, "", "Shipped via Bridgetown."].join("\n")
-      const tag = yield* releaseOnce(session, prefix, {
+      const tag = yield* releaseOnce(session, step.prefix, {
         save: (patch) =>
           atGate(sessionId, "awaiting_release", {
             ...patch,
@@ -357,7 +360,6 @@ export const ShipperLive = Layer.effect(Shipper)(
         phase: "deploy",
         activity: `Released ${tag}, waiting for approval`,
         milestones: { ...session.milestones, released: true },
-        release: { image: session.release?.image ?? "", tag, version: tag.slice(tag.lastIndexOf("-v") + 1) },
         // A new release gets a tracker message of its own: an earlier deploy's (before a follow-up PR) is not followed.
         deployStage: null,
         tracker: null,
@@ -376,7 +378,7 @@ export const ShipperLive = Layer.effect(Shipper)(
         phase: "deploy",
         activity: "Re-ran failed jobs",
         ...(tag === null ? { resolution: "re-ran failed jobs, outcome not tracked" } : {}),
-        release: tag === null ? session.release : { image: "", tag, version: "" },
+        releaseTag: tag ?? session.releaseTag,
         deployStage: null,
         tracker: tag === null ? null : session.alertId,
       })

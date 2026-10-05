@@ -1,6 +1,7 @@
 import type { NewAction } from "../actions/queue.ts"
 import { type Alert, passedAt, type SentBack, type Session, type SessionStatus } from "../domain/model.ts"
 import * as Messages from "../ship/messages.ts"
+import { releasePrefixOf } from "../ship/transitions.ts"
 import type { SessionResult } from "./output.ts"
 import { pushBackPrompt } from "./prompts.ts"
 
@@ -15,7 +16,7 @@ export const MAX_PUSHBACKS = 1
 export const shipStatus = (session: Session): SessionStatus | undefined => {
   const m = session.milestones
   if (m.released && !m.deployed) return "deploying"
-  if (m.merged && !m.released) return session.release === null ? undefined : "awaiting_release"
+  if (m.merged && !m.released) return session.releasePrefix === null ? undefined : "awaiting_release"
   if (session.prUrl !== null && !m.merged) return "ci"
   return undefined
 }
@@ -137,19 +138,13 @@ export const decideOutcome = ({ session, result, alert, pushed, head, adversaria
     const prUrl = result.prUrl ?? (shipping === undefined ? null : session.prUrl)
     if (prUrl === null) return { ...none, cards: reply, patch: verdict, fail: "The agent reported a fix but opened no PR" }
     const newPr = prUrl !== session.prUrl
-    // A follow-up PR (after a failed deploy) ships on its own: its own CI, merge and release.
-    const restart = newPr && session.prUrl !== null
+    // A follow-up PR (after a failed deploy, of its own release or of the re-run it recommended) ships on its own:
+    // its own CI, merge and release.
+    const restart = newPr && (session.prUrl !== null || session.releaseTag !== null)
     const shipTo: SessionStatus = !newPr && shipping !== undefined ? shipping : "ci"
     const review = shipTo === "ci" ? toReview(restart) : null
     const onward: Partial<Session> = shipTo === "ci" ? { status: "ci", phase: "ci", activity: "Waiting for CI" } : { status: shipTo, activity: result.summary }
-    const release =
-      shipTo !== "ci"
-        ? session.release
-        : result.releasePrefix !== null
-          ? { image: alert?.fields._tag === "release" ? alert.fields.image : "", tag: result.releasePrefix, version: "" }
-          : newPr
-            ? null
-            : session.release
+    const releasePrefix = shipTo !== "ci" ? session.releasePrefix : (releasePrefixOf(result.releasePrefix) ?? (newPr ? null : session.releasePrefix))
     return {
       ...none,
       cards: reply,
@@ -163,11 +158,10 @@ export const decideOutcome = ({ session, result, alert, pushed, head, adversaria
           // A review and a CI run hold for the head they read: on any other, they are to come (the ship loop reads CI again).
           ...(shipTo === "ci" && !passed ? { critiqued: false, ciGreen: false } : {}),
         },
-        ...(restart ? { mergeRequestedAt: null, releaseTag: null, review: null, deployStage: null, critiqueRounds: 0, critique: null } : {}),
+        ...(restart ? { mergeRequestedAt: null, releaseTag: null, review: null, deployStage: null, tracker: null, critiqueRounds: 0, critique: null } : {}),
         ...(review ?? onward),
         prUrl,
-        component: shipTo === "ci" ? (result.releasePrefix ?? session.component) : session.component,
-        release,
+        releasePrefix,
       },
       markReady: review === null && shipTo === "ci" ? prUrl : null,
     }

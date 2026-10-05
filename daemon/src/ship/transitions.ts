@@ -129,14 +129,13 @@ export type DeployStep =
 
 /**
  * Whether `tag`'s release tracker reports this session's own deploy: it cut that release (or re-ran it) and the
- * deploy has not landed. Before a release, `release.tag` is only the prefix the agent named, which can be a full tag:
- * the tracker of that tag (the failure being fixed) says nothing about this session. A re-run sent back once it failed
- * again still follows it, until the agent opens a PR of its own: from then on it ships that PR.
+ * deploy has not landed. A tag still being cut is not followed yet; a re-run sent back once it failed again still is,
+ * until the agent opens a PR of its own, which ships on its own (`decideOutcome` then forgets the re-run's tag).
  */
 export const followsDeploy = (session: Session, tag: string): boolean =>
-  session.release?.tag === tag &&
+  session.releaseTag === tag &&
   !session.milestones.deployed &&
-  (session.status === "deploying" || session.milestones.released || (session.deployStage !== null && session.prUrl === null))
+  (session.milestones.released || session.status === "deploying" || session.deployStage !== null)
 
 /** A deploying session, given the tracker's state. Only a changed state moves it: a tracker edit never re-sends the agent. */
 export const deployTransition = (session: Session, state: ReleaseState): DeployStep => {
@@ -171,7 +170,7 @@ export const deployTransition = (session: Session, state: ReleaseState): DeployS
  */
 export const deployStalled = (session: Session, nowMs: number): Extract<Escalation, { _tag: "HandOff" }> | null => {
   if (session.status !== "deploying") return null
-  const tag = session.release?.tag ?? "the release"
+  const tag = session.releaseTag ?? "the release"
   const quiet = nowMs - Date.parse(session.updatedAt)
   const stage = session.deployStage
   switch (stage?._tag) {
@@ -196,6 +195,12 @@ const RELEASE_PREFIX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 /** `admin-v0.6.0` → `admin`; a bare prefix stays as it is. */
 export const tagPrefix = (tag: string): string => tag.replace(/-v\d+\.\d+\.\d+.*$/, "")
 
+/** The prefix the agent named, as a prefix: a full tag (`admin-v0.6.0`) gives its prefix, nothing or blank gives `null`. */
+export const releasePrefixOf = (named: string | null): string | null => {
+  const prefix = tagPrefix(named?.trim() ?? "")
+  return prefix === "" ? null : prefix
+}
+
 export type AfterMerge =
   | { readonly _tag: "NothingToRelease" }
   | { readonly _tag: "Release"; readonly prefix: string }
@@ -203,8 +208,8 @@ export type AfterMerge =
   | { readonly _tag: "BadPrefix"; readonly prefix: string }
 
 export const afterMerge = (session: Session): AfterMerge => {
-  if (session.release === null || session.release.tag === "") return { _tag: "NothingToRelease" }
-  const prefix = tagPrefix(session.release.tag)
+  const prefix = session.releasePrefix
+  if (prefix === null) return { _tag: "NothingToRelease" }
   return RELEASE_PREFIX.test(prefix) ? { _tag: "Release", prefix } : { _tag: "BadPrefix", prefix }
 }
 

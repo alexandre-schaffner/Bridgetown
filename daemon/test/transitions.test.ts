@@ -13,6 +13,7 @@ import {
   MAX_CI_ROUNDS,
   MERGE_QUEUE_TIMEOUT_MS,
   needsReviewRequest,
+  releasePrefixOf,
   sendBackOrHandOff,
 } from "../src/ship/transitions.ts"
 import { makeSession } from "./fixtures/records.ts"
@@ -83,7 +84,7 @@ describe("ciTransition", () => {
 })
 
 describe("deployTransition (M3: only a changed release state moves the session)", () => {
-  const deploying = (overrides = {}) => makeSession("deploying", { release: { image: "", tag: "admin-v0.6.1", version: "" }, ...overrides })
+  const deploying = (overrides = {}) => makeSession("deploying", { releaseTag: "admin-v0.6.1", ...overrides })
   const failed = { _tag: "Failed" as const, stage: "Build", detail: "1 attempt failed" }
   test("a first failure sends the agent back", () => {
     expect(deployTransition(deploying(), failed)).toMatchObject({ _tag: "Failed", escalation: { _tag: "SendBack", round: 1, activity: "Build failed — investigating" } })
@@ -106,20 +107,20 @@ describe("deployTransition (M3: only a changed release state moves the session)"
 describe("deployStalled reads the stored stage, not the status line", () => {
   const ago = (ms: number) => new Date(NOW - ms - 60_000).toISOString()
   const approval = { _tag: "AwaitingApproval" } as const
-  const release = { image: "", tag: "admin-v0.6.1", version: "" }
+  const releaseTag = "admin-v0.6.1"
   test("quiet for 3h outside approval is stalled", () => {
-    expect(deployStalled(makeSession("deploying", { updatedAt: ago(DEPLOY_TIMEOUT_MS), release }), NOW)).toMatchObject({ title: "Deploy stalled", detail: "No tracker update for admin-v0.6.1 in 3 hours." })
+    expect(deployStalled(makeSession("deploying", { updatedAt: ago(DEPLOY_TIMEOUT_MS), releaseTag }), NOW)).toMatchObject({ title: "Deploy stalled", detail: "No tracker update for admin-v0.6.1 in 3 hours." })
     expect(deployStalled(makeSession("deploying", { updatedAt: new Date(NOW).toISOString() }), NOW)).toBeNull()
     expect(deployStalled(makeSession("ci", { updatedAt: ago(DEPLOY_TIMEOUT_MS) }), NOW)).toBeNull()
   })
   test("approval gets a day, then it is handed to you too", () => {
     expect(deployStalled(makeSession("deploying", { updatedAt: ago(DEPLOY_TIMEOUT_MS), deployStage: approval, activity: "anything" }), NOW)).toBeNull()
-    expect(deployStalled(makeSession("deploying", { updatedAt: ago(APPROVAL_TIMEOUT_MS), deployStage: approval, release }), NOW)).toMatchObject({ title: "Release not approved" })
+    expect(deployStalled(makeSession("deploying", { updatedAt: ago(APPROVAL_TIMEOUT_MS), deployStage: approval, releaseTag }), NOW)).toMatchObject({ title: "Release not approved" })
   })
   test("a failure the tracker reported is not called a silent tracker", () => {
     const failed = { _tag: "Failed", stage: "Production", detail: "2 attempts failed" } as const
-    expect(deployStalled(makeSession("deploying", { updatedAt: ago(DEPLOY_TIMEOUT_MS / 2), deployStage: failed, release }), NOW)).toBeNull()
-    expect(deployStalled(makeSession("deploying", { updatedAt: ago(DEPLOY_TIMEOUT_MS), deployStage: failed, release }), NOW)).toEqual({
+    expect(deployStalled(makeSession("deploying", { updatedAt: ago(DEPLOY_TIMEOUT_MS / 2), deployStage: failed, releaseTag }), NOW)).toBeNull()
+    expect(deployStalled(makeSession("deploying", { updatedAt: ago(DEPLOY_TIMEOUT_MS), deployStage: failed, releaseTag }), NOW)).toEqual({
       _tag: "HandOff",
       activity: "Production failed, not taken up",
       title: "Deploy failed",
@@ -130,34 +131,34 @@ describe("deployStalled reads the stored stage, not the status line", () => {
 
 describe("followsDeploy: a tracker moves only the session shipping its tag", () => {
   const tag = "admin-v0.6.0"
-  const release = { image: "merkl-admin", tag, version: "" }
-  test("before a release, an agent-named full tag is only a prefix", () => {
+  test("nothing cut yet, or a tag still being cut, is not followed", () => {
     for (const status of ["ci", "critiquing", "awaiting_merge", "awaiting_release", "waiting"] as const) {
-      expect([status, followsDeploy(makeSession(status, { release }), tag)]).toEqual([status, false])
+      expect([status, followsDeploy(makeSession(status, { releasePrefix: "admin" }), tag)]).toEqual([status, false])
     }
+    expect(followsDeploy(makeSession("awaiting_release", { releasePrefix: "admin", releaseTag: tag }), tag)).toBe(false)
   })
   test("a cut release, a re-run, and a deploy it already followed (handed back meanwhile)", () => {
-    expect(followsDeploy(makeSession("deploying", { release }), tag)).toBe(true)
-    expect(followsDeploy(makeSession("waiting", { release, milestones: { ...NO_MILESTONES, merged: true, released: true } }), tag)).toBe(true)
-    expect(followsDeploy(makeSession("waiting", { release, deployStage: { _tag: "Failed", stage: "Build", detail: "" } }), tag)).toBe(true)
-    expect(followsDeploy(makeSession("deploying", { release }), "admin-v0.6.1")).toBe(false)
-    expect(followsDeploy(makeSession("waiting", { release, milestones: { ...NO_MILESTONES, released: true, deployed: true } }), tag)).toBe(false)
-  })
-  test("a re-run whose agent then opened a PR (naming the full tag) ships that PR, not the re-run's deploy", () => {
-    const failed = { _tag: "Failed" as const, stage: "Build", detail: "" }
-    expect(followsDeploy(makeSession("ci", { release, deployStage: failed, prUrl: "https://ghe/pull/9" }), tag)).toBe(false)
+    expect(followsDeploy(makeSession("deploying", { releaseTag: tag }), tag)).toBe(true)
+    expect(followsDeploy(makeSession("waiting", { releaseTag: tag, milestones: { ...NO_MILESTONES, merged: true, released: true } }), tag)).toBe(true)
+    expect(followsDeploy(makeSession("waiting", { releaseTag: tag, deployStage: { _tag: "Failed", stage: "Build", detail: "" } }), tag)).toBe(true)
+    expect(followsDeploy(makeSession("deploying", { releaseTag: tag }), "admin-v0.6.1")).toBe(false)
+    expect(followsDeploy(makeSession("waiting", { releaseTag: tag, milestones: { ...NO_MILESTONES, released: true, deployed: true } }), tag)).toBe(false)
   })
 })
 
 describe("after the merge (M2)", () => {
-  const merged = (tag: string | null) =>
-    makeSession("awaiting_merge", { milestones: { ...NO_MILESTONES, merged: true }, release: tag === null ? null : { image: "", tag, version: "" } })
-  test("nothing to ship, a prefix, a full tag, a bad prefix", () => {
+  const merged = (releasePrefix: string | null) => makeSession("awaiting_merge", { milestones: { ...NO_MILESTONES, merged: true }, releasePrefix })
+  test("nothing to ship, a prefix, a bad prefix", () => {
     expect(afterMerge(merged(null))).toEqual({ _tag: "NothingToRelease" })
     expect(afterMerge(merged("admin"))).toEqual({ _tag: "Release", prefix: "admin" })
-    expect(afterMerge(merged("states-exporter-v0.1.0"))).toEqual({ _tag: "Release", prefix: "states-exporter" })
     expect(afterMerge(merged("Admin App"))).toEqual({ _tag: "BadPrefix", prefix: "Admin App" })
     expect(afterMerge(merged("admin/../x"))).toMatchObject({ _tag: "BadPrefix" })
+  })
+  test("what the agent names is kept as a prefix: a full tag gives its prefix, a blank nothing", () => {
+    expect(releasePrefixOf("admin")).toBe("admin")
+    expect(releasePrefixOf("states-exporter-v0.1.0")).toBe("states-exporter")
+    expect(releasePrefixOf(" ")).toBeNull()
+    expect(releasePrefixOf(null)).toBeNull()
   })
   test("next tag: a patch bump, or v0.1.0 for a first release", () => {
     expect(nextTagFrom(["admin-v0.6.0", "admin-v0.6.10", "admin-v0.6.9", "api-v9.0.0"], "admin")).toBe("admin-v0.6.11")

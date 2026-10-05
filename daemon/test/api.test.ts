@@ -23,7 +23,7 @@ const queued: Session = {
   id: "s_queued", alertId: alert.id, title: alert.title, channelName: "alert-releases", status: "queued", phase: "diagnose",
   activity: "Queued", diagnosis: null, outcome: null, recommendation: null, prUrl: null, branch: "fix-bt-x", worktree: null,
   repoPath: "/r", claudeSessionId: null, model: "m", effort: "high", ciRounds: 0, costUsd: 0, slackThreadUrl: null,
-  release: null, milestones: NO_MILESTONES, rootCauseFound: null, resolution: null, pushbacks: 0, component: null,
+  milestones: NO_MILESTONES, rootCauseFound: null, resolution: null, pushbacks: 0, releasePrefix: null,
   review: null, critiqueRounds: 0, critique: null, mergeRequestedAt: null, releaseTag: null, deployStage: null, tracker: null, sentBack: null, startedAt: "2026-10-01T00:00:00.000Z", updatedAt: "2026-10-01T00:00:00.000Z",
 }
 

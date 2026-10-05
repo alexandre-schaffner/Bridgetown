@@ -43,7 +43,7 @@ const slowGitHub = (release: Deferred.Deferred<void>, options: { readonly create
 
 const releasable: Session = makeSession("awaiting_release", {
   id: "s_rel", alertId: "C1:rel", prUrl: "https://ghe/pull/3338", activity: "Merged, ready to cut dispute-v0.4.3",
-  release: { image: "merkl-dispute", tag: "dispute", version: "" },
+  releasePrefix: "dispute",
   milestones: { diagnosed: true, fixed: true, prOpened: true, critiqued: true, ciGreen: true, merged: true, released: false, deployed: false },
 })
 const releaseCard: Action = {
@@ -112,7 +112,7 @@ describe("the release gate through the real shipper", () => {
           return yield* (yield* Store).getSession("s_rel")
         }),
       )
-      expect(after).toMatchObject({ status: "deploying", release: { tag: "dispute-v0.4.3" }, deployStage: null, tracker: null })
+      expect(after).toMatchObject({ status: "deploying", releaseTag: "dispute-v0.4.3", deployStage: null, tracker: null })
     } finally {
       await world.dispose()
     }
@@ -146,7 +146,7 @@ describe("the release gate through the real shipper", () => {
     const world = makeWorld({ github })
     const mergeable = makeSession("awaiting_merge", {
       id: "s_rel", alertId: "C1:rel", prUrl: "https://ghe/pull/3338", activity: "#3338 approved and green, ready to merge",
-      release: { image: "merkl-dispute", tag: "dispute", version: "" },
+      releasePrefix: "dispute",
       milestones: { diagnosed: true, fixed: true, prOpened: true, critiqued: true, ciGreen: true, merged: false, released: false, deployed: false },
     })
     try {
@@ -226,7 +226,7 @@ describe("a card whose session moved on acts on nothing and goes", () => {
       const failure = await world.runPromise(
         Effect.gen(function* () {
           yield* seed({ ...releasable, status: "resolved" }, releaseCard)
-          return yield* (yield* Shipper).release("s_rel", "dispute").pipe(Effect.flip)
+          return yield* (yield* Shipper).release("s_rel").pipe(Effect.flip)
         }),
       )
       expect(failure._tag).toBe("Conflict")
@@ -241,7 +241,8 @@ describe("a card whose session moved on acts on nothing and goes", () => {
     const world = makeWorld({ github })
     const stalled = makeSession("waiting", {
       id: "s_rel", alertId: "C1:rel", prUrl: "https://ghe/pull/3338", activity: "No deploy progress for 3h",
-      release: { image: "merkl-dispute", tag: "dispute-v0.4.3", version: "v0.4.3" },
+      releasePrefix: "dispute",
+      releaseTag: "dispute-v0.4.3",
       milestones: { diagnosed: true, fixed: true, prOpened: true, critiqued: true, ciGreen: true, merged: true, released: true, deployed: false },
     })
     const tracker = makeAlert({

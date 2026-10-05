@@ -212,7 +212,8 @@ describe("send-backs", () => {
   test("a failed deploy sent back and answered with a revert recommendation is handed to you", async () => {
     const deploying = makeSession("deploying", {
       id: "s_deploy", alertId: "C1:deploy", worktree: "/w", claudeSessionId: "c", prUrl: OWN_PR, outcome: "fix_pr", rootCauseFound: true,
-      release: { image: "merkl-api", tag: "api-v1.2.3", version: "v1.2.3" },
+      releasePrefix: "api",
+      releaseTag: "api-v1.2.3",
       milestones: { ...NO_MILESTONES, prOpened: true, ciGreen: true, merged: true, released: true },
     })
     const tracker = makeAlert({

@@ -52,7 +52,7 @@ describe("a deploy in flight follows its own tracker", () => {
         yield* store.putAlert(makeAlert({ id: "C1:dep", sessionId: "s_dep" }))
         yield* store.putSession(
           makeSession("deploying", {
-            id: "s_dep", alertId: "C1:dep", release: { image: "merkl-admin", tag, version: "v0.6.0" }, milestones: released,
+            id: "s_dep", alertId: "C1:dep", releasePrefix: "admin", releaseTag: tag, milestones: released,
             deployStage: { _tag: "AwaitingApproval" }, tracker: TRACKER_ID,
           }),
         )
@@ -68,12 +68,12 @@ describe("a tracker moves only the session that shipped its tag", () => {
   const world = makeWorld()
   afterAll(() => world.dispose())
 
-  test("a PR still in CI whose agent named the full failing tag is not resolved by that tracker going green", async () => {
+  test("a PR still in CI, of the release whose failure it fixes, is not resolved by that tracker going green", async () => {
     const out = await world.runPromise(
       Effect.gen(function* () {
         const store = yield* Store
         yield* store.putAlert(makeAlert({ id: "C1:ci", sessionId: "s_ci" }))
-        yield* store.putSession(makeSession("ci", { id: "s_ci", alertId: "C1:ci", prUrl: "https://ghe/pull/1", release: { image: "merkl-admin", tag, version: "" } }))
+        yield* store.putSession(makeSession("ci", { id: "s_ci", alertId: "C1:ci", prUrl: "https://ghe/pull/1", releasePrefix: "admin" }))
         const parsed = parseMessage(adminDeployed, { channelId: RELEASES, channelName: "alert-releases", myUserId: undefined })
         yield* (yield* Shipper).trackDeploy(alertFromParsed(parsed, { permalink: null, receivedAt: "", triage: { decision: "filtered", reason: "r", jev: null }, sessionId: null, events: [] }))
         return yield* store.getSession("s_ci")
@@ -93,7 +93,7 @@ describe("a failed deploy sent back to an agent that cannot resume", () => {
         const store = yield* Store
         yield* store.putAlert(makeAlert({ id: "C1:gone", sessionId: "s_gone" }))
         yield* store.putSession(
-          makeSession("deploying", { id: "s_gone", alertId: "C1:gone", worktree: null, release: { image: "merkl-admin", tag, version: "v0.6.0" }, milestones: released }),
+          makeSession("deploying", { id: "s_gone", alertId: "C1:gone", worktree: null, releasePrefix: "admin", releaseTag: tag, milestones: released }),
         )
         yield* (yield* Shipper).trackDeploy(trackerAlert(null))
         return { session: yield* store.getSession("s_gone"), cards: (yield* store.listActions()).map((a) => a.title) }

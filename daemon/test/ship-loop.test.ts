@@ -47,8 +47,7 @@ const mergeCard = (overrides: Partial<Action> = {}): Action => ({
 
 const shipping = (status: Session["status"], overrides: Partial<Session> = {}) =>
   makeSession(status, {
-    id: "s_m", alertId: "C1:m", prUrl: PR, activity: "#3345 approved and green, ready to merge", component: "app",
-    release: { image: "merkl-app", tag: "app", version: "" },
+    id: "s_m", alertId: "C1:m", prUrl: PR, activity: "#3345 approved and green, ready to merge", releasePrefix: "app",
     milestones: { diagnosed: true, fixed: true, prOpened: true, critiqued: true, ciGreen: true, merged: false, released: false, deployed: false },
     ...overrides,
   })
@@ -119,6 +118,32 @@ describe("the merge gate is read again every tick", () => {
     try {
       const out = await world.runPromise(seed(shipping("ci", { review: reviewed, milestones: { ...shipping("ci").milestones, ciGreen: false } })).pipe(Effect.andThen(afterTick)))
       expect(out.session).toMatchObject({ status: "ci", milestones: { ciGreen: true } })
+    } finally {
+      await world.dispose()
+    }
+  })
+})
+
+describe("the review request goes to the team that owns the fix", () => {
+  test("by the prefix it ships under, else by the image its release alert names", async () => {
+    const { github } = fakeGitHub({ current: { reviewDecision: "REVIEW_REQUIRED" } })
+    const world = makeWorld({ github })
+    const engine = makeAlert({
+      id: "C1:engine", sessionId: "s_engine",
+      fields: { _tag: "release", image: "merkl-engine", version: "v3.1.0", actor: null, runId: null, runUrl: null, tag: "engine-v3.1.0", stages: [] },
+    })
+    try {
+      const out = await world.runPromise(
+        Effect.gen(function* () {
+          const store = yield* Store
+          yield* seed(shipping("ci", { review: null }))
+          yield* store.putAlert(engine)
+          yield* store.putSession(shipping("ci", { id: "s_engine", alertId: engine.id, review: null, releasePrefix: null }))
+          yield* (yield* Shipper).tick
+          return [(yield* store.getSession("s_m"))?.review?.channelName, (yield* store.getSession("s_engine"))?.review?.channelName]
+        }),
+      )
+      expect(out).toEqual(["product-approvals", "general-approvals"])
     } finally {
       await world.dispose()
     }
@@ -219,9 +244,9 @@ describe("an inbox session's updates stay out of the teammate's thread", () => {
           const store = yield* Store
           // Nothing to release: the merge resolves both, and each would announce it.
           yield* store.putAlert(makeAlert({ id: "D1:1", sessionId: "s_in", source: "inbox", fields: inbox }))
-          yield* store.putSession(shipping("awaiting_merge", { id: "s_in", alertId: "D1:1", release: null }))
+          yield* store.putSession(shipping("awaiting_merge", { id: "s_in", alertId: "D1:1", releasePrefix: null }))
           yield* store.putAlert(makeAlert({ id: "C1:m", sessionId: "s_m" }))
-          yield* store.putSession(shipping("awaiting_merge", { release: null }))
+          yield* store.putSession(shipping("awaiting_merge", { releasePrefix: null }))
           yield* (yield* Shipper).tick
         }),
       )

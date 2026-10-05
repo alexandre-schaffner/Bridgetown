@@ -244,7 +244,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
       Effect.gen(function* () {
         for (const session of yield* store.activeSessions()) {
           const tracker = session.tracker
-          if (tracker === null || seen.has(tracker) || session.release === null || !followsDeploy(session, session.release.tag)) continue
+          if (tracker === null || seen.has(tracker) || session.releaseTag === null || !followsDeploy(session, session.releaseTag)) continue
           const alert = yield* store.getAlert(tracker)
           if (alert === undefined) continue
           const channel = { id: alert.channelId, name: alert.channelName, enabled: true }

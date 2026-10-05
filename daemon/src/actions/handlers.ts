@@ -4,7 +4,6 @@ import { type Action, type ActionKind, type Alert, RETRY, type Session } from ".
 import type { SessionRepoShape } from "../sessions/repo.ts"
 import type { SessionRunnerShape } from "../sessions/runner.ts"
 import type { ShipperShape } from "../ship/shipper.ts"
-import { tagPrefix } from "../ship/transitions.ts"
 import { toMrkdwn } from "../slack/text.ts"
 import type { SlackThreadShape } from "../slack/thread.ts"
 import type { StoreShape } from "../store/store.ts"
@@ -47,8 +46,7 @@ export const makeHandlers = (deps: HandlerDeps): Readonly<Record<ActionKind, Han
 
   merge: ({ session }) => (session === undefined ? Effect.void : deps.shipper.merge(session.id)),
 
-  release: ({ action, session }) =>
-    session === undefined || action.payload === null ? Effect.void : deps.shipper.release(session.id, tagPrefix(action.payload)),
+  release: ({ session }) => (session === undefined ? Effect.void : deps.shipper.release(session.id)),
 
   rerun: ({ action, session }) =>
     session === undefined || action.payload === null ? Effect.void : deps.shipper.rerun(session.id, action.payload),

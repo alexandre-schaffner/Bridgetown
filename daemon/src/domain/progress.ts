@@ -119,7 +119,7 @@ const headlineOf = (session: Session): { readonly headline: string; readonly ton
     case "awaiting_release":
       return { headline: "Merged · ready to release", tone: "waiting" }
     case "deploying":
-      return { headline: `Deploying ${session.release?.tag ?? ""}`.trim(), tone: "live" }
+      return { headline: `Deploying ${session.releaseTag ?? ""}`.trim(), tone: "live" }
     case "resolved":
       return { headline: outcome === null ? "Resolved" : `Resolved · ${outcome}`, tone: "success" }
     case "closed":

@@ -335,7 +335,6 @@ export const Session = Schema.Struct({
   ciRounds: Schema.Number,
   costUsd: Schema.Number,
   slackThreadUrl: Schema.NullOr(Schema.String),
-  release: Schema.NullOr(Schema.Struct({ image: Schema.String, tag: Schema.String, version: Schema.String })),
   /** What is known to have happened, each set only on evidence. Drives the stepper. */
   milestones: Schema.Struct({
     diagnosed: Schema.Boolean,
@@ -353,8 +352,11 @@ export const Session = Schema.Struct({
   resolution: nullByDefault(Schema.String),
   /** Times Bridgetown sent the agent back because it handed off without a root cause. */
   pushbacks: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0))),
-  /** Release prefix or image that owns the fix; picks the approvals channel and team. */
-  component: nullByDefault(Schema.String),
+  /**
+   * The release prefix the agent named for its fix (`admin` for `admin-vX.Y.Z`): what the release gate cuts after the
+   * merge, and the team whose approvals channel reviews it. `null`: nothing to release.
+   */
+  releasePrefix: nullByDefault(Schema.String),
   /** The review request Bridgetown posted in an approvals channel. */
   review: nullByDefault(
     Schema.Struct({
@@ -371,7 +373,10 @@ export const Session = Schema.Struct({
   critiqueRounds: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0))),
   /** The last adversarial review of the pushed head, and the agent's reply to it. */
   critique: nullByDefault(Critique),
-  /** The tag Bridgetown is cutting or cut. Set before `gh release create`, so a repeat reuses it and never cuts a second one. */
+  /**
+   * The release this session ships: the tag it is cutting or cut (set before `gh release create`, so a repeat reuses
+   * it and never cuts a second one; `milestones.released` says it was cut), or the one a re-run it recommended follows.
+   */
   releaseTag: nullByDefault(Schema.String),
   /** The release tracker's last state seen for this session's deploy. Only a change moves the session. */
   deployStage: nullByDefault(ReleaseState),

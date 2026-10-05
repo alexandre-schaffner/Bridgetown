@@ -4,8 +4,8 @@ import { type Alert, NO_MILESTONES, type Session, type SessionStatus } from "../
 export const makeSession = (status: SessionStatus, overrides: Partial<Session> = {}): Session => ({
   id: "s", alertId: "C1:1", title: "t", channelName: "alert-releases", status, phase: "diagnose", activity: "",
   diagnosis: null, outcome: null, recommendation: null, prUrl: null, branch: "b", worktree: "/w", repoPath: "/r",
-  claudeSessionId: null, model: "m", effort: "high", ciRounds: 0, costUsd: 0, slackThreadUrl: null, release: null,
-  milestones: NO_MILESTONES, rootCauseFound: null, resolution: null, pushbacks: 0, component: null, review: null,
+  claudeSessionId: null, model: "m", effort: "high", ciRounds: 0, costUsd: 0, slackThreadUrl: null,
+  milestones: NO_MILESTONES, rootCauseFound: null, resolution: null, pushbacks: 0, releasePrefix: null, review: null,
   critiqueRounds: 0, critique: null, mergeRequestedAt: null, releaseTag: null, deployStage: null, tracker: null, sentBack: null, startedAt: "", updatedAt: "", ...overrides,
 })
 

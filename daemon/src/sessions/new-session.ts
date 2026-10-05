@@ -34,12 +34,11 @@ export const newSession = (alert: Alert, id: string, repoPath: string): Session 
     costUsd: 0,
     // A watch finding's permalink is its Grafana dashboard: there is no Slack thread.
     slackThreadUrl: alert.source === "watch" ? null : alert.permalink,
-    release: null,
     milestones: NO_MILESTONES,
     rootCauseFound: null,
     resolution: null,
     pushbacks: 0,
-    component: alert.fields._tag === "release" ? alert.fields.image : null,
+    releasePrefix: null,
     review: null,
     critiqueRounds: 0,
     critique: null,

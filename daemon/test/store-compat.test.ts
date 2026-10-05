@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite"
 import { join } from "node:path"
 import { Effect } from "effect"
 import { alertDetail, snapshot } from "../src/api/views.ts"
-import { legacyClosed, legacyDisposition, legacyReviewPosted } from "../src/store/migrations.ts"
+import { legacyClosed, legacyDisposition, legacyRelease, legacyReviewPosted } from "../src/store/migrations.ts"
 import { Store } from "../src/store/store.ts"
 import { OLD_ALERTS, OLD_SESSIONS, oldStore } from "./fixtures/old-store.ts"
 import { makeWorld } from "./fixtures/world.ts"
@@ -33,7 +33,8 @@ describe("a store the first daemon wrote", () => {
       milestones: { diagnosed: false, fixed: false, prOpened: false, ciGreen: false, merged: false, released: false, deployed: false },
       rootCauseFound: null, resolution: null, pushbacks: 0, mergeRequestedAt: null, releaseTag: null, deployStage: null,
     })
-    expect(out.ci).toMatchObject({ mergeRequestedAt: null, releaseTag: null, deployStage: null })
+    expect(out.ci).toMatchObject({ mergeRequestedAt: null, releaseTag: null, deployStage: null, releasePrefix: "api" })
+    expect(out.stopped?.releasePrefix).toBeNull()
     expect(out.actions).toEqual([expect.objectContaining({ id: "a_old_review", url: null })])
     expect(out.transcript).toHaveLength(1)
   })
@@ -100,6 +101,7 @@ describe("a store the first daemon wrote", () => {
         { migration_id: 3, name: "closed_sessions" },
         { migration_id: 4, name: "review_posted" },
         { migration_id: 5, name: "global_horizon" },
+        { migration_id: 6, name: "release_prefix" },
       ])
       expect(db.query("SELECT status FROM sessions WHERE id = ?").get(OLD_SESSIONS.closedAsResolved.id)).toEqual({ status: "closed" })
       expect(db.query("SELECT key FROM kv ORDER BY key").all()).toEqual([{ key: "paused" }])
@@ -133,5 +135,21 @@ describe("legacy rewrites", () => {
     expect(legacyReviewPosted({ review: { channelName: "c", permalink: null, handledReviewId: null } })?.review).toMatchObject({ posted: false })
     expect(legacyReviewPosted({ review: { channelName: "c", permalink: null, handledReviewId: null, posted: true } })).toBeUndefined()
     expect(legacyReviewPosted({ review: null })).toBeUndefined()
+  })
+  test("release: the agent's prefix and the tag cut or followed are told apart", () => {
+    const milestones = { merged: true, released: true }
+    // Named by the agent, not cut yet: a full tag is still only a prefix.
+    expect(legacyRelease({ prUrl: "u", release: { image: "merkl-admin", tag: "admin-v0.6.0", version: "" }, component: "admin-v0.6.0", releaseTag: null })).toEqual({
+      prUrl: "u", releasePrefix: "admin", releaseTag: null,
+    })
+    // Cut: the tag, and the prefix it was cut under.
+    expect(legacyRelease({ prUrl: "u", milestones, release: { image: "", tag: "admin-v0.6.1", version: "v0.6.1" }, releaseTag: "admin-v0.6.1" })).toMatchObject({
+      releasePrefix: "admin", releaseTag: "admin-v0.6.1",
+    })
+    // A re-run's: no PR of its own, only the tag it follows.
+    expect(legacyRelease({ prUrl: null, release: { image: "", tag: "api-v1.2.3", version: "" } })).toMatchObject({ releasePrefix: null, releaseTag: "api-v1.2.3" })
+    // Only an image to route by: nothing to release.
+    expect(legacyRelease({ prUrl: "u", release: null, component: "merkl-admin" })).toEqual({ prUrl: "u", releasePrefix: null, releaseTag: null })
+    expect(legacyRelease({ releasePrefix: "api", releaseTag: null })).toBeUndefined()
   })
 })
