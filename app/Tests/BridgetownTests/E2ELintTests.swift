@@ -60,7 +60,7 @@ import Testing
     @Test func linesClampedOutOfSightOverlapNothing() {
         // ClampedText's lines past "Show more" keep their frames, over the next row, and so
         // does the clip around them.
-        let clip = element(0, CGRect(x: 0, y: 0, width: 300, height: 62), role: "AXGroup", identifier: E2EAccessibility.clipIdentifier)
+        let clip = element(0, CGRect(x: 0, y: 0, width: 300, height: 62), role: "AXGroup", identifier: ClampedText.clipIdentifier)
         let hiddenLine = element(1, CGRect(x: 0, y: 32, width: 300, height: 30), parent: 0, text: "Ruled out: the campaign config")
         let nextRow = element(2, CGRect(x: 0, y: 48, width: 300, height: 16), text: "Agent failed · Dispute bot")
         #expect(rules([clip, hiddenLine, nextRow]).isEmpty)

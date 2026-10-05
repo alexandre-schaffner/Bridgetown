@@ -16,10 +16,6 @@ enum E2EAccessibility {
         var nodes: [AnyObject] = []
     }
 
-    /// A view that clips text out of sight says so with this identifier (`ClampedText`): the
-    /// tree still has every line at its whole frame, and the view's own frame is theirs.
-    nonisolated static let clipIdentifier = "clip"
-
     /// Without these SwiftUI builds no tree below the hosting view's first level.
     static func enable() {
         for attribute in ["AXEnhancedUserInterface", "AXManualAccessibility"] {

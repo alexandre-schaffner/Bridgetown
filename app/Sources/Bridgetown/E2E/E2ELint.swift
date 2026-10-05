@@ -150,10 +150,10 @@ enum E2ELint {
         func isTextLeaf(_ element: E2EElement) -> Bool {
             element.text != nil && !element.interactive && !parents.contains(element.id)
         }
-        /// Inside a view that clips it (`E2EAccessibility.clipIdentifier`): its lines keep
-        /// their whole frames in the tree, so which of them show can't be told.
+        /// Inside a view that clips it (`ClampedText.clipIdentifier`): its lines keep their
+        /// whole frames in the tree, so which of them show can't be told.
         func inClip(_ element: E2EElement) -> Bool {
-            ancestors(element).contains { $0.identifier == E2EAccessibility.clipIdentifier }
+            ancestors(element).contains { $0.identifier == ClampedText.clipIdentifier }
         }
         let inside = surface.insetBy(dx: -tolerance, dy: -tolerance)
         var drawnText: [E2EElement] = []
