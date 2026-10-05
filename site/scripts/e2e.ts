@@ -616,6 +616,33 @@ const CHECKS: Check[] = [
       expect(focused, "the light chapter doesn't take focus");
     },
   },
+  {
+    name: "Paging down with the keyboard, the nav stays out of the way",
+    viewport: LAPTOP,
+    motion: "no-preference",
+    async run(page) {
+      await page.keyboard.press("PageDown");
+      await page.keyboard.press("PageDown");
+      await page.waitForTimeout(1200);
+      expect(await page.evaluate(() => scrollY > 200), "PageDown didn't scroll the page");
+      expect(await page.evaluate(() => document.documentElement.classList.contains("nav-hidden")), "the nav came back once the page stopped");
+    },
+  },
+  {
+    name: "A nav that stepped aside comes back for keyboard focus",
+    viewport: LAPTOP,
+    motion: "no-preference",
+    async run(page) {
+      await page.evaluate(() => scrollTo(0, innerHeight * 3));
+      await page.mouse.wheel(0, 300);
+      await page.waitForTimeout(1000);
+      expect(await page.evaluate(() => document.documentElement.classList.contains("nav-hidden")), "the nav didn't step aside");
+      await page.focus('nav a[href="#notch"]');
+      await page.waitForTimeout(800);
+      const top = await page.evaluate(() => document.querySelector(".nav")!.getBoundingClientRect().top);
+      expect(top > -1, `the focused nav is ${Math.round(-top)}px off the top of the screen`);
+    },
+  },
 ];
 
 async function check(browser: Browser, base: string, out: string, c: Check, n: number): Promise<CheckResult> {

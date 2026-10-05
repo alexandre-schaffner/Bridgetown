@@ -77,9 +77,12 @@ import Icon from "./Icon.astro";
     sync();
   }
 
-  // The nav steps aside while you read down, and comes back when you scroll up.
+  // The nav steps aside while you read down, and comes back when you scroll up. Lenis reports
+  // a keyboard or scrollbar jump twice, the second time 400ms later without moving; only
+  // movement counts.
   let lastY = 0;
   onScroll((y) => {
+    if (y === lastY) return;
     document.documentElement.classList.toggle("nav-hidden", y > lastY && y > 200);
     lastY = y;
   });
@@ -103,6 +106,11 @@ import Icon from "./Icon.astro";
 
   :global(.nav-hidden) .nav {
     transform: translateY(-100%);
+  }
+
+  /* Back for whoever tabs into it, however far down the page. */
+  :global(.nav-hidden) .nav:focus-within {
+    transform: none;
   }
 
   .brand {
