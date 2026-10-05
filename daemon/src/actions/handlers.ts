@@ -42,7 +42,7 @@ export const makeHandlers = (deps: HandlerDeps): Readonly<Record<ActionKind, Han
   investigate: ({ action }) => (action.alertId === null ? Effect.void : deps.investigate(action.alertId)),
 
   escalate: ({ action }) =>
-    action.alertId === null ? Effect.void : deps.store.appendAlertEvent(action.alertId, "Opened by you in Slack or Revv", "opened"),
+    action.alertId === null ? Effect.void : deps.store.appendAlertEvent(action.alertId, "Opened by you in Slack or Revv", { disposition: "opened" }),
 
   merge: ({ session }) => (session === undefined ? Effect.void : deps.shipper.merge(session.id)),
 

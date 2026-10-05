@@ -5,6 +5,7 @@ import { type AdapterError, NotFound } from "../domain/errors.ts"
 import { daysAgo, now, tsToIso } from "../domain/ids.ts"
 import { type Action, type Alert, type Channel, channelLabel, type Claimant, claimHeadline, isActive, type Triage, triageEvent } from "../domain/model.ts"
 import { Hub, problemOf } from "../hub.ts"
+import { SessionRepo } from "../sessions/repo.ts"
 import { SessionRunner } from "../sessions/runner.ts"
 import { Shipper } from "../ship/shipper.ts"
 import { followsDeploy } from "../ship/transitions.ts"
@@ -71,6 +72,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
     const slack = yield* SlackClient
     const me = yield* SlackMe
     const jev = yield* Jev
+    const repo = yield* SessionRepo
     const runner = yield* SessionRunner
     const shipper = yield* Shipper
     const queue = yield* ActionQueue
@@ -116,11 +118,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
     const yieldTo = (alert: Alert, claimedBy: ReadonlyArray<Claimant>) =>
       Effect.gen(function* () {
         yield* queue.removeWhere((a) => a.kind === "investigate" && a.alertId === alert.id)
-        yield* store.modifyAlert(alert.id, (current) =>
-          current === undefined
-            ? undefined
-            : { ...current, claimedBy, events: [...current.events, { at: now(), text: `Left to a teammate: ${claimHeadline(claimedBy) ?? ""}` }] },
-        )
+        yield* store.appendAlertEvent(alert.id, `Left to a teammate: ${claimHeadline(claimedBy) ?? ""}`, { claimedBy })
         yield* hub.notify
       })
 
@@ -148,7 +146,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
         const stale = (a: Action) => a.alertId === id && a.kind === "investigate"
         if (!(yield* queue.list).some(stale)) return
         yield* queue.removeWhere(stale)
-        yield* store.appendAlertEvent(id, `Its card was withdrawn: ${reason}`, "withdrawn")
+        yield* store.appendAlertEvent(id, `Its card was withdrawn: ${reason}`, { disposition: "withdrawn" })
       })
 
     const ingest = Effect.fn("AlertPipeline.ingest")(function* (channel: Channel, message: SlackMessage, since: number) {
@@ -202,9 +200,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
         if (alert !== undefined && newcomers.length > 0) {
           // A card asking you to start an agent is stale once someone else is on it.
           if (alert.sessionId === null) yield* queue.removeWhere((a) => a.kind === "investigate" && a.alertId === id)
-          yield* store.modifyAlert(id, (current) =>
-            current === undefined ? undefined : { ...current, events: [...current.events, { at: now(), text: `In Slack: ${claimHeadline(newcomers)}` }] },
-          )
+          yield* store.appendAlertEvent(id, `In Slack: ${claimHeadline(newcomers)}`)
         }
         return yield* finish(alert)
       }
@@ -224,7 +220,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
           attached ? `Attached to a running session: ${outcome.reason}` : `Filtered by a rule: ${outcome.reason}`,
           attached ? outcome.sessionId : null,
         )
-        if (attached) yield* store.appendTranscript(outcome.sessionId, { at: now(), kind: "status", text: `Alert repeated: ${parsed.title}` })
+        if (attached) yield* repo.log(outcome.sessionId, "status", `Alert repeated: ${parsed.title}`)
         if (existing !== undefined) yield* withdraw(id, outcome.reason)
         return yield* finish(alert)
       }
@@ -317,15 +313,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
 
     const feedback = Effect.fn("AlertPipeline.feedback")(function* (alertId: string, label: "good" | "bad") {
       yield* findAlert(alertId)
-      yield* store.modifyAlert(alertId, (current) =>
-        current === undefined
-          ? undefined
-          : {
-              ...current,
-              feedback: label,
-              events: [...current.events, { at: now(), text: label === "good" ? "You marked Jev's call as right" : "You marked Jev's call as wrong" }],
-            },
-      )
+      yield* store.appendAlertEvent(alertId, label === "good" ? "You marked Jev's call as right" : "You marked Jev's call as wrong", { feedback: label })
       yield* hub.notify
     })
 

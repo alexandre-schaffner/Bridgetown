@@ -89,7 +89,7 @@ export const ActionsLive = Layer.effect(Actions)(
             yield* store.appendAlertEvent(
               action.alertId,
               action.kind === "escalate" ? "Dismissed by you without opening it" : "Dismissed by you, no agent started",
-              "dismissed",
+              { disposition: "dismissed" },
             )
           }
           if (session !== undefined && dismissCloses(action, session)) yield* runner.close(session.id)

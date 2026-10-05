@@ -362,10 +362,7 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
         const id = newId("s")
         const session = newSession(alert, id, settings.monorepoPath)
         yield* repo.create(session)
-        yield* store.modifyAlert(alert.id, (current) => {
-          const base = current ?? alert
-          return { ...base, sessionId: id, events: [...base.events, { at: now(), text: `Agent session started (${session.model}, ${session.effort})` }] }
-        })
+        yield* store.appendAlertEvent(alert.id, `Agent session started (${session.model}, ${session.effort})`, { sessionId: id })
         yield* hub.notify
         return session
       }),

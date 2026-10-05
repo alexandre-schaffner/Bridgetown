@@ -25,6 +25,9 @@ export const SessionRef = Schema.Struct({
 })
 export type SessionRef = typeof SessionRef.Type
 
+/** What an alert history line records besides itself. */
+export type AlertEventChange = Partial<Pick<Alert, "claimedBy" | "feedback" | "sessionId">> & { readonly disposition?: Disposition["kind"] }
+
 export interface StoreShape {
   readonly getAlert: (id: string) => Effect.Effect<Alert | undefined, AdapterError>
   /**
@@ -42,8 +45,11 @@ export interface StoreShape {
     f: (current: Alert | undefined) => Alert | undefined,
     contentHash?: string,
   ) => Effect.Effect<Alert | undefined, AdapterError>
-  /** Appends a line to the alert's history; `disposition` also records what you did to its card. */
-  readonly appendAlertEvent: (id: string, text: string, disposition?: Disposition["kind"]) => Effect.Effect<void, AdapterError>
+  /**
+   * Appends a line to the alert's history, with the change it records: what you did to its card (`disposition`),
+   * who is on it, your feedback, the session started on it. Nothing for an alert no longer stored.
+   */
+  readonly appendAlertEvent: (id: string, text: string, change?: AlertEventChange) => Effect.Effect<void, AdapterError>
   readonly alertHash: (id: string) => Effect.Effect<string | undefined, AdapterError>
   readonly recentAlerts: (limit: number) => Effect.Effect<ReadonlyArray<Alert>, AdapterError>
   /** Every alert from Slack (not a watch finding) received at or after `since` (ISO), newest first. */
@@ -154,12 +160,13 @@ const StoreImpl = Layer.effect(Store)(
       getAlert,
       putAlert,
       modifyAlert,
-      appendAlertEvent: (id, text, disposition) =>
+      appendAlertEvent: (id, text, { disposition, ...change } = {}) =>
         modifyAlert(id, (alert) => {
           if (alert === undefined) return undefined
           const at = now()
           return {
             ...alert,
+            ...change,
             events: [...alert.events, { at, text }],
             disposition: disposition === undefined ? alert.disposition : { kind: disposition, at },
           }

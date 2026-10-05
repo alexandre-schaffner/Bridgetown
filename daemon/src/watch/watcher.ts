@@ -9,6 +9,7 @@ import { alertBoard, type PanelSpec, watchBoard } from "../grafana/boards.ts"
 import { Grafana } from "../grafana/client.ts"
 import { Hub } from "../hub.ts"
 import { AlertPipeline } from "../pipeline/alerts.ts"
+import { SessionRepo } from "../sessions/repo.ts"
 import { Store } from "../store/store.ts"
 import { Jev } from "../triage/jev.ts"
 import { alertKind } from "../triage/kind.ts"
@@ -82,6 +83,7 @@ export const WatcherLive = Layer.effect(Watcher)(
   Effect.gen(function* () {
     const hub = yield* Hub
     const store = yield* Store
+    const repo = yield* SessionRepo
     const boards = yield* Boards
     const jev = yield* Jev
     const pipeline = yield* AlertPipeline
@@ -116,7 +118,7 @@ export const WatcherLive = Layer.effect(Watcher)(
         yield* store.putAlert(alert)
         yield* hub.notify
         if (attachTo !== null) {
-          yield* store.appendTranscript(attachTo, { at: nowIso(), kind: "status", text: `Signal rose again: ${finding.title}` })
+          yield* repo.log(attachTo, "status", `Signal rose again: ${finding.title}`)
           return false
         }
         yield* pipeline.act(alert)
@@ -165,7 +167,7 @@ export const WatcherLive = Layer.effect(Watcher)(
           yield* store.appendAlertEvent(
             finding.id,
             `Back to its usual level at ${clock(now)} (${formatValue(measured.level, measured.panel.unit)}); the suggestion was withdrawn`,
-            "withdrawn",
+            { disposition: "withdrawn" },
           )
           yield* hub.notify
         }

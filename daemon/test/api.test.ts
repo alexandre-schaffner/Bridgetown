@@ -126,6 +126,14 @@ describe("contract shape", () => {
   })
 })
 
+describe("feedback on Jev's call", () => {
+  test("is stored on the alert, and its history says so", async () => {
+    expect((await post(`/alerts/${encodeURIComponent(alert.id)}/feedback`, { label: "good" })).status).toBe(200)
+    const detail: unknown = await (await call(`/alerts/${encodeURIComponent(alert.id)}`)).json()
+    expect(detail).toMatchObject({ alert: { feedback: "good" }, events: [{ text: "Ignored by Jev: noise" }, { text: "You marked Jev's call as right" }] })
+  })
+})
+
 describe("status codes", () => {
   test("404 for unknown ids", async () => {
     expect((await call("/alerts/C9%3A1")).status).toBe(404)
