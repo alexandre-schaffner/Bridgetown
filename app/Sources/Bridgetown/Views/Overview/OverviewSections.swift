@@ -42,7 +42,7 @@ struct NeedsYouSection: View {
         let order = groups.flatMap { $0.actions.map(\.id) }
         VStack(alignment: .leading, spacing: 8) {
             PickingHeader(selection: $selection, order: order) {
-                SectionHeader(title: "Needs you", count: snapshot.actions.count, tint: Ink.amber)
+                SectionHeader(title: "Needs you", count: snapshot.actions.count)
             } actions: {
                 bulkActions
             }
@@ -180,12 +180,7 @@ struct AgentsSection: View {
         let order = running.map(\.id)
         VStack(alignment: .leading, spacing: 8) {
             PickingHeader(selection: $selection, order: order) {
-                SectionHeader(
-                    title: "Agents",
-                    count: running.count,
-                    tint: running.contains { $0.holder?.isMoving == true } ? Ink.blue : nil,
-                    trailing: Session.breakdown(running)
-                )
+                SectionHeader(title: "Agents", count: running.count)
             } actions: {
                 stopActions
             }

@@ -167,34 +167,28 @@ extension View {
 
 // MARK: Section header
 
+/// A title and, past one, how many rows follow. The count stays grey: the rows carry
+/// the colour where it means something.
 struct SectionHeader: View {
     /// Tall enough for a compact button, so a selection header can stand in without a jump.
     static let height: CGFloat = 24
 
     let title: String
     var count: Int?
-    /// Colours the count when the section is worth attention (orange for Needs you).
-    var tint: Color?
-    var trailing: String?
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(title)
                 .font(Typo.title)
                 .tracking(Typo.titleTracking)
                 .foregroundStyle(.primary)
             if let count, count > 1 {
-                Badge(text: "\(count)", tint: tint)
+                Text("\(count)")
+                    .font(.geist(12).monospacedDigit())
+                    .foregroundStyle(.tertiary)
+                    .contentTransition(.numericText())
             }
             Spacer(minLength: 0)
-            if let trailing {
-                Text(trailing)
-                    .font(.geist(11))
-                    .monospacedDigit()
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-                    .truncationMode(.head)
-            }
         }
         .frame(height: Self.height)
         .accessibilityAddTraits(.isHeader)
