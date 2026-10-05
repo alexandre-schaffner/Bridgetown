@@ -234,7 +234,7 @@ describe("the adversarial review", () => {
 
   test("past the review but still a draft (an earlier `gh pr ready` failed): the CI check takes it out of draft", async () => {
     const { github, state } = fakeGitHub()
-    const draft = { number: 3352, title: "fix", state: "OPEN", mergedAt: null, isDraft: true, url: PR, reviewDecision: null, latestReviews: [], statusCheckRollup: [] }
+    const draft = { number: 3352, title: "fix", state: "OPEN", mergedAt: null, isDraft: true, headRefOid: "aaaa111", url: PR, reviewDecision: null, latestReviews: [], statusCheckRollup: [] }
     const world = makeWorld({ github: { ...github, viewPr: () => Effect.succeed(draft) }, jev })
     try {
       await world.runPromise(

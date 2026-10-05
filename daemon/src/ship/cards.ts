@@ -19,7 +19,7 @@ export const mergeDetail = (session: Session, pr: PullRequest): string => {
     ...(approvers.length > 0 ? [`approved by ${approvers.join(", ")}`] : []),
     checks > 0 ? `CI green, ${checks === 1 ? "1 check" : `${checks} checks`}` : "CI green",
     // Only a pass on the head being merged: one on an earlier head (pushed again with the review off) is no evidence.
-    ...(critique !== null && passedAt(critique, pr.headRefOid ?? null) ? [`${REVIEWER_NAMES[critique.reviewer]} passed`] : []),
+    ...(critique !== null && passedAt(critique, pr.headRefOid) ? [`${REVIEWER_NAMES[critique.reviewer]} passed`] : []),
   ].join(" · ")
 }
 

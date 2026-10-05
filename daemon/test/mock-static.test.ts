@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import { existsSync } from "node:fs"
 import { join } from "node:path"
-import { ASK, buildFixtures, SESSION, STILL_SESSION, type WorldOptions } from "../scripts/mock/fixtures.ts"
+import { Effect } from "effect"
+import { makeFakeGitHub } from "../scripts/mock/fakes.ts"
+import { ASK, buildFixtures, pr, SESSION, STILL_SESSION, type WorldOptions } from "../scripts/mock/fixtures.ts"
+import { mergeDetail } from "../src/ship/cards.ts"
+import { makeSession } from "./fixtures/records.ts"
 import { scratchDir } from "./fixtures/tmp.ts"
 
 const NOW = "2026-10-04T12:00:00.000Z"
@@ -149,4 +153,14 @@ describe("the mock honours the daemon's launch contract", () => {
     mock.child.stdin.end()
     await mock.child.exited
   }, 30_000)
+})
+
+describe("the mock's GitHub", () => {
+  test("a PR's head is one commit, so a review that passed it shows on the merge card the ship loop builds", async () => {
+    const { github } = makeFakeGitHub({ prs: {}, tags: [], latencyMs: 0, holds: {}, blocked: false, onRelease: () => undefined })
+    const [view, head] = await Effect.runPromise(Effect.all([github.viewPr(pr(3360)), github.prHead(pr(3360))]))
+    const session = makeSession("awaiting_merge", { prUrl: pr(3360), critique: { reviewer: "codex", sha: head ?? "", findings: [], response: null } })
+    expect(view.headRefOid).toBe(head ?? "")
+    expect(mergeDetail(session, view)).toEndWith("· Codex passed")
+  })
 })

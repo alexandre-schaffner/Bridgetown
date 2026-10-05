@@ -7,6 +7,7 @@ const pr = (checks: ReadonlyArray<Record<string, string | null>>) => ({
   title: "fix(app-admin): pin vite",
   state: "OPEN",
   mergedAt: null,
+  headRefOid: "aaaa111",
   url: "https://nocturlab.ghe.com/Merkl/monorepo/pull/1",
   reviewDecision: null,
   latestReviews: [],

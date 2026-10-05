@@ -18,7 +18,7 @@ import {
 import { makeSession } from "./fixtures/records.ts"
 
 const pr = (overrides: Partial<PullRequest> = {}): PullRequest => ({
-  number: 7, title: "fix(app-admin): pin vite", state: "OPEN", mergedAt: null, url: "https://ghe/pull/7",
+  number: 7, title: "fix(app-admin): pin vite", state: "OPEN", mergedAt: null, headRefOid: "aaaa111", url: "https://ghe/pull/7",
   reviewDecision: null, latestReviews: [], statusCheckRollup: [], ...overrides,
 })
 const red = { _tag: "Red" as const, failing: [{ name: "lint", url: "https://x/1" }] }

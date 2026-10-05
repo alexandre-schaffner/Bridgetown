@@ -94,6 +94,9 @@ export interface FakeGitHubOptions {
   readonly onRelease: (tag: string) => void
 }
 
+/** A PR's head commit: one per PR, the same from `gh pr view` and the head lookup, so a review's pass shows on its merge card. */
+const headOf = (url: string): string => new Bun.CryptoHasher("sha1").update(url).digest("hex")
+
 const checks = (state: FakePr["checks"]): PullRequest["statusCheckRollup"] => [
   { name: "lint", status: "COMPLETED", conclusion: "SUCCESS" },
   { name: "typecheck", status: "COMPLETED", conclusion: "SUCCESS" },
@@ -140,6 +143,7 @@ export const makeFakeGitHub = (options: FakeGitHubOptions) => {
       title: pr.title,
       state: pr.mergedAt === null ? "OPEN" : "MERGED",
       mergedAt: pr.mergedAt,
+      headRefOid: headOf(url),
       url,
       reviewDecision: review,
       latestReviews: review === "APPROVED" ? [{ id: `r_${url}`, state: "APPROVED", body: "", author: { login: "baptiste" } }] : [],
@@ -179,7 +183,7 @@ export const makeFakeGitHub = (options: FakeGitHubOptions) => {
         ),
       ),
     branchHead: (_repoPath, branch) => Effect.succeed(new Bun.CryptoHasher("sha1").update(branch).digest("hex")),
-    prHead: (url) => Effect.succeed(new Bun.CryptoHasher("sha1").update(url).digest("hex")),
+    prHead: (url) => Effect.succeed(headOf(url)),
     markReady: () => ghe("pr ready", slow(options.latencyMs / 3)),
     reachability: Effect.sync(() => (blocked ? "blocked" : "ok")),
   }

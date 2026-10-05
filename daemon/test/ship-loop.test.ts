@@ -20,7 +20,7 @@ const fakeGitHub = (pr: { current: Partial<PullRequest> }, tagLookup?: Deferred.
   const github: GitHubShape = {
     viewPr: (url) =>
       Effect.sync(() => ({
-        number: 3345, title: "fix(app): import d3-shape from its root", state: "OPEN", mergedAt: null, url,
+        number: 3345, title: "fix(app): import d3-shape from its root", state: "OPEN", mergedAt: null, headRefOid: "aaaa111", url,
         reviewDecision: "APPROVED", latestReviews: [], statusCheckRollup: green, ...pr.current,
       })),
     mergePr: () => Effect.sync(() => void calls.merge++),

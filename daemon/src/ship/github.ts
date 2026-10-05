@@ -41,7 +41,7 @@ const PullRequest = Schema.Struct({
   mergedAt: Schema.NullOr(Schema.String),
   isDraft: Schema.optional(Schema.Boolean),
   /** The head commit, which a passed review must have read for the merge card to say so. */
-  headRefOid: Schema.optional(Schema.String),
+  headRefOid: Schema.String,
   url: Schema.String,
   reviewDecision: Schema.NullOr(Schema.String),
   latestReviews: Schema.Array(Review),

@@ -6,7 +6,7 @@ import { makeSession } from "./fixtures/records.ts"
 
 const PR = "https://nocturlab.ghe.com/Merkl/monorepo/pull/3352"
 const pr = (overrides: Partial<PullRequest> = {}): PullRequest => ({
-  number: 3352, title: "fix(api): reject an empty region", state: "OPEN", mergedAt: null, url: PR,
+  number: 3352, title: "fix(api): reject an empty region", state: "OPEN", mergedAt: null, headRefOid: "abc", url: PR,
   reviewDecision: "APPROVED", latestReviews: [], statusCheckRollup: [], ...overrides,
 })
 const review = (login: string, state: string) => ({ id: `r-${login}`, state, body: "", author: { login } })
