@@ -1,8 +1,9 @@
 import { afterAll, describe, expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
 import { join } from "node:path"
+import * as SqliteClient from "@effect/sql-sqlite-bun/SqliteClient"
 import { Effect } from "effect"
-import { Store } from "../src/store/store.ts"
+import { Store, tuneStorage } from "../src/store/store.ts"
 import { oldStore } from "./fixtures/old-store.ts"
 import { makeAlert, makeSession } from "./fixtures/records.ts"
 import { scratchDir } from "./fixtures/tmp.ts"
@@ -91,5 +92,12 @@ describe("store pruning", () => {
       await reopened.dispose()
     }
     expect(pragma(old, "auto_vacuum")).toBe(2)
+  })
+
+  test("a VACUUM that cannot run leaves the file as it was and does not stop the store from opening", async () => {
+    const old = oldStore()
+    // A read-only connection reads the mode but cannot VACUUM, as a full disk or a held lock would refuse it.
+    await Effect.runPromise(tuneStorage.pipe(Effect.provide(SqliteClient.layer({ filename: join(old, "bridgetown.db"), readonly: true })), Effect.scoped))
+    expect(pragma(old, "auto_vacuum")).toBe(0)
   })
 })

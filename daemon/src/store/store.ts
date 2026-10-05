@@ -282,22 +282,22 @@ const INCREMENTAL = 2
 /**
  * Space that pruning frees goes back to the disk. An existing file only takes incremental auto-vacuum
  * through a VACUUM, which cannot run inside the migrations' transaction, so it runs here, once, after
- * them. The WAL file shrinks back to 8 MB after each checkpoint instead of keeping its peak.
+ * them. The WAL file shrinks back to 8 MB after each checkpoint instead of keeping its peak. Best effort:
+ * a VACUUM that cannot run (a full disk, a writer holding the lock) is logged, the file keeps its mode,
+ * and the next start tries again; the daemon starts either way.
  */
-const tuning = Layer.effectDiscard(
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    yield* sql`PRAGMA journal_size_limit = 8388608`
-    const [mode] = yield* sql<{ readonly auto_vacuum: number }>`PRAGMA auto_vacuum`
-    if (mode?.auto_vacuum === INCREMENTAL) return
-    yield* sql`PRAGMA auto_vacuum = INCREMENTAL`
-    yield* sql`VACUUM`
-  }),
-)
+export const tuneStorage = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql`PRAGMA journal_size_limit = 8388608`
+  const [mode] = yield* sql<{ readonly auto_vacuum: number }>`PRAGMA auto_vacuum`
+  if (mode?.auto_vacuum === INCREMENTAL) return
+  yield* sql`PRAGMA auto_vacuum = INCREMENTAL`
+  yield* sql`VACUUM`
+}).pipe(Effect.catch((error) => Effect.logWarning(`Storage tuning skipped until the next start: ${errorMessage(error)}`)))
 
 export const StoreLive = (directory: string) => {
   mkdirSync(directory, { recursive: true })
   const sqlLayer = SqliteClient.layer({ filename: join(directory, "bridgetown.db") })
   const migrationLayer = SqliteMigrator.layer({ loader: migrations, table: "bridgetown_migrations" })
-  return StoreImpl.pipe(Layer.provide(tuning), Layer.provide(migrationLayer), Layer.provide(sqlLayer))
+  return StoreImpl.pipe(Layer.provide(Layer.effectDiscard(tuneStorage)), Layer.provide(migrationLayer), Layer.provide(sqlLayer))
 }
