@@ -202,7 +202,7 @@ async function walk(browser: Browser, base: string, out: string, spec: PageSpec,
       await page.waitForTimeout(settle);
       const png = `shots/${shotName}.png`;
       await page.screenshot({ path: join(out, png), scale: "css", caret: "hide" });
-      const issues = await page.evaluate(lintPage, { allow: ALLOW, shot: shotName });
+      const issues = await page.evaluate(lintPage, { allow: ALLOW });
       await crop(page, out, shotName, issues);
       result.shots.push({ name: shotName, page: spec.path, size, motion, scrollY: y, png, issues });
     }

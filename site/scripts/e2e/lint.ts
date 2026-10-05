@@ -37,19 +37,22 @@ export interface Issue {
 /**
  * Issues that are the design, not a glitch. Each names its rule, the element it is about (an
  * ancestor selector, matched with closest()), and why it is fine. `with` is the other element
- * of an overlap; `shots` narrows an entry to shot names containing that text.
+ * of an overlap; `media` holds an entry to the screens where the design does this (a media
+ * query, as the CSS that lays it out has it), so the same issue anywhere else still counts.
  */
 export interface Allow {
   rule: Rule | Rule[];
   within: string;
   with?: string;
-  shots?: string;
+  media?: string;
   why: string;
 }
 export const ALLOW: Allow[] = [
   {
-    rule: ["clipped-text", "spill"],
+    rule: "clipped-text",
     within: "[data-track]",
+    // Where the frames sit in a row (Journey.astro); stacked on a narrow screen, nothing in them may be cut.
+    media: "(min-width: 981px)",
     why: "The journey reel runs sideways: the frames either side of the middle one pass the screen's edges.",
   },
   {
@@ -65,8 +68,8 @@ export const ALLOW: Allow[] = [
   },
   {
     rule: "ellipsis",
-    within: "[data-island]",
-    why: "The island's rows are a line each and truncate, as the app's do.",
+    within: "[data-island] .d",
+    why: "An island row's detail is one line and truncates, as the app's does; its title and the banner's never should.",
   },
 ];
 
@@ -74,7 +77,7 @@ export const ALLOW: Allow[] = [
  * Runs in the page, so it is self-contained. Text is linted as the boxes of its text nodes
  * (a Range's client rects, a line each), clipped by every ancestor whose overflow clips it.
  */
-export function lintPage({ allow, shot }: { allow: Allow[]; shot: string }): Issue[] {
+export function lintPage({ allow }: { allow: Allow[] }): Issue[] {
   const vw = innerWidth;
   const vh = innerHeight;
   const issues: Issue[] = [];
@@ -102,7 +105,7 @@ export function lintPage({ allow, shot }: { allow: Allow[]; shot: string }): Iss
     return allow.find(
       (a) =>
         (Array.isArray(a.rule) ? a.rule.includes(rule) : a.rule === rule) &&
-        (!a.shots || shot.includes(a.shots)) &&
+        (!a.media || matchMedia(a.media).matches) &&
         (covers(a, el, other) || (other && covers(a, other, el))),
     )?.why;
   };
