@@ -569,6 +569,8 @@ interface Check {
   name: string;
   viewport: Viewport;
   motion: Motion;
+  /** Before the page opens: routes, listeners. */
+  setup?(page: Page): Promise<void>;
   run(page: Page): Promise<void>;
 }
 interface CheckResult {
@@ -586,6 +588,14 @@ const LAPTOP = VIEWPORTS[2]!;
 function expect(ok: unknown, what: string): asserts ok {
   if (!ok) throw new Error(what);
 }
+
+/** Every request the page makes from here on whose URL contains `part`. */
+function requests(page: Page, part: string) {
+  const urls: string[] = [];
+  page.on("request", (r) => r.url().includes(part) && urls.push(new URL(r.url()).pathname));
+  return urls;
+}
+const heroRequests = new WeakMap<Page, string[]>();
 
 const CHECKS: Check[] = [
   {
@@ -685,6 +695,33 @@ const CHECKS: Check[] = [
       }
     },
   },
+  {
+    name: "The hero's frames come from the set its picture chose",
+    // Between the two old rules: the picture took the medium set here and the script the large.
+    viewport: { width: 1500, height: 900, scale: 1.5, touch: false },
+    motion: "no-preference",
+    async setup(page) {
+      heroRequests.set(page, requests(page, "/hero/"));
+    },
+    async run(page) {
+      await page.waitForTimeout(1000);
+      const sets = new Set(heroRequests.get(page)!.filter((u) => u.endsWith(".webp")).map((u) => u.split("/")[2]));
+      expect(sets.size === 1, `frames came from ${[...sets].join(" and ")}`);
+    },
+  },
+  {
+    name: "Under Reduce Motion the hero's opening loop isn't downloaded",
+    viewport: LAPTOP,
+    motion: "reduce",
+    async setup(page) {
+      heroRequests.set(page, requests(page, "loop.mp4"));
+    },
+    async run(page) {
+      await page.waitForTimeout(1500);
+      const loops = heroRequests.get(page)!;
+      expect(loops.length === 0, `it fetched ${loops.join(", ")}`);
+    },
+  },
 ];
 
 async function check(browser: Browser, base: string, out: string, c: Check, n: number): Promise<CheckResult> {
@@ -698,6 +735,7 @@ async function check(browser: Browser, base: string, out: string, c: Check, n: n
   });
   const page = await context.newPage();
   try {
+    await c.setup?.(page);
     await page.goto(`${base}/`, { waitUntil: "load" });
     await page.evaluate(() => document.fonts.ready.then(() => undefined));
     await page.waitForTimeout(800);

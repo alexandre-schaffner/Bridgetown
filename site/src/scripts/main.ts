@@ -90,11 +90,7 @@ addEventListener("themechange", () => scene?.setDay(dayColor(cssRGB("--day"))));
 
 // The pre-rendered hero.
 const heroMedia = $("[data-hero-media]");
-const heroFrames =
-  heroMedia &&
-  createHeroFrames($<HTMLCanvasElement>("[data-hero-frames]", heroMedia)!, $<HTMLVideoElement>("[data-hero-loop]", heroMedia)!, {
-    reducedMotion: reduced,
-  });
+const heroFrames = heroMedia && createHeroFrames(heroMedia, { reducedMotion: reduced });
 
 if (finePointer && !reduced) {
   addEventListener("pointermove", (e) => {
