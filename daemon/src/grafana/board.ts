@@ -57,6 +57,8 @@ export class Boards extends Context.Service<Boards, BoardsShape>()("Boards") {}
 
 /** The overview covers an hour, so a minute-old board is as stale as it should get. */
 const CACHE_MS = 60_000
+/** A board nobody opened or warmed for this long (an alert's, opened once) is dropped instead of kept for the daemon's life. */
+const EVICT_MS = 10 * CACHE_MS
 const DEPLOY_LIMIT = 40
 export const GRAFANA_DOWN = "Grafana MCP is down. Run `bun grafana:mcp` in the monorepo to see prod charts."
 
@@ -160,7 +162,10 @@ export const BoardsLive = Layer.effect(Boards)(
           Effect.tap((board) =>
             Effect.sync(() => {
               // A failure is not cached, so the next open tries again.
-              if (board.error === null) cache.set(spec.key, { at: Date.now(), board })
+              if (board.error !== null) return
+              const at = Date.now()
+              cache.set(spec.key, { at, board })
+              for (const [key, entry] of cache) if (at - entry.at > EVICT_MS) cache.delete(key)
             }),
           ),
           Effect.exit,
