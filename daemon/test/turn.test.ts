@@ -36,9 +36,10 @@ const turnOf = async (
   plays: ReadonlyArray<Play>,
   session: Session = handedBack("s_turn"),
   start: (runner: SessionRunnerShape) => Effect.Effect<unknown, unknown, Shipper> = (runner) => runner.message(session.id, "go"),
+  github: GitHubShape = quietGitHub,
 ) => {
   const { agent } = playingAgent(plays)
-  const world = makeWorld({ agent, github: quietGitHub })
+  const world = makeWorld({ agent, github })
   try {
     return await world.runPromise(
       Effect.gen(function* () {
@@ -143,5 +144,38 @@ describe("send-backs", () => {
     const out = await turnOf([{ kind: "result", output: revert }], deploying, () => Shipper.use((shipper) => shipper.trackDeploy(tracker)))
     expect(out.session).toMatchObject({ status: "waiting", sentBack: null, outcome: "recommendation", milestones: { released: true, deployed: false } })
     expect(out.cards).toEqual(["review: Deploy failed · t"])
+  })
+
+  test("a send-back queued behind an ending turn is answered by the next turn, not by the one ending", async () => {
+    // The first turn's result waits on `git ls-remote` until the send-back has been queued behind it.
+    const reached = Promise.withResolvers<void>()
+    const queuedUp = Promise.withResolvers<void>()
+    const github: GitHubShape = {
+      ...quietGitHub,
+      branchHead: () =>
+        Effect.promise(async () => {
+          reached.resolve()
+          await queuedUp.promise
+          return null
+        }),
+    }
+    const inCi: Session = { ...handedBack("s_queued"), prUrl: OWN_PR, milestones: { ...NO_MILESTONES, prOpened: true, ciGreen: true } }
+    const flaky = { ...RESULT, outcome: "recommendation" as const, recommendation: "rerun_failed_jobs" as const, recommendationDetail: "A flaky runner" }
+    const delivered: Array<string> = []
+    const out = await turnOf(
+      [{ kind: "result", output: flaky }],
+      inCi,
+      (runner) =>
+        Effect.gen(function* () {
+          yield* runner.message(inCi.id, "is this flaky?")
+          yield* Effect.promise(() => reached.promise)
+          delivered.push(yield* runner.continueWith(inCi.id, "CI is red", { sentBack: "ci" }))
+          queuedUp.resolve()
+        }),
+      github,
+    )
+    expect(delivered).toEqual(["queued"])
+    expect(out.session).toMatchObject({ status: "waiting", sentBack: null })
+    expect(out.cards).toEqual(["review: CI still red · t"])
   })
 })

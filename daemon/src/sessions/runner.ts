@@ -52,6 +52,7 @@ export class SessionRunner extends Context.Service<SessionRunner, SessionRunnerS
 
 interface FollowUp {
   readonly text: string
+  readonly patch: TurnPatch
   readonly reopen: boolean
 }
 
@@ -202,7 +203,8 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
           const waiting = yield* Queue.clear(followUps)
           if (waiting.length === 0) return [undefined, dropLive(state, id, followUps)] as const
           const reopen = waiting.some((f) => f.reopen)
-          const [next, after] = yield* claim(state, id, waiting.map((f) => f.text).join("\n\n"), { resume: true, reopen })
+          const patch = waiting.reduce<TurnPatch>((merged, f) => ({ ...merged, ...f.patch }), {})
+          const [next, after] = yield* claim(state, id, waiting.map((f) => f.text).join("\n\n"), { resume: true, patch, reopen })
           if (next !== undefined) return [next, after] as const
           yield* repo.log(id, "status", "Follow-up not delivered: the session has ended")
           return [undefined, dropLive(state, id, followUps)] as const
@@ -290,10 +292,13 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
           if (session === undefined) return ["refused", state] as const
           const live = state.live.get(id)
           if (live !== undefined) {
-            // No claim will carry the patch: the text joins a turn that already has one.
-            if (Object.keys(patch).length > 0) yield* repo.patch(id, patch)
-            if (yield* Queue.offer(live.input, userMessage(text, "next"))) return ["sent", state] as const
-            yield* Queue.offer(live.followUps, { text, reopen })
+            if (yield* Queue.offer(live.input, userMessage(text, "next"))) {
+              // The running turn takes the text, so its result answers it, and no claim is coming to write the patch.
+              if (Object.keys(patch).length > 0) yield* repo.patch(id, patch)
+              return ["sent", state] as const
+            }
+            // The next turn's claim writes the patch: written now, the ending turn's result would read (and clear) `sentBack`.
+            yield* Queue.offer(live.followUps, { text, patch, reopen })
             yield* repo.log(id, "status", "Queued for after the current turn")
             return ["queued", state] as const
           }
