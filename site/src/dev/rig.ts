@@ -20,7 +20,7 @@ export function $<T extends Element = HTMLElement>(s: string, root: ParentNode =
 }
 
 /** What the island says at each step of its tour, Wings to Merge. */
-export const TOUR = [
+const TOUR = [
   "Agents at work, either side of the notch.",
   "Something is yours: a banner drops, then tucks back in.",
   "Click, and the whole app unfolds.",

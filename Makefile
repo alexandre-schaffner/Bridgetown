@@ -61,9 +61,9 @@ test-app:
 mock:
 	cd daemon && bun scripts/mock/main.ts
 
-# The landing page end to end: builds it if stale, serves dist/, and screenshots and lints each
-# page at five viewports into .context/e2e/<run>/site (open index.md). ARGS="--quick" for one
-# stop per section, ARGS="--only 375x812" for one walk.
+# The landing page end to end: builds it if stale, serves dist/, screenshots and lints each page
+# at five viewports and runs its checks, into .context/e2e/<run>/site (open index.md).
+# ARGS="--quick" for one stop per section, ARGS="--only 375x812" for one walk.
 .PHONY: e2e-site
 e2e-site:
 	cd site && bun scripts/e2e.ts $(ARGS)
