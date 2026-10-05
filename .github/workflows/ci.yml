@@ -57,7 +57,10 @@ jobs:
 
   app:
     name: App (tests, bundle)
-    runs-on: macos-15
+    runs-on: macos-26
+    env:
+      # Pinned so a runner image's default Xcode moving doesn't change the compiler under us.
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
     timeout-minutes: 30
     permissions:
       contents: read

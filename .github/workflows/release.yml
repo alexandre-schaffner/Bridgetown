@@ -66,12 +66,14 @@ jobs:
     if: >-
       !cancelled() && !failure() &&
       (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch')
-    runs-on: macos-15
+    runs-on: macos-26
+    env:
+      # Pinned so a runner image's default Xcode moving doesn't change the compiler under us.
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      TAG: ${{ needs.release-please.outputs.tag_name || inputs.tag }}
     timeout-minutes: 30
     permissions:
       contents: read
-    env:
-      TAG: ${{ needs.release-please.outputs.tag_name || inputs.tag }}
     steps:
       - name: Check the tag
         run: |
