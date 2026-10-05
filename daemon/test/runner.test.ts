@@ -109,6 +109,28 @@ describe("your message", () => {
   })
 })
 
+describe("a new turn", () => {
+  test("takes down the hand-off it supersedes, which would otherwise close the session mid-turn", async () => {
+    const { agent, texts } = recordingAgent()
+    const world = makeWorld({ agent })
+    try {
+      await world.runPromise(Effect.gen(function* () {
+        const store = yield* Store
+        yield* seed(handedBack("s_reopen"))
+        yield* store.putAction({
+          id: "a_handoff", kind: "review", title: "Root cause not found · t", detail: "", primaryLabel: "Close session", options: [],
+          sessionId: "s_reopen", alertId: "C1:s_reopen", payload: null, url: null, createdAt: "2026-10-01T00:00:00.000Z",
+        })
+        yield* (yield* SessionRunner).message("s_reopen", "look again")
+      }))
+      await until(() => texts().includes("look again"))
+      expect(await world.runPromise(Store.use((store) => store.listActions()))).toEqual([])
+    } finally {
+      await world.dispose()
+    }
+  })
+})
+
 describe("session fibers", () => {
   test("stop interrupts the turn: the query is aborted and the session ends stopped", async () => {
     const { agent, state, texts } = recordingAgent()
