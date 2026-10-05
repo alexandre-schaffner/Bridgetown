@@ -32,8 +32,8 @@ final class Store {
     /// Why this connection hasn't succeeded yet (while still `.connecting`).
     private(set) var lastConnectError: String?
 
-    /// Called with (previous, next) on every snapshot change. Used for notifications.
-    @ObservationIgnored var onSnapshot: ((Snapshot?, Snapshot) -> Void)?
+    /// Called on every snapshot change. Used for notifications.
+    @ObservationIgnored var onSnapshot: ((Snapshot) -> Void)?
 
     @ObservationIgnored private var client: DaemonClient?
     @ObservationIgnored private var streamTask: Task<Void, Never>?
@@ -99,10 +99,9 @@ final class Store {
     private func apply(_ next: Snapshot) {
         serverSettings = next.settings
         let shown = withLocalSettings(next)
-        let previous = snapshot
-        guard previous != shown else { return }
+        guard shown != snapshot else { return }
         snapshot = shown
-        onSnapshot?(previous, shown)
+        onSnapshot?(shown)
         if case let .session(id) = route, shown.session(id: id) == nil { back() }
     }
 

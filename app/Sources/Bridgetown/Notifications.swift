@@ -1,42 +1,50 @@
 import AppKit
 import UserNotifications
 
-/// Posts a user notification for each new "Needs you" action (`NewActions`).
-///
-/// UNUserNotificationCenter traps when the process has no bundle identifier (e.g. under
-/// `swift run`), so everything is gated on `isAvailable`.
+/// Posts a user notification for each new "Needs you" action (`NewActions`), and takes it
+/// back once the action is gone.
 @MainActor
 final class Notifier: NSObject {
-    static var isAvailable: Bool { Bundle.main.bundleIdentifier != nil }
-
-    private var authorized = false
+    /// Set by `start`. UNUserNotificationCenter traps when the process has no bundle
+    /// identifier (e.g. under `swift run`), and an e2e run never starts it.
+    private var center: UNUserNotificationCenter?
     /// Clicking a notification opens the island.
     var onOpen: (() -> Void)?
 
     func start() {
-        guard Self.isAvailable else { return }
+        guard Bundle.main.bundleIdentifier != nil else { return }
         let center = UNUserNotificationCenter.current()
         center.delegate = self
-        Task {
-            authorized = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
-        }
+        self.center = center
+        // Posting doesn't wait on the answer: allowed later in System Settings, it works
+        // from then on, and until then the system drops what we post.
+        Task { _ = try? await center.requestAuthorization(options: [.alert, .sound]) }
     }
 
     func post(_ actions: [Action]) {
-        guard Self.isAvailable, authorized else { return }
-        for action in actions.prefix(3) { post(action) }
+        guard let center else { return }
+        for action in actions.prefix(3) {
+            let content = UNMutableNotificationContent()
+            content.title = action.title
+            content.body = action.detail
+            content.sound = .default
+            content.threadIdentifier = "actions"
+            center.add(UNNotificationRequest(identifier: Self.identifier(action.id), content: content, trigger: nil))
+        }
     }
 
-    private func post(_ action: Action) {
-        let content = UNMutableNotificationContent()
-        content.title = action.title
-        content.body = action.detail
-        content.sound = .default
-        content.threadIdentifier = "actions"
-        content.userInfo = ["actionId": action.id, "sessionId": action.sessionId ?? ""]
-        let request = UNNotificationRequest(identifier: "action-\(action.id)", content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request)
+    /// Takes back every delivered notification whose action is gone: answered here or in
+    /// Slack, or before a relaunch. Clicking one would open the island onto nothing.
+    func withdraw(allBut current: Set<String>) {
+        guard let center else { return }
+        let keep = Set(current.map(Self.identifier))
+        Task {
+            let stale = await center.deliveredNotifications().map(\.request.identifier).filter { !keep.contains($0) }
+            if !stale.isEmpty { center.removeDeliveredNotifications(withIdentifiers: stale) }
+        }
     }
+
+    private static func identifier(_ actionId: String) -> String { "action-\(actionId)" }
 }
 
 extension Notifier: UNUserNotificationCenterDelegate {
@@ -58,12 +66,14 @@ extension Notifier: UNUserNotificationCenterDelegate {
 /// New "Needs you" actions, snapshot to snapshot, diffed on ids. The first snapshot is the
 /// baseline, so a relaunch doesn't replay everything already waiting.
 struct NewActions {
-    private var seen: Set<String>?
+    /// The last snapshot's ids. Only those: an action id is never used again, so forgetting
+    /// the ones that are gone can't announce anything twice.
+    private(set) var seen: Set<String>?
 
     /// The actions not seen before, in "Needs you" order; none during quiet hours.
     mutating func update(_ snap: Snapshot, now: Date = AppClock.now) -> [Action] {
         let ids = Set(snap.actions.map(\.id))
-        defer { seen = (seen ?? []).union(ids) }
+        defer { seen = ids }
         guard let seen, !QuietHours.isActive(snap.settings.quietHours, at: now) else { return [] }
         return snap.sortedActions.filter { !seen.contains($0.id) }
     }

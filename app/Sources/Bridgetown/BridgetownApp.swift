@@ -46,9 +46,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
         notifier.onOpen = { [weak self] in self?.island.open() }
         // Each new "Needs you" is both a notification and a banner under the notch.
-        store.onSnapshot = { [weak self] _, next in
+        store.onSnapshot = { [weak self] next in
             guard let self else { return }
+            let seen = newActions.seen
             let fresh = newActions.update(next)
+            // A notification goes once its action does, here or while the app was closed.
+            if let current = newActions.seen, current != seen { notifier.withdraw(allBut: current) }
             guard let first = fresh.first else { return }
             notifier.post(fresh)
             island.announce(first)

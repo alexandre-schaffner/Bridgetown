@@ -171,6 +171,20 @@ import Testing
         #expect(new.update(snap).isEmpty)
     }
 
+    /// It keeps the cards standing and no more, so it doesn't grow for as long as the app
+    /// runs; the ones gone are the notifications to take back.
+    @Test func itRemembersOnlyTheCardsStanding() throws {
+        var snap = try Fixture.snapshot()
+        snap.settings.quietHours.enabled = false
+        var new = NewActions()
+        _ = new.update(snap)
+        let resolved = try #require(snap.actions.first)
+        snap.actions.removeFirst()
+        _ = new.update(snap)
+        #expect(new.seen == Set(snap.actions.map(\.id)))
+        #expect(new.seen?.contains(resolved.id) == false)
+    }
+
     @Test func quietHoursHoldThemBackButStillCountThemSeen() throws {
         var snap = try Fixture.snapshot()
         snap.settings.quietHours = .init(enabled: true, start: "00:00", end: "23:59")
