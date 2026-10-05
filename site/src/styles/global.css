@@ -159,6 +159,11 @@ input {
   border-radius: 4px;
 }
 
+/* A chapter an in-page link sent focus to (scripts/scroll.ts): the view moving there says so. */
+[tabindex="-1"]:focus {
+  outline: none;
+}
+
 ::selection {
   background: oklch(0.63 0.19 252 / 0.3);
 }

@@ -3,15 +3,17 @@
 // viewports, with and without Reduce Motion. At every scroll stop it takes a screenshot and
 // lints what the page drew: sideways scroll, text or media spilling past the screen, text cut
 // off or ellipsised by its box, text drawn over other text, broken images and videos, console
-// errors, page errors and failed requests.
+// errors, page errors and failed requests. Then it checks what the page has to do: focus,
+// landing, the nav, the films (CHECKS).
 //
-// Writes .context/e2e/<run>/site/: index.md first (errors with crops, warnings by rule, a
-// contact sheet per walk), report.json, shots/, issues/ (each issue's crop, outlined in red)
-// and sheets/. Exits 0 when clean, 1 on lint errors, 2 when the harness itself failed.
+// Writes .context/e2e/<run>/site/: index.md first (checks, errors with crops, warnings by
+// rule, a contact sheet per walk), report.json, shots/, issues/ (each issue's crop, outlined
+// in red), sheets/ and checks/ (the screen when a check failed). Exits 0 when clean, 1 on lint
+// errors or a failed check, 2 when the harness itself failed.
 //
 // usage: bun scripts/e2e.ts [--quick] [--only <part of a shot name>] [--no-build]
 //   --quick     one stop per section instead of one per screen
-//   --only      e.g. `--only 375x812`, `--only home.1920x1080.reduce`
+//   --only      e.g. `--only 375x812`, `--only home.1920x1080.reduce`, `--only checks`
 
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -557,15 +559,101 @@ async function sheet(browser: Browser, base: string, out: string, w: Walk) {
   await page.close();
 }
 
+// MARK: Checks
+
+/**
+ * What the page has to do, not only how it looks. Each check opens the home page in a context
+ * of its own and throws a sentence saying what went wrong.
+ */
+interface Check {
+  name: string;
+  viewport: Viewport;
+  motion: Motion;
+  run(page: Page): Promise<void>;
+}
+interface CheckResult {
+  name: string;
+  size: string;
+  motion: Motion;
+  ok: boolean;
+  error?: string;
+  png?: string;
+}
+
+const PHONE = VIEWPORTS[0]!;
+const LAPTOP = VIEWPORTS[2]!;
+
+function expect(ok: unknown, what: string): asserts ok {
+  if (!ok) throw new Error(what);
+}
+
+const CHECKS: Check[] = [
+  {
+    name: "The skip link moves keyboard focus into the content",
+    viewport: LAPTOP,
+    motion: "no-preference",
+    async run(page) {
+      await page.keyboard.press("Tab");
+      expect(await page.evaluate(() => document.activeElement?.matches(".skip")), "the first Tab doesn't reach the skip link");
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("Tab");
+      expect(await page.evaluate(() => !!document.activeElement?.closest("main")), "after the skip link, Tab goes back to the nav");
+    },
+  },
+  {
+    name: "Under Reduce Motion, a nav link lands on the light's stage and focuses it",
+    viewport: LAPTOP,
+    motion: "reduce",
+    async run(page) {
+      await page.click('nav a[href="#light"]');
+      await page.waitForTimeout(300);
+      const { y, stage, focused } = await page.evaluate(() => {
+        const light = document.querySelector<HTMLElement>("#light")!;
+        const stage = light.getBoundingClientRect().top + scrollY + parseFloat(getComputedStyle(light).paddingTop);
+        return { y: scrollY, stage, focused: document.activeElement === light };
+      });
+      expect(Math.abs(y - stage) < 2, `it lands at ${Math.round(y)}px, in the dusk before the stage at ${Math.round(stage)}px`);
+      expect(focused, "the light chapter doesn't take focus");
+    },
+  },
+];
+
+async function check(browser: Browser, base: string, out: string, c: Check, n: number): Promise<CheckResult> {
+  const result: CheckResult = { name: c.name, size: `${c.viewport.width}x${c.viewport.height}`, motion: c.motion, ok: false };
+  const context = await browser.newContext({
+    viewport: { width: c.viewport.width, height: c.viewport.height },
+    deviceScaleFactor: c.viewport.scale,
+    isMobile: c.viewport.touch,
+    hasTouch: c.viewport.touch,
+    reducedMotion: c.motion,
+  });
+  const page = await context.newPage();
+  try {
+    await page.goto(`${base}/`, { waitUntil: "load" });
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    await page.waitForTimeout(800);
+    await c.run(page);
+    result.ok = true;
+  } catch (e) {
+    result.error = e instanceof Error ? e.message.split("\n")[0] : String(e);
+    result.png = `checks/${String(n).padStart(2, "0")}.png`;
+    await page.screenshot({ path: join(out, result.png), scale: "css" }).catch(() => (result.png = undefined));
+  } finally {
+    await context.close();
+  }
+  return result;
+}
+
 // MARK: Report
 
-function report(out: string, run: string, browser: string, walks: Walk[], started: number) {
+function report(out: string, run: string, browser: string, walks: Walk[], checks: CheckResult[], started: number) {
   const shots = walks.flatMap((w) => w.shots);
   const all = [...walks.flatMap((w) => w.issues), ...shots.flatMap((s) => s.issues)];
   const open = all.filter((i) => !i.allowed);
   const errors = open.filter((i) => i.severity === "error");
   const warnings = open.filter((i) => i.severity === "warning");
   const failed = walks.filter((w) => w.error);
+  const broken = checks.filter((c) => !c.ok);
   const git = (...a: string[]) => {
     try {
       return execFileSync("git", a, { cwd: ROOT, encoding: "utf8" }).trim();
@@ -573,7 +661,15 @@ function report(out: string, run: string, browser: string, walks: Walk[], starte
       return "";
     }
   };
-  const summary = { shots: shots.length, errors: errors.length, warnings: warnings.length, allowed: all.length - open.length, failedWalks: failed.length };
+  const summary = {
+    shots: shots.length,
+    errors: errors.length,
+    warnings: warnings.length,
+    allowed: all.length - open.length,
+    checks: checks.length,
+    failedChecks: broken.length,
+    failedWalks: failed.length,
+  };
   writeFileSync(
     join(out, "report.json"),
     JSON.stringify(
@@ -584,6 +680,7 @@ function report(out: string, run: string, browser: string, walks: Walk[], starte
         browser,
         durationMs: Date.now() - started,
         summary,
+        checks,
         walks,
       },
       null,
@@ -591,8 +688,17 @@ function report(out: string, run: string, browser: string, walks: Walk[], starte
     ),
   );
 
-  const line = `${summary.shots} shots, ${summary.errors} errors, ${summary.warnings} warnings, ${summary.allowed} allowed${failed.length ? `, ${failed.length} walks failed` : ""}`;
+  const line =
+    `${summary.shots} shots, ${summary.errors} errors, ${summary.warnings} warnings, ${summary.allowed} allowed; ` +
+    `${checks.length - broken.length} of ${checks.length} checks pass${failed.length ? `; ${failed.length} walks failed` : ""}`;
   const md: string[] = [`# Site e2e · ${run}`, "", line, ""];
+  if (checks.length) {
+    md.push("## Checks", "");
+    for (const c of checks) {
+      md.push(`- ${c.ok ? "✓" : "✗"} ${c.name} (${c.size}, ${c.motion})${c.ok ? "" : `: **${c.error}**${c.png ? ` [shot](${c.png})` : ""}`}`);
+    }
+    md.push("");
+  }
   const link = (i: Issue) => (i.crop ? ` [crop](${i.crop})` : "");
   const where = (i: Issue) => shots.find((s) => s.issues.includes(i));
   if (failed.length) {
@@ -640,7 +746,7 @@ function report(out: string, run: string, browser: string, walks: Walk[], starte
   }
   md.push("");
   writeFileSync(join(out, "index.md"), md.join("\n"));
-  return { line, code: failed.length ? 2 : errors.length ? 1 : 0 };
+  return { line, code: failed.length ? 2 : errors.length || broken.length ? 1 : 0 };
 }
 
 /** Keeps the five newest site runs, and points latest-site at this one. */
@@ -663,7 +769,7 @@ const started = Date.now();
 const run = new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
 const e2e = join(ROOT, ".context", "e2e");
 const out = join(e2e, run, "site");
-for (const d of ["shots", "issues", "sheets"]) mkdirSync(join(out, d), { recursive: true });
+for (const d of ["shots", "issues", "sheets", "checks"]) mkdirSync(join(out, d), { recursive: true });
 
 let code = 2;
 try {
@@ -676,6 +782,7 @@ try {
   });
   const version = `chromium ${browser.version()}`;
   const walks: Walk[] = [];
+  const checks: CheckResult[] = [];
   try {
     for (const spec of PAGES) {
       for (const vp of VIEWPORTS) {
@@ -690,11 +797,17 @@ try {
         }
       }
     }
+    for (const [n, c] of CHECKS.entries()) {
+      if (ONLY && !c.name.includes(ONLY) && ONLY !== "checks") continue;
+      const r = await check(browser, server.url, out, c, n);
+      checks.push(r);
+      console.log(`${r.ok ? "✓" : "✗"} ${c.name}${r.ok ? "" : `: ${r.error}`}`);
+    }
   } finally {
     await browser.close();
     server.stop();
   }
-  const result = report(out, run, version, walks, started);
+  const result = report(out, run, version, walks, checks, started);
   prune(e2e, run);
   console.log(`${result.line}\n${relative(process.cwd(), join(out, "index.md"))}`);
   code = result.code;

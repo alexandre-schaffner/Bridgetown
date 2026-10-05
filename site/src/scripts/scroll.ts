@@ -31,22 +31,26 @@ onScroll(() => (scrolledAt = performance.now()));
 /** Milliseconds since the page last moved. */
 export const sinceScroll = () => performance.now() - scrolledAt;
 
+// The browser's own jump is cancelled, so this does what it would have done too: the target
+// takes focus, so the skip link and the nav move keyboard focus with the view.
 for (const a of $$<HTMLAnchorElement>('a[href^="#"]')) {
   a.addEventListener("click", (e) => {
     const id = a.getAttribute("href")!;
-    const target = id === "#top" ? document.body : $(id);
+    const target = $(id);
     if (!target) return;
     e.preventDefault();
+    // Chapters that open on a run of dusk land past it, on the stage (data-land="stage").
+    const run = target.dataset.land === "stage" ? parseFloat(getComputedStyle(target).paddingTop) : 0;
+    const to = target.getBoundingClientRect().top + scrollY + run;
     if (lenis) {
       // A long way off, cut to a screen short of it and glide the rest: gliding through every
       // chapter between would scrub the hero, the reel and the light all at once.
-      // Chapters that open on a run of dusk land past it, on the stage (data-land="stage").
-      const run = target.dataset.land === "stage" ? parseFloat(getComputedStyle(target).paddingTop) : 0;
-      const to = target.getBoundingClientRect().top + lenis.scroll + run;
       const gap = to - lenis.scroll;
       if (Math.abs(gap) > innerHeight * 2) lenis.scrollTo(to - Math.sign(gap) * innerHeight, { immediate: true });
       lenis.scrollTo(to, { duration: 1.1, easing: (t) => 1 - (1 - t) ** 4 });
-    } else target.scrollIntoView();
+    } else scrollTo(0, to);
+    if (!target.hasAttribute("tabindex")) target.tabIndex = -1;
+    target.focus({ preventScroll: true });
     history.replaceState(null, "", id);
   });
 }
