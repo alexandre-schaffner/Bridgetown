@@ -263,24 +263,44 @@ export const ShipperLive = Layer.effect(Shipper)(
       if (alert.fields._tag !== "release" || alert.fields.tag === null) return
       const tag = alert.fields.tag
       const state = releaseState(alert.fields.stages)
+      const version = { id: alert.id, applied: (yield* store.alertHash(alert.id)) ?? null }
+      // A record of what the session read, not news: it leaves the deploy's quiet clock running (`deployStalled`).
+      const note = (session: Session, tracker: Session["tracker"]) =>
+        session.tracker?.id === tracker?.id && session.tracker?.applied === tracker?.applied ? Effect.void : repo.patch(session.id, { tracker }, { touch: false })
       for (const session of yield* store.activeSessions()) {
-        if (!followsDeploy(session, tag) || (yield* runner.busy(session.id))) continue
+        if (!followsDeploy(session, tag)) continue
+        // Busy: the tracker is pointed at but not taken in, so the ship loop applies this version once the turn is over.
+        if (yield* runner.busy(session.id)) {
+          yield* note(session, session.tracker?.id === alert.id ? session.tracker : { id: alert.id, applied: null })
+          continue
+        }
         const step = deployTransition(session, state)
         switch (step._tag) {
           case "Unchanged":
+            yield* note(session, version)
             continue
           case "Failed":
-            yield* escalate(session, step.escalation, deployFailedPrompt(alert, session), "deploy", { deployStage: state, tracker: alert.id })
+            yield* escalate(session, step.escalation, deployFailedPrompt(alert, session), "deploy", { deployStage: state, tracker: version })
             continue
           case "Deployed":
             yield* finishDeploy(session, alert)
             continue
           case "Progress":
-            yield* repo.patch(session.id, { activity: step.activity, deployStage: state, tracker: alert.id })
+            yield* repo.patch(session.id, { activity: step.activity, deployStage: state, tracker: version })
             continue
         }
       }
     })
+
+    /** The version of its tracker that came in while the session was busy, applied now that it is not. */
+    const catchUp = (session: Session) =>
+      Effect.gen(function* () {
+        const tracker = session.tracker
+        if (tracker === null || session.releaseTag === null || !followsDeploy(session, session.releaseTag)) return
+        if ((yield* store.alertHash(tracker.id)) === tracker.applied) return
+        const alert = yield* store.getAlert(tracker.id)
+        if (alert !== undefined) yield* trackDeploy(alert)
+      })
 
     /**
      * Back at the release gate without its card: a turn in between (your message, a teammate's follow-up) withdrew
@@ -311,6 +331,7 @@ export const ShipperLive = Layer.effect(Shipper)(
         if (yield* runner.busy(session.id)) continue
         if (session.status === "ci" || session.status === "awaiting_merge") yield* checkCi(session.id).pipe(reported("CI check"))
         if (session.status === "awaiting_release") yield* reofferRelease(session).pipe(reported("Release card"))
+        yield* catchUp(session).pipe(reported("Deploy tracker"))
         const stalled = deployStalled(session, Date.now())
         if (stalled !== null) yield* handOff(session.id, stalled)
       }
@@ -380,7 +401,8 @@ export const ShipperLive = Layer.effect(Shipper)(
         ...(tag === null ? { resolution: "re-ran failed jobs, outcome not tracked" } : {}),
         releaseTag: tag ?? session.releaseTag,
         deployStage: null,
-        tracker: tag === null ? null : session.alertId,
+        // The tracker as it reads now is the failure being re-run: only an edit after this is news.
+        tracker: tag === null ? null : { id: session.alertId, applied: (yield* store.alertHash(session.alertId)) ?? null },
       })
       if (alert !== undefined) yield* thread.postUpdate(alert, Messages.reranJobs)
     })

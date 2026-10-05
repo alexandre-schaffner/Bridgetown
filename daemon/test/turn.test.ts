@@ -225,7 +225,7 @@ describe("send-backs", () => {
     // What the shipper saw stays recorded; what the turn was sent back for went with the turn that answered it.
     expect(out.session).toMatchObject({
       status: "waiting", sentBack: null, outcome: "recommendation", milestones: { released: true, deployed: false },
-      deployStage: { _tag: "Failed", stage: "Production" }, tracker: "C1:tracker",
+      deployStage: { _tag: "Failed", stage: "Production" }, tracker: { id: "C1:tracker" },
     })
     expect(out.cards).toEqual(["review: Deploy failed · t"])
   })

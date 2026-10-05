@@ -89,6 +89,13 @@ export const legacyRelease = (session: Json): Json | undefined => {
   return { ...rest, releasePrefix: prefix, releaseTag: recorded }
 }
 
+/**
+ * Before a session kept the version of its tracker it took in, `tracker` was the alert id alone. The version stored
+ * then counts as taken in, so nothing is applied twice; `hashOf` reads it. `undefined` for every other row.
+ */
+export const legacyTracker = (session: Json, hashOf: (alertId: string) => string | undefined): Json | undefined =>
+  typeof session.tracker === "string" ? { ...session, tracker: { id: session.tracker, applied: hashOf(session.tracker) ?? null } } : undefined
+
 /** Rewrites the rows of `table` that `f` changes. */
 const rewrite = (table: "alerts" | "sessions", f: (row: Json) => Json | undefined) =>
   Effect.gen(function* () {
@@ -148,4 +155,9 @@ export const migrations = SqliteMigrator.fromRecord({
   // One poll horizon for every channel, from before each channel kept its own (`since:<channel id>`): nothing reads it.
   "005_global_horizon": SqlClient.SqlClient.pipe(Effect.flatMap((sql) => sql`DELETE FROM kv WHERE key = 'since'`)),
   "006_release_prefix": rewrite("sessions", legacyRelease),
+  "007_tracker_version": Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const hashes = new Map((yield* sql<{ readonly id: string; readonly hash: string }>`SELECT id, content_hash AS hash FROM alerts`).map((row) => [row.id, row.hash]))
+    yield* rewrite("sessions", (session) => legacyTracker(session, (id) => hashes.get(id)))
+  }),
 })

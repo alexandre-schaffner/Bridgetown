@@ -107,7 +107,7 @@ describe("the release gate through the real shipper", () => {
     try {
       const after = await world.runPromise(
         Effect.gen(function* () {
-          yield* seed({ ...releasable, tracker: "C0AUKD42N3U:1790930000.000100" }, releaseCard)
+          yield* seed({ ...releasable, tracker: { id: "C0AUKD42N3U:1790930000.000100", applied: "h" } }, releaseCard)
           yield* (yield* Actions).resolve("a_rel", null)
           return yield* (yield* Store).getSession("s_rel")
         }),

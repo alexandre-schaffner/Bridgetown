@@ -107,7 +107,7 @@ describe("decideOutcome", () => {
   })
 
   test("so does the first PR after a re-run that failed again: the re-run's deploy is no longer followed", () => {
-    const reran = running({ releaseTag: "admin-v0.6.0", tracker: "C1:tracker", sentBack: "deploy", deployStage: { _tag: "Failed", stage: "Build", detail: "" } })
+    const reran = running({ releaseTag: "admin-v0.6.0", tracker: { id: "C1:tracker", applied: "h" }, sentBack: "deploy", deployStage: { _tag: "Failed", stage: "Build", detail: "" } })
     const d = decide({ session: reran, result: result({ outcome: "fix_pr", prUrl: "https://ghe/pull/9", releasePrefix: "admin-v0.6.0" }) })
     expect(d.patch).toMatchObject({ status: "ci", prUrl: "https://ghe/pull/9", releasePrefix: "admin", releaseTag: null, deployStage: null, tracker: null })
   })

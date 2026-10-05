@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite"
 import { join } from "node:path"
 import { Effect } from "effect"
 import { alertDetail, snapshot } from "../src/api/views.ts"
-import { legacyClosed, legacyDisposition, legacyRelease, legacyReviewPosted } from "../src/store/migrations.ts"
+import { legacyClosed, legacyDisposition, legacyRelease, legacyReviewPosted, legacyTracker } from "../src/store/migrations.ts"
 import { Store } from "../src/store/store.ts"
 import { OLD_ALERTS, OLD_SESSIONS, oldStore } from "./fixtures/old-store.ts"
 import { makeWorld } from "./fixtures/world.ts"
@@ -102,6 +102,7 @@ describe("a store the first daemon wrote", () => {
         { migration_id: 4, name: "review_posted" },
         { migration_id: 5, name: "global_horizon" },
         { migration_id: 6, name: "release_prefix" },
+        { migration_id: 7, name: "tracker_version" },
       ])
       expect(db.query("SELECT status FROM sessions WHERE id = ?").get(OLD_SESSIONS.closedAsResolved.id)).toEqual({ status: "closed" })
       expect(db.query("SELECT key FROM kv ORDER BY key").all()).toEqual([{ key: "paused" }])
@@ -151,5 +152,12 @@ describe("legacy rewrites", () => {
     // Only an image to route by: nothing to release.
     expect(legacyRelease({ prUrl: "u", release: null, component: "merkl-admin" })).toEqual({ prUrl: "u", releasePrefix: null, releaseTag: null })
     expect(legacyRelease({ releasePrefix: "api", releaseTag: null })).toBeUndefined()
+  })
+  test("tracker: the version stored when it was read counts as taken in", () => {
+    const hashes: Record<string, string> = { "C1:t": "h1" }
+    expect(legacyTracker({ tracker: "C1:t" }, (id) => hashes[id])).toEqual({ tracker: { id: "C1:t", applied: "h1" } })
+    expect(legacyTracker({ tracker: "C1:gone" }, (id) => hashes[id])).toEqual({ tracker: { id: "C1:gone", applied: null } })
+    expect(legacyTracker({ tracker: null }, (id) => hashes[id])).toBeUndefined()
+    expect(legacyTracker({ tracker: { id: "C1:t", applied: "h1" } }, (id) => hashes[id])).toBeUndefined()
   })
 })

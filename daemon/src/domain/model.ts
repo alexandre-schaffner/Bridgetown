@@ -380,8 +380,12 @@ export const Session = Schema.Struct({
   releaseTag: nullByDefault(Schema.String),
   /** The release tracker's last state seen for this session's deploy. Only a change moves the session. */
   deployStage: nullByDefault(ReleaseState),
-  /** That tracker's alert id. It is edited in place for hours, so the poll reads it on its own, however far down its channel it is. */
-  tracker: nullByDefault(Schema.String),
+  /**
+   * That tracker's alert, edited in place for hours (so the poll reads it on its own, however far down its channel it
+   * is), and the version of it this session took in (`applied`, its content hash). A version that came in while the
+   * session's agent was busy is applied by the ship loop once it is not.
+   */
+  tracker: nullByDefault(Schema.Struct({ id: Schema.String, applied: Schema.NullOr(Schema.String) })),
   /** Set with a send-back, cleared by the turn that answers it: a result without a fix then comes to you. */
   sentBack: nullByDefault(SentBack),
   startedAt: Schema.String,

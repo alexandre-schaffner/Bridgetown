@@ -3,10 +3,13 @@ import { Effect } from "effect"
 import { alertFromParsed } from "../src/domain/alert.ts"
 import { NO_MILESTONES } from "../src/domain/model.ts"
 import { AlertPipeline } from "../src/pipeline/alerts.ts"
+import { SessionRunner } from "../src/sessions/runner.ts"
 import { Shipper } from "../src/ship/shipper.ts"
+import type { GitHubShape } from "../src/ship/github.ts"
 import type { SlackMessage } from "../src/slack/client.ts"
 import { parseMessage } from "../src/slack/parse.ts"
 import { Store } from "../src/store/store.ts"
+import { playingAgent, RESULT } from "./fixtures/agent.ts"
 import { adminBuildFailed } from "./fixtures/messages.ts"
 import { makeAlert, makeSession } from "./fixtures/records.ts"
 import { fakeSlack, makeWorld } from "./fixtures/world.ts"
@@ -53,7 +56,7 @@ describe("a deploy in flight follows its own tracker", () => {
         yield* store.putSession(
           makeSession("deploying", {
             id: "s_dep", alertId: "C1:dep", releasePrefix: "admin", releaseTag: tag, milestones: released,
-            deployStage: { _tag: "AwaitingApproval" }, tracker: TRACKER_ID,
+            deployStage: { _tag: "AwaitingApproval" }, tracker: { id: TRACKER_ID, applied: "before the edit" },
           }),
         )
         yield* (yield* AlertPipeline).pollOnce
@@ -99,7 +102,75 @@ describe("a failed deploy sent back to an agent that cannot resume", () => {
         return { session: yield* store.getSession("s_gone"), cards: (yield* store.listActions()).map((a) => a.title) }
       }),
     )
-    expect(out.session).toMatchObject({ status: "waiting", sentBack: null, deployStage: { _tag: "Failed", stage: "Build" }, tracker: TRACKER_ID })
+    expect(out.session).toMatchObject({ status: "waiting", sentBack: null, deployStage: { _tag: "Failed", stage: "Build" }, tracker: { id: TRACKER_ID } })
     expect(out.cards).toEqual(["Agent cannot resume · t"])
   })
 })
+
+describe("a tracker edit that comes while the agent is busy", () => {
+  const { agent } = playingAgent([
+    { kind: "tool", name: "ask", args: { question: "Answer Pierre?" } },
+    { kind: "result", output: { ...RESULT, outcome: "no_action", summary: "answered Pierre" } },
+  ])
+  const world = makeWorld({ agent })
+  afterAll(() => world.dispose())
+
+  test("is applied once the turn is over, not lost", async () => {
+    const parsed = parseMessage(adminDeployed, { channelId: RELEASES, channelName: "alert-releases", myUserId: undefined })
+    const deployed = alertFromParsed(parsed, { permalink: null, receivedAt: "2026-10-02T11:23:26.000Z", triage: { decision: "filtered", reason: "r", jev: null }, sessionId: null, events: [] })
+    const out = await world.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store
+        const runner = yield* SessionRunner
+        yield* store.putAlert(trackerAlert(null), "v1")
+        yield* store.putAlert(makeAlert({ id: "C1:busy", sessionId: "s_busy" }))
+        yield* store.putSession(
+          makeSession("deploying", {
+            id: "s_busy", alertId: "C1:busy", worktree: "/w", claudeSessionId: "c", releasePrefix: "admin", releaseTag: tag, milestones: released,
+            deployStage: { _tag: "AwaitingApproval" }, tracker: { id: TRACKER_ID, applied: "v1" },
+          }),
+        )
+        // A teammate's question keeps the agent busy while the tracker is edited to deployed.
+        yield* runner.continueWith("s_busy", "Pierre asks how it is going")
+        while (!(yield* store.listActions()).some((a) => a.kind === "answer")) yield* Effect.sleep("5 millis")
+        yield* store.putAlert(deployed, "v2")
+        yield* (yield* Shipper).trackDeploy(deployed)
+        const whileBusy = (yield* store.getSession("s_busy"))?.milestones.deployed
+        yield* runner.message("s_busy", "yes")
+        while (yield* runner.busy("s_busy")) yield* Effect.sleep("5 millis")
+        yield* (yield* Shipper).tick
+        return { whileBusy, after: yield* store.getSession("s_busy") }
+      }),
+    )
+    expect(out.whileBusy).toBe(false)
+    expect(out.after).toMatchObject({ status: "resolved", resolution: `deployed ${tag}`, milestones: { deployed: true } })
+  })
+})
+
+describe("a re-run", () => {
+  const reruns: Array<string> = []
+  const github: GitHubShape = {
+    viewPr: () => Effect.die("no PR"), mergePr: () => Effect.void, rerunFailedJobs: (runId) => Effect.sync(() => void reruns.push(runId)),
+    nextPatchTag: () => Effect.die("no release"), tagExists: () => Effect.succeed(false), createRelease: () => Effect.void,
+    branchHead: () => Effect.succeed(null), prHead: () => Effect.succeed(null), markReady: () => Effect.void, reachability: Effect.succeed("ok"),
+  }
+  const world = makeWorld({ github })
+  afterAll(() => world.dispose())
+
+  test("follows the tracker it re-ran, and waits for its next edit: the failure being re-run is not news", async () => {
+    const out = await world.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store
+        const shipper = yield* Shipper
+        yield* store.putAlert(trackerAlert("s_rerun"), "failed once")
+        yield* store.putSession(makeSession("waiting", { id: "s_rerun", alertId: TRACKER_ID, outcome: "recommendation", recommendation: "rerun_failed_jobs" }))
+        yield* shipper.rerun("s_rerun", "291250187")
+        yield* shipper.tick
+        return yield* store.getSession("s_rerun")
+      }),
+    )
+    expect(reruns).toEqual(["291250187"])
+    expect(out).toMatchObject({ status: "deploying", releaseTag: tag, deployStage: null, tracker: { id: TRACKER_ID, applied: "failed once" } })
+  })
+})
+
