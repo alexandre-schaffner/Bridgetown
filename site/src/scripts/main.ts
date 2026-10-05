@@ -592,6 +592,7 @@ if (journey) {
       journey.style.height = "";
       pin.style.position = "";
       track.style.transform = "";
+      panels.forEach((p) => p && (p.style.transform = ""));
       return;
     }
     distance = Math.max(0, track.scrollWidth - innerWidth);

@@ -726,8 +726,16 @@ const recent = [
   }
 
   .island:global(.is-open) .btn {
+    position: relative;
     pointer-events: auto;
     cursor: pointer;
+  }
+
+  /* The screen is drawn small on a phone: a larger target than the button shows. */
+  .btn::after {
+    content: "";
+    position: absolute;
+    inset: -10px -6px;
   }
 
   .island:global(.is-open) .btn:hover {

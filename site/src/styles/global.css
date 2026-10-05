@@ -56,7 +56,8 @@
   --t-h2: clamp(2.25rem, 3.2vw + 1rem, 4rem);
   --t-h1: clamp(3rem, 6vw + 1rem, 6rem);
 
-  --gutter: clamp(1.25rem, 4vw, 3.5rem);
+  /* Never under a landscape iPhone's sensor housing (viewport-fit=cover). */
+  --gutter: max(clamp(1.25rem, 4vw, 3.5rem), env(safe-area-inset-left), env(safe-area-inset-right));
   --measure: 34rem;
   --max: 84rem;
 
