@@ -66,9 +66,17 @@ const holdSeconds = Number(process.env.MOCK_RELEASE_HOLD_SECONDS ?? 600)
 
 // Launched by hand, the token defaults to "dev"; launched by the app, it comes on stdin and this is ignored.
 process.env.BRIDGETOWN_API_TOKEN ??= "dev"
-// One branch of stdin carries the launch (the secrets line, then EOF when the app goes); the other, control lines.
-const [launchInput, controlInput] = Bun.stdin.stream().tee()
-const launch = await readLaunch(() => launchInput)
+/**
+ * Launched like the daemon, one branch of stdin carries the launch (the secrets line, then
+ * EOF when the app goes) and the other the control lines. By hand stdin is the terminal and
+ * is left alone: reading it from a background job (`make mock &`) would stop the mock.
+ */
+let controlInput: ReturnType<typeof Bun.stdin.stream> | undefined
+const launch = await readLaunch(() => {
+  const [launchInput, control] = Bun.stdin.stream().tee()
+  controlInput = control
+  return launchInput
+})
 const token = process.env.MOCK_API_TOKEN || launch.env.apiToken
 
 // Bound first, like the daemon: a taken port exits 98 before anything is created.
@@ -157,24 +165,25 @@ const Control = Schema.Union([
 const decodeControl = Schema.decodeUnknownOption(Schema.fromJsonString(Control))
 
 /** Reads control lines until stdin closes, applying each. */
-const steer = Effect.gen(function* () {
-  const hub = yield* Hub
-  const reader = controlInput.pipeThrough(new TextDecoderStream()).getReader()
-  let buffered = ""
-  while (true) {
-    const chunk = yield* Effect.promise(() => reader.read())
-    if (chunk.done) return
-    buffered += chunk.value
-    const lines = buffered.split("\n")
-    buffered = lines.pop() ?? ""
-    for (const line of lines) {
-      const command = decodeControl(line)
-      if (command._tag === "None") continue
-      if (command.value.mock === "crash") process.exit(command.value.code)
-      else yield* hub.patchStatus(command.value.patch)
+const steer = (input: ReturnType<typeof Bun.stdin.stream>) =>
+  Effect.gen(function* () {
+    const hub = yield* Hub
+    const reader = input.pipeThrough(new TextDecoderStream()).getReader()
+    let buffered = ""
+    while (true) {
+      const chunk = yield* Effect.promise(() => reader.read())
+      if (chunk.done) return
+      buffered += chunk.value
+      const lines = buffered.split("\n")
+      buffered = lines.pop() ?? ""
+      for (const line of lines) {
+        const command = decodeControl(line)
+        if (command._tag === "None") continue
+        if (command.value.mock === "crash") process.exit(command.value.code)
+        else yield* hub.patchStatus(command.value.patch)
+      }
     }
-  }
-})
+  })
 
 const program = Effect.gen(function* () {
   const root = yield* mockRoot
@@ -264,7 +273,7 @@ const program = Effect.gen(function* () {
       while (staticWorld && session !== null && ((yield* repo.get(session))?.releaseTag ?? null) === null) yield* Effect.sleep("10 millis")
     }
     yield* serve(server, { token })
-    yield* steer.pipe(Effect.forkScoped)
+    if (controlInput !== undefined) yield* steer(controlInput).pipe(Effect.forkScoped)
 
     if (!staticWorld) {
       // The daemon's loops, faster: sessions start (unless GHE is blocked), CI and merges move, Slack is "polled".

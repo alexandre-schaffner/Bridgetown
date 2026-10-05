@@ -111,6 +111,17 @@ describe("the mock honours the daemon's launch contract", () => {
     expect(await mock.child.exited).toBe(3)
   }, 30_000)
 
+  test("launched by hand, it reads no control lines: stdin is the terminal there", async () => {
+    const mock = launch({ BRIDGETOWN_SECRETS: "", BRIDGETOWN_API_TOKEN: "t0ken" })
+    await mock.state()
+    mock.send({ mock: "crash", code: 3 })
+    await Bun.sleep(300)
+    expect(mock.child.exitCode).toBeNull()
+    await mock.state()
+    mock.child.kill()
+    await mock.child.exited
+  }, 30_000)
+
   test("a taken port exits 98", async () => {
     const holder = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } })
     const mock = launch({ BRIDGETOWN_PORT: String(holder.port) })
