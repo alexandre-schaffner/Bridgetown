@@ -3,7 +3,7 @@ import { ActionQueue } from "../actions/queue.ts"
 import { MAX_CRITIQUE_ROUNDS } from "../critique/transitions.ts"
 import { type AdapterError, Conflict, errorMessage, NotFound } from "../domain/errors.ts"
 import { newId, now } from "../domain/ids.ts"
-import { acceptsMessages, type Alert, holdsSlot, isActive, isFinished, type Session } from "../domain/model.ts"
+import { acceptsMessages, type Alert, closedResolution, holdsSlot, isActive, isFinished, type Session } from "../domain/model.ts"
 import { Hub } from "../hub.ts"
 import { GitHub } from "../ship/github.ts"
 import { SlackThread } from "../slack/thread.ts"
@@ -13,7 +13,7 @@ import { Agent } from "./agent.ts"
 import { Asks } from "./asks.ts"
 import { makeFinish } from "./finish.ts"
 import { inboxPrompt, initialPrompt, RETRY_PROMPT, setupNotes } from "./prompts.ts"
-import { SessionRepo, withPatch } from "./repo.ts"
+import { type ModifyOptions, SessionRepo, withPatch } from "./repo.ts"
 import type { TurnEnd } from "./sdk-events.ts"
 import { makeTurnInput, makeTurns, type TurnInput, userMessage } from "./turn.ts"
 import { newSession } from "./new-session.ts"
@@ -44,6 +44,8 @@ export interface SessionRunnerShape {
   /** Your message: answers a pending `ask`, else reaches the agent. `Conflict` unless the session `acceptsMessages`; may resume a handed-back session. */
   readonly message: (sessionId: string, text: string) => Effect.Effect<void, AdapterError | NotFound | Conflict>
   readonly stop: (sessionId: string) => Effect.Effect<void, AdapterError | NotFound>
+  /** Closes it without a verified outcome (never as resolved), turn and all; a session already over (bar a failed one) is left as it is. */
+  readonly close: (sessionId: string) => Effect.Effect<void, AdapterError>
   /** Re-queues a failed session; it resumes its agent conversation if it had one. `Conflict` while its last turn is still winding down. */
   readonly retry: (sessionId: string) => Effect.Effect<void, AdapterError | Conflict>
   /** Hands the user's reply to a blocked `ask` call. False when nobody is waiting on that action. */
@@ -318,6 +320,25 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
         }),
       )
 
+    /**
+     * Ends the session from outside its turns, under the lock so no delivery starts a turn in between: the write
+     * first, which every later claim of Bridgetown's respects, then nothing live or parked, and the fiber of whatever
+     * turn did start. A write `f` refuses ends nothing.
+     */
+    const end = (sessionId: string, f: (current: Session) => Session | undefined, options?: ModifyOptions) =>
+      Effect.gen(function* () {
+        const fiber = yield* SynchronizedRef.modifyEffect(turns, (state) =>
+          Effect.gen(function* () {
+            if ((yield* repo.modify(sessionId, f, options)) === undefined) return [Option.none(), state] as const
+            const running = yield* FiberMap.get(fibers, sessionId)
+            return [running, withParked(withLive(state, sessionId, undefined), sessionId, undefined)] as const
+          }),
+        )
+        // Outside the lock, which the turn's own cleanup takes. Interrupting aborts its query (the CLI exits, an
+        // open ask goes with it) or its worktree setup.
+        if (Option.isSome(fiber)) yield* Fiber.interrupt(fiber.value)
+      })
+
     /** Parked turns first (they were waiting already), as far as the free slots go. */
     const startParked = SynchronizedRef.modifyEffect(turns, (initial) =>
       Effect.gen(function* () {
@@ -396,20 +417,19 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
         const session = yield* repo.get(sessionId)
         if (session === undefined) return yield* new NotFound({ message: "unknown session" })
         if (!isActive(session)) return
-        // Under the lock, so no delivery starts a turn in between: stopped first, which every later claim of
-        // Bridgetown's respects, then nothing live or parked, and the fiber of whatever turn did start.
-        const fiber = yield* SynchronizedRef.modifyEffect(turns, (state) =>
-          Effect.gen(function* () {
-            yield* repo.patch(sessionId, { status: "stopped", activity: "Stopped by you", resolution: "stopped by you" })
-            const running = yield* FiberMap.get(fibers, sessionId)
-            return [running, withParked(withLive(state, sessionId, undefined), sessionId, undefined)] as const
-          }),
-        )
-        // Outside the lock, which the turn's own cleanup takes. Interrupting aborts its query (the CLI exits, an
-        // open ask goes with it) or its worktree setup.
-        if (Option.isSome(fiber)) yield* Fiber.interrupt(fiber.value)
+        yield* end(sessionId, (current) => withPatch(current, { status: "stopped", activity: "Stopped by you", resolution: "stopped by you" }))
         yield* queue.removeWhere((action) => action.sessionId === sessionId)
       }),
+
+      close: (sessionId) =>
+        end(
+          sessionId,
+          (current) =>
+            isFinished(current) && current.status !== "failed"
+              ? undefined
+              : { ...current, status: "closed", activity: "Closed by you", resolution: closedResolution(current) },
+          { evenIfFinished: true },
+        ),
 
       answer: asks.answer,
 

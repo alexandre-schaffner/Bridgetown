@@ -8,7 +8,7 @@ import { SessionRunner } from "../sessions/runner.ts"
 import { Shipper } from "../ship/shipper.ts"
 import { SlackThread } from "../slack/thread.ts"
 import { Store } from "../store/store.ts"
-import { closeUnresolved, makeHandlers } from "./handlers.ts"
+import { makeHandlers } from "./handlers.ts"
 import { makeInFlight } from "./in-flight.ts"
 import { ActionQueue } from "./queue.ts"
 
@@ -92,7 +92,7 @@ export const ActionsLive = Layer.effect(Actions)(
               "dismissed",
             )
           }
-          if (session !== undefined && dismissCloses(action, session)) yield* closeUnresolved(repo, session.id)
+          if (session !== undefined && dismissCloses(action, session)) yield* runner.close(session.id)
           yield* hub.notify
         }),
       )

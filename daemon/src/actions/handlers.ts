@@ -9,20 +9,6 @@ import { toMrkdwn } from "../slack/text.ts"
 import type { SlackThreadShape } from "../slack/thread.ts"
 import type { StoreShape } from "../store/store.ts"
 
-/** The honest one-line outcome of a session you close without a verified fix. Never "resolved". */
-export const closedResolution = (session: Session): string =>
-  session.status === "failed"
-    ? "agent failed"
-    : session.rootCauseFound === false
-      ? "root cause not found"
-      : session.outcome === "recommendation"
-        ? "recommendation handed to you"
-        : session.milestones.merged
-          ? "merged, not released"
-          : session.milestones.prOpened
-            ? "PR open, not merged"
-            : "not fixed"
-
 /** Recorded when a reply could not go out because dry run is on: closed, not resolved, and says so. */
 export const DRY_RUN_REPLY = "dry run · reply not sent"
 
@@ -49,17 +35,6 @@ export interface Resolution {
  * can try again.
  */
 export type Handler = (resolution: Resolution) => Effect.Effect<void, DaemonError>
-
-/** Closing without a verified outcome: recorded as closed, never as resolved. */
-export const closeUnresolved = (repo: SessionRepoShape, sessionId: string) =>
-  repo.modify(
-    sessionId,
-    (current) =>
-      current.status === "resolved" || current.status === "closed" || current.status === "stopped"
-        ? undefined
-        : { ...current, status: "closed", activity: "Closed by you", resolution: closedResolution(current) },
-    { evenIfFinished: true },
-  )
 
 const alertOf = (store: StoreShape, action: Action) =>
   action.alertId === null ? Effect.succeed<Alert | undefined>(undefined) : store.getAlert(action.alertId)
@@ -112,5 +87,5 @@ export const makeHandlers = (deps: HandlerDeps): Readonly<Record<ActionKind, Han
       ? Effect.void
       : action.payload === RETRY
         ? deps.runner.retry(session.id)
-        : closeUnresolved(deps.repo, session.id).pipe(Effect.asVoid),
+        : deps.runner.close(session.id),
 })

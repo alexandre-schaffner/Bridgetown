@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { Effect, Fiber } from "effect"
+import { Actions } from "../src/actions/actions.ts"
 import { NO_MILESTONES, type Session } from "../src/domain/model.ts"
 import { Asks } from "../src/sessions/asks.ts"
 import { recoverInterrupted } from "../src/sessions/recovery.ts"
@@ -120,6 +121,35 @@ describe("asks", () => {
     )
     expect(out.session?.status).toBe("stopped")
     expect(out.cards).toEqual([])
+  })
+
+  test("closing a session from its card while its agent asks takes the agent down too", async () => {
+    const { agent, state } = playingAgent([{ kind: "tool", name: "ask", args: { question: "Pin or revert?" } }])
+    const world = makeWorld({ agent, github: quietGitHub })
+    try {
+      const out = await world.runPromise(
+        Effect.gen(function* () {
+          const store = yield* Store
+          const session = handedBack("s_close")
+          yield* store.putAlert(makeAlert({ id: session.alertId, sessionId: session.id }))
+          yield* store.putSession(session)
+          yield* store.putAction({
+            id: "a_draft", kind: "reply", title: "Reply to Pierre", detail: "draft", primaryLabel: "Send reply", options: [],
+            sessionId: session.id, alertId: session.alertId, payload: "draft", url: null, createdAt: "2026-10-01T00:00:00.000Z",
+          })
+          yield* (yield* SessionRunner).message(session.id, "go")
+          while (!(yield* store.listActions()).some((a) => a.kind === "answer")) yield* Effect.sleep("5 millis")
+          // Waiting on its question, the session's draft reply still offers to close it.
+          yield* (yield* Actions).dismiss("a_draft")
+          return { session: yield* store.getSession(session.id), cards: (yield* store.listActions()).length }
+        }),
+      )
+      expect(out.session).toMatchObject({ status: "closed", activity: "Closed by you" })
+      expect(out.cards).toBe(0)
+      expect(state.aborted).toBe(1)
+    } finally {
+      await world.dispose()
+    }
   })
 
   test("a question still open when Bridgetown quits is found interrupted at the next start, with a Retry", async () => {

@@ -509,6 +509,20 @@ export const acceptsMessages = (session: Session): boolean => {
   }
 }
 
+/** The honest one-line outcome of a session you close without a verified fix. Never "resolved". */
+export const closedResolution = (session: Session): string =>
+  session.status === "failed"
+    ? "agent failed"
+    : session.rootCauseFound === false
+      ? "root cause not found"
+      : session.outcome === "recommendation"
+        ? "recommendation handed to you"
+        : session.milestones.merged
+          ? "merged, not released"
+          : session.milestones.prOpened
+            ? "PR open, not merged"
+            : "not fixed"
+
 /** Marks the review card a failed session gets; resolving it re-queues the same session. */
 export const RETRY = "retry"
 
