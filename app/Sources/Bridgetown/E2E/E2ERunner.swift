@@ -145,10 +145,15 @@ final class E2ERunner {
             if let shown = surfaces.current, case .notch = shown.spec { surfaces.show(shown.spec) }
         case let .mock(line):
             daemon.sendControl(line.line)
+        case .stopDaemon:
+            await withCheckedContinuation { done in
+                if !daemon.stop(completion: { done.resume() }) { done.resume() }
+            }
         case let .restart(world, tokenMismatch):
             daemon.extraEnvironment["MOCK_WORLD"] = world ?? suite.world
             daemon.extraEnvironment[Self.mockToken] = tokenMismatch ? "not-this-app" : nil
-            daemon.restart()
+            // Stopped or given up on, it starts afresh; running, it is replaced.
+            if case .running = daemon.state { daemon.restart() } else { daemon.start() }
             // A fresh stream at once, rather than after the backoff a dead daemon built up.
             store.connect(to: daemon.endpoint)
             try await wait(tokenMismatch ? .rejected : .connected, timeoutMs: 20_000)
@@ -299,7 +304,17 @@ final class E2ERunner {
             return
         }
         let deadline = ContinuousClock.now + .milliseconds(timeoutMs)
-        while !holds(condition) {
+        // A dropped stream first says the daemon closed it, then, once a reconnect has failed,
+        // that it is unreachable: wait for the reason to stand still a second.
+        let hold: Duration = condition == .disconnected ? .seconds(1) : .zero
+        var since: (connection: Store.Connection, at: ContinuousClock.Instant)?
+        while true {
+            if holds(condition) {
+                if since?.connection != store.connection { since = (store.connection, .now) }
+                if let since, ContinuousClock.now - since.at >= hold { return }
+            } else {
+                since = nil
+            }
             guard ContinuousClock.now < deadline else {
                 throw Failure(description: "not \(condition) within \(timeoutMs)ms (connection \(store.connection), daemon \(daemon.state))")
             }

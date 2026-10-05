@@ -186,9 +186,11 @@
 
     {"surface": "open", "preset": "wide"},
     {"mock": {"crash": 1}},
+    {"wait": "connected"},
+    {"daemon": "stop"},
     {"wait": "disconnected"},
     {"shot": "problem-disconnected"},
-    {"wait": "connected"},
+    {"restart": {}},
     {"mock": {"crash": 98}},
     {"wait": "portInUse"},
     {"shot": "problem-port-in-use"},

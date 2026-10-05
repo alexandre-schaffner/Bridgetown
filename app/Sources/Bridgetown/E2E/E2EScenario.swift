@@ -193,6 +193,8 @@ enum E2EStep {
     case scroll(in: String, to: String)
     case island(String, action: String?)
     case mock(E2EJSON)
+    /// The app stops its daemon and leaves it down, until a `restart`.
+    case stopDaemon
     case restart(world: String?, tokenMismatch: Bool)
     case appearance([E2EAppearance])
     case wait(Wait, timeoutMs: Int)
@@ -293,6 +295,9 @@ enum E2EStep {
             } else {
                 throw bad("mock takes \"status\" or \"crash\"")
             }
+        } else if let daemon = json["daemon"] {
+            guard daemon.string == "stop" else { throw bad("daemon takes \"stop\"") }
+            self = .stopDaemon
         } else if let restart = json["restart"] {
             self = .restart(world: restart["world"]?.string, tokenMismatch: restart["tokenMismatch"]?.bool ?? false)
         } else if let appearance = json["appearance"] {
