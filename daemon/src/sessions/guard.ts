@@ -172,9 +172,9 @@ const checkCommand = (command: Command, scope: Scope): string | undefined => {
       let rest = args.slice(firstPositional(args, options))
       // `timeout 30 cmd`, `script -q out cmd`: a positional operand precedes the command.
       if (name === "timeout" || name === "script") rest = rest.slice(1)
-      if (name === "xargs") {
+      // With a command, xargs appends words from stdin the guard never sees, and -I substitutes them into the template, so a runtime word is appended and -I slots are marked dynamic. With no command it runs `echo` on its stdin, where there is nothing to smuggle a subcommand into.
+      if (name === "xargs" && rest.length > 0) {
         const replstr = xargsReplstr(args)
-        // xargs appends words from stdin the guard never sees, and -I substitutes them into the template.
         rest = [...rest.map((word) => (replstr !== undefined && replstr !== "" && word.text.includes(replstr) ? { ...word, dynamic: true } : word)), RUNTIME_WORD]
       }
       // `bunx prisma@5 migrate` runs `prisma`.
@@ -245,8 +245,11 @@ const commandRefusal = (name: string, head: Word, args: ReadonlyArray<Word>, sco
   }
   // `trap 'cmd' SIGNAL` runs its first argument as a command when the signal fires.
   if (name === "trap") return args[0] === undefined ? undefined : checkString(args[0], scope)
-  // `let`/`declare -i`/`typeset -i` evaluate arithmetic, which runs any `$(…)`/backtick inside even from a quoted argument the parser left intact.
-  if ((name === "let" || name === "declare" || name === "typeset" || name === "local" || name === "readonly") && args.some((arg) => /\$\(|`/.test(arg.text))) return REASONS.dynamic
+  // `let`, and the integer forms `declare -i` / `typeset -i` / `local -i` / `readonly -i`, evaluate their argument as arithmetic, which runs any `$(…)`/backtick inside it — even from a quoted argument the parser left intact (`declare -i y='$(…)'`). A plain `local x=$(…)` is an ordinary substitution the parser has already seen and checked, so it is left alone.
+  const arithmetic =
+    name === "let" ||
+    ((name === "declare" || name === "typeset" || name === "local" || name === "readonly") && args.some((arg) => /^-[a-zA-Z]*i/.test(arg.text)))
+  if (arithmetic && args.some((arg) => /\$\(|`/.test(arg.text))) return REASONS.dynamic
   if (SHELLS.has(name)) return shellRefusal(args, scope)
   if (name === "source" || name === ".") return args[0] === undefined ? undefined : scriptRefusal(args[0], scope, true)
   if (name === "watch") {

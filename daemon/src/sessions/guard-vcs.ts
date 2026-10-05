@@ -121,8 +121,11 @@ const ghApiRefusal = (args: ReadonlyArray<Word>): string | undefined => {
       fields = true
     } else if (GH_API_VALUE_FLAGS.has(text)) {
       i++
-    } else if (!text.startsWith("-") && endpoint === undefined) {
+    } else if (!text.startsWith("-") && !word?.dynamic && endpoint === undefined) {
       endpoint = text
+    } else if (word?.dynamic) {
+      // A dynamic word undergoes word-splitting and could introduce -X/-f/--input, turning a read into a write (`gh api …/merge $X`). It cannot be checked, so it is refused. The value of a known value flag is consumed above and never reaches here.
+      return REASONS.dynamic
     }
   }
   if (endpoint === "graphql" && args.some((arg) => /\bmutation\b/i.test(arg.text))) return REASONS.graphql

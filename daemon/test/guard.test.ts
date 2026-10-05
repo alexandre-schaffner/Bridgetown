@@ -16,6 +16,8 @@ const files: Record<string, string> = {
   "/w/tool.ts": "#!/usr/bin/env bun\nconsole.log('kubectl')\n",
   "/w/envshebang.sh": "#!/usr/bin/env -S bash -euo pipefail\nkubectl delete pod api-0\n",
   "/w/py.py": "#!/usr/bin/env python3\nkubectl = 1\n",
+  // Ordinary idioms: `local`/`readonly` with a command substitution the parser already checks, not arithmetic injection.
+  "/w/vars.sh": "#!/bin/bash\nreadonly ROOT=$(git rev-parse --show-toplevel)\nf() {\n  local sha=$(git rev-parse HEAD)\n  echo \"$sha\"\n}\nf\n",
   "/tmp/y.sh": "gcloud logging read\n",
 }
 const context: GuardContext = { branch, cwd: worktree, daemonPort: 47621, readFile: (path) => files[path] }
@@ -152,6 +154,9 @@ describe("guard", () => {
     'gh pr "$(echo merge)" 1',
     "X=merge; gh pr $X 1",
     "gh api -X $M repos/o/r/pulls/1/merge",
+    // A dynamic word anywhere in `gh api` splits at runtime into flags (`-X PUT`, `-f`), turning a read into a write.
+    "gh api repos/o/r/pulls/1/merge $X",
+    "gh api $EP",
     "git push $F fix-bt-merkl-admin-v0-6-0",
     "echo 'pr merge 1' | xargs gh",
     "echo 'push origin HEAD:main' | xargs git",
@@ -266,6 +271,7 @@ describe("guard", () => {
     "gh search issues repo:Merkl/monorepo",
     "gh auth status",
     "gh api repos/Merkl/monorepo/pulls/1/comments",
+    "gh api -X GET search/issues -f q=repo:Merkl/monorepo",
     "git tag --sort=-creatordate",
     "git tag --contains HEAD",
     "git config --get remote.origin.url",
@@ -285,6 +291,15 @@ describe("guard", () => {
     "ps aux",
     "ps -ef | grep bun",
     "ps -p 1234 -o command",
+    // `local`/`readonly`/`declare` with an ordinary `$(…)` the parser already checked (not `let`/`-i` arithmetic), and a script that uses them.
+    "local sha=$(git rev-parse HEAD)",
+    "readonly ROOT=$(git rev-parse --show-toplevel)",
+    "declare TAG=$(git describe --tags)",
+    "bash ./vars.sh",
+    "./vars.sh",
+    // Bare xargs (no command) runs echo on its stdin; nothing to smuggle in.
+    "cat files.txt | xargs",
+    "git log --oneline | xargs -n1",
   ]
   for (const command of stillAllowed) {
     test(`allows: ${JSON.stringify(command)}`, () => expect(refusal(command, context)).toBeUndefined())
