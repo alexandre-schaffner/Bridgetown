@@ -1,36 +1,42 @@
 /**
- * End-to-end check of the session pipeline against a throwaway repo:
+ * A real Agent SDK session (it costs money) against a throwaway repo:
  * worktree → Agent SDK session → report tool → structured result → finalize.
  * Slack is faked (dry run) and `origin` is a local bare repo, so nothing leaves the machine.
+ * Everything it writes (store, repo, worktree, the agent's conversation) goes on success; on
+ * a failure or timeout it is kept for a look and the script exits 1.
  *
- *   BRIDGETOWN_HOME=/tmp/bt-e2e/home bun scripts/e2e-session.ts
+ *   bun scripts/session-smoke.ts
  */
 import { execSync } from "node:child_process"
-import { mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { Effect, Layer } from "effect"
 import { readEnv } from "../src/config.ts"
 import type { Alert } from "../src/domain/model.ts"
+import { claudeProjectDir } from "../src/housekeeping/housekeeping.ts"
 import { Hub, HubLive } from "../src/hub.ts"
 import { ActionQueueLive } from "../src/actions/queue.ts"
 import { AgentLive } from "../src/sessions/agent.ts"
 import { AsksLive } from "../src/sessions/asks.ts"
 import { SessionRepoLive } from "../src/sessions/repo.ts"
 import { SessionRunner, SessionRunnerLive } from "../src/sessions/runner.ts"
-import { WorktreesLive } from "../src/sessions/worktree.ts"
+import { worktreePath, WorktreesLive } from "../src/sessions/worktree.ts"
 import { GitHubLive } from "../src/ship/github.ts"
 import { SlackClientLive } from "../src/slack/client.ts"
 import { SlackThreadLive } from "../src/slack/thread.ts"
 import { Store, StoreLive } from "../src/store/store.ts"
 
-const root = "/tmp/bt-e2e"
-rmSync(root, { recursive: true, force: true })
+const root = mkdtempSync(join(tmpdir(), "bt-smoke-"))
+// The store and the worktree (the repo has no .shared) both live under it, never in the app's own home.
+process.env.BRIDGETOWN_HOME = `${root}/home`
 mkdirSync(`${root}/repo/src`, { recursive: true })
 const sh = (cmd: string, cwd = `${root}/repo`) => execSync(cmd, { cwd, stdio: "pipe" }).toString()
 writeFileSync(`${root}/repo/package.json`, JSON.stringify({ name: "demo", private: true, scripts: { type: "tsc --noEmit -p ." }, devDependencies: { typescript: "^5.9.0" } }, null, 2))
 writeFileSync(`${root}/repo/tsconfig.json`, JSON.stringify({ compilerOptions: { strict: true, noEmit: true, target: "ES2022", module: "ESNext", moduleResolution: "bundler" }, include: ["src"] }))
 writeFileSync(`${root}/repo/src/price.ts`, `export interface Price {\n  readonly token: string\n  readonly usd: number\n}\n\nexport const format = (price: Price): string => \`\${price.token}: $\${price.usd.toFixed(2)}\`\n`)
 writeFileSync(`${root}/repo/src/index.ts`, `import { format } from "./price"\n\nconsole.log(format({ token: "MERKL", usd: "1.25" }))\n`)
-sh("git init -q -b main && git add -A && git -c user.email=bt@test -c user.name=bt commit -qm init")
+sh("git init -q -b main && git add -A && git -c user.email=bt@test -c user.name=bt -c commit.gpgsign=false commit -qm init")
 sh(`git init -q --bare ${root}/origin.git`, root)
 sh(`git remote add origin ${root}/origin.git && git push -q origin main`)
 
@@ -62,6 +68,7 @@ const alert: Alert = {
   claimedBy: [],
 }
 
+/** Whether the session got as far as a structured result it did not fail on, and its branch. */
 const program = Effect.gen(function* () {
   const hub = yield* Hub
   const store = yield* Store
@@ -84,11 +91,18 @@ const program = Effect.gen(function* () {
       console.log("actions:", JSON.stringify(yield* store.listActions(), null, 2))
       console.log("transcript:")
       for (const entry of yield* store.transcript(session.id, 60)) console.log(`  [${entry.kind}] ${entry.text.split("\n")[0]}`)
-      return
+      return { passed: current.outcome !== null && current.status !== "failed", branch: session.branch }
     }
   }
   console.log("timed out")
+  return { passed: false, branch: session.branch }
 })
 
-await Effect.runPromise(program.pipe(Effect.provide(layer), Effect.scoped))
+const { passed, branch } = await Effect.runPromise(program.pipe(Effect.provide(layer), Effect.scoped))
+const leftovers = [root, ...(branch === null ? [] : [claudeProjectDir(worktreePath(`${root}/repo`, branch))])]
+if (!passed) {
+  console.log(`FAILED; kept for a look: ${leftovers.join(" and ")}`)
+  process.exit(1)
+}
+for (const path of leftovers) rmSync(path, { recursive: true, force: true })
 process.exit(0)
