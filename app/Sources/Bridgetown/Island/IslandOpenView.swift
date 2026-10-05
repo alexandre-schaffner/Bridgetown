@@ -11,18 +11,21 @@ struct IslandOpenView: View {
     let model: IslandModel
 
     /// The prod column: what's wrong, if anything, then the prod board.
-    static let statusWidth: CGFloat = 380
+    static let prodWidth: CGFloat = 380
+    /// The status line's inset from the band's left edge, and its gap before the wings.
+    private static let bandInset: CGFloat = 16
+    private static let wingGap: CGFloat = 8
 
     var body: some View {
         let geometry = model.geometry
         // Only schedules the redraw: the time itself is the app's clock.
         TimelineView(.periodic(from: .now, by: 30)) { _ in
             VStack(spacing: 0) {
-                band(notch: geometry.notch, now: AppClock.now)
+                band(geometry, now: AppClock.now)
                 Hairline()
                 HStack(alignment: .top, spacing: 0) {
                     status(now: AppClock.now)
-                        .frame(width: Self.statusWidth)
+                        .frame(width: Self.prodWidth)
                     Hairline(vertical: true)
                     main(now: AppClock.now)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -34,11 +37,14 @@ struct IslandOpenView: View {
         .stage()
     }
 
-    private func band(notch: CGSize, now: Date) -> some View {
-        ZStack {
+    private func band(_ geometry: NotchGeometry, now: Date) -> some View {
+        let notch = geometry.notch
+        // The wings sit centred; the status line stops short of the left one.
+        let beside = (geometry.openWidth - notch.width) / 2 - IslandModel.wing
+        return ZStack {
             GlanceWings(glance: model.glance, notch: notch, hovering: false)
-            HeaderView(now: now)
-                .padding(.leading, 16)
+            HeaderView(now: now, room: beside - Self.bandInset - Self.wingGap)
+                .padding(.leading, Self.bandInset)
                 .padding(.trailing, 10)
         }
         .frame(height: notch.height)

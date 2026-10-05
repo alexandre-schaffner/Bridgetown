@@ -5,10 +5,13 @@ import SwiftUI
 /// `ProblemList`.
 struct HeaderView: View {
     let now: Date
+    /// How far the status line may run: up to the wings beside the notch, not under them.
+    let room: CGFloat
 
     var body: some View {
         HStack(spacing: 8) {
             StatusSummary(now: now)
+                .frame(maxWidth: max(0, room), alignment: .leading)
             Spacer(minLength: 0)
             AppMenu()
         }
@@ -16,33 +19,22 @@ struct HeaderView: View {
 }
 
 /// "Polled 2m ago · 1 of 15 resolved in 24h", or what the connection is doing. A pause or a
-/// dry run leads, since either changes what the rest means.
+/// dry run leads, since either changes what the rest means. Short of room, the facts after
+/// it drop from the end rather than be cut mid-word.
 struct StatusSummary: View {
     @Environment(Store.self) private var store
     @Environment(DaemonProcess.self) private var daemon
     let now: Date
 
     var body: some View {
-        HStack(spacing: 6) {
+        Group {
             if let status = store.snapshot?.status, store.connection == .connected {
-                if status.paused {
-                    Text("Paused")
-                        .foregroundStyle(.primary)
-                        .help("Alerts are still triaged, but no agent starts on its own")
-                    Button("Resume") { store.setPaused(false) }
-                        .buttonStyle(.link)
-                        .foregroundStyle(Ink.blue)
-                        .accessibilityIdentifier("header.resume")
-                    dot
+                let facts = facts(status)
+                ViewThatFits(in: .horizontal) {
+                    line(status, facts: facts)
+                    line(status, facts: Array(facts.prefix(1)))
+                    line(status, facts: [])
                 }
-                if status.dryRun {
-                    Text("Dry run")
-                        .foregroundStyle(.primary)
-                        .help("Agents run, but nothing is posted to Slack")
-                    dot
-                }
-                Text(connectedLine(status))
-                    .foregroundStyle(.tertiary)
             } else {
                 Text(connectionLine)
                     .foregroundStyle(.secondary)
@@ -54,9 +46,40 @@ struct StatusSummary: View {
         .contentTransition(.numericText())
     }
 
+    private func line(_ status: Status, facts: [String]) -> some View {
+        HStack(spacing: 6) {
+            if status.paused {
+                Text("Paused")
+                    .foregroundStyle(.primary)
+                    .help("Alerts are still triaged, but no agent starts on its own")
+                Button { store.setPaused(false) } label: {
+                    // Taller than the word, so it is easy to hit in the band.
+                    Text("Resume")
+                        .padding(.vertical, 4)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.link)
+                .foregroundStyle(Ink.blue)
+                .accessibilityIdentifier("header.resume")
+            }
+            if status.dryRun {
+                if status.paused { dot }
+                Text("Dry run")
+                    .foregroundStyle(.primary)
+                    .help("Agents run, but nothing is posted to Slack")
+            }
+            if !facts.isEmpty {
+                if status.paused || status.dryRun { dot }
+                Text(facts.joined(separator: " · "))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
     private var dot: some View { Text("·").foregroundStyle(.tertiary) }
 
-    private func connectedLine(_ status: Status) -> String {
+    /// Most telling first: the first to stay when the line is short of room.
+    private func facts(_ status: Status) -> [String] {
         var parts: [String] = []
         if let poll = status.lastPollAt {
             let rel = Format.relative(poll, now: now)
@@ -65,7 +88,7 @@ struct StatusSummary: View {
         if let sessions = store.snapshot?.metrics?.sessions, sessions.started > 0 {
             parts.append("\(sessions.resolved) of \(sessions.started) resolved in 24h")
         }
-        return parts.joined(separator: " · ")
+        return parts
     }
 
     private var connectionLine: String {
