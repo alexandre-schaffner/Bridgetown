@@ -1,7 +1,7 @@
 import { closeSync, openSync, readSync, statSync } from "node:fs"
 import { homedir } from "node:os"
 import { basename, isAbsolute, resolve } from "node:path"
-import { firstPositional, flags, REASONS } from "./guard-reasons.ts"
+import { firstPositional, flags, REASONS, runsNothing } from "./guard-reasons.ts"
 import { ghRefusal, githubApiWriteRefusal, gitRefusal } from "./guard-vcs.ts"
 import { type Command, parseShell, type Word } from "./shell.ts"
 
@@ -47,8 +47,13 @@ export const readScript = (path: string): string | undefined => {
 
 const KEYWORDS = new Set(["!", "{", "}", "if", "then", "else", "elif", "fi", "do", "done", "while", "until", "esac", "coproc"])
 const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)\+?=/
-/** Env assignments that make a later command run something the guard never sees: a startup file, an ssh/pager/diff command, an injected library. */
-const DANGEROUS_ENV = /^(BASH_ENV|ENV|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|GIT_SSH_COMMAND|GIT_SSH|GIT_EXTERNAL_DIFF|GIT_PAGER|GIT_EDITOR|GIT_SEQUENCE_EDITOR|GIT_CONFIG_PARAMETERS|GIT_CONFIG_(COUNT|KEY_[0-9]+|VALUE_[0-9]+)|GIT_PROXY_COMMAND|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|NODE_OPTIONS|PERL5OPT|PERL5LIB|PYTHONSTARTUP|RUBYOPT)$/
+/** Variables whose value is a command a later program runs (an ssh, pager, editor or askpass): only one that runs nothing may be set (`GIT_EDITOR=true`, `PAGER=cat`). */
+const COMMAND_ENV = /^(GIT_SSH_COMMAND|GIT_SSH|GIT_EXTERNAL_DIFF|GIT_PAGER|GIT_EDITOR|GIT_SEQUENCE_EDITOR|GIT_PROXY_COMMAND|GIT_ASKPASS|SSH_ASKPASS|PAGER|GH_PAGER|EDITOR|VISUAL|GH_EDITOR)$/
+/** Variables no value of which is safe: a startup file or option string a shell or runtime runs, an injected library, git's config, exec path and hook templates, an exported bash function (`env 'BASH_FUNC_git%%=() {…}'`). */
+const LOADER_ENV =
+  /^(BASH_ENV|ENV|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|BASH_FUNC_.*|GIT_CONFIG_PARAMETERS|GIT_CONFIG_(COUNT|KEY_[0-9]+|VALUE_[0-9]+)|GIT_EXEC_PATH|GIT_TEMPLATE_DIR|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|NODE_OPTIONS|BUN_OPTIONS|PERL5OPT|PERL5LIB|PYTHONSTARTUP|RUBYOPT)$/
+/** Builtins that set variables from their `NAME=value` arguments. */
+const DECLARATIONS = new Set(["export", "declare", "typeset", "local", "readonly"])
 const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "mksh", "ash", "fish", "csh", "tcsh", "yash", "oksh", "posh", "busybox", "pwsh", "nu", "xonsh", "elvish"])
 const CLUSTER = new Set(["kubectl", "helm", "argocd", "kargo"])
 const GCP = new Set(["gcloud", "gsutil", "bq"])
@@ -149,9 +154,9 @@ const checkCommand = (command: Command, scope: Scope): string | undefined => {
       continue
     }
     // A leading `NAME=value` is an environment assignment, not the command. Quoting of the value does not change that (`GIT_SSH_COMMAND='…' git fetch`), so it is stripped even when the word is marked quoted.
-    const assignment = ASSIGNMENT.exec(first.text)
-    if (assignment !== null) {
-      if (DANGEROUS_ENV.test(assignment[1] ?? "")) return REASONS.dangerousEnv
+    if (ASSIGNMENT.test(first.text)) {
+      const reason = assignmentRefusal(first)
+      if (reason !== undefined) return reason
       argv = argv.slice(1)
       continue
     }
@@ -191,6 +196,48 @@ const checkCommand = (command: Command, scope: Scope): string | undefined => {
   return undefined
 }
 
+/** Why setting `name` is refused; `value` is what it is set to, `undefined` when unknown (computed, appended, or exported as it already is). */
+const variableRefusal = (name: string, value: string | undefined): string | undefined => {
+  if (LOADER_ENV.test(name)) return REASONS.dangerousEnv
+  return COMMAND_ENV.test(name) && (value === undefined || !runsNothing(value)) ? REASONS.dangerousEnv : undefined
+}
+
+/** `NAME=value` or `NAME+=value`, whether a prefix, an `env` argument or a `declare`/`export` one. The name ends at the first `=`: `env` takes any such word as an assignment, a bash function's `BASH_FUNC_git%%` included. */
+const assignmentRefusal = (word: Word): string | undefined => {
+  const eq = word.text.indexOf("=")
+  const append = word.text[eq - 1] === "+"
+  return variableRefusal(word.text.slice(0, append ? eq - 1 : eq), append || word.dynamic ? undefined : word.text.slice(eq + 1))
+}
+
+/** `$(…)` or a backtick in an argument. */
+const substitutes = (word: Word): boolean => /\$\(|`/.test(word.text)
+
+/**
+ * `export NAME=value` and `declare`/`local`/`readonly NAME=value` set a variable as
+ * surely as a prefix does. Exporting a dangerous name bare passes on a value set where
+ * the guard never saw it (`read GIT_SSH_COMMAND; export GIT_SSH_COMMAND`), and a
+ * computed name could be any. The integer forms (`declare -i`) evaluate their arguments
+ * as arithmetic, which runs any `$(…)` inside, even quoted (`declare -i y='$(…)'`); a
+ * plain `local x=$(…)` is an ordinary substitution the parser has already checked.
+ */
+const declarationRefusal = (name: string, args: ReadonlyArray<Word>): string | undefined => {
+  const options = args.filter((arg) => arg.text.startsWith("-")).map((arg) => arg.text)
+  if (options.some((option) => /^-[a-zA-Z]*i/.test(option)) && args.some(substitutes)) return REASONS.dynamic
+  const exporting = name === "export" || options.some((option) => /^-[a-zA-Z]*x/.test(option))
+  for (const arg of args) {
+    if (arg.text.startsWith("-")) continue
+    const reason = ASSIGNMENT.test(arg.text)
+      ? assignmentRefusal(arg)
+      : arg.dynamic
+        ? REASONS.dynamic
+        : exporting
+          ? variableRefusal(arg.text, undefined)
+          : undefined
+    if (reason !== undefined) return reason
+  }
+  return undefined
+}
+
 const ENV_VALUE_FLAGS = flags("-u", "--unset", "-C", "--chdir", "-P", "-a", "--argv0")
 
 /** `env [options] [NAME=value…] [cmd …]`, including the `-S`/`-iS'…'` split-string form that parses the rest as one shell string. */
@@ -199,11 +246,13 @@ const envRefusal = (args: ReadonlyArray<Word>, scope: Scope): string | undefined
     const word = args[i]
     if (word === undefined) break
     const text = word.text
-    if (!text.startsWith("-") || text === "-") {
-      // The first non-flag word is either `NAME=value` (an assignment, kept scanning) or the command.
-      const name = ASSIGNMENT.exec(text)?.[1]
-      if (name === undefined) return checkCommand(args.slice(i), scope)
-      if (DANGEROUS_ENV.test(name)) return REASONS.dangerousEnv
+    // A lone `-` is `-i`, not the command.
+    if (text === "-") continue
+    if (!text.startsWith("-")) {
+      // Every word with an `=` before the command is an assignment, whatever its name; the first without one is the command.
+      if (!text.includes("=")) return checkCommand(args.slice(i), scope)
+      const reason = assignmentRefusal(word)
+      if (reason !== undefined) return reason
       continue
     }
     // -S / --split-string / a short-flag cluster containing S: the remaining text is one shell string.
@@ -245,11 +294,9 @@ const commandRefusal = (name: string, head: Word, args: ReadonlyArray<Word>, sco
   }
   // `trap 'cmd' SIGNAL` runs its first argument as a command when the signal fires.
   if (name === "trap") return args[0] === undefined ? undefined : checkString(args[0], scope)
-  // `let`, and the integer forms `declare -i` / `typeset -i` / `local -i` / `readonly -i`, evaluate their argument as arithmetic, which runs any `$(…)`/backtick inside it — even from a quoted argument the parser left intact (`declare -i y='$(…)'`). A plain `local x=$(…)` is an ordinary substitution the parser has already seen and checked, so it is left alone.
-  const arithmetic =
-    name === "let" ||
-    ((name === "declare" || name === "typeset" || name === "local" || name === "readonly") && args.some((arg) => /^-[a-zA-Z]*i/.test(arg.text)))
-  if (arithmetic && args.some((arg) => /\$\(|`/.test(arg.text))) return REASONS.dynamic
+  // `let` evaluates its arguments as arithmetic, which runs any `$(…)` inside, even quoted (`let 'a[$(…)]'`).
+  if (name === "let" && args.some(substitutes)) return REASONS.dynamic
+  if (DECLARATIONS.has(name)) return declarationRefusal(name, args)
   if (SHELLS.has(name)) return shellRefusal(args, scope)
   if (name === "source" || name === ".") return args[0] === undefined ? undefined : scriptRefusal(args[0], scope, true)
   if (name === "watch") {

@@ -54,3 +54,17 @@ export const firstPositional = (args: ReadonlyArray<Word>, withValue: ReadonlySe
 }
 
 export const flags = (...names: ReadonlyArray<string>): ReadonlySet<string> => new Set(names)
+
+/** Programs that run nothing else, and git's "no hooks" path. */
+const INERT = new Set(["", ":", "true", "false", "cat", "less", "more", "/dev/null"])
+
+/**
+ * A command-valued setting (an editor, pager, ssh or hook path, from a variable or
+ * git config) that runs nothing: empty, or an inert program with only its own flags.
+ * `GIT_EDITOR=true git rebase --continue` and the Claude CLI's own
+ * `git -c core.pager= -c core.hooksPath=/dev/null` turn a command off, not on.
+ */
+export const runsNothing = (value: string): boolean => {
+  const [program = "", ...rest] = value.trim().split(/\s+/)
+  return INERT.has(program) && rest.every((word) => word.startsWith("-"))
+}

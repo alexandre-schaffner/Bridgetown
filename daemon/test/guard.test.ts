@@ -230,6 +230,20 @@ describe("guard", () => {
     "GIT_SSH_COMMAND='gh pr merge 1' git fetch",
     "GIT_PAGER='gh pr merge 1' git log",
     'NODE_OPTIONS="--require ./x.js" bun test',
+    "BUN_OPTIONS='--preload ./x.ts' bun test",
+    "GIT_ASKPASS=./x.sh git fetch",
+    "GIT_EXEC_PATH=/w/bin git subtree split",
+    "GH_PAGER='gh pr merge 1' gh pr view 1",
+    "PAGER=$X git log",
+    // An exported bash function, which `env` takes as an assignment whatever its name, shadows `git` in the child shell.
+    "env 'BASH_FUNC_git%%=() { gh pr merge 1; }' bash -c 'git status'",
+    // `-` is env's `-i`, not the command.
+    "env - kubectl get pods",
+    // `export`/`declare` set variables as surely as a prefix; a bare export passes on a value set unseen, a computed name could be any.
+    "export GIT_SSH_COMMAND='gh pr merge 1'; git fetch",
+    "declare -x GIT_SSH_COMMAND='gh pr merge 1'",
+    "read GIT_SSH_COMMAND < cmd.txt; export GIT_SSH_COMMAND; git fetch",
+    'export "$N=gh pr merge 1"',
     // ./envshebang.sh runs by path with an `env -S bash` shebang: still shell, still checked.
     "./envshebang.sh",
     // Deep nesting is reported, not crashed through (fail closed).
@@ -300,6 +314,14 @@ describe("guard", () => {
     // Bare xargs (no command) runs echo on its stdin; nothing to smuggle in.
     "cat files.txt | xargs",
     "git log --oneline | xargs -n1",
+    // A command variable set to something that runs nothing turns a prompt or pager off.
+    "GIT_EDITOR=true git rebase --continue",
+    "GIT_PAGER=cat git log",
+    "GH_PAGER=cat gh pr view 1",
+    "PAGER='less -R' git log",
+    'export PATH="$PWD/node_modules/.bin:$PATH"',
+    "export NODE_ENV=test && bun test",
+    "env -i PATH=/usr/bin:/bin bun test",
   ]
   for (const command of stillAllowed) {
     test(`allows: ${JSON.stringify(command)}`, () => expect(refusal(command, context)).toBeUndefined())
