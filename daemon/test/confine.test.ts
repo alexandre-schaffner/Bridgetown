@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import { mkdirSync, mkdtempSync, symlinkSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { mkdirSync, symlinkSync } from "node:fs"
 import { join } from "node:path"
 import { writeRefusal } from "../src/sessions/confine.ts"
+import { scratchDir } from "./fixtures/tmp.ts"
 
-const root = mkdtempSync(join(tmpdir(), "bt-confine-"))
+const root = scratchDir("bt-confine-")
 const worktree = join(root, "wt")
 const outside = join(root, "elsewhere")
 mkdirSync(join(worktree, "src"), { recursive: true })

@@ -1,7 +1,6 @@
 import { Database } from "bun:sqlite"
-import { mkdtempSync } from "node:fs"
-import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { scratchDir } from "./tmp.ts"
 
 /**
  * Rows as the first daemon wrote them (copied from a real store, trimmed): no
@@ -88,7 +87,7 @@ export const OLD_ACTION = {
 
 /** A `BRIDGETOWN_HOME` holding a store exactly as the first daemon left it: its schema, its migration record, its rows. */
 export const oldStore = (): string => {
-  const home = mkdtempSync(join(tmpdir(), "bt-old-store-"))
+  const home = scratchDir("bt-old-store-")
   const db = new Database(join(home, "bridgetown.db"))
   db.run(`CREATE TABLE "bridgetown_migrations" (migration_id integer PRIMARY KEY NOT NULL, created_at datetime NOT NULL DEFAULT current_timestamp, name VARCHAR(255) NOT NULL)`)
   db.run(`INSERT INTO bridgetown_migrations (migration_id, name) VALUES (1, 'initial')`)

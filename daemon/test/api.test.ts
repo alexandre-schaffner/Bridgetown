@@ -1,7 +1,4 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { mkdtempSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 import { Effect, ManagedRuntime, Schema } from "effect"
 import { authorized, bind, type BoundServer, serve } from "../src/api/server.ts"
 import { AdapterError, Conflict, GheBlocked, InvalidInput, MissingCredential, NotFound, SlackApiError, statusOf } from "../src/domain/errors.ts"
@@ -9,6 +6,7 @@ import type { Env } from "../src/config.ts"
 import { type Alert, NO_MILESTONES, type Session, Settings } from "../src/domain/model.ts"
 import { appLayer } from "../src/layers.ts"
 import { Store } from "../src/store/store.ts"
+import { scratchDir } from "./fixtures/tmp.ts"
 
 const TOKEN = "test-token"
 const env: Env = { port: 0, apiToken: TOKEN, slackToken: undefined, typesafeKey: undefined, forceDryRun: true, jevModel: "jev" }
@@ -26,14 +24,15 @@ const queued: Session = {
   activity: "Queued", diagnosis: null, outcome: null, recommendation: null, prUrl: null, branch: "fix-bt-x", worktree: null,
   repoPath: "/r", claudeSessionId: null, model: "m", effort: "high", ciRounds: 0, costUsd: 0, slackThreadUrl: null,
   release: null, milestones: NO_MILESTONES, rootCauseFound: null, resolution: null, pushbacks: 0, component: null,
-  review: null, critiqueRounds: 0, critique: null, mergeRequestedAt: null, releaseTag: null, deployStage: null, tracker: null, startedAt: "2026-10-01T00:00:00.000Z", updatedAt: "2026-10-01T00:00:00.000Z",
+  review: null, critiqueRounds: 0, critique: null, mergeRequestedAt: null, releaseTag: null, deployStage: null, tracker: null, sentBack: null, startedAt: "2026-10-01T00:00:00.000Z", updatedAt: "2026-10-01T00:00:00.000Z",
 }
 
 let server: BoundServer
 let dispose = async () => {}
+const home = scratchDir("bt-api-")
 
 beforeAll(async () => {
-  process.env.BRIDGETOWN_HOME = mkdtempSync(join(tmpdir(), "bt-api-"))
+  process.env.BRIDGETOWN_HOME = home
   const rt = ManagedRuntime.make(appLayer(env))
   dispose = () => rt.dispose()
   server = bind(0)

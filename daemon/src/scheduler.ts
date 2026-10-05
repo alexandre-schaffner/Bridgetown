@@ -1,6 +1,7 @@
 import { Context, Duration, Effect, Layer, Schedule } from "effect"
 import { Critic } from "./critique/critic.ts"
 import { Health } from "./health.ts"
+import { Housekeeping } from "./housekeeping/housekeeping.ts"
 import { Boards } from "./grafana/board.ts"
 import { Hub } from "./hub.ts"
 import { AlertPipeline } from "./pipeline/alerts.ts"
@@ -10,7 +11,7 @@ import { Shipper } from "./ship/shipper.ts"
 import { Watcher } from "./watch/watcher.ts"
 
 export interface SchedulerShape {
-  /** Runs the poll, inbox, ship, scheduling, health and prod watch loops until interrupted. */
+  /** Runs the poll, inbox, ship, scheduling, health, prod watch and housekeeping loops until interrupted. */
   readonly run: Effect.Effect<never>
 }
 
@@ -42,6 +43,7 @@ export const SchedulerLive = Layer.effect(Scheduler)(
     const runner = yield* SessionRunner
     const boards = yield* Boards
     const watcher = yield* Watcher
+    const housekeeping = yield* Housekeeping
 
     // Sessions cannot fetch or push while GHE refuses this network, so they wait in the queue.
     const scheduleTick = Effect.gen(function* () {
@@ -67,6 +69,8 @@ export const SchedulerLive = Layer.effect(Scheduler)(
           yield* loop("boards", boards.warm, Schedule.spaced("300 seconds"))
           yield* loop("watch", watcher.tick, Schedule.spaced("300 seconds"), "90 seconds")
           yield* loop("logs", watcher.sweepLogs, Schedule.spaced("600 seconds"), "150 seconds")
+          // Well after startup's recovery and first polls; nothing it deletes is that urgent.
+          yield* loop("housekeeping", housekeeping.run, Schedule.spaced("1 hour"), "2 minutes")
           return yield* Effect.never
         }),
       ),

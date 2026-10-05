@@ -193,6 +193,48 @@ describe("decideOutcome", () => {
     })
   })
 
+  describe("a send-back answered without a fix comes to you", () => {
+    const deployFailed = running({
+      prUrl: "https://ghe/pull/1",
+      sentBack: "deploy",
+      deployStage: { _tag: "Failed", stage: "Production", detail: "ETL deploy failed" },
+      milestones: { ...NO_MILESTONES, prOpened: true, ciGreen: true, merged: true, released: true },
+    })
+
+    test("a revert recommendation after a failed deploy: handed off, posted, milestones kept", () => {
+      const d = decide({ session: deployFailed, result: result({ outcome: "recommendation", recommendation: "revert", recommendationDetail: "Revert #1" }) })
+      expect(d.patch).toMatchObject({ status: "waiting", outcome: "recommendation", milestones: { merged: true, released: true, deployed: false } })
+      expect(d.cards).toEqual([{ _tag: "HandOff", title: "Deploy failed", detail: "Revert #1" }])
+      expect(d.post).toContain("Revert #1")
+    })
+
+    for (const [sentBack, title] of [["ci", "CI still red"], ["changes", "Changes requested"]] as const) {
+      test(`${sentBack}: needs you, with the diagnosis`, () => {
+        const d = decide({ session: running({ prUrl: "https://ghe/pull/1", sentBack }), result: result({ diagnosis: "the runner is out of disk" }) })
+        expect(d.patch.status).toBe("waiting")
+        expect(d.cards).toEqual([{ _tag: "HandOff", title, detail: "the runner is out of disk" }])
+        expect(d.post).toBeNull()
+      })
+    }
+
+    test("a fix is still a fix: the follow-up PR ships", () => {
+      const d = decide({ session: deployFailed, result: result({ outcome: "fix_pr", prUrl: "https://ghe/pull/2" }) })
+      expect(d.patch.status).toBe("ci")
+    })
+
+    test("a fix with no follow-up PR after a failed deploy ships nothing: handed off, not back to a deploy that will not move", () => {
+      for (const prUrl of [null, "https://ghe/pull/1"]) {
+        const d = decide({ session: deployFailed, result: result({ outcome: "fix_pr", prUrl, diagnosis: "pushed to the merged branch" }) })
+        expect(d.patch.status).toBe("waiting")
+        expect(d.cards).toEqual([{ _tag: "HandOff", title: "Deploy failed", detail: "pushed to the merged branch" }])
+      }
+    })
+
+    test("without a send-back the same answer is a side turn back to the deploy", () => {
+      expect(decide({ session: { ...deployFailed, sentBack: null }, result: result({ outcome: "recommendation" }) }).patch.status).toBe("deploying")
+    })
+  })
+
   test("what the agent tried goes to the transcript", () => {
     expect(decide({ result: result({ tried: ["grafana: nothing"] }) }).notes).toEqual(["Tried:\n· grafana: nothing"])
   })

@@ -161,7 +161,7 @@ export const CriticLive = Layer.effect(Critic)(
           case "HandOff":
             return yield* handOff(id, critique, step, session)
           case "SendBack": {
-            // Recorded before the turn: a message delivered into a running turn carries no patch.
+            // What the review saw is its own record, written before the turn it asks for (as the shipper's send-backs do).
             if ((yield* stillReviewing(id, (current) => ({ ...current, critique, critiqueRounds: step.round }), session)) === undefined) return
             return yield* deliverFindings(id, critique, step.round)
           }

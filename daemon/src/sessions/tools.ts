@@ -1,11 +1,13 @@
 import { createSdkMcpServer, tool, type McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk"
 import { z } from "zod"
 import { VERSION } from "../config.ts"
-import { openableUrl, type Phase } from "../domain/model.ts"
+import type { Phase } from "../domain/model.ts"
+import { ownPrUrl } from "./output.ts"
 
 export const TOOL_SERVER = "bridgetown"
 export interface ToolCallbacks {
-  readonly report: (phase: Phase, note: string, prUrl: string | undefined) => Promise<void>
+  /** `prUrl` only goes in the transcript: the session's PR is the one its structured result names. */
+  readonly report: (phase: Phase, note: string, prUrl: string | null) => Promise<void>
   /** Resolves with the user's answer, or `undefined` when nobody answered in time. */
   readonly ask: (question: string, options: ReadonlyArray<string>) => Promise<string | undefined>
   /** The alert's thread and the channel messages around it, readable text. */
@@ -33,8 +35,7 @@ export const makeToolServer = (callbacks: ToolCallbacks): McpSdkServerConfigWith
           prUrl: z.string().url().optional(),
         },
         async (args) => {
-          // The app opens this link, so only https (or slack:, revv:) is kept; anything else is dropped.
-          await callbacks.report(args.phase, args.note, openableUrl(args.prUrl) ?? undefined)
+          await callbacks.report(args.phase, args.note, ownPrUrl(args.prUrl))
           return text("Reported.")
         },
       ),

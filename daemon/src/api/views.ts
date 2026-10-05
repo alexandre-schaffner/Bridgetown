@@ -12,8 +12,8 @@ import { type Judged, loadJudged, loadSweep, type SweepRecord, watchBlocked } fr
 
 /** The wire shapes of docs/API.md, built from the store. */
 
-const SNAPSHOT_ALERTS = 30
-const SNAPSHOT_FINISHED_SESSIONS = 20
+export const SNAPSHOT_ALERTS = 30
+export const SNAPSHOT_FINISHED_SESSIONS = 20
 
 const alertView = (alert: Alert, session: Session | undefined, openCards: number) => ({
   id: alert.id,

@@ -1,5 +1,5 @@
 import type { NewAction } from "../actions/queue.ts"
-import { type Alert, passedAt, type Session, type SessionStatus } from "../domain/model.ts"
+import { type Alert, passedAt, type SentBack, type Session, type SessionStatus } from "../domain/model.ts"
 import * as Messages from "../ship/messages.ts"
 import type { SessionResult } from "./output.ts"
 import { pushBackPrompt } from "./prompts.ts"
@@ -20,6 +20,9 @@ export const shipStatus = (session: Session): SessionStatus | undefined => {
   return undefined
 }
 
+/** The hand-off card's title when a send-back comes back without a fix. */
+const SENT_BACK_TITLES: Readonly<Record<SentBack, string>> = { ci: "CI still red", changes: "Changes requested", deploy: "Deploy failed" }
+
 /** A card the result asks for: a hand-off goes through the queue's dedupe, anything else is put as is. */
 export type CardRequest =
   | { readonly _tag: "HandOff"; readonly title: string; readonly detail: string }
@@ -27,7 +30,7 @@ export type CardRequest =
 
 export interface FinalizeInput {
   readonly session: Session
-  /** Its `prUrl` already filtered to an openable URL. */
+  /** Its `prUrl` already checked to be a PR on the repo Bridgetown ships (`ownPrUrl`). */
   readonly result: SessionResult
   readonly alert: Alert | undefined
   /** Evidence that the agent pushed its branch. */
@@ -59,8 +62,9 @@ export interface Finalized {
  * on evidence; an agent that hands off without a confirmed root cause is sent
  * back once first; a session with a PR in flight goes back to shipping whatever a
  * side turn concludes, so a "no action" answer to a teammate never resolves an
- * open PR. A pushed head that no review has passed yet goes to the adversarial
- * review before CI.
+ * open PR, but a send-back (red CI, requested changes, a failed deploy) answered
+ * without a fix is handed to you. A pushed head that no review has passed yet goes
+ * to the adversarial review before CI.
  */
 export const decideOutcome = ({ session, result, alert, pushed, head, adversarialReview }: FinalizeInput): Finalized => {
   const milestones = {
@@ -117,6 +121,19 @@ export const decideOutcome = ({ session, result, alert, pushed, head, adversaria
     inbox !== undefined && result.outcome !== "needs_human"
       ? [card({ kind: "reply", title: `Reply to ${inbox.fromName}`, detail: result.summary, primaryLabel: "Send reply", payload: result.summary })]
       : []
+
+  // Bridgetown sent the agent back and it found no fix, or none that ships (a failed deploy is only answered by a
+  // follow-up PR: the one it released cannot ship again). The ship flow cannot get past that on its own.
+  const sentBack = session.sentBack
+  if (sentBack !== null && (result.outcome !== "fix_pr" || (sentBack === "deploy" && (result.prUrl ?? session.prUrl) === session.prUrl))) {
+    return {
+      ...none,
+      cards: [...reply, { _tag: "HandOff", title: SENT_BACK_TITLES[sentBack], detail: result.recommendationDetail ?? result.diagnosis }],
+      patch: { ...verdict, status: "waiting", activity: result.summary },
+      post:
+        result.outcome === "recommendation" ? forAlert(Messages.recommendation(result.summary, result.recommendationDetail ?? result.recommendation ?? "")) : null,
+    }
+  }
 
   if (result.outcome === "fix_pr") {
     const prUrl = result.prUrl ?? (shipping === undefined ? null : session.prUrl)

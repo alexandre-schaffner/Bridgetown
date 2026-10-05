@@ -82,3 +82,24 @@ describe("a tracker moves only the session that shipped its tag", () => {
     expect(out).toMatchObject({ status: "ci", deployStage: null, milestones: { deployed: false } })
   })
 })
+
+describe("a failed deploy sent back to an agent that cannot resume", () => {
+  const world = makeWorld()
+  afterAll(() => world.dispose())
+
+  test("is handed to you with what the tracker said recorded, and no send-back pending", async () => {
+    const out = await world.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store
+        yield* store.putAlert(makeAlert({ id: "C1:gone", sessionId: "s_gone" }))
+        yield* store.putSession(
+          makeSession("deploying", { id: "s_gone", alertId: "C1:gone", worktree: null, release: { image: "merkl-admin", tag, version: "v0.6.0" }, milestones: released }),
+        )
+        yield* (yield* Shipper).trackDeploy(trackerAlert(null))
+        return { session: yield* store.getSession("s_gone"), cards: (yield* store.listActions()).map((a) => a.title) }
+      }),
+    )
+    expect(out.session).toMatchObject({ status: "waiting", sentBack: null, deployStage: { _tag: "Failed", stage: "Build" }, tracker: TRACKER_ID })
+    expect(out.cards).toEqual(["Agent cannot resume · t"])
+  })
+})

@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { ActionQueue } from "../src/actions/queue.ts"
-import { RETRY, type Session } from "../src/domain/model.ts"
+import { type Action, RETRY, type Session } from "../src/domain/model.ts"
 import { recoverInterrupted, wasInterrupted } from "../src/sessions/recovery.ts"
 import { SessionRepo } from "../src/sessions/repo.ts"
 import { Store } from "../src/store/store.ts"
@@ -100,6 +100,54 @@ describe("SessionRepo: the finished guard", () => {
       }),
     )
     expect(texts).toEqual(["Agent session ended · Closed · root cause not found", "Agent session resumed"])
+  })
+})
+
+describe("SessionRepo: cards end with their session", () => {
+  const card = (sessionId: string, kind: Action["kind"], payload: string | null = null): Action => ({
+    id: `a_${sessionId}_${kind}_${payload ?? ""}`, kind, title: kind, detail: "", primaryLabel: "Go", options: [], sessionId,
+    alertId: null, payload, url: null, createdAt: "2026-10-01T00:00:00.000Z",
+  })
+  const cardsAfter = (session: Session, cards: ReadonlyArray<Action>, patch: Partial<Session>) =>
+    run(
+      Effect.gen(function* () {
+        const store = yield* Store
+        yield* seed(session)
+        for (const action of cards) yield* store.putAction(action)
+        yield* (yield* SessionRepo).patch(session.id, patch)
+        return (yield* store.listActions()).filter((a) => a.sessionId === session.id).map((a) => `${a.kind}:${a.payload ?? ""}`).sort()
+      }),
+    )
+
+  test("a PR closed under a merge card leaves no merge card", async () => {
+    const left = await cardsAfter(makeSession("awaiting_merge", { id: "s_closed", alertId: "C1:closed" }), [card("s_closed", "merge", "https://ghe/pull/1")], {
+      status: "stopped",
+      resolution: "PR closed without merging",
+    })
+    expect(left).toEqual([])
+  })
+
+  test("a deploy that finishes after it was handed off as stalled takes the hand-off card with it", async () => {
+    const left = await cardsAfter(makeSession("waiting", { id: "s_late", alertId: "C1:late" }), [card("s_late", "review"), card("s_late", "release", "api-v1")], {
+      status: "resolved",
+    })
+    expect(left).toEqual([])
+  })
+
+  test("a failed session keeps its draft reply and retry card; everything else goes", async () => {
+    const left = await cardsAfter(
+      makeSession("waiting", { id: "s_fail", alertId: "C1:fail" }),
+      [card("s_fail", "review"), card("s_fail", "rerun", "42"), card("s_fail", "answer"), card("s_fail", "reply", "Thanks"), card("s_fail", "review", RETRY)],
+      { status: "failed" },
+    )
+    expect(left).toEqual(["reply:Thanks", `review:${RETRY}`])
+  })
+
+  test("a write that does not end the session leaves its cards alone", async () => {
+    const left = await cardsAfter(makeSession("awaiting_merge", { id: "s_wait", alertId: "C1:wait" }), [card("s_wait", "merge", "https://ghe/pull/1")], {
+      activity: "still waiting",
+    })
+    expect(left).toEqual(["merge:https://ghe/pull/1"])
   })
 })
 

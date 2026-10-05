@@ -65,7 +65,8 @@ export const makeFinish = ({ store, thread, repo, queue, github, hub, sendBack }
       const session = yield* repo.modify(id, (current) => {
         const decision = decideOutcome({ session: current, result, alert, pushed, head, adversarialReview })
         decided.value = decision
-        return withPatch(current, decision.patch)
+        // This turn answered whatever it was sent back for; one that fails is retried with the same question.
+        return withPatch(current, decision.fail === null ? { ...decision.patch, sentBack: null } : decision.patch)
       })
       const decision = decided.value
       if (session === undefined || decision === undefined) return

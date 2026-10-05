@@ -1,7 +1,8 @@
 import { Context, Effect, Layer } from "effect"
+import { RETRY } from "../actions/queue.ts"
 import type { AdapterError } from "../domain/errors.ts"
 import { now } from "../domain/ids.ts"
-import { isFinished, type Session, type TranscriptKind } from "../domain/model.ts"
+import { type Action, type ActionKind, isFinished, type Session, type TranscriptKind } from "../domain/model.ts"
 import { progressOf } from "../domain/progress.ts"
 import { Hub } from "../hub.ts"
 import { truncate } from "../slack/text.ts"
@@ -17,6 +18,11 @@ export interface ModifyOptions {
    * finished session, which is how a stop always wins.
    */
   readonly evenIfFinished?: boolean
+  /**
+   * Whether the write counts as activity (the default): it bumps `updatedAt`. Housekeeping's don't, so
+   * reclaiming a worktree neither reorders the recent sessions nor restarts a retention clock.
+   */
+  readonly touch?: boolean
 }
 
 export interface SessionRepoShape {
@@ -46,6 +52,14 @@ export const sessionEndEvent = (session: Session): string => `Agent session ende
 
 export const SESSION_RESUMED_EVENT = "Agent session resumed"
 
+const LIVE_ONLY: ReadonlyArray<ActionKind> = ["merge", "release", "rerun", "answer"]
+
+/**
+ * A card that acts on a session still in flight (a merge, a release, a rerun, an answer, a hand-off), so it goes
+ * when the session ends. A draft reply still posts, and the retry card is how a failed session goes on.
+ */
+const endsWithSession = (action: Action): boolean => LIVE_ONLY.includes(action.kind) || (action.kind === "review" && action.payload !== RETRY)
+
 /** A patch applied to a session; `milestones` merge instead of replacing. */
 export const withPatch = (session: Session, patch: Partial<Session>): Session => ({
   ...session,
@@ -66,10 +80,13 @@ export const SessionRepoLive = Layer.effect(SessionRepo)(
         if (isFinished(current) && options.evenIfFinished !== true) return undefined
         const changed = f(current)
         if (changed === undefined) return undefined
-        const next: Session = { ...changed, id: current.id, updatedAt: now() }
+        const next: Session = { ...changed, id: current.id, updatedAt: options.touch === false ? current.updatedAt : now() }
         yield* store.putSession(next)
         // The alert's history says when its session ended (and if it came back), so the app never has to infer it.
-        if (!isFinished(current) && isFinished(next)) yield* store.appendAlertEvent(next.alertId, sessionEndEvent(next))
+        if (!isFinished(current) && isFinished(next)) {
+          yield* store.appendAlertEvent(next.alertId, sessionEndEvent(next))
+          yield* store.deleteActionsWhere((action) => action.sessionId === next.id && endsWithSession(action))
+        }
         if (isFinished(current) && !isFinished(next)) yield* store.appendAlertEvent(next.alertId, SESSION_RESUMED_EVENT)
         yield* hub.notify
         return next

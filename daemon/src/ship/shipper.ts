@@ -2,14 +2,13 @@ import { Context, Effect, Layer } from "effect"
 import { ActionQueue } from "../actions/queue.ts"
 import { type AdapterError, Conflict, type GitHubError } from "../domain/errors.ts"
 import { now } from "../domain/ids.ts"
-import type { Alert, Session } from "../domain/model.ts"
+import type { Alert, SentBack, Session } from "../domain/model.ts"
 import { releaseState } from "../domain/release.ts"
 import { Hub, problemOf } from "../hub.ts"
 import { ciFailedPrompt, deployFailedPrompt, reviewChangesPrompt } from "../sessions/prompts.ts"
 import { cannotResume, makeHandOff } from "../sessions/hand-off.ts"
 import { SessionRepo, withPatch } from "../sessions/repo.ts"
 import { SessionRunner } from "../sessions/runner.ts"
-import { removeWorktree } from "../sessions/worktree.ts"
 import { SlackThread } from "../slack/thread.ts"
 import { Store } from "../store/store.ts"
 import { mergeDetail, releaseDetail } from "./cards.ts"
@@ -64,13 +63,20 @@ export const ShipperLive = Layer.effect(Shipper)(
 
     /**
      * Another round for the agent, or a hand-off once the CI-round budget is spent. `record` (what this step saw, so
-     * the next tick does not act on it again) is written first either way; the turn itself only sets its round.
+     * the next tick does not act on it again) is written first either way, whatever becomes of the turn. The turn
+     * carries only itself: its round, and what it is `sentBack` for, which the runner writes once a turn takes the
+     * prompt, so the result that answers it is the one that reads it.
      */
-    const escalate = (session: Session, escalation: Escalation, prompt: string, record: Partial<Session>) =>
+    const escalate = (session: Session, escalation: Escalation, prompt: string, sentBack: SentBack, record: Partial<Session>) =>
       Effect.gen(function* () {
         if (escalation._tag === "HandOff") return yield* handOff(session.id, escalation, () => record)
         yield* repo.patch(session.id, record)
-        const delivery = yield* runner.continueWith(session.id, prompt, { phase: escalation.phase, ciRounds: escalation.round, activity: escalation.activity })
+        const delivery = yield* runner.continueWith(session.id, prompt, {
+          phase: escalation.phase,
+          ciRounds: escalation.round,
+          activity: escalation.activity,
+          sentBack,
+        })
         if (delivery === "refused") yield* handOff(session.id, cannotResume("send it back"))
       })
 
@@ -205,9 +211,9 @@ export const ShipperLive = Layer.effect(Shipper)(
             yield* settle(yield* repo.patch(sessionId, { status: "ci", activity: step.activity, mergeRequestedAt: null, milestones }))
             return
           case "Red":
-            return yield* escalate(session, step.escalation, ciFailedPrompt(step.failing, session.ciRounds + 1, MAX_CI_ROUNDS), { milestones })
+            return yield* escalate(session, step.escalation, ciFailedPrompt(step.failing, session.ciRounds + 1, MAX_CI_ROUNDS), "ci", { milestones })
           case "ChangesRequested":
-            return yield* escalate(session, step.escalation, reviewChangesPrompt(step.review.author.login, step.review.body), {
+            return yield* escalate(session, step.escalation, reviewChangesPrompt(step.review.author.login, step.review.body), "changes", {
               review: session.review === null ? null : { ...session.review, handledReviewId: step.review.id },
               milestones,
             })
@@ -247,14 +253,11 @@ export const ShipperLive = Layer.effect(Shipper)(
           resolution: `deployed ${tag}`.trim(),
           milestones: { ...session.milestones, deployed: true },
           deployStage: { _tag: "Deployed" },
-          // Removed below: nothing may resume a turn in it.
-          worktree: null,
         })
         if (done === undefined) return
         yield* settle(done)
         const origin = yield* store.getAlert(session.alertId)
         yield* thread.postUpdate(origin ?? alert, Messages.deployed(tag === "" ? alert.title : tag))
-        if (session.worktree !== null) yield* removeWorktree(session.repoPath, session.worktree).pipe(Effect.ignore)
       })
 
     const trackDeploy = Effect.fn("Shipper.trackDeploy")(function* (alert: Alert) {
@@ -268,7 +271,7 @@ export const ShipperLive = Layer.effect(Shipper)(
           case "Unchanged":
             continue
           case "Failed":
-            yield* escalate(session, step.escalation, deployFailedPrompt(alert, session.branch ?? "fix-bt"), { deployStage: state, tracker: alert.id })
+            yield* escalate(session, step.escalation, deployFailedPrompt(alert, session.branch ?? "fix-bt"), "deploy", { deployStage: state, tracker: alert.id })
             continue
           case "Deployed":
             yield* finishDeploy(session, alert)

@@ -1,6 +1,3 @@
-import { mkdtempSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import type { Env } from "../../src/config.ts"
 import { MissingCredential } from "../../src/domain/errors.ts"
@@ -13,6 +10,7 @@ import { GitHub, GitHubLive, type GitHubShape } from "../../src/ship/github.ts"
 import { SlackClient, type SlackClientShape, type SlackMessage } from "../../src/slack/client.ts"
 import { StoreLive } from "../../src/store/store.ts"
 import { Jev, type JevShape } from "../../src/triage/jev.ts"
+import { scratchDir } from "./tmp.ts"
 
 export const verdict = (overrides: Partial<JevVerdict> = {}): JevVerdict => ({
   actionable: 0.95, agentResolvable: 0.9, humanOnIt: 0.01, kind: "build_failure", kindConfidence: 0.9, depth: "quick", urgency: 1, ...overrides,
@@ -53,13 +51,13 @@ export interface WorldOptions {
   readonly reviewer?: ReviewerShape
   readonly github?: GitHubShape
   readonly grafana?: GrafanaShape
-  /** An existing `BRIDGETOWN_HOME` (a store an older daemon wrote); a fresh temp dir otherwise. */
+  /** An existing `BRIDGETOWN_HOME` (a store an older daemon wrote); a fresh scratch dir otherwise. */
   readonly home?: string
 }
 
 /** The real services over a temp store, with Slack and Jev faked (and the SDK and GitHub when a test passes them). Nothing reaches the network or the SDK unless a test starts a turn. */
 export const makeWorld = (options: WorldOptions = {}) => {
-  const home = options.home ?? mkdtempSync(join(tmpdir(), "bt-world-"))
+  const home = options.home ?? scratchDir("bt-world-")
   process.env.BRIDGETOWN_HOME = home
   const env: Env = { port: 0, apiToken: "t", slackToken: "xoxp-test", typesafeKey: "k", forceDryRun: options.dryRun ?? true, jevModel: "jev" }
   const base = Layer.mergeAll(

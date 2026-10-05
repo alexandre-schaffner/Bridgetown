@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { existsSync, mkdtempSync, readFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { Effect, Fiber } from "effect"
 import { run, runOk } from "../src/proc.ts"
+import { scratchDir } from "./fixtures/tmp.ts"
 
 const alive = (pid: number): boolean => {
   try {
@@ -16,7 +16,7 @@ const alive = (pid: number): boolean => {
 
 /** A child that writes its pid, then sleeps far longer than any test. */
 const sleeper = () => {
-  const pidFile = join(mkdtempSync(join(tmpdir(), "bt-proc-")), "pid")
+  const pidFile = join(scratchDir("bt-proc-"), "pid")
   return { pidFile, command: ["sh", "-c", `echo $$ > ${pidFile}; exec sleep 30`] }
 }
 

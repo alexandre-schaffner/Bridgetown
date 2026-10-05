@@ -1,7 +1,7 @@
-import { afterAll, describe, expect, test } from "bun:test"
+import { afterAll, describe, expect, setSystemTime, test } from "bun:test"
 import { Effect } from "effect"
 import { Boards } from "../src/grafana/board.ts"
-import { overviewBoard } from "../src/grafana/boards.ts"
+import { overviewBoard, watchBoard } from "../src/grafana/boards.ts"
 import type { GrafanaShape } from "../src/grafana/client.ts"
 import { Hub } from "../src/hub.ts"
 import { makeWorld } from "./fixtures/world.ts"
@@ -44,5 +44,25 @@ describe("board cache", () => {
       }),
     )
     expect(calls).toBe(4)
+  })
+
+  test("a board nobody opened for ten minutes is dropped once another one is cached", async () => {
+    const at = (minutes: number) => new Date(Date.UTC(2026, 9, 5, 12, minutes))
+    try {
+      const fetched = await world.runPromise(
+        Effect.gen(function* () {
+          const b = yield* Boards
+          setSystemTime(at(0))
+          const first = yield* b.build(overviewBoard("database", at(0)))
+          setSystemTime(at(11))
+          yield* b.build(watchBoard(at(11)))
+          // Evicted, so this waits for a fresh fetch instead of answering with the old board.
+          return [first.fetchedAt, (yield* b.build(overviewBoard("database", at(11)))).fetchedAt]
+        }),
+      )
+      expect(fetched).toEqual([at(0).toISOString(), at(11).toISOString()])
+    } finally {
+      setSystemTime()
+    }
   })
 })

@@ -6,7 +6,7 @@ export const makeSession = (status: SessionStatus, overrides: Partial<Session> =
   diagnosis: null, outcome: null, recommendation: null, prUrl: null, branch: "b", worktree: "/w", repoPath: "/r",
   claudeSessionId: null, model: "m", effort: "high", ciRounds: 0, costUsd: 0, slackThreadUrl: null, release: null,
   milestones: NO_MILESTONES, rootCauseFound: null, resolution: null, pushbacks: 0, component: null, review: null,
-  critiqueRounds: 0, critique: null, mergeRequestedAt: null, releaseTag: null, deployStage: null, tracker: null, startedAt: "", updatedAt: "", ...overrides,
+  critiqueRounds: 0, critique: null, mergeRequestedAt: null, releaseTag: null, deployStage: null, tracker: null, sentBack: null, startedAt: "", updatedAt: "", ...overrides,
 })
 
 export const makeAlert = (overrides: Partial<Alert> = {}): Alert => ({
