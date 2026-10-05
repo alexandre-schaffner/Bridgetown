@@ -148,7 +148,7 @@ struct BucketChart: View {
             guard s.current else { continue }
             for (c, value) in s.values.enumerated() {
                 guard let value else { continue }
-                let spike = Self.isSpike(value, typical: typical)
+                let spike = Board.Panel.isSpike(value, typical: typical)
                 let marked = c == hovered || (hovered == nil && c == newest)
                 guard spike || marked else { continue }
                 let p = point(c, value)
@@ -234,16 +234,12 @@ struct BucketChart: View {
         }
     }
 
-    static func isSpike(_ value: Double, typical: Double?) -> Bool {
-        Board.Panel.isSpike(value, typical: typical)
-    }
-
     /// A bar's colour: a spike amber (white while hovered); else the hovered bar white and
     /// the rest dim, or the newest white and the rest quiet grey. A series no longer
     /// reporting stays faint throughout.
     private func barColor(column: Int, value: Double, newest: Int?, current: Bool) -> Color {
         guard current else { return .white.opacity(0.2) }
-        let spike = Self.isSpike(value, typical: typical)
+        let spike = Board.Panel.isSpike(value, typical: typical)
         if let hovered {
             if column == hovered { return .white.opacity(0.95) }
             return spike ? Ink.amber.opacity(0.4) : .white.opacity(0.28)

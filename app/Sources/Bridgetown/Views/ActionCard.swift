@@ -17,7 +17,6 @@ struct ActionCard: View {
     /// Editable copy of a `reply` action's draft.
     @ViewState private var draft: String
     @ViewState private var confirmingClose = false
-    @FocusState private var replyFocused: Bool
 
     init(action: Action, expanded: Bool = true, now: Date = AppClock.now, pick: RowPick? = nil, onToggle: (() -> Void)? = nil) {
         self.action = action
@@ -180,11 +179,11 @@ struct ActionCard: View {
             Group {
                 if action.isOneClick {
                     Button(action.primaryLabel) { store.resolve(action) }
-                        .buttonStyle(.stage(.secondary, compact: true))
+                        .buttonStyle(.stage(.secondary))
                 } else {
                     // Needs input: the button opens the card where it's typed or chosen.
                     Button(action.kind == .reply ? "Review reply" : "Answer") { onToggle?() }
-                        .buttonStyle(.stage(.secondary, compact: true))
+                        .buttonStyle(.stage(.secondary))
                 }
             }
             .lineLimit(1)
@@ -289,7 +288,7 @@ struct ActionCard: View {
                     .inputField()
                 HStack(spacing: 8) {
                     Button(action.primaryLabel) { store.resolve(action, response: draft) }
-                        .buttonStyle(.stage(.primary, compact: true))
+                        .buttonStyle(.stage(.primary))
                         .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     if draft != action.detail {
                         Button("Revert") { draft = action.detail }
@@ -306,13 +305,12 @@ struct ActionCard: View {
                     .textFieldStyle(.plain)
                     .font(.geist(12))
                     .inputField()
-                    .focused($replyFocused)
                     .onSubmit(send)
                 Button(action: send) {
                     Image(systemName: "arrow.up")
                         .font(.geist(10, .bold))
                 }
-                .buttonStyle(.stage(.primary, compact: true))
+                .buttonStyle(.stage(.primary))
                 .disabled(reply.trimmingCharacters(in: .whitespaces).isEmpty)
                 .help(action.primaryLabel)
             }
@@ -321,7 +319,7 @@ struct ActionCard: View {
         } else {
             HStack(spacing: 10) {
                 Button(action.primaryLabel) { store.resolve(action) }
-                    .buttonStyle(.stage(.primary, compact: true))
+                    .buttonStyle(.stage(.primary))
                 // review: the agent ended without a fix. Talking to it is the alternative
                 // to Retry / Close session, so it opens the session's message field,
                 // offered only when the daemon will take a message.
@@ -361,10 +359,10 @@ private struct OptionChips: View {
             ForEach(Array(options.enumerated()), id: \.offset) { index, option in
                 if index == 0 {
                     Button(option) { choose(option) }
-                        .buttonStyle(.stage(.primary, compact: true))
+                        .buttonStyle(.stage(.primary))
                 } else {
                     Button(option) { choose(option) }
-                        .buttonStyle(.stage(.secondary, compact: true))
+                        .buttonStyle(.stage(.secondary))
                 }
             }
         }

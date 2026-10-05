@@ -11,7 +11,6 @@ struct ClampedText: View {
     var mono = false
     var lineSpacing: CGFloat = 2
     var moreLabel = "Show more"
-    var lessLabel = "Show less"
     /// Sets the text in a quiet rounded block (raw messages), with the toggle outside it.
     var boxed = false
 
@@ -54,7 +53,7 @@ struct ClampedText: View {
                     }
                 }
             if truncated {
-                Button(expanded ? lessLabel : moreLabel) { expanded.toggle() }
+                Button(expanded ? "Show less" : moreLabel) { expanded.toggle() }
                     .buttonStyle(.plain)
                     .font(.geist(11, .medium))
                     .foregroundStyle(.tint)

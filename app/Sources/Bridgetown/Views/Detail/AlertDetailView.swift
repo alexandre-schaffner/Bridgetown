@@ -83,7 +83,6 @@ struct AlertDetailView: View {
                         mono: true,
                         lineSpacing: 1.5,
                         moreLabel: "Show full message",
-                        lessLabel: "Show less",
                         boxed: true
                     )
                     .id(raw)
@@ -214,7 +213,7 @@ struct AlertDetailView: View {
             } label: {
                 Label(alert.permalinkLabel, systemImage: "arrow.up.right.square")
             }
-            .buttonStyle(.stage(.secondary, compact: true))
+            .buttonStyle(.stage(.secondary))
             .disabled(alert.permalink == nil)
             .help(alert.permalink == nil ? "No permalink for this message" : alert.source == .watch ? "Open the dashboard in Grafana" : "Open the message in Slack")
 
@@ -228,7 +227,7 @@ struct AlertDetailView: View {
                 .disabled(store.isBusy(alert.id))
                 .help("Start an agent on this alert")
                 // Primary only when investigating is the expected next step.
-                button.buttonStyle(.stage(waiting ? .primary : .secondary, compact: true))
+                button.buttonStyle(.stage(waiting ? .primary : .secondary))
             }
         }
         .padding(.horizontal, 16)
@@ -246,7 +245,7 @@ struct AlertDetailView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             Button("Try again") { Task { await load() } }
-                .buttonStyle(.stage(.secondary, compact: true))
+                .buttonStyle(.stage(.secondary))
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

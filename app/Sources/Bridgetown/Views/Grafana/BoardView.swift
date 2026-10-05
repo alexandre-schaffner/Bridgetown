@@ -125,26 +125,13 @@ private struct MiniPanel: View {
     static let lineChartWidth: CGFloat = 92
     static let lineValueWidth: CGFloat = 70
 
-    private struct Point: Identifiable {
-        let series: String
-        let at: Date
-        let value: Double
-        var id: String { "\(series)-\(at.timeIntervalSince1970)" }
-    }
-
-    private var points: [Point] {
-        panel.series.flatMap { s in
-            s.points.compactMap { p in
-                guard p.count == 2 else { return nil }
-                return Point(series: s.label, at: Date(timeIntervalSince1970: p[0]), value: p[1])
-            }
-        }
-    }
-
+    /// The chart's top: a little above the highest sample.
     private var yMax: Double {
-        let top = points.map(\.value).max() ?? 0
+        let top = panel.series.flatMap { $0.points.compactMap { $0.count == 2 ? $0[1] : nil } }.max() ?? 0
         return top > 0 ? top * 1.15 : 1
     }
+
+    private var hasSamples: Bool { panel.series.contains { $0.points.contains { $0.count == 2 } } }
 
     /// The value under the shared crosshair (summed across series, like `latest`), or the latest.
     private var shown: Double? {
@@ -389,7 +376,7 @@ private struct MiniPanel: View {
     /// panel to look at. Grey when it failed to load.
     private var valueStyle: AnyShapeStyle {
         if panel.error != nil { return AnyShapeStyle(.tertiary) }
-        if hover == nil, let latest = panel.latest, BucketChart.isSpike(latest, typical: typical) {
+        if hover == nil, panel.spikeRatio != nil {
             return AnyShapeStyle(Ink.amber)
         }
         return AnyShapeStyle(.primary)
@@ -418,7 +405,7 @@ private struct MiniPanel: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, minHeight: height, alignment: .topLeading)
                 .help(error)
-        } else if points.isEmpty {
+        } else if !hasSamples {
             Text("No data in this window")
                 .font(.geist(11))
                 .foregroundStyle(.tertiary)
@@ -433,9 +420,6 @@ private struct MiniPanel: View {
     private var style: BucketChart.Style {
         panel.series.count == 1 && (panel.unit == .count || panel.unit == .unknown) ? .bars : .levels
     }
-
-    /// The window's usual level, its median, for the dashed rule and the line under the value.
-    private var typical: Double? { panel.typical }
 
     private var step: TimeInterval { Double(max(1, board.stepSeconds)) }
 
@@ -476,12 +460,12 @@ private struct MiniPanel: View {
             if let hover {
                 Text(hover, format: Format.clock)
                     .foregroundStyle(.secondary)
-            } else if let typical, let latest = panel.latest {
+            } else if let spike = panel.spikeRatio {
+                Text("↑ \(Format.decimal(spike, digits: 1))× usual")
+                    .foregroundStyle(Ink.amber)
+            } else if let typical = panel.typical, let latest = panel.latest {
                 let ratio = latest / typical
-                if BucketChart.isSpike(latest, typical: typical) {
-                    Text("↑ \(Format.decimal(ratio, digits: 1))× usual")
-                        .foregroundStyle(Ink.amber)
-                } else if ratio <= 0.55 {
+                if ratio <= 0.55 {
                     Text("↓ \(Format.decimal(ratio, digits: 1))× usual")
                         .foregroundStyle(.secondary)
                 } else {
@@ -501,7 +485,7 @@ private struct MiniPanel: View {
             series: chartSeries,
             style: style,
             yMax: yMax,
-            typical: typical,
+            typical: panel.typical,
             hovered: hoveredColumn,
             deploys: board.deploys
                 .filter { $0.at >= board.from && $0.at <= board.to }

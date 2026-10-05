@@ -157,10 +157,10 @@ struct StepPill: View {
 
     private var connector: Connector.Kind {
         let next = session.pillKind(at: index + 1)
-        if index + 1 == session.marker.index, [.moving, .held, .you].contains(next) {
+        if index + 1 == session.markerIndex, [.moving, .held, .you].contains(next) {
             return next == .moving ? .feeding : .leading
         }
-        if index < session.marker.index { return .behind }
+        if index < session.markerIndex { return .behind }
         return session.isActive ? .ahead : .unreached
     }
 
@@ -333,16 +333,12 @@ extension Session {
     /// Where the session is: the step in progress or the one that failed; the next step
     /// when it waits between two (ready to merge, approval to release); past the end once
     /// resolved; where it stopped otherwise.
-    struct Marker: Equatable {
-        var index: Int
-    }
-
-    var marker: Marker {
+    var markerIndex: Int {
         let frontier = steps.firstIndex { $0.state == .pending || $0.state == .unknown } ?? steps.count
-        if let i = steps.firstIndex(where: { $0.state == .failed }) { return Marker(index: i) }
-        if holder != nil { return Marker(index: steps.firstIndex { $0.state == .current } ?? frontier) }
-        if tone == .success { return Marker(index: steps.count) }
-        return Marker(index: frontier)
+        if let i = steps.firstIndex(where: { $0.state == .failed }) { return i }
+        if holder != nil { return steps.firstIndex { $0.state == .current } ?? frontier }
+        if tone == .success { return steps.count }
+        return frontier
     }
 
     /// How each step's pill stands, for animating a change across the row.
@@ -350,7 +346,7 @@ extension Session {
 
     func pillKind(at index: Int) -> StepPill.Kind {
         let step = steps[index]
-        let at = marker.index
+        let at = markerIndex
         if step.state == .failed { return tone == .failure ? .failed : .stopped }
         if index == at, let holder {
             if holder == .you || tone == .waiting { return .you }

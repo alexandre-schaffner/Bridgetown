@@ -25,9 +25,6 @@ enum Ink {
     static let track = Color.white.opacity(0.08)
     /// Data marks: neutral, a step below the text.
     static let mark = Color.white.opacity(0.62)
-    /// Finished steps: further down (4.3:1), so the colour of the step in play is the
-    /// brightest thing in the stepper.
-    static let settled = Color.white.opacity(0.44)
 
     /// Text levels on black: 16:1, 7.6:1, 5.5:1 (all AA).
     static let text = Color(white: 0.93)
@@ -226,55 +223,33 @@ struct BrandMark: View {
     }
 }
 
-// MARK: Section label
-
-/// The title of a field inside a section.
-struct SectionLabel: View {
-    let text: String
-    var color: Color?
-
-    init(_ text: String, color: Color? = nil) {
-        self.text = text
-        self.color = color
-    }
-
-    var body: some View {
-        Text(text)
-            .font(Typo.label)
-            .foregroundStyle(color.map(AnyShapeStyle.init) ?? AnyShapeStyle(.secondary))
-            .lineLimit(1)
-    }
-}
-
 // MARK: Buttons
 
 /// Three buttons, as in Geist: white primary (the one next step), outlined secondary,
-/// red for destructive confirmations.
+/// red for destructive confirmations. One size: the island's rows and bars are dense.
 struct StageButtonStyle: ButtonStyle {
     enum Kind { case primary, secondary, danger }
     var kind: Kind = .secondary
-    var compact = false
 
     func makeBody(configuration: Configuration) -> some View {
-        StageButtonLabel(configuration: configuration, kind: kind, compact: compact)
+        StageButtonLabel(configuration: configuration, kind: kind)
     }
 
     private struct StageButtonLabel: View {
         let configuration: Configuration
         let kind: Kind
-        let compact: Bool
         @Environment(\.isEnabled) private var isEnabled
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @ViewState private var hovering = false
 
         var body: some View {
             configuration.label
-                .font(.geist(compact ? 11.5 : 12, .medium))
+                .font(.geist(11.5, .medium))
                 .labelStyle(.titleAndIcon)
                 .lineLimit(1)
                 .foregroundStyle(foreground)
-                .padding(.horizontal, compact ? 8 : 10)
-                .frame(height: compact ? 24 : 28)
+                .padding(.horizontal, 8)
+                .frame(height: 24)
                 .background(background, in: RoundedRectangle(cornerRadius: Ink.controlRadius, style: .continuous))
                 .overlay {
                     if kind == .secondary {
@@ -310,12 +285,7 @@ struct StageButtonStyle: ButtonStyle {
 }
 
 extension ButtonStyle where Self == StageButtonStyle {
-    static var primary: StageButtonStyle { StageButtonStyle(kind: .primary) }
-    static var secondary: StageButtonStyle { StageButtonStyle(kind: .secondary) }
-    static var danger: StageButtonStyle { StageButtonStyle(kind: .danger) }
-    static func stage(_ kind: StageButtonStyle.Kind, compact: Bool = false) -> StageButtonStyle {
-        StageButtonStyle(kind: kind, compact: compact)
-    }
+    static func stage(_ kind: StageButtonStyle.Kind) -> StageButtonStyle { StageButtonStyle(kind: kind) }
 }
 
 // MARK: Tab switch

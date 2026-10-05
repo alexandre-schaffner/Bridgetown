@@ -262,7 +262,7 @@ struct SessionDetailView: View {
             } label: {
                 Label("Take over in Terminal", systemImage: "terminal")
             }
-            .buttonStyle(.stage(.secondary, compact: true))
+            .buttonStyle(.stage(.secondary))
             .disabled(session.claudeSessionId == nil)
             .help(session.claudeSessionId == nil ? "No Claude session yet" : "claude --resume in the worktree")
 
@@ -282,7 +282,7 @@ struct SessionDetailView: View {
                     } label: {
                         Text("Stop").foregroundStyle(Ink.red)
                     }
-                    .buttonStyle(.stage(.secondary, compact: true))
+                    .buttonStyle(.stage(.secondary))
                     .disabled(store.isBusy(session.id))
                     .accessibilityIdentifier("session.stop")
                 }

@@ -141,27 +141,6 @@ extension Board {
 
 // MARK: - Sessions
 
-extension Session.State {
-    var label: String {
-        switch self {
-        case .queued: "Queued"
-        case .preparing: "Preparing worktree"
-        case .running: "Running"
-        case .waiting: "Waiting on you"
-        case .critiquing: "In adversarial review"
-        case .ci: "Waiting on CI"
-        case .awaiting_merge: "Ready to merge"
-        case .awaiting_release: "Ready to release"
-        case .deploying: "Deploying"
-        case .resolved: "Resolved"
-        case .closed: "Closed"
-        case .failed: "Failed"
-        case .stopped: "Stopped"
-        case .unknown: "Unknown"
-        }
-    }
-}
-
 extension Session {
     /// What it is doing now, or for a finished session the honest outcome.
     var statusDetail: String {
@@ -280,17 +259,6 @@ extension Step.State {
         case .failed: tone == .failure ? "failed here" : "stopped here"
         case .skipped: "not needed"
         case .unknown: "unknown"
-        }
-    }
-
-    var isEmphasized: Bool { self == .current || self == .failed }
-
-    func labelStyle(stopTint: Color) -> AnyShapeStyle {
-        switch self {
-        case .current: AnyShapeStyle(.primary)
-        case .done: AnyShapeStyle(.secondary)
-        case .failed: AnyShapeStyle(stopTint)
-        case .pending, .skipped, .unknown: AnyShapeStyle(.tertiary)
         }
     }
 }

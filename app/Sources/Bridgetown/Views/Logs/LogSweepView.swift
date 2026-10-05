@@ -63,7 +63,7 @@ private struct SweepContent: View {
                 Button(showSteady ? "Hide steady errors" : "Show \(steady.count) steady error\(steady.count == 1 ? "" : "s")") {
                     withAnimation(Easing.state) { showSteady.toggle() }
                 }
-                .buttonStyle(.stage(.secondary, compact: true))
+                .buttonStyle(.stage(.secondary))
                 .frame(maxWidth: .infinity)
                 .accessibilityIdentifier("logs.showSteady")
             }

@@ -599,9 +599,9 @@ struct ConfirmButtons: View {
     var body: some View {
         HStack(spacing: 8) {
             Button("Cancel", action: onCancel)
-                .buttonStyle(.stage(.secondary, compact: true))
+                .buttonStyle(.stage(.secondary))
             Button(confirmLabel, role: .destructive, action: onConfirm)
-                .buttonStyle(.stage(.danger, compact: true))
+                .buttonStyle(.stage(.danger))
         }
         .task {
             try? await Task.sleep(for: .seconds(5))

@@ -100,14 +100,14 @@ struct NeedsYouSection: View {
             Button(closes > 0 ? "Close…" : "Dismiss") {
                 if closes > 0 { confirmingClose = true } else { finish { picked.forEach(store.dismiss) } }
             }
-            .buttonStyle(.stage(.secondary, compact: true))
+            .buttonStyle(.stage(.secondary))
             .disabled(picked.isEmpty)
             .help(closes > 0 ? "Some of these close their session without a fix" : "Dismiss the selected cards")
             if let label = picked.sharedPrimary {
                 Button("\(label) \(picked.count)") {
                     finish { picked.forEach { store.resolve($0) } }
                 }
-                .buttonStyle(.stage(.primary, compact: true))
+                .buttonStyle(.stage(.primary))
             }
         }
     }
@@ -216,7 +216,7 @@ struct AgentsSection: View {
             } label: {
                 Text("Stop…").foregroundStyle(Ink.red)
             }
-            .buttonStyle(.stage(.secondary, compact: true))
+            .buttonStyle(.stage(.secondary))
             .disabled(picked.isEmpty)
         }
     }
@@ -276,7 +276,7 @@ struct RecentSection: View {
                     Button(showAll ? "Show less" : "Show \(hidden) more") {
                         withAnimation(.snappy(duration: 0.2)) { showAll.toggle() }
                     }
-                    .buttonStyle(.stage(.secondary, compact: true))
+                    .buttonStyle(.stage(.secondary))
                     .accessibilityIdentifier("recent.showMore")
                     .frame(maxWidth: .infinity)
                 }
@@ -300,7 +300,7 @@ struct RecentSection: View {
                 Haptics.perform(.alignment, "recent.bulk")
                 selection.clear()
             }
-            .buttonStyle(.stage(.secondary, compact: true))
+            .buttonStyle(.stage(.secondary))
             .help("Start an agent on each, whatever Jev decided")
         }
         Menu {
@@ -320,7 +320,7 @@ struct RecentSection: View {
             Text("Rate")
         }
         .menuStyle(.button)
-        .buttonStyle(.stage(.secondary, compact: true))
+        .buttonStyle(.stage(.secondary))
         .menuIndicator(.hidden)
         .fixedSize()
         .disabled(picked.isEmpty)
