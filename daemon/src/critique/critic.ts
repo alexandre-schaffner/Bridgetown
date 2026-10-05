@@ -39,7 +39,7 @@ export const CriticLive = Layer.effect(Critic)(
 
     /** One review per session at a time; interrupted with the layer. */
     const reviews = yield* FiberMap.make<string>()
-    /** Reviews in a row that could not run, per session. A restart starts the count again. */
+    /** Reviews in a row that could not run, per session in review. Leaving review, or a restart, starts the count again. */
     const errors = new Map<string, number>()
 
     /**
@@ -201,8 +201,9 @@ export const CriticLive = Layer.effect(Critic)(
         const sessions = yield* store.activeSessions()
         const reviewing = new Set<string>()
         for (const session of sessions) if (session.status === "critiquing" && !(yield* runner.busy(session.id))) reviewing.add(session.id)
-        // A session that left review (stopped, closed, your message) no longer needs its codex run.
+        // A session that left review (stopped, closed, your message) no longer needs its codex run, nor its error count.
         for (const [id] of Array.from(reviews)) if (!reviewing.has(id)) yield* FiberMap.remove(reviews, id)
+        for (const id of [...errors.keys()]) if (!reviewing.has(id)) errors.delete(id)
         if ((yield* hub.status).github === "blocked") return
         const settings = yield* hub.settings
         for (const session of sessions) {
