@@ -49,9 +49,9 @@ const KEYWORDS = new Set(["!", "{", "}", "if", "then", "else", "elif", "fi", "do
 const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)\+?=/
 /** Variables whose value is a command a later program runs (an ssh, pager, editor or askpass): only one that runs nothing may be set (`GIT_EDITOR=true`, `PAGER=cat`). */
 const COMMAND_ENV = /^(GIT_SSH_COMMAND|GIT_SSH|GIT_EXTERNAL_DIFF|GIT_PAGER|GIT_EDITOR|GIT_SEQUENCE_EDITOR|GIT_PROXY_COMMAND|GIT_ASKPASS|SSH_ASKPASS|PAGER|GH_PAGER|EDITOR|VISUAL|GH_EDITOR)$/
-/** Variables no value of which is safe: a startup file or option string a shell or runtime runs, an injected library, git's config, exec path and hook templates, an exported bash function (`env 'BASH_FUNC_git%%=() {…}'`). */
+/** Variables no value of which is safe: a startup file or option string a shell or runtime runs, an injected library, git's config, exec path and hook templates, an exported bash function (`env 'BASH_FUNC_git%%=() {…}'`), and Bridgetown's own (`BRIDGETOWN_BRANCH` is the exec-time guard's scope). */
 const LOADER_ENV =
-  /^(BASH_ENV|ENV|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|BASH_FUNC_.*|GIT_CONFIG_PARAMETERS|GIT_CONFIG_(COUNT|KEY_[0-9]+|VALUE_[0-9]+)|GIT_EXEC_PATH|GIT_TEMPLATE_DIR|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|NODE_OPTIONS|BUN_OPTIONS|PERL5OPT|PERL5LIB|PYTHONSTARTUP|RUBYOPT)$/
+  /^(BASH_ENV|ENV|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|BASH_FUNC_.*|GIT_CONFIG_PARAMETERS|GIT_CONFIG_(COUNT|KEY_[0-9]+|VALUE_[0-9]+)|GIT_EXEC_PATH|GIT_TEMPLATE_DIR|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|NODE_OPTIONS|BUN_OPTIONS|PERL5OPT|PERL5LIB|PYTHONSTARTUP|RUBYOPT|BRIDGETOWN_.*)$/
 /** Builtins that set variables from their `NAME=value` arguments. */
 const DECLARATIONS = new Set(["export", "declare", "typeset", "local", "readonly"])
 const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "mksh", "ash", "fish", "csh", "tcsh", "yash", "oksh", "posh", "busybox", "pwsh", "nu", "xonsh", "elvish"])
@@ -62,6 +62,14 @@ const NETWORK = new Set(["curl", "wget", "nc", "ncat", "netcat", "socat", "telne
 const PORT_ARGUMENT = new Set(["nc", "ncat", "netcat", "telnet"])
 const SLACK_HOST = /(^|[^A-Za-z0-9-])([A-Za-z0-9-]+\.)*slack\.com(?![A-Za-z0-9-])/i
 const MAX_DEPTH = 4
+
+/**
+ * The commands the exec-time guard (guard-exec.ts) stands in front of: those this
+ * policy refuses or restricts by name that reach production, a remote or a
+ * credential. Not `security`: the Claude CLI reads its own login from the Keychain
+ * through it, by name, and the Keychain asks before handing over anyone else's item.
+ */
+export const EXEC_GUARDED: ReadonlyArray<string> = ["gh", "git", ...CLUSTER, ...GCP, "op", "sudo", "su", "doas", "cast", "curl", "wget"]
 
 interface Scope extends GuardContext {
   /** Unknown after a `cd` to a computed directory. */
@@ -74,6 +82,12 @@ interface Scope extends GuardContext {
 /** Why this command is refused, or `undefined` when it may run. */
 export const refusal = (command: string, context: GuardContext): string | undefined =>
   check(command, { ...context, cwdKnown: true, source: command, depth: 0 })
+
+/** Why the exec-time guard refuses `name args…`: the argv a program is about to run with, every expansion done, so nothing in it is dynamic. */
+export const execRefusal = (name: string, args: ReadonlyArray<string>, context: GuardContext): string | undefined => {
+  const word = (text: string): Word => ({ text, dynamic: false, splits: false, quoted: true })
+  return commandRefusal(name, word(name), args.map(word), { ...context, cwdKnown: true, source: [name, ...args].join(" "), depth: 0 })
+}
 
 const check = (source: string, scope: Scope): string | undefined => {
   if (scope.depth > MAX_DEPTH) return REASONS.nesting

@@ -6,6 +6,7 @@ import { daemonPort, GH_HOST } from "../config.ts"
 import type { Session } from "../domain/model.ts"
 import { childEnv } from "../secrets.ts"
 import { readScript } from "./guard.ts"
+import { installShims, shimDir } from "./guard-exec.ts"
 import { SESSION_RESULT_JSON_SCHEMA } from "./output.ts"
 import { type ToolGuard, toolGuard, toolRefusal } from "./tool-guard.ts"
 import { makeToolServer, TOOL_SERVER, type ToolCallbacks } from "./tools.ts"
@@ -52,11 +53,17 @@ const claudeExecutable = (): string | undefined =>
 const withExecutable = (path: string | undefined): { pathToClaudeCodeExecutable?: string } =>
   path === undefined ? {} : { pathToClaudeCodeExecutable: path }
 
-/** The agent's environment: no daemon credential or config, plus what sessions need. */
-export const sessionEnv = (env: Record<string, string | undefined>, sessionId: string): Record<string, string> => ({
+/**
+ * The agent's environment: no daemon credential or config, the exec-time guard's
+ * shims first on PATH, and the session's branch, which is all the guard needs to know
+ * about it (the command-line guard refuses setting either).
+ */
+export const sessionEnv = (env: Record<string, string | undefined>, session: Pick<Session, "id" | "branch">, shims: string): Record<string, string> => ({
   ...childEnv(env),
+  PATH: env.PATH === undefined ? shims : `${shims}:${env.PATH}`,
   GH_HOST,
-  BRIDGETOWN_SESSION: sessionId,
+  BRIDGETOWN_SESSION: session.id,
+  BRIDGETOWN_BRANCH: session.branch ?? "",
 })
 
 export interface TurnSetup {
@@ -85,8 +92,10 @@ const SESSION_TOOLS: ReadonlyArray<string> = ["Bash", "Read", "Glob", "Grep", "E
  */
 const SESSION_DISALLOWED_TOOLS: ReadonlyArray<string> = ["Task"]
 
-/** The SDK options for one turn: guards, write confinement, MCP servers, structured output, a scrubbed env. */
+/** The SDK options for one turn: guards (its shims put back first), write confinement, MCP servers, structured output, a scrubbed env. */
 export const sdkOptions = ({ session, abort, resume, tools, onRefused }: TurnSetup): Options => {
+  const shims = shimDir()
+  installShims(shims, daemonPort())
   const guard: ToolGuard = {
     branch: session.branch ?? "",
     cwd: session.worktree ?? session.repoPath,
@@ -122,7 +131,7 @@ export const sdkOptions = ({ session, abort, resume, tools, onRefused }: TurnSet
     persistSession: true,
     maxTurns: MAX_TURNS,
     ...withExecutable(claudeExecutable()),
-    env: sessionEnv(process.env, session.id),
+    env: sessionEnv(process.env, session, shims),
     ...(resume && session.claudeSessionId !== null ? { resume: session.claudeSessionId } : {}),
   }
 }

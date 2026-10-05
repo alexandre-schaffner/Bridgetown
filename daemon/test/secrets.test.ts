@@ -85,13 +85,14 @@ describe("secrets never reach children", () => {
   test("child env strips BRIDGETOWN_*, SLACK_*, TYPESAFE_*", () => {
     expect(childEnv(env)).toEqual({ PATH: "/usr/bin:/bin", HOME: "/Users/x", ANTHROPIC_API_KEY: "sk-ant" })
   })
-  test("session env adds only what sessions need", () => {
-    expect(sessionEnv(env, "s_1")).toEqual({
-      PATH: "/usr/bin:/bin",
+  test("session env adds only what sessions need, the exec-time guard's shims first on PATH", () => {
+    expect(sessionEnv(env, { id: "s_1", branch: "fix-bt-x-1" }, "/bt/guard-bin")).toEqual({
+      PATH: "/bt/guard-bin:/usr/bin:/bin",
       HOME: "/Users/x",
       ANTHROPIC_API_KEY: "sk-ant",
       GH_HOST: "nocturlab.ghe.com",
       BRIDGETOWN_SESSION: "s_1",
+      BRIDGETOWN_BRANCH: "fix-bt-x-1",
     })
   })
   test("startup scrub removes the credentials and the launch flag", () => {

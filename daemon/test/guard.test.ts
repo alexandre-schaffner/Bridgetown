@@ -259,6 +259,9 @@ describe("guard", () => {
     "declare -x GIT_SSH_COMMAND='gh pr merge 1'",
     "read GIT_SSH_COMMAND < cmd.txt; export GIT_SSH_COMMAND; git fetch",
     'export "$N=gh pr merge 1"',
+    // The exec-time guard takes the session's branch from BRIDGETOWN_BRANCH.
+    "BRIDGETOWN_BRANCH=main make push",
+    "export BRIDGETOWN_BRANCH=main",
     // A computed word in a gh command whose verdict rests on its flags could become one (`$X` = `--base release`, a file named `--watch`).
     "gh pr edit 1 $X",
     "gh pr checks 1 $X",
