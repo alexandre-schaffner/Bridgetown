@@ -165,7 +165,7 @@ export const triageEvent = (triage: Triage): string => {
   }
 }
 
-/** What became of an alert's last card: you dismissed or opened it, or Bridgetown withdrew it (its signal went back to normal). */
+/** What became of an alert's last card: you dismissed or opened it, or Bridgetown withdrew it (its signal went back to normal, or a later verdict left nothing to do). */
 export const Disposition = Schema.Struct({ kind: Schema.Literals(["dismissed", "opened", "withdrawn"]), at: Schema.String })
 export type Disposition = typeof Disposition.Type
 

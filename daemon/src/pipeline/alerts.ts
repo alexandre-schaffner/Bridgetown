@@ -3,7 +3,7 @@ import { ActionQueue } from "../actions/queue.ts"
 import { alertFromParsed, type ParsedAlert } from "../domain/alert.ts"
 import { type AdapterError, NotFound } from "../domain/errors.ts"
 import { daysAgo, now, tsToIso } from "../domain/ids.ts"
-import { type Alert, type Channel, channelLabel, type Claimant, claimHeadline, isActive, type Triage, triageEvent } from "../domain/model.ts"
+import { type Action, type Alert, type Channel, channelLabel, type Claimant, claimHeadline, isActive, type Triage, triageEvent } from "../domain/model.ts"
 import { Hub, problemOf } from "../hub.ts"
 import { SessionRunner } from "../sessions/runner.ts"
 import { Shipper } from "../ship/shipper.ts"
@@ -131,10 +131,24 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
         if (alert.triage.decision === "auto" && !status.paused && settings.autoStart) {
           const take = yield* claims.take(alert, { yieldTo: true })
           if (take._tag === "TakenBy") return yield* yieldTo(alert, take.claimedBy)
+          // An agent is on it now: a suggestion an earlier verdict put up is moot.
+          yield* queue.removeWhere((a) => a.kind === "investigate" && a.alertId === alert.id)
           yield* runner.enqueue(alert)
           return
         }
         if (alert.triage.decision === "auto" || alert.triage.decision === "suggest") yield* suggest(alert)
+      })
+
+    /**
+     * A known alert re-triaged to nothing to do (a failed build re-run green, a repeat a session now owns): the
+     * Investigate card its earlier verdict put up goes, and its history says why.
+     */
+    const withdraw = (id: string, reason: string) =>
+      Effect.gen(function* () {
+        const stale = (a: Action) => a.alertId === id && a.kind === "investigate"
+        if (!(yield* queue.list).some(stale)) return
+        yield* queue.removeWhere(stale)
+        yield* store.appendAlertEvent(id, `Its card was withdrawn: ${reason}`, "withdrawn")
       })
 
     const ingest = Effect.fn("AlertPipeline.ingest")(function* (channel: Channel, message: SlackMessage, since: number) {
@@ -211,11 +225,13 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
           attached ? outcome.sessionId : null,
         )
         if (attached) yield* store.appendTranscript(outcome.sessionId, { at: now(), kind: "status", text: `Alert repeated: ${parsed.title}` })
+        if (existing !== undefined) yield* withdraw(id, outcome.reason)
         return yield* finish(alert)
       }
 
       const verdict = yield* triage(parsed, message, thread, history)
       const alert = yield* write(() => verdict, triageEvent(verdict))
+      if (existing !== undefined && verdict.decision === "ignore") yield* withdraw(id, verdict.reason)
       yield* finish(alert)
       if (alert !== undefined && alert.sessionId === null) yield* act(alert)
     })

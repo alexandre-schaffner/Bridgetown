@@ -6,6 +6,7 @@ import { AlertPipeline, commitHorizon, readHorizon } from "../src/pipeline/alert
 import type { SlackMessage } from "../src/slack/client.ts"
 import { Store } from "../src/store/store.ts"
 import type { JevShape } from "../src/triage/jev.ts"
+import { adminBuildFailed } from "./fixtures/messages.ts"
 import { fakeSlack, makeWorld, verdict } from "./fixtures/world.ts"
 
 const CHANNEL = "C0AUKD42N3U"
@@ -141,5 +142,29 @@ describe("the horizon only moves past what was read", () => {
     const found = await Promise.all(messages.map((m) => stored(m.ts)))
     expect(found.filter((a) => a === undefined)).toHaveLength(0)
     expect(backlogAsks).toHaveLength(1)
+  })
+})
+
+describe("a known alert re-triaged to nothing to do", () => {
+  const ts = recent(5)
+  let tracker: SlackMessage = { ...adminBuildFailed, ts }
+  const world = makeWorld({ slack: fakeSlack((channel) => (channel === CHANNEL ? [tracker] : [])) })
+  afterAll(() => world.dispose())
+
+  test("a failed build re-run green withdraws the card it had put up", async () => {
+    const cards = () => world.runPromise(Store.use((store) => store.listActions().pipe(Effect.map((all) => all.map((a) => a.kind)))))
+    await world.runPromise(AlertPipeline.use((pipeline) => pipeline.pollOnce))
+    // Without Jev the call is yours: a suggestion.
+    expect(await cards()).toEqual(["investigate"])
+    tracker = {
+      ...tracker,
+      blocks: JSON.parse(JSON.stringify(adminBuildFailed.blocks).replace(":red_circle:  *Build*\\nBuild failed  ·  _1 attempt failed_", ":large_green_circle:  *Build*\\nImage built")),
+    }
+    await world.runPromise(AlertPipeline.use((pipeline) => pipeline.pollOnce))
+    const alert = await world.runPromise(Store.use((store) => store.getAlert(`${CHANNEL}:${ts}`)))
+    expect(await cards()).toEqual([])
+    expect(alert?.title).toBe("merkl-admin v0.6.0 · Deployed")
+    expect(alert?.events.at(-1)?.text).toBe("Its card was withdrawn: Release deployed successfully")
+    expect(alert?.disposition?.kind).toBe("withdrawn")
   })
 })
