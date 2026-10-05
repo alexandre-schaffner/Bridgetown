@@ -4,6 +4,7 @@
 
 import { chromium } from "playwright-core";
 import { spawn } from "node:child_process";
+import { constants } from "node:os";
 import { resolve } from "node:path";
 
 export const SITE = resolve(import.meta.dir, "..");
@@ -17,13 +18,21 @@ export async function devServer() {
     cwd: SITE,
     stdio: ["ignore", "ignore", "inherit"],
   });
+  const stop = () => server.kill();
+  // However the script ends, the server goes with it, rather than holding its port and watching
+  // files for no one: an uncaught error skips the caller's `finally`, and so do Ctrl-C and a
+  // timeout's SIGTERM unless they end the process through exit().
+  process.once("exit", stop);
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+    process.once(signal, () => process.exit(128 + constants.signals[signal]));
+  }
   const url = `http://127.0.0.1:${port}`;
   for (let i = 0; ; i++) {
     if (await fetch(url).then((r) => r.ok, () => false)) break;
     if (i > 300 || server.exitCode !== null) throw new Error("astro dev didn't start");
     await Bun.sleep(100);
   }
-  return { url, stop: () => server.kill() };
+  return { url, stop };
 }
 
 /** Chromium drawing WebGL in software, as on any machine. */
