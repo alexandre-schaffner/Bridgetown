@@ -82,10 +82,12 @@ export function createIsland(
   const steps = [...root.querySelectorAll<HTMLElement>("[data-step]")];
 
   // Fit the 1440-point screen to the bezel. Narrow screens zoom in on the notch instead,
-  // keeping the open island's width in view and letting the menu bar run off the sides.
+  // letting the menu bar run off the sides; on a phone, as far as the open island's middle
+  // column, so what needs you can be read.
   const fit = () => {
     const inner = mac.clientWidth - 28;
-    const k = inner < 900 ? inner / 1160 : inner / 1440;
+    const span = 440 + (1160 - 440) * Math.min(1, Math.max(0, (inner - 320) / (900 - 320)));
+    const k = inner < 900 ? inner / span : inner / 1440;
     mac.style.setProperty("--k", String(k));
     mac.style.setProperty("--ox", `${(inner - 1440 * k) / 2}px`);
   };
@@ -141,13 +143,23 @@ export function createIsland(
       if (!s.settled) moving = true;
     }
     draw();
-    if (moving && visible) raf = requestAnimationFrame(tick);
+    // A move under way finishes even if the chapter has just gone, so the shape never
+    // stops halfway with its layers already gone.
+    if (moving) raf = requestAnimationFrame(tick);
   };
   const kick = () => {
-    if (!raf && visible) {
-      last = performance.now();
-      raf = requestAnimationFrame(tick);
+    if (raf) return;
+    if (!visible) {
+      // Off screen: take the new shape at once.
+      for (const s of Object.values(springs)) {
+        s.x = s.target;
+        s.v = 0;
+      }
+      draw();
+      return;
     }
+    last = performance.now();
+    raf = requestAnimationFrame(tick);
   };
 
   const shape = (p: Presentation) => {

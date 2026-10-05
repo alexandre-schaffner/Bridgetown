@@ -18,7 +18,7 @@ const median = [...values.slice(-3)].sort((a, b) => a - b)[1]!;
 const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
 ---
 
-<section class="watch day" id="watch" data-watch aria-labelledby="watch-title">
+<section class="watch day" id="watch" data-tone="sunk" data-watch aria-labelledby="watch-title">
   <div class="wrap">
     <div class="intro">
       <h2 id="watch-title" class="display">It watches production, too.</h2>
@@ -41,7 +41,7 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
           <path d={linePath(values, W, H, PAD, max, 0)} class="line" pathLength="1" data-line></path>
           <circle cx={x(values.length - 1)} cy={y(values.at(-1)!)} r="5" class="head" data-head></circle>
         </svg>
-        <span class="usual-label" style={`top:${(y(usual) / H) * 100}%`}>usual · {Math.round(usual)}</span>
+        <span class="usual-label" style={`--y:${(y(usual) / H).toFixed(4)}`}>usual · {Math.round(usual)}</span>
         <div class="finding" data-finding>
           <p class="f-kind"><i class="dot dot-amber" aria-hidden="true"></i> Rise</p>
           <p class="f-text">Median of the last 3 steps is {(median / usual).toFixed(1)}× usual. No Slack alert covers it.</p>
@@ -68,7 +68,6 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
 <style>
   .watch {
     padding-block: clamp(7rem, 16vh, 11rem);
-    background: var(--day-sunk);
   }
 
   .intro {
@@ -88,9 +87,7 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
     padding: clamp(1.25rem, 2.5vw, 2rem);
     border-radius: 16px;
     background: var(--day);
-    box-shadow:
-      0 0 0 1px var(--line),
-      0 24px 48px -32px oklch(0.19 0.008 255 / 0.3);
+    box-shadow: 0 0 0 1px var(--line);
   }
 
   .chart-head {
@@ -107,12 +104,13 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
   }
 
   .plot {
+    --plot-h: clamp(12rem, 30vh, 18rem);
     position: relative;
   }
 
   svg {
     width: 100%;
-    height: clamp(12rem, 30vh, 18rem);
+    height: var(--plot-h);
     overflow: visible;
   }
 
@@ -146,8 +144,10 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
     vector-effect: non-scaling-stroke;
   }
 
+  /* On the dashed line, measured on the plot alone: on a phone the finding sits below it. */
   .usual-label {
     position: absolute;
+    top: calc(var(--y) * var(--plot-h));
     left: 0;
     translate: 0 -140%;
     font-size: 0.75rem;
@@ -224,8 +224,14 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
   }
 
   /* With script, the line draws as you scroll and the finding waits for the rise. */
-  :global(html.js) .watch .line {
+  :global(html.js) .watch .plot {
     --draw: 1;
+    --reach: 0;
+  }
+
+  /* The shade under the line keeps pace with its pen. */
+  :global(html.js) .watch .area {
+    clip-path: inset(0 calc((1 - var(--reach)) * 100%) 0 0);
   }
 
   :global(html.js) .watch [data-rise],

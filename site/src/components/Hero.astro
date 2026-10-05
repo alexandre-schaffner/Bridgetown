@@ -1,96 +1,121 @@
 ---
+import ArchMark from "./ArchMark.astro";
 import Icon from "./Icon.astro";
 import { download } from "../lib/download";
-// Night. The arch stands in the dark with the light behind it; scrolling walks the camera
-// through the opening until the light is all there is. Three captions play on the way.
+// Night, before dawn. The headline, large and alone, over the light breaking along the edge of
+// a dark world (scripts/dawn.ts). Scrolling raises Bridgetown's board out of that light, live:
+// a morning replayed, messages landing and agents working them, the merge and the reply left
+// for you (scripts/board.ts). Then day floods the frame and becomes the next chapter's screen.
 ---
 
 <section class="hero night" id="top" data-hero aria-labelledby="hero-title">
   <div class="stage">
-    <div class="beat beat-intro" data-beat>
-      <p class="kicker">Bridgetown for macOS</p>
+    <div class="intro" data-hero-intro>
+      <p class="kicker" data-rise>Bridgetown for macOS</p>
       <h1 id="hero-title" data-split>Your alerts, handled before you&nbsp;look.</h1>
-      <div class="intro-side">
-        <p class="lead">
-          A Mac app in your notch. It reads your team's Slack alerts and the messages sent to you, gives coding
-          agents the work they can finish, and brings you the rest.
-        </p>
-        <div class="actions">
-          <a class="button button-light" href={download.url} data-download>
-            <Icon name="download" size={15} stroke={2.2} />
-            Download for macOS
-          </a>
-          <button class="watch" type="button" data-open-film="launch">
-            <span class="disc"><Icon name="play" size={12} stroke={2.4} /></span>
-            Watch the film
-          </button>
-        </div>
-        <p class="meta mono">{download.meta}</p>
+      <p class="lead" data-rise>
+        A Mac app in your notch. It reads your team's Slack alerts and the messages sent to you, gives coding agents
+        the work they can finish, and brings you the rest.
+      </p>
+      <div class="actions" data-rise>
+        <a class="button button-light" href={download.url} data-download>
+          <Icon name="download" size={15} stroke={2.2} />
+          Download for macOS
+        </a>
+        <button class="watch" type="button" data-open-film="launch">
+          <span class="disc"><Icon name="play" size={12} stroke={2.4} /></span>
+          Watch the film
+        </button>
       </div>
+      <p class="meta mono" data-rise>{download.meta}</p>
     </div>
 
-    <p class="beat beat-line" data-beat>
-      Every alert channel, every mention, every direct message: read the moment it lands.
-    </p>
-    <p class="beat beat-line" data-beat>
-      Each one gets a single question. <span class="soft">Can an agent finish this, or does it need you?</span>
+    <p class="caption" data-hero-caption>
+      Every alert channel, every mention, every direct message, read the moment it lands.
     </p>
 
-    <div class="cue" data-cue aria-hidden="true">
-      <span>Scroll through</span>
-      <i></i>
+    <div class="board-wrap" data-board-wrap>
+      <section class="board" data-board aria-label="Bridgetown's board: a morning, replayed">
+        <div class="board-face" data-board-tilt>
+          <header class="b-head">
+            <p class="b-title"><ArchMark size={14} /> Bridgetown <span class="b-clock" data-board-clock>09:41</span></p>
+            <p class="b-counts">
+              <span><i class="dot dot-amber"></i>Needs you <b data-board-count="needs">0</b></span>
+              <span><i class="dot dot-blue"></i>Agents <b data-board-count="agents">0</b></span>
+              <span><i class="dot dot-green"></i>Resolved <b data-board-count="done">0</b></span>
+            </p>
+          </header>
+          <div class="b-cols" aria-hidden="true"><span>Time</span><span>Message</span><span>Status</span></div>
+          <ol class="b-rows" data-board-rows></ol>
+          <footer class="b-foot">
+            <span>A morning, replayed. The merge and the reply wait for you.</span>
+            <button type="button" class="b-replay" data-board-replay hidden>Replay</button>
+          </footer>
+        </div>
+      </section>
     </div>
   </div>
 </section>
 
 <style>
-  .hero {
-    min-height: 100svh;
-  }
-
   .stage {
     display: grid;
     gap: 4rem;
-    align-content: end;
-    min-height: 100svh;
-    padding: 7rem var(--gutter) 3.5rem;
+    justify-items: center;
+    padding: 9rem var(--gutter) 5rem;
+    text-align: center;
+  }
+
+  .intro {
+    display: grid;
+    justify-items: center;
+    gap: 1.5rem;
   }
 
   .kicker {
     font-size: var(--t-small);
     font-weight: 500;
+    letter-spacing: 0.01em;
     color: var(--night-dim);
   }
 
   h1 {
-    font-size: var(--t-h1);
-    line-height: 0.98;
+    max-width: 13ch;
+    font-size: clamp(3rem, 6.4vw + 0.5rem, 6rem);
+    line-height: 1;
     letter-spacing: -0.038em;
-    font-weight: 580;
-    max-width: 11ch;
+    font-weight: 600;
   }
 
-  .beat-intro {
-    display: grid;
-    gap: 1.5rem;
-    max-width: min(44rem, 52vw);
+  /* Each word rises out of its own line (scripts/main.ts). */
+  h1 :global(.w) {
+    display: inline-block;
+    /* Room for descenders inside the mask. */
+    padding-block: 0.04em 0.14em;
+    margin-block: -0.04em -0.14em;
+    overflow: hidden;
+    vertical-align: top;
   }
 
-  .intro-side {
-    display: grid;
-    gap: 1.75rem;
+  h1 :global(.wi) {
+    display: inline-block;
+    transform-origin: 0 100%;
   }
 
-  .intro-side .lead {
-    font-size: var(--t-body);
-    max-width: 27rem;
+  .intro .lead {
+    max-width: 37rem;
+    margin-top: 0.25rem;
+    font-size: var(--t-lead);
+    color: var(--night-dim);
   }
 
   .actions {
     display: flex;
     flex-wrap: wrap;
+    justify-content: center;
     align-items: center;
-    gap: 1.5rem;
+    gap: 1rem 1.75rem;
+    margin-top: 0.75rem;
   }
 
   .meta {
@@ -128,25 +153,19 @@ import { download } from "../lib/download";
     transform: scale(1.08);
   }
 
-  .beat-line {
-    max-width: 22ch;
-    font-size: var(--t-h2);
-    line-height: 1.06;
-    letter-spacing: -0.03em;
-    font-weight: 560;
-  }
-
-  .soft {
+  .caption {
+    max-width: 24ch;
+    font-size: var(--t-h3);
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+    font-weight: 540;
     color: var(--night-dim);
   }
 
-  .cue {
-    display: none;
-  }
-
-  /* With script: one viewport, pinned, while the camera moves. Beats stack in one place. */
+  /* With script: one viewport, pinned, while the board rises and the day comes. */
   :global(html.js) .hero {
-    height: 420svh;
+    height: 360svh;
+    cursor: auto;
   }
 
   :global(html.js) .stage {
@@ -154,93 +173,368 @@ import { download } from "../lib/download";
     top: 0;
     display: block;
     height: 100svh;
-    min-height: 0;
-    overflow: hidden;
+    padding: 0;
+    /* Clipped, not scrollable: focusing a button in the board must never pan the stage. */
+    overflow: clip;
   }
 
-  /* A floor of shadow under the captions, so the words hold over white stone. */
-  :global(html.js) .stage::after {
-    content: "";
-    position: absolute;
-    inset: auto 0 0;
-    height: 55%;
-    background: linear-gradient(180deg, transparent, oklch(0.1 0.006 255 / 0.72));
-    opacity: var(--scrim, 1);
-    pointer-events: none;
-  }
-
-  :global(html.js) .beat {
-    z-index: 1;
+  :global(html.js) .intro {
     position: absolute;
     left: var(--gutter);
     right: var(--gutter);
-    bottom: clamp(2.5rem, 7svh, 4.5rem);
+    top: 46%;
+    z-index: 2;
+    translate: 0 -50%;
   }
 
-  :global(html.js) .beat-line {
+  :global(html.js) .caption {
+    position: absolute;
+    left: 50%;
+    top: max(5.5rem, 50% - var(--board-h, 32rem) / 2 - 7.5rem);
+    z-index: 2;
+    width: max-content;
+    max-width: min(30ch, 100vw - 2 * var(--gutter));
+    translate: -50% 0;
     opacity: 0;
     visibility: hidden;
   }
 
-  :global(html.js) .cue {
+  /* MARK: The board */
+
+  .board-wrap {
+    display: none;
+  }
+
+  /* Centred, rising out of the light as you scroll (scripts/main.ts moves it). */
+  :global(html.js) .board-wrap {
+    --row-h: 3.875rem;
+    --rows: 6;
     position: absolute;
     left: 50%;
-    bottom: 1.25rem;
-    display: grid;
-    justify-items: center;
-    gap: 0.625rem;
-    translate: -50% 0;
+    top: 50%;
+    z-index: 2;
+    display: block;
+    width: min(54rem, 100vw - 2 * var(--gutter));
+    translate: -50% -50%;
+    opacity: 0;
+  }
+
+  /* Drawn like the app's popover: black, one-pixel edges, rows ruled like a table. */
+  .board-face {
+    border-radius: 18px;
+    background: var(--ui-surface);
+    box-shadow:
+      inset 0 0 0 1px var(--ui-hairline),
+      inset 0 1px 0 rgb(255 255 255 / 0.1);
+    color: var(--ui-text);
+    font-size: 0.8125rem;
+    line-height: 1.35;
+    text-align: left;
+    transform-origin: 50% 60%;
+    will-change: transform;
+  }
+
+  .b-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    padding: 0.875rem 1.125rem;
+  }
+
+  .b-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+  }
+
+  .b-clock {
+    font-family: var(--mono);
     font-size: 0.75rem;
-    color: var(--night-faint);
+    font-weight: 400;
+    color: var(--ui-faint);
+    font-variant-numeric: tabular-nums;
   }
 
-  .cue i {
-    position: relative;
-    width: 1px;
-    height: 2.25rem;
+  .b-counts {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.75rem;
+    color: var(--ui-dim);
+  }
+
+  .b-counts span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .b-counts b {
+    display: inline-block;
+    min-width: 1ch;
+    font-weight: 500;
+    color: var(--ui-text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .b-counts .dot {
+    width: 0.375rem;
+    height: 0.375rem;
+  }
+
+  .b-cols,
+  .b-rows :global(.row) {
+    display: grid;
+    grid-template-columns: 2.75rem minmax(0, 1fr) 10.5rem;
+    gap: 0 1rem;
+    padding-inline: 1.125rem;
+  }
+
+  .b-cols {
+    padding-block: 0.375rem;
+    box-shadow: inset 0 1px 0 var(--ui-hairline);
+    font-size: 0.6875rem;
+    color: var(--ui-faint);
+  }
+
+  .b-rows {
+    height: calc(var(--rows) * var(--row-h));
+    margin: 0;
+    padding: 0;
     overflow: hidden;
-    background: oklch(1 0 0 / 0.15);
+    list-style: none;
   }
 
-  .cue i::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: var(--night-ink);
-    animation: cue 2.2s var(--ease-in-out) infinite;
+  .b-rows :global(.row) {
+    align-items: start;
+    height: var(--row-h);
+    padding-top: 0.75rem;
+    box-shadow: inset 0 1px 0 var(--ui-hairline);
+    transition: background-color 200ms var(--ease-out);
   }
 
-  @keyframes cue {
+  .b-rows :global(.row:hover) {
+    background: rgb(255 255 255 / 0.025);
+  }
+
+  .b-rows :global(.time) {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    /* On the title's line. */
+    line-height: calc(0.8125rem * 1.35);
+    color: var(--ui-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .b-rows :global(.what),
+  .b-rows :global(.state) {
+    display: grid;
+    gap: 0.25rem;
+    min-width: 0;
+  }
+
+  .b-rows :global(.title),
+  .b-rows :global(.src),
+  .b-rows :global(.note) {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .b-rows :global(.title) {
+    font-weight: 500;
+  }
+
+  .b-rows :global(.src) {
+    font-family: var(--mono);
+    font-size: 0.6875rem;
+    color: var(--ui-faint);
+  }
+
+  .b-rows :global(.label) {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .b-rows :global(.txt) {
+    display: inline-block;
+  }
+
+  .b-rows :global(.dot) {
+    transition: color 400ms var(--ease-out);
+  }
+
+  .b-rows :global(.dot-hollow) {
+    color: var(--ui-faint);
+    background: transparent;
+    box-shadow: inset 0 0 0 1.5px currentColor;
+  }
+
+  /* Live work breathes; reading shimmers. Nothing else moves on its own. */
+  .b-rows :global(.dot.live) {
+    animation: live 1.8s var(--ease-out) infinite;
+  }
+
+  @keyframes live {
     0% {
-      translate: 0 -100%;
+      box-shadow: 0 0 0 0 oklch(0.63 0.19 252 / 0.6);
     }
-    60%,
     100% {
-      translate: 0 100%;
+      box-shadow: 0 0 0 6px oklch(0.63 0.19 252 / 0);
     }
   }
 
-  @media (max-width: 860px) {
-    .beat-intro {
-      max-width: none;
+  .b-rows :global(.row.reading .txt) {
+    animation: reading 1.2s ease-in-out infinite alternate;
+  }
+
+  @keyframes reading {
+    to {
+      opacity: 0.45;
     }
-    /* The arch stands behind the words here; a scrim keeps them readable. */
-    :global(html.js) .beat-intro::before {
-      content: "";
-      position: absolute;
-      inset: -40vh calc(-1 * var(--gutter)) -6rem;
-      z-index: -1;
-      background: linear-gradient(180deg, transparent, oklch(0.12 0.006 255 / 0.85) 45%);
-      pointer-events: none;
+  }
+
+  /* Under the label, one of three: the session's steps, your one next step, or the evidence. */
+  .b-rows :global(.sub) {
+    display: grid;
+    align-items: center;
+    height: 1.5rem;
+  }
+
+  .b-rows :global(.sub > *) {
+    grid-area: 1 / 1;
+    opacity: 0;
+    visibility: hidden;
+    translate: 0 30%;
+    transition:
+      opacity 320ms var(--ease-out),
+      translate 420ms var(--ease-out),
+      visibility 0s 420ms;
+  }
+
+  .b-rows :global(.row[data-sub="track"] .track),
+  .b-rows :global(.row[data-sub="action"] .act),
+  .b-rows :global(.row[data-sub="note"] .note) {
+    opacity: 1;
+    visibility: visible;
+    translate: 0 0;
+    transition:
+      opacity 320ms var(--ease-out) 80ms,
+      translate 420ms var(--ease-out) 80ms;
+  }
+
+  .b-rows :global(.track) {
+    display: flex;
+    gap: 3px;
+  }
+
+  .b-rows :global(.track i) {
+    width: 1rem;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--ui-track);
+    box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.12);
+    transition: background-color 500ms var(--ease-out);
+  }
+
+  .b-rows :global(.track .done) {
+    background: var(--ui-mark);
+    box-shadow: none;
+  }
+
+  .b-rows :global(.track .now-blue) {
+    background: var(--blue);
+    box-shadow: none;
+  }
+
+  .b-rows :global(.track .now-amber) {
+    background: var(--amber);
+    box-shadow: none;
+  }
+
+  .b-rows :global(.act) {
+    justify-self: start;
+    height: 1.5rem;
+    padding: 0 0.625rem;
+    border: 0;
+    border-radius: 6px;
+    background: #ededed;
+    color: #000;
+    font-size: 0.75rem;
+    font-weight: 520;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+      background-color 160ms var(--ease-out),
+      transform 160ms var(--ease-out),
+      opacity 320ms var(--ease-out) 80ms,
+      translate 420ms var(--ease-out) 80ms;
+  }
+
+  .b-rows :global(.act:hover) {
+    background: #fff;
+  }
+
+  .b-rows :global(.act:active) {
+    transform: scale(0.94);
+  }
+
+  .b-rows :global(.note) {
+    font-size: 0.6875rem;
+    color: var(--ui-faint);
+  }
+
+  .b-foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.625rem 1.125rem 0.75rem;
+    box-shadow: inset 0 1px 0 var(--ui-hairline);
+    font-size: 0.6875rem;
+    color: var(--ui-faint);
+  }
+
+  .b-replay {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--ui-text);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .b-replay:hover {
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+
+  @media (max-width: 1180px) {
+    .b-cols,
+    .b-rows :global(.row) {
+      grid-template-columns: minmax(0, 1fr) 9.5rem;
     }
-    :global(html.js) .cue {
+    .b-cols span:first-child,
+    .b-rows :global(.time) {
       display: none;
     }
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    .cue i::after {
-      animation: none;
+  @media (max-width: 760px) {
+    :global(html.js) .board-wrap {
+      --rows: 5;
+    }
+    .b-cols,
+    .b-foot span,
+    .b-counts span:last-child {
+      display: none;
     }
   }
+
 </style>

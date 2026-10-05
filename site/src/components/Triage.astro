@@ -2,80 +2,10 @@
 // Day. What happens to each message: rules first, then Jev's answers as probabilities, then
 // a route. Rows play in as you reach them; the bars fill to their numbers.
 
-type Route = { label: string; dot: "blue" | "amber" | "grey" };
-interface Row {
-  /** What the policy does with it (scripts/main.ts re-routes as the threshold moves). */
-  kind: "alert" | "inbox" | "rule";
-  from: string;
-  who: string;
-  text: string;
-  answers: [string, number][] | null;
-  note?: string;
-  route: Route;
-}
-
-const rows: Row[] = [
-  {
-    kind: "alert",
-    from: "#alerts-api",
-    who: "Monitor",
-    text: "5xx rate 3.1% on /v4/orders over 5 minutes",
-    answers: [
-      ["Needs action now", 93],
-      ["An agent can fix it", 86],
-      ["A teammate is on it", 5],
-    ],
-    route: { label: "Agent starts", dot: "blue" },
-  },
-  {
-    kind: "inbox",
-    from: "Direct message",
-    who: "Priya",
-    text: "Should we ship the pricing change today, or hold it for Monday?",
-    answers: [
-      ["Waiting on you", 96],
-      ["An agent can do it", 4],
-      ["Already answered", 2],
-    ],
-    route: { label: "Needs you", dot: "amber" },
-  },
-  {
-    kind: "inbox",
-    from: "#eng-api",
-    who: "Jonas",
-    text: "@you the orders page 500s when region is empty, can you take a look?",
-    answers: [
-      ["Waiting on you", 91],
-      ["An agent can do it", 78],
-      ["Already answered", 3],
-    ],
-    route: { label: "Agent drafts, you send", dot: "blue" },
-  },
-  {
-    kind: "alert",
-    from: "#alerts-billing",
-    who: "Monitor",
-    text: "Invoice job failed 3 times in a row",
-    answers: [
-      ["Needs action now", 88],
-      ["An agent can fix it", 71],
-      ["A teammate is on it", 82],
-    ],
-    route: { label: "Sam is on it", dot: "grey" },
-  },
-  {
-    kind: "rule",
-    from: "#alerts-releases",
-    who: "Deploy bot",
-    text: "web v2.15.0 deployed to production",
-    answers: null,
-    note: "Matched a rule: a successful deploy. No model call.",
-    route: { label: "Filtered", dot: "grey" },
-  },
-];
+import { triageRows as rows } from "../lib/messages";
 ---
 
-<section class="triage day" id="triage" aria-labelledby="triage-title">
+<section class="triage day" id="triage" data-sheet data-tone="sunk" aria-labelledby="triage-title">
   <div class="wrap">
     <div class="intro">
       <h2 id="triage-title" class="display">One question for every message.</h2>
@@ -153,7 +83,11 @@ const rows: Row[] = [
 <style>
   .triage {
     padding-block: clamp(6rem, 14vh, 10rem);
-    background: var(--day-sunk);
+  }
+
+  /* It slides in over the notch's last screen. */
+  :global(html.js) .triage {
+    margin-top: -100svh;
   }
 
   .intro {
