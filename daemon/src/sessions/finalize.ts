@@ -162,7 +162,8 @@ export const decideOutcome = ({ session, result, alert, pushed, head, adversaria
           ...milestones,
           prOpened: true,
           ...(restart ? { critiqued: false, ciGreen: false, merged: false, released: false, deployed: false } : {}),
-          ...(review !== null ? { critiqued: false } : {}),
+          // A review and a CI run hold for the head they read: on any other, they are to come (the ship loop reads CI again).
+          ...(shipTo === "ci" && !passed ? { critiqued: false, ciGreen: false } : {}),
         },
         ...(restart ? { mergeRequestedAt: null, releaseTag: null, review: null, deployStage: null, critiqueRounds: 0, critique: null } : {}),
         ...(review ?? onward),

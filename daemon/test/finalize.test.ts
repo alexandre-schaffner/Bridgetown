@@ -187,6 +187,15 @@ describe("decideOutcome", () => {
       expect(d.patch.status).toBe("ci")
     })
 
+    test("CI and a passed review hold for their head: new commits are reviewed and checked again", () => {
+      const green = running({ prUrl: "https://ghe/pull/1", critique: passed, milestones: { ...NO_MILESTONES, prOpened: true, critiqued: true, ciGreen: true } })
+      expect(decide({ session: green, head: "def", adversarialReview: true, result: fix }).patch.milestones).toMatchObject({ critiqued: false, ciGreen: false })
+      // With the review off, the old pass is no evidence for the new head either.
+      expect(decide({ session: green, head: "def", adversarialReview: false, result: fix }).patch).toMatchObject({ status: "ci", milestones: { critiqued: false, ciGreen: false } })
+      // The head the review passed: both stand.
+      expect(decide({ session: green, head: "abc", adversarialReview: true, result: fix }).patch.milestones).toMatchObject({ critiqued: true, ciGreen: true })
+    })
+
     test("a side turn on a merged session never goes back to review", () => {
       const deploying = running({ prUrl: "https://ghe/pull/1", milestones: { ...NO_MILESTONES, prOpened: true, merged: true, released: true } })
       expect(decide({ session: deploying, head: "new", adversarialReview: true, result: fix }).patch.status).toBe("deploying")
