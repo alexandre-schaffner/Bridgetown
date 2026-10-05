@@ -1,30 +1,26 @@
 ---
 // Night, last. The arch at rest, and the one thing to do next.
 import ArchMark from "./ArchMark.astro";
-import { site } from "../site";
+import Icon from "./Icon.astro";
+import { download } from "../lib/download";
 ---
 
-<section class="finale night" id="access" data-finale data-land="stage" aria-labelledby="access-title">
+<section class="finale night" id="download" data-finale data-land="stage" aria-labelledby="download-title">
   <div class="stage">
     <div class="ask">
-      <h2 id="access-title" class="display">Let the agents take the first pass.</h2>
-      <p class="lead">
-        Bridgetown is in early access for teams on macOS 14 or later, with Slack, GitHub and Claude Code.
-      </p>
-      <form class="form" data-access-form data-endpoint={site.accessEndpoint} novalidate>
-        <label class="visually-hidden" for="access-email">Work email</label>
-        <input
-          id="access-email"
-          name="email"
-          type="email"
-          autocomplete="email"
-          required
-          placeholder="you@company.com"
-          aria-describedby="access-status"
-        />
-        <button class="button button-light" type="submit">Request early access</button>
-        <p id="access-status" class="status" role="status" aria-live="polite"></p>
-      </form>
+      <h2 id="download-title" class="display">Let the agents take the first pass.</h2>
+      <p class="lead">Works with the Slack, GitHub and Claude&nbsp;Code you already use.</p>
+      <div class="get">
+        <a class="button button-light" href={download.url} data-download>
+          <Icon name="download" size={15} stroke={2.2} />
+          Download for macOS
+        </a>
+        <p class="meta mono">{download.meta}</p>
+        <p class="note">
+          Not notarized yet. On first launch, open System Settings → Privacy &amp; Security → Open Anyway.
+          <a href={download.notes}>Release notes and signatures</a>
+        </p>
+      </div>
     </div>
 
     <footer class="foot">
@@ -90,65 +86,38 @@ import { site } from "../site";
     max-width: 30rem;
   }
 
-  .form {
+  /* Smoked glass: the arch is bright right behind it. */
+  .get {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 0.5rem;
+    justify-items: center;
+    gap: 0.75rem;
     width: min(100%, 30rem);
     margin-top: 1rem;
-    padding: 0.375rem;
-    border-radius: 999px;
-    /* Smoked glass: the arch is bright right behind it. */
+    padding: 0.5rem 1.5rem 1.25rem;
+    border-radius: 1.75rem;
     background: oklch(0.14 0.006 255 / 0.62);
     box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.18);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
   }
 
-  input {
-    min-width: 0;
-    height: 2.875rem;
-    padding: 0 1rem;
-    border: 0;
-    border-radius: 999px;
-    background: transparent;
-    color: var(--night-ink);
+  .get .button {
+    margin-top: 0.75rem;
   }
 
-  input::placeholder {
-    color: var(--night-faint);
+  .meta {
+    color: var(--night-dim);
   }
 
-  input:focus-visible {
-    outline: none;
-  }
-
-  .form:focus-within {
-    box-shadow:
-      inset 0 0 0 1px oklch(1 0 0 / 0.32),
-      0 0 0 4px oklch(0.63 0.19 252 / 0.35);
-  }
-
-  .button[disabled] {
-    opacity: 0.6;
-    cursor: progress;
-  }
-
-  .status {
-    grid-column: 1 / -1;
-    min-height: 1.25rem;
-    padding-inline: 1rem;
+  .note {
     font-size: var(--t-small);
     color: var(--night-dim);
-    text-align: left;
   }
 
-  .status:empty {
-    display: none;
-  }
-
-  .status:global(.error) {
-    color: oklch(0.78 0.13 30);
+  .note a {
+    display: block;
+    margin-top: 0.25rem;
+    color: var(--night-ink);
   }
 
   .foot {
@@ -177,12 +146,5 @@ import { site } from "../site";
     gap: 0.5rem;
     color: var(--night-ink);
     font-weight: 560;
-  }
-
-  @media (max-width: 560px) {
-    .form {
-      grid-template-columns: 1fr;
-      border-radius: 1.5rem;
-    }
   }
 </style>

@@ -1,5 +1,6 @@
 ---
 import Icon from "./Icon.astro";
+import { download } from "../lib/download";
 // Night. The arch stands in the dark with the light behind it; scrolling walks the camera
 // through the opening until the light is all there is. Three captions play on the way.
 ---
@@ -15,12 +16,16 @@ import Icon from "./Icon.astro";
           agents the work they can finish, and brings you the rest.
         </p>
         <div class="actions">
-          <a class="button button-light" href="#access">Request early access</a>
+          <a class="button button-light" href={download.url} data-download>
+            <Icon name="download" size={15} stroke={2.2} />
+            Download for macOS
+          </a>
           <button class="watch" type="button" data-open-film="launch">
             <span class="disc"><Icon name="play" size={12} stroke={2.4} /></span>
             Watch the film
           </button>
         </div>
+        <p class="meta mono">{download.meta}</p>
       </div>
     </div>
 
@@ -86,6 +91,11 @@ import Icon from "./Icon.astro";
     flex-wrap: wrap;
     align-items: center;
     gap: 1.5rem;
+  }
+
+  .meta {
+    margin-top: -0.5rem;
+    color: var(--night-faint);
   }
 
   .watch {
