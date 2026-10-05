@@ -32,6 +32,12 @@ export const ghRefusal = (args: ReadonlyArray<Word>): string | undefined => {
   const [group, sub] = positional
   if (positional.some((word) => word.dynamic)) return REASONS.dynamic
   const has = (flag: string) => args.some((arg) => arg.text === flag || arg.text.startsWith(`${flag}=`))
+  const runtimeFlag = (valueFlags: ReadonlySet<string>, takesId: boolean) =>
+    runtimeFlagRefusal(
+      args.filter((arg) => arg !== group && arg !== sub),
+      valueFlags,
+      takesId,
+    )
   switch (group?.text) {
     case "pr":
       switch (sub?.text) {
@@ -43,11 +49,11 @@ export const ghRefusal = (args: ReadonlyArray<Word>): string | undefined => {
         case "comment":
           return undefined
         case "checks":
-          return has("--watch") || has("-w") ? REASONS.watch : undefined
+          return runtimeFlag(PR_CHECKS_VALUE_FLAGS, true) ?? (has("--watch") || has("-w") ? REASONS.watch : undefined)
         case "create":
-          return prCreateRefusal(args)
+          return runtimeFlag(PR_CREATE_VALUE_FLAGS, false) ?? prCreateRefusal(args)
         case "edit":
-          return has("--add-reviewer") || has("--base") || has("-B") ? REASONS.review : undefined
+          return runtimeFlag(PR_EDIT_VALUE_FLAGS, true) ?? (has("--add-reviewer") || has("--base") || has("-B") ? REASONS.review : undefined)
         default:
           return sub?.text === "merge" ? REASONS.merge : REASONS.ghCommand
       }
@@ -63,13 +69,48 @@ export const ghRefusal = (args: ReadonlyArray<Word>): string | undefined => {
       return undefined
     case "auth":
       // The token itself must stay out of reach; status may reveal it with these flags.
-      return sub?.text === "status" && !has("-t") && !has("--show-token") ? undefined : REASONS.ghCommand
+      if (sub?.text !== "status") return REASONS.ghCommand
+      return runtimeFlag(AUTH_STATUS_VALUE_FLAGS, false) ?? (has("-t") || has("--show-token") ? REASONS.ghCommand : undefined)
     case "api":
       return ghApiRefusal(args.slice(args.findIndex((arg) => arg === group) + 1))
     default:
       return REASONS.ghCommand
   }
 }
+
+/**
+ * Where a `gh` command's verdict rests on its flags (`--watch`, `--base`, `--draft`,
+ * `--show-token`), a word known only at runtime could become one of them. Only two may
+ * be dynamic: the pull request's id, the first positional (`gh pr checks $PR`; the
+ * exec-time guard sees what it expands to), and a value flag's value that stays one
+ * word (`--body "$(cat …)"`, `--title="$T"`). A computed flag name, a value outside
+ * quotes (`--body $B` may be `x --base main`) or any other computed word is refused.
+ */
+const runtimeFlagRefusal = (args: ReadonlyArray<Word>, valueFlags: ReadonlySet<string>, takesId: boolean): string | undefined => {
+  let idSlot = takesId
+  for (let i = 0; i < args.length; i++) {
+    const word = args[i]
+    if (word === undefined) break
+    if (valueFlags.has(word.text)) {
+      if (args[i + 1]?.splits) return REASONS.computedFlag
+      i++
+    } else if (word.text.startsWith("-")) {
+      if (word.splits || /[$`]/.test(word.text.split("=")[0] ?? "")) return REASONS.computedFlag
+    } else if (idSlot) {
+      idSlot = false
+    } else if (word.dynamic) {
+      return REASONS.computedFlag
+    }
+  }
+  return undefined
+}
+
+const PR_CHECKS_VALUE_FLAGS = flags("-i", "--interval", "-q", "--jq", "-t", "--template", "--json", "-R", "--repo")
+const PR_EDIT_VALUE_FLAGS = flags(
+  ...["-t", "--title", "-b", "--body", "-F", "--body-file", "-B", "--base", "-m", "--milestone", "-R", "--repo"],
+  ...["--add-label", "--remove-label", "--add-reviewer", "--remove-reviewer", "--add-assignee", "--remove-assignee", "--add-project", "--remove-project"],
+)
+const AUTH_STATUS_VALUE_FLAGS = flags("-h", "--hostname", "-q", "--jq", "--json", "--template")
 
 /** `gh pr create` options whose value is the next word: `--body --draft` sets the body, not the draft. */
 const PR_CREATE_VALUE_FLAGS = flags(
@@ -102,17 +143,20 @@ const ghApiRefusal = (args: ReadonlyArray<Word>): string | undefined => {
   let endpoint: string | undefined
   for (let i = 0; i < args.length; i++) {
     const word = args[i]
-    const text = word?.text ?? ""
+    if (word === undefined) break
+    const text = word.text
     const next = args[i + 1]
+    // A word outside quotes splits at runtime and could add -X, -f or --input (`--jq $Q`, `-f q=$Q`), turning a read into a write.
+    if (word.splits || (next?.splits && (GH_API_FIELD_FLAGS.has(text) || GH_API_VALUE_FLAGS.has(text)))) return REASONS.computedFlag
     if (text === "-X" || text === "--method") {
       if (next?.dynamic) return REASONS.dynamic
       method = next?.text.toUpperCase()
       i++
     } else if (text.startsWith("--method=")) {
-      if (word?.dynamic) return REASONS.dynamic
+      if (word.dynamic) return REASONS.dynamic
       method = text.slice("--method=".length).toUpperCase()
     } else if (/^-X./.test(text)) {
-      if (word?.dynamic) return REASONS.dynamic
+      if (word.dynamic) return REASONS.dynamic
       method = text.slice(2).toUpperCase()
     } else if (GH_API_FIELD_FLAGS.has(text)) {
       fields = true
@@ -121,10 +165,10 @@ const ghApiRefusal = (args: ReadonlyArray<Word>): string | undefined => {
       fields = true
     } else if (GH_API_VALUE_FLAGS.has(text)) {
       i++
-    } else if (!text.startsWith("-") && !word?.dynamic && endpoint === undefined) {
+    } else if (!text.startsWith("-") && !word.dynamic && endpoint === undefined) {
       endpoint = text
-    } else if (word?.dynamic) {
-      // A dynamic word undergoes word-splitting and could introduce -X/-f/--input, turning a read into a write (`gh api …/merge $X`). It cannot be checked, so it is refused. The value of a known value flag is consumed above and never reaches here.
+    } else if (word.dynamic) {
+      // A computed flag could be -X or -f. The value of a known value flag is consumed above and never reaches here.
       return REASONS.dynamic
     }
   }

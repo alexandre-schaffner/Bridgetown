@@ -244,6 +244,18 @@ describe("guard", () => {
     "declare -x GIT_SSH_COMMAND='gh pr merge 1'",
     "read GIT_SSH_COMMAND < cmd.txt; export GIT_SSH_COMMAND; git fetch",
     'export "$N=gh pr merge 1"',
+    // A computed word in a gh command whose verdict rests on its flags could become one (`$X` = `--base release`, a file named `--watch`).
+    "gh pr edit 1 $X",
+    "gh pr checks 1 $X",
+    "gh pr checks 1 *",
+    "gh pr edit 1 --body $B",
+    'gh pr edit 1 "-$X"',
+    "gh pr create --draft $X",
+    "gh pr create --draft --title $T",
+    "gh auth status $X",
+    // An unquoted value in `gh api` splits into flags (`-X PUT`).
+    "gh api repos/o/r/issues --jq $Q",
+    "gh api -X GET search/issues -f q=$Q",
     // ./envshebang.sh runs by path with an `env -S bash` shebang: still shell, still checked.
     "./envshebang.sh",
     // Deep nesting is reported, not crashed through (fail closed).
@@ -322,6 +334,16 @@ describe("guard", () => {
     'export PATH="$PWD/node_modules/.bin:$PATH"',
     "export NODE_ENV=test && bun test",
     "env -i PATH=/usr/bin:/bin bun test",
+    // A computed PR id, or a quoted value of a value flag, stays one non-flag word.
+    "gh pr checks $PR",
+    'gh pr checks "$PR"',
+    "gh pr view $PR",
+    "gh run view $RUN --log-failed",
+    'gh pr edit $PR --body "$B"',
+    'gh pr edit "$PR" --title="$T"',
+    `gh pr create --draft --title "$T" --body "$(cat <<'EOF'\n## Summary\nfixed\nEOF\n)"`,
+    'gh auth status --hostname "$GH_HOST"',
+    'gh api -X GET search/issues -f q="$Q"',
   ]
   for (const command of stillAllowed) {
     test(`allows: ${JSON.stringify(command)}`, () => expect(refusal(command, context)).toBeUndefined())
@@ -353,6 +375,21 @@ describe("shell parser", () => {
     const parsed = parseShell(deep)
     expect(parsed._tag).toBe("Unparsable")
     if (parsed._tag === "Unparsable") expect(parsed.reason).toBe("too deeply nested")
+  })
+  test("a word with an expansion or glob outside quotes may split at runtime", () => {
+    const words = (source: string) => {
+      const parsed = parseShell(source)
+      return parsed._tag === "Parsed" ? parsed.commands.flat().map((w) => [w.text, w.dynamic, w.splits]) : parsed.reason
+    }
+    expect(words(`c $X "$X" "a"$X --b="$X" *.ts '*'`)).toEqual([
+      ["c", false, false],
+      ["$X", true, true],
+      ["$X", true, false],
+      ["a$X", true, true],
+      ["--b=$X", true, false],
+      ["*.ts", true, true],
+      ["*", false, false],
+    ])
   })
   test("sibling substitutions do not accumulate nesting", () => {
     expect(parseShell(`echo ${"$(a) ".repeat(500)}`)._tag).toBe("Parsed")

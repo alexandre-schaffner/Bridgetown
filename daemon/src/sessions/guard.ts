@@ -142,7 +142,7 @@ const xargsReplstr = (args: ReadonlyArray<Word>): string | undefined => {
 }
 
 /** A word whose value is only known at runtime, appended so a wrapper that feeds extra arguments (xargs from stdin) cannot smuggle a subcommand past the gate. */
-const RUNTIME_WORD: Word = { text: "", dynamic: true, quoted: false }
+const RUNTIME_WORD: Word = { text: "", dynamic: true, splits: true, quoted: false }
 
 const checkCommand = (command: Command, scope: Scope): string | undefined => {
   let argv = [...command]

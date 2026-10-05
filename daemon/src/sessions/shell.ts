@@ -11,6 +11,8 @@ export interface Word {
   readonly text: string
   /** Holds an expansion, substitution or glob, so its runtime value is unknown. */
   readonly dynamic: boolean
+  /** Holds one outside quotes, so at runtime it may become several words, or none: `$X` may be `1 --watch`. */
+  readonly splits: boolean
   /** Some part of it was quoted; a quoted heredoc delimiter disables expansion of the body. */
   readonly quoted: boolean
 }
@@ -132,7 +134,7 @@ class Parser {
     if (this.peek() === "(") {
       this.i++
       this.parseList(")")
-      return { _tag: "Substitution", word: { text: `${op}(…)`, dynamic: true, quoted: false } }
+      return { _tag: "Substitution", word: { text: `${op}(…)`, dynamic: true, splits: false, quoted: false } }
     }
     if (op === "<" && this.peek() === "<") {
       this.i++
@@ -173,6 +175,7 @@ class Parser {
     let text = ""
     let unquoted = ""
     let dynamic = false
+    let splits = false
     let quoted = false
     let plainDigits = true
     while (!this.done && !WORD_END.has(this.peek())) {
@@ -212,7 +215,7 @@ class Parser {
       } else if (c === "$" || c === "`") {
         const expansion = this.readExpansion()
         text += expansion
-        dynamic ||= expansion !== "$"
+        splits ||= expansion !== "$"
         plainDigits = false
       } else {
         text += c
@@ -221,8 +224,8 @@ class Parser {
         this.i++
       }
     }
-    dynamic ||= PATTERN.test(unquoted)
-    return { word: { text, dynamic, quoted }, fd: plainDigits && text !== "" }
+    splits ||= PATTERN.test(unquoted)
+    return { word: { text, dynamic: dynamic || splits, splits, quoted }, fd: plainDigits && text !== "" }
   }
 
   /** `$'…'`: escapes decoded, nothing expanded. */
