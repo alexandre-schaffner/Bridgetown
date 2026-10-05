@@ -299,6 +299,10 @@ export const findingsUnanswered = (critique: Critique | null): boolean =>
 export const passedAt = (critique: Critique | null, head: string | null): boolean =>
   critique !== null && head !== null && critique.sha === head && critiquePassed(critique)
 
+/** What Bridgetown sent the agent back to fix while shipping: red CI, a reviewer's requested changes, a failed deploy. */
+export const SentBack = Schema.Literals(["ci", "changes", "deploy"])
+export type SentBack = typeof SentBack.Type
+
 export const NO_MILESTONES = {
   diagnosed: false,
   fixed: false,
@@ -371,6 +375,8 @@ export const Session = Schema.Struct({
   releaseTag: nullByDefault(Schema.String),
   /** The release tracker's last state seen for this session's deploy. Only a change moves the session. */
   deployStage: nullByDefault(ReleaseState),
+  /** Set with a send-back, cleared by the turn that answers it: a result without a fix then comes to you. */
+  sentBack: nullByDefault(SentBack),
   startedAt: Schema.String,
   updatedAt: Schema.String,
 })

@@ -19,8 +19,8 @@ import { makeTurnInput, makeTurns, type TurnInput, userMessage } from "./turn.ts
 import { newSession } from "./new-session.ts"
 import { createWorktree } from "./worktree.ts"
 
-/** What Bridgetown may set along with a turn it asks for (CI round, review handled…). Status is the runner's. */
-export type TurnPatch = Partial<Pick<Session, "phase" | "activity" | "ciRounds" | "review">>
+/** What Bridgetown may set along with a turn it asks for (CI round, review handled, what it is sent back for…). Status is the runner's. */
+export type TurnPatch = Partial<Pick<Session, "phase" | "activity" | "ciRounds" | "review" | "deployStage" | "sentBack">>
 
 /**
  * What happened to a message or prompt: sent into the running turn (the agent

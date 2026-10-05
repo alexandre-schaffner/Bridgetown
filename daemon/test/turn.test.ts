@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { Effect, Fiber } from "effect"
-import type { Session } from "../src/domain/model.ts"
+import { NO_MILESTONES, type Session } from "../src/domain/model.ts"
 import { Asks } from "../src/sessions/asks.ts"
 import { SessionRepo } from "../src/sessions/repo.ts"
-import { SessionRunner } from "../src/sessions/runner.ts"
+import { SessionRunner, type SessionRunnerShape } from "../src/sessions/runner.ts"
+import type { GitHubShape } from "../src/ship/github.ts"
+import { Shipper } from "../src/ship/shipper.ts"
 import { Store } from "../src/store/store.ts"
 import { init, type Play, playingAgent, RESULT } from "./fixtures/agent.ts"
 import { makeAlert, makeSession } from "./fixtures/records.ts"
@@ -15,19 +17,36 @@ const OWN_PR = "https://nocturlab.ghe.com/Merkl/monorepo/pull/3401"
 /** Handed back with its worktree and agent conversation: your message starts a resumed turn. */
 const handedBack = (id: string): Session => makeSession("waiting", { id, alertId: `C1:${id}`, worktree: "/w", claudeSessionId: "c", outcome: "needs_human" })
 
-/** Seeds a handed-back session, sends it a message, and waits until its turn is over. */
-const turnOf = async (plays: ReadonlyArray<Play>) => {
+/** GitHub that knows nothing and changes nothing. */
+const quietGitHub: GitHubShape = {
+  viewPr: () => Effect.die("no PR in these tests"),
+  mergePr: () => Effect.void,
+  rerunFailedJobs: () => Effect.void,
+  nextPatchTag: (_repo, prefix) => Effect.succeed(`${prefix}-v0.0.1`),
+  tagExists: () => Effect.succeed(false),
+  createRelease: () => Effect.void,
+  branchHead: () => Effect.succeed(null),
+  prHead: () => Effect.succeed(null),
+  markReady: () => Effect.void,
+  reachability: Effect.succeed("ok"),
+}
+
+/** Seeds a session (handed back unless `session` says otherwise), starts a turn on it, and waits until the turn is over. */
+const turnOf = async (
+  plays: ReadonlyArray<Play>,
+  session: Session = handedBack("s_turn"),
+  start: (runner: SessionRunnerShape) => Effect.Effect<unknown, unknown, Shipper> = (runner) => runner.message(session.id, "go"),
+) => {
   const { agent } = playingAgent(plays)
-  const world = makeWorld({ agent })
+  const world = makeWorld({ agent, github: quietGitHub })
   try {
     return await world.runPromise(
       Effect.gen(function* () {
         const store = yield* Store
         const runner = yield* SessionRunner
-        const session = handedBack("s_turn")
         yield* store.putAlert(makeAlert({ id: session.alertId, sessionId: session.id }))
         yield* store.putSession(session)
-        yield* runner.message(session.id, "go")
+        yield* start(runner)
         while (yield* runner.busy(session.id)) yield* Effect.sleep("10 millis")
         return {
           session: yield* store.getSession(session.id),
@@ -106,5 +125,23 @@ describe("asks", () => {
     } finally {
       await world.dispose()
     }
+  })
+})
+
+describe("send-backs", () => {
+  test("a failed deploy sent back and answered with a revert recommendation is handed to you", async () => {
+    const deploying = makeSession("deploying", {
+      id: "s_deploy", alertId: "C1:deploy", worktree: "/w", claudeSessionId: "c", prUrl: OWN_PR, outcome: "fix_pr", rootCauseFound: true,
+      release: { image: "merkl-api", tag: "api-v1.2.3", version: "v1.2.3" },
+      milestones: { ...NO_MILESTONES, prOpened: true, ciGreen: true, merged: true, released: true },
+    })
+    const tracker = makeAlert({
+      id: "C1:tracker",
+      fields: { _tag: "release", image: "merkl-api", version: "v1.2.3", actor: null, runId: null, runUrl: null, tag: "api-v1.2.3", stages: [{ name: "Production", status: "failure", detail: "ETL deploy failed" }] },
+    })
+    const revert = { ...RESULT, outcome: "recommendation" as const, recommendation: "revert" as const, recommendationDetail: "Revert the PR" }
+    const out = await turnOf([{ kind: "result", output: revert }], deploying, () => Shipper.use((shipper) => shipper.trackDeploy(tracker)))
+    expect(out.session).toMatchObject({ status: "waiting", sentBack: null, outcome: "recommendation", milestones: { released: true, deployed: false } })
+    expect(out.cards).toEqual(["review: Deploy failed · t"])
   })
 })

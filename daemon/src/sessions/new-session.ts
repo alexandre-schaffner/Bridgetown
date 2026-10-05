@@ -46,6 +46,7 @@ export const newSession = (alert: Alert, id: string, repoPath: string): Session 
     mergeRequestedAt: null,
     releaseTag: null,
     deployStage: null,
+    sentBack: null,
     startedAt: now(),
     updatedAt: now(),
   }

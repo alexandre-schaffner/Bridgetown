@@ -1,13 +1,13 @@
 import { Context, Effect, Layer } from "effect"
 import { ActionQueue } from "../actions/queue.ts"
 import type { AdapterError, GitHubError } from "../domain/errors.ts"
-import type { Alert, Session } from "../domain/model.ts"
+import type { Alert, SentBack, Session } from "../domain/model.ts"
 import { releaseState } from "../domain/release.ts"
 import { Hub } from "../hub.ts"
 import { ciFailedPrompt, deployFailedPrompt, reviewChangesPrompt } from "../sessions/prompts.ts"
 import { cannotResume, makeHandOff } from "../sessions/hand-off.ts"
 import { SessionRepo } from "../sessions/repo.ts"
-import { SessionRunner } from "../sessions/runner.ts"
+import { SessionRunner, type TurnPatch } from "../sessions/runner.ts"
 import { removeWorktree } from "../sessions/worktree.ts"
 import { SlackThread } from "../slack/thread.ts"
 import { Store } from "../store/store.ts"
@@ -61,7 +61,7 @@ export const ShipperLive = Layer.effect(Shipper)(
       })
 
     /** Another round for the agent, or a hand-off once the CI-round budget is spent. */
-    const escalate = (session: Session, escalation: Escalation, prompt: string, patch: Partial<Session> = {}) =>
+    const escalate = (session: Session, escalation: Escalation, prompt: string, sentBack: SentBack, patch: TurnPatch = {}) =>
       Effect.gen(function* () {
         if (escalation._tag === "HandOff") return yield* handOff(session.id, escalation, () => patch)
         const delivery = yield* runner.continueWith(session.id, prompt, {
@@ -69,6 +69,7 @@ export const ShipperLive = Layer.effect(Shipper)(
           phase: escalation.phase,
           ciRounds: escalation.round,
           activity: escalation.activity,
+          sentBack,
         })
         if (delivery === "refused") yield* handOff(session.id, cannotResume("send it back"), () => patch)
       })
@@ -197,9 +198,9 @@ export const ShipperLive = Layer.effect(Shipper)(
             if (step.activity !== null) yield* repo.patch(sessionId, { activity: step.activity })
             return
           case "Red":
-            return yield* escalate(session, step.escalation, ciFailedPrompt(step.failing, session.ciRounds + 1, MAX_CI_ROUNDS))
+            return yield* escalate(session, step.escalation, ciFailedPrompt(step.failing, session.ciRounds + 1, MAX_CI_ROUNDS), "ci")
           case "ChangesRequested":
-            return yield* escalate(session, step.escalation, reviewChangesPrompt(step.review.author.login, step.review.body), {
+            return yield* escalate(session, step.escalation, reviewChangesPrompt(step.review.author.login, step.review.body), "changes", {
               review: session.review === null ? null : { ...session.review, handledReviewId: step.review.id },
             })
           case "ReadyToMerge": {
@@ -255,7 +256,7 @@ export const ShipperLive = Layer.effect(Shipper)(
           case "Unchanged":
             continue
           case "Failed":
-            yield* escalate(session, step.escalation, deployFailedPrompt(alert, session.branch ?? "fix-bt"), { deployStage: state })
+            yield* escalate(session, step.escalation, deployFailedPrompt(alert, session.branch ?? "fix-bt"), "deploy", { deployStage: state })
             continue
           case "Deployed":
             yield* finishDeploy(session, alert)

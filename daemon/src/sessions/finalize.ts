@@ -1,5 +1,5 @@
 import type { NewAction } from "../actions/queue.ts"
-import { type Alert, passedAt, type Session, type SessionStatus } from "../domain/model.ts"
+import { type Alert, passedAt, type SentBack, type Session, type SessionStatus } from "../domain/model.ts"
 import * as Messages from "../ship/messages.ts"
 import type { SessionResult } from "./output.ts"
 import { pushBackPrompt } from "./prompts.ts"
@@ -19,6 +19,9 @@ export const shipStatus = (session: Session): SessionStatus | undefined => {
   if (session.prUrl !== null && !m.merged) return "ci"
   return undefined
 }
+
+/** The hand-off card's title when a send-back comes back without a fix. */
+const SENT_BACK_TITLES: Readonly<Record<SentBack, string>> = { ci: "CI still red", changes: "Changes requested", deploy: "Deploy failed" }
 
 /** A card the result asks for: a hand-off goes through the queue's dedupe, anything else is put as is. */
 export type CardRequest =
@@ -59,8 +62,9 @@ export interface Finalized {
  * on evidence; an agent that hands off without a confirmed root cause is sent
  * back once first; a session with a PR in flight goes back to shipping whatever a
  * side turn concludes, so a "no action" answer to a teammate never resolves an
- * open PR. A pushed head that no review has passed yet goes to the adversarial
- * review before CI.
+ * open PR, but a send-back (red CI, requested changes, a failed deploy) answered
+ * without a fix is handed to you. A pushed head that no review has passed yet goes
+ * to the adversarial review before CI.
  */
 export const decideOutcome = ({ session, result, alert, pushed, head, adversarialReview }: FinalizeInput): Finalized => {
   const milestones = {
@@ -154,6 +158,17 @@ export const decideOutcome = ({ session, result, alert, pushed, head, adversaria
         release,
       },
       markReady: review === null && shipTo === "ci" ? prUrl : null,
+    }
+  }
+
+  if (session.sentBack !== null) {
+    // Bridgetown sent the agent back and it found no fix: the ship flow cannot get past that on its own.
+    return {
+      ...none,
+      cards: [...reply, { _tag: "HandOff", title: SENT_BACK_TITLES[session.sentBack], detail: result.recommendationDetail ?? result.diagnosis }],
+      patch: { ...verdict, status: "waiting", activity: result.summary },
+      post:
+        result.outcome === "recommendation" ? forAlert(Messages.recommendation(result.summary, result.recommendationDetail ?? result.recommendation ?? "")) : null,
     }
   }
 
