@@ -52,7 +52,7 @@ struct NeedsYouSection: View {
                     GroupRow(group: entry.group, count: entry.actions.count, pick: groupPick(entry.actions.map(\.id)))
                     ForEach(entry.actions) { action in
                         Hairline()
-                        ActionCard(
+                        ActionRow(
                             action: action,
                             expanded: expandedAction == action.id,
                             pick: $selection.pick(action.id, in: order)
@@ -131,7 +131,7 @@ struct NeedsYouSection: View {
 }
 
 /// A group's header row inside the Needs you table: its glyph (the selection mark on
-/// hover), its name and how many, on a faint wash of the group's colour.
+/// hover), its name and how many, on a faint fill. Colour stays on the glyph and count.
 private struct GroupRow: View {
     let group: ActionGroup
     let count: Int
@@ -156,7 +156,7 @@ private struct GroupRow: View {
         }
         .padding(.horizontal, Metrics.inset)
         .frame(height: 36)
-        .background((group.tint ?? .white).opacity(group.tint == nil ? 0.03 : 0.07))
+        .background(pick.selected ? Ink.picked : Color.white.opacity(0.03))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .accessibilityElement(children: .combine)
@@ -331,7 +331,7 @@ private struct QuietFold: View {
     let toggle: () -> Void
 
     var body: some View {
-        Button(action: toggle) {
+        TableRow(open: toggle) { _ in
             HStack(spacing: 10) {
                 Text(count == 1 ? "1 filtered or ignored" : "\(count) filtered or ignored")
                     .font(Typo.rowDetail)
@@ -345,9 +345,7 @@ private struct QuietFold: View {
             .padding(.leading, AlertRow.leading + AlertRow.timeWidth + 10)
             .padding(.trailing, Metrics.inset)
             .frame(height: 42)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(RowButtonStyle())
         .accessibilityLabel(open ? "Hide \(count) filtered or ignored alerts" : "Show \(count) filtered or ignored alerts")
         .accessibilityIdentifier("recent.quietFold")
     }

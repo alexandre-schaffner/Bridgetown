@@ -6,9 +6,8 @@ struct AlertRow: View {
     @Environment(Store.self) private var store
     let alert: AlertView
     let session: Session?
-    var pick: RowPick?
+    let pick: RowPick
     @Environment(\.now) private var now
-    @ViewState private var hovering = false
 
     /// The time column: "now", "59m", "23h", "Oct 12" right-aligned, so the times read down.
     static let timeWidth: CGFloat = 40
@@ -20,32 +19,23 @@ struct AlertRow: View {
     private var offersFeedback: Bool { alert.triage.jev != nil }
 
     var body: some View {
-        Button {
-            if pick?.click() == true { return }
-            store.show(.alert(alert.id))
-        } label: {
-            content
-        }
-        .buttonStyle(RowButtonStyle(selected: pick?.selected == true))
-        .overlay(alignment: .trailing) {
+        TableRow(pick: pick, open: { store.show(.alert(alert.id)) }) { hovering in
+            content(hovering)
+        } overlay: { hovering in
             if offersFeedback && hovering {
                 FeedbackThumbs(alert: alert)
                     .padding(.trailing, Metrics.inset - 4)
                     .transition(.opacity)
             }
+        } menu: {
+            menu
         }
-        .onHover { hovering = $0 }
-        .animation(Easing.quick, value: hovering)
         .help(tooltip)
-        .accessibilityElement(children: .combine)
         .accessibilityHint("Shows how this alert was triaged and how it ended")
-        .accessibilityAddTraits(pick?.selected == true ? .isSelected : [])
-        .contextMenu { menu }
-        .opacity(store.isBusy(alert.id) ? 0.5 : 1)
-        .animation(Easing.quick, value: store.isBusy(alert.id))
+        .busy(store.isBusy(alert.id))
     }
 
-    private var content: some View {
+    private func content(_ hovering: Bool) -> some View {
         let glyph = OutcomeGlyph(alert.outcome, session: session)
         return HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text(Format.relative(alert.receivedAt, now: now))
@@ -60,17 +50,12 @@ struct AlertRow: View {
                     .font(.geist(13, .medium))
                     .foregroundStyle(glyph.style)
             }
-            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
+            .centeredOnRowTitle()
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(alert.title)
-                    .font(Typo.rowTitle)
-                    .tracking(Typo.rowTitleTracking)
-                    .lineSpacing(Typo.rowLineSpacing)
+                    .rowTitle()
                     .foregroundStyle(glyph.dimmed ? .secondary : .primary)
-                    .lineLimit(2)
-                    .truncationMode(.tail)
-                    .fixedSize(horizontal: false, vertical: true)
                 (Text("\(Format.channel(alert.channelName)) · ")
                     + (glyph.dimmed ? Text(alert.outcome.headline) : alert.outcome.tone.headline(alert.outcome.headline)))
                     .font(Typo.rowDetail)
@@ -96,8 +81,6 @@ struct AlertRow: View {
         .padding(.leading, Self.leading)
         .padding(.trailing, Metrics.inset)
         .padding(.vertical, 15)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
     }
 
     @ViewBuilder
@@ -123,10 +106,6 @@ struct AlertRow: View {
         Divider()
         Button(alert.permalinkLabel) { SystemActions.open(alert.permalink) }
             .disabled(alert.permalink == nil)
-        if let pick {
-            Divider()
-            Button(pick.selected ? "Deselect" : "Select", action: pick.toggle)
-        }
     }
 
     private var tooltip: String {

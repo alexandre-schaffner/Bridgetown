@@ -8,49 +8,30 @@ struct JobRow: View {
     let session: Session
     var pick: RowPick?
     @Environment(\.now) private var now
-    @ViewState private var hovering = false
 
     var body: some View {
-        Button {
-            if pick?.click() == true { return }
-            store.show(.session(session.id))
-        } label: {
-            content
-        }
-        .buttonStyle(RowButtonStyle(selected: pick?.selected == true))
-        .onHover { hovering = $0 }
-        .help(session.headline)
-        .accessibilityElement(children: .combine)
-        .accessibilityHint("Shows session details")
-        .accessibilityAddTraits(pick?.selected == true ? .isSelected : [])
-        .contextMenu {
+        TableRow(pick: pick, open: { store.show(.session(session.id)) }) { hovering in
+            content(hovering)
+        } menu: {
             Button("Show details") { store.show(.session(session.id)) }
             if session.prUrl != nil { Button("Open PR") { SystemActions.open(session.prUrl) } }
             if session.slackThreadUrl != nil { Button("Open Slack thread") { SystemActions.open(session.slackThreadUrl) } }
-            if let pick {
-                Divider()
-                Button(pick.selected ? "Deselect" : "Select", action: pick.toggle)
-            }
         }
+        .help(session.headline)
+        .accessibilityHint("Shows session details")
     }
 
-    private var content: some View {
+    private func content(_ hovering: Bool) -> some View {
         VStack(alignment: .leading, spacing: 13) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 SelectMark(pick: pick, hovering: hovering) {
                     HolderDot(session: session)
                 }
-                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
+                .centeredOnRowTitle()
 
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text(session.title)
-                            .font(Typo.rowTitle)
-                            .tracking(Typo.rowTitleTracking)
-                            .lineSpacing(Typo.rowLineSpacing)
-                            .lineLimit(2)
-                            .truncationMode(.tail)
-                            .fixedSize(horizontal: false, vertical: true)
+                        Text(session.title).rowTitle()
                         Spacer(minLength: 4)
                         Text(Format.duration(from: session.startedAt, to: now))
                             .font(Typo.rowTime)
@@ -69,8 +50,6 @@ struct JobRow: View {
         .padding(.horizontal, Metrics.inset)
         .padding(.top, 16)
         .padding(.bottom, 13)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
     }
 
     /// "#alert-dev · Waiting on you · Asked: …": where it came from, the daemon's headline

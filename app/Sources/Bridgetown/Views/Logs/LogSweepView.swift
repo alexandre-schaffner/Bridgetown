@@ -102,7 +102,7 @@ private struct PatternRow: View {
                 .font(.geist(12.5, .medium))
                 .foregroundStyle(problem ? AnyShapeStyle(Ink.red) : AnyShapeStyle(.tertiary))
                 .frame(width: 16)
-                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
+                .centeredOnRowTitle()
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
@@ -147,7 +147,7 @@ private struct PatternRow: View {
         .padding(.horizontal, Metrics.inset)
         .padding(.vertical, 14)
         .contentShape(Rectangle())
-        .rowHighlight()
+        .hoverFill()
         .onTapGesture { SystemActions.open(pattern.link) }
         .help(tooltip)
         .accessibilityElement(children: .combine)

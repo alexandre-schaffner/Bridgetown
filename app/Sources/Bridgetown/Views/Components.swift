@@ -125,7 +125,7 @@ struct FeedbackThumbs: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-        .hoverHighlight(radius: 5)
+        .hoverFill(radius: 5)
         .help(help)
         .accessibilityLabel(help)
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -151,7 +151,7 @@ struct IconButton: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
-        .hoverHighlight(radius: 6)
+        .hoverFill(radius: 6)
         .animation(Easing.state, value: systemName)
         .help(help)
         .accessibilityLabel(help)

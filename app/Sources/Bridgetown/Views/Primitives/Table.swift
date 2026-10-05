@@ -160,62 +160,107 @@ extension View {
 
 // MARK: Hover
 
-struct HoverHighlight: ViewModifier {
-    var radius: CGFloat = 6
+extension View {
+    /// A faint fill under the pointer: square for a row of a table, rounded for a small
+    /// control. A row that is one button is a `TableRow`, which also answers the press.
+    func hoverFill(radius: CGFloat = 0, enabled: Bool = true) -> some View {
+        modifier(HoverFill(radius: radius, enabled: enabled))
+    }
+}
+
+private struct HoverFill: ViewModifier {
+    let radius: CGFloat
+    let enabled: Bool
     @ViewState private var hovering = false
 
     func body(content: Content) -> some View {
         content
             .background(
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .fill(hovering ? Ink.hover : .clear)
+                    .fill(hovering && enabled ? Ink.hover : .clear)
             )
-            .onHover { hovering = $0 }
-            .animation(.easeOut(duration: 0.12), value: hovering)
-    }
-}
-
-extension View {
-    func hoverHighlight(radius: CGFloat = 6) -> some View { modifier(HoverHighlight(radius: radius)) }
-
-    /// A row in a `RowList` with controls of its own: a faint fill on hover. A row that is
-    /// one button uses `RowButtonStyle`, which also answers the press.
-    func rowHighlight(_ enabled: Bool = true) -> some View { modifier(RowHighlight(enabled: enabled)) }
-}
-
-struct RowHighlight: ViewModifier {
-    var enabled = true
-    @ViewState private var hovering = false
-
-    func body(content: Content) -> some View {
-        content
-            .background(hovering && enabled ? Ink.hover : .clear)
             .onHover { hovering = $0 }
             .animation(Easing.quick, value: hovering)
     }
 }
 
-/// A whole row as a button: a faint fill on hover, a firmer one while the button is
-/// down, so a click is felt before it navigates, and while the row is picked.
-struct RowButtonStyle: ButtonStyle {
-    /// Picked for a bulk action: the firm fill stays.
-    var selected = false
+// MARK: Table row
 
-    func makeBody(configuration: Configuration) -> some View {
-        RowLabel(configuration: configuration, selected: selected)
+/// A row of a table that is one button: it opens what it stands for, and with a `pick`
+/// it can be picked for a bulk action too (a click picks instead of opening while the
+/// list is picking, or with ⌘ or ⇧ held). Its fill says how it stands: picked, pressed,
+/// under the pointer.
+///
+/// The row tracks the pointer once and hands it to its content (to show the selection
+/// mark) and to its overlay (controls laid over the row's end, outside the button so they
+/// take their own clicks). Its menu gets Select or Deselect after the row's own items.
+struct TableRow<Content: View, Overlay: View, Menu: View>: View {
+    var pick: RowPick?
+    /// Nil when there is nothing to open: the row is not a button then.
+    let open: (() -> Void)?
+    @ViewBuilder let content: (_ hovering: Bool) -> Content
+    @ViewBuilder let overlay: (_ hovering: Bool) -> Overlay
+    @ViewBuilder let menu: () -> Menu
+    @ViewState private var hovering = false
+
+    var body: some View {
+        Group {
+            if let open {
+                Button {
+                    if pick?.click() != true { open() }
+                } label: {
+                    label
+                }
+                .buttonStyle(Fill(picked: pick?.selected == true, hovering: hovering))
+            } else {
+                label.background(pick?.selected == true ? Ink.picked : .clear)
+            }
+        }
+        .overlay(alignment: .trailing) { overlay(hovering) }
+        .onHover { hovering = $0 }
+        .animation(Easing.quick, value: hovering)
+        .accessibilityAddTraits(pick?.selected == true ? .isSelected : [])
+        // The selection mark shows only under the pointer; this picks the row without it.
+        .accessibilityActions {
+            if let pick { Button(pick.selected ? "Deselect" : "Select", action: pick.toggle) }
+        }
+        .contextMenu {
+            menu()
+            if let pick {
+                Divider()
+                Button(pick.selected ? "Deselect" : "Select", action: pick.toggle)
+            }
+        }
     }
 
-    private struct RowLabel: View {
-        let configuration: Configuration
-        let selected: Bool
-        @ViewState private var hovering = false
+    private var label: some View {
+        content(hovering)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+    }
 
-        var body: some View {
+    /// A faint fill on hover, a firmer one while the button is down, so a click is felt
+    /// before it navigates, and the picked fill while the row is picked.
+    private struct Fill: ButtonStyle {
+        let picked: Bool
+        let hovering: Bool
+
+        func makeBody(configuration: Configuration) -> some View {
             configuration.label
-                .background(selected ? Ink.picked : configuration.isPressed ? Ink.selected : hovering ? Ink.hover : .clear)
-                .onHover { hovering = $0 }
-                .animation(Easing.quick, value: hovering)
+                .background(picked ? Ink.picked : configuration.isPressed ? Ink.selected : hovering ? Ink.hover : .clear)
                 .animation(Easing.quick, value: configuration.isPressed)
         }
+    }
+}
+
+extension TableRow where Overlay == EmptyView {
+    init(pick: RowPick? = nil, open: (() -> Void)?, @ViewBuilder content: @escaping (_ hovering: Bool) -> Content, @ViewBuilder menu: @escaping () -> Menu) {
+        self.init(pick: pick, open: open, content: content, overlay: { _ in EmptyView() }, menu: menu)
+    }
+}
+
+extension TableRow where Overlay == EmptyView, Menu == EmptyView {
+    init(open: (() -> Void)?, @ViewBuilder content: @escaping (_ hovering: Bool) -> Content) {
+        self.init(pick: nil, open: open, content: content, overlay: { _ in EmptyView() }, menu: { EmptyView() })
     }
 }

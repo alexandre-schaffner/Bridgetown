@@ -1,170 +1,88 @@
 import SwiftUI
 
-struct ActionCard: View {
+/// A card in Needs you, as a row of its table: the title and its age over the detail,
+/// each up to two lines. The group's header names the verb, so the row's button waits for
+/// the pointer, sliding in over the row's end rather than taking width from every title.
+/// An agent's question with quick replies is answered from the row itself. Opened, the
+/// row is the whole card (`ActionCard`).
+struct ActionRow: View {
     @Environment(Store.self) private var store
     let action: Action
-    /// Collapsed, the card is one row: title, one line of detail and the primary button
-    /// when it needs no input. Expanding shows everything. Detail panes always expand.
-    var expanded = true
-    /// Tapping the row; nil where the card can't collapse.
-    var onToggle: (() -> Void)?
-    /// The row's place in the list's selection, in the overview.
-    var pick: RowPick?
-    @ViewState private var hovering = false
-    @ViewState private var reply = ""
-    /// Editable copy of a `reply` action's draft.
-    @ViewState private var draft: String
+    let expanded: Bool
+    let pick: RowPick
+    let toggle: () -> Void
     @ViewState private var confirmingClose = false
     @Environment(\.now) private var now
-
-    init(action: Action, expanded: Bool = true, pick: RowPick? = nil, onToggle: (() -> Void)? = nil) {
-        self.action = action
-        self.expanded = expanded
-        self.pick = pick
-        self.onToggle = onToggle
-        _draft = ViewState(initialValue: action.detail)
-    }
 
     /// An agent's question with quick replies: answered from the row itself, one click,
     /// as nothing needs typing.
     private var answersInline: Bool { action.kind == .answer && !action.options.isEmpty && !action.inFlight }
 
-    /// For `reply` the detail is the draft itself, edited below rather than shown as text.
-    private var showsDetail: Bool { !action.detail.isEmpty && action.kind != .reply }
-
-    /// The ✕ says what it does: dismissing some cards records the session as closed.
-    private var dismissLabel: String { action.dismissCloses ? "Close session" : "Dismiss" }
-
     var body: some View {
         Group {
-            if expanded || confirmingClose { full } else { compact }
-        }
-        .disabled(store.isBusy(action.id))
-        .opacity(store.isBusy(action.id) && !action.inFlight ? 0.6 : 1)
-        .animation(Easing.quick, value: store.isBusy(action.id))
-        .animation(.snappy(duration: 0.18), value: confirmingClose)
-        .onChange(of: action.detail) { old, new in
-            if draft == old { draft = new }  // the agent revised its draft; keep user edits
-        }
-        .contextMenu {
-            if !action.inFlight, action.isOneClick {
-                Button(action.primaryLabel) { store.resolve(action) }
-                Divider()
-            }
-            if let session = action.sessionId {
-                Button("Show session") { store.show(.session(session)) }
-            }
-            if !action.inFlight {
-                Button(action.dismissCloses ? "Close session…" : "Dismiss", action: requestDismiss)
-            }
-            if let pick {
-                Divider()
-                Button(pick.selected ? "Deselect" : "Select", action: pick.toggle)
+            if expanded || confirmingClose {
+                ActionCard(action: action, pick: pick, confirmingClose: $confirmingClose, collapse: toggle)
+            } else {
+                row
             }
         }
+        .busy(store.isBusy(action.id), dims: !action.inFlight)
     }
 
-    private var icon: some View {
-        Image(systemName: action.kind.symbol)
-            .font(.system(size: 12, weight: .regular))
-            .foregroundStyle(iconTint.map(AnyShapeStyle.init) ?? AnyShapeStyle(.secondary))
-            .frame(width: 16)
-    }
-
-    /// Green when a verified fix is ready to ship, amber for a new incident, red when an
-    /// agent failed; questions and replies stay neutral.
-    private var iconTint: Color? {
-        switch action.kind {
-        case .merge, .release: Ink.green
-        case .investigate, .grafana: Ink.amber
-        case .rerun: Ink.red
-        case .review:
-            action.sessionId.flatMap { store.snapshot?.session(id: $0)?.tone } == .failure ? Ink.red : nil
-        default: nil
-        }
-    }
-
-    /// A failed agent is marked on its row; the group's header carries every other meaning.
-    private var failed: Bool { iconTint == Ink.red }
-
-    /// One row: the title and its age over the detail, each up to two lines. The group's header names
-    /// the verb, so the button waits for the pointer; it slides in over the row's end
-    /// rather than taking width from every title.
-    private var compact: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            SelectMark(pick: pick, hovering: hovering) {
-                if failed {
-                    Image(systemName: Tone.failure.stopSymbol)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Ink.red)
-                        .accessibilityLabel("Failed")
-                }
-            }
-            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
-
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(action.title)
-                        .font(Typo.rowTitle)
-                        .tracking(Typo.rowTitleTracking)
-                        .lineSpacing(Typo.rowLineSpacing)
-                        .lineLimit(2)
-                        .truncationMode(.tail)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 4)
-                    if action.inFlight {
-                        ProgressView().controlSize(.mini)
-                            .help(action.kind.progressLabel)
-                    } else {
-                        Text(Format.relative(action.createdAt, now: now))
-                            .font(Typo.rowTime)
-                            .foregroundStyle(.tertiary)
+    private var row: some View {
+        TableRow(pick: pick, open: toggle) { hovering in
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                SelectMark(pick: pick, hovering: hovering) {
+                    if action.failed(in: store.snapshot) {
+                        Image(systemName: Tone.failure.stopSymbol)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Ink.red)
+                            .accessibilityLabel("Failed")
                     }
                 }
-                if !action.detail.isEmpty {
-                    Text(Markdown.line(action.detail, size: 12))
-                        .font(Typo.rowDetail)
-                        .lineSpacing(Typo.rowLineSpacing)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .truncationMode(.tail)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if answersInline {
-                    OptionChips(options: action.options) { store.resolve(action, response: $0) }
-                        .padding(.top, 6)
+                .centeredOnRowTitle()
+
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(action.title).rowTitle()
+                        Spacer(minLength: 4)
+                        if action.inFlight {
+                            // Said by the row's value: as an element of its own, a spinner
+                            // would make the whole row read as one.
+                            ProgressView().controlSize(.mini)
+                                .help(action.kind.progressLabel)
+                                .accessibilityHidden(true)
+                        } else {
+                            Text(Format.relative(action.createdAt, now: now))
+                                .font(Typo.rowTime)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    if !action.detail.isEmpty {
+                        Text(Markdown.line(action.detail, size: 12)).rowDetail()
+                    }
+                    if answersInline {
+                        OptionChips(options: action.options) { store.resolve(action, response: $0) }
+                            .padding(.top, 6)
+                    }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.horizontal, Metrics.inset)
-        .padding(.vertical, 16)
-        .background(pick?.selected == true ? Ink.picked : hovering ? Ink.hover : .clear)
-        .overlay(alignment: .trailing) {
-            if hovering && !action.inFlight && !answersInline && pick?.picking != true {
+            .padding(.horizontal, Metrics.inset)
+            .padding(.vertical, 16)
+        } overlay: { hovering in
+            if hovering && !action.inFlight && !answersInline && !pick.picking {
                 hoverButton
-                    .transition(.opacity.combined(with: .offset(x: 6)))
+                    .transition(.opacity)
             }
-        }
-        .animation(Easing.quick, value: hovering)
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture {
-            if pick?.click() == true { return }
-            onToggle?()
+        } menu: {
+            ActionMenu(action: action, requestDismiss: requestDismiss)
         }
         .help(action.detail.isEmpty ? action.title : "\(action.title)\n\(Markdown.plain(action.detail))")
-        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("needsYou.row.\(action.id)")
-        .accessibilityAddTraits(pick?.selected == true ? .isSelected : [])
-        .accessibilityAction(named: "Expand") { onToggle?() }
+        .accessibilityValue(action.inFlight ? action.kind.progressLabel : "")
+        .accessibilityAction(named: "Expand", toggle)
         .accessibilityAction(named: Text(action.primaryLabel)) {
-            if action.isOneClick { store.resolve(action) } else { onToggle?() }
-        }
-        // The selection mark shows only under the pointer; this picks the row without one,
-        // in the lists that pick.
-        .accessibilityActions {
-            if let pick { Button(pick.selected ? "Deselect" : "Select", action: pick.toggle) }
+            if action.isOneClick { store.resolve(action) } else { toggle() }
         }
     }
 
@@ -177,14 +95,12 @@ struct ActionCard: View {
             Group {
                 if action.isOneClick {
                     Button(action.primaryLabel) { store.resolve(action) }
-                        .buttonStyle(.stage(.secondary))
                 } else {
                     // Needs input: the button opens the card where it's typed or chosen.
-                    Button(action.kind == .reply ? "Review reply" : "Answer") { onToggle?() }
-                        .buttonStyle(.stage(.secondary))
+                    Button(action.kind == .reply ? "Review reply" : "Answer", action: toggle)
                 }
             }
-            .lineLimit(1)
+            .buttonStyle(.stage(.secondary))
             .fixedSize()
             .padding(.leading, 2)
             .padding(.trailing, Metrics.inset)
@@ -193,25 +109,56 @@ struct ActionCard: View {
         }
     }
 
-    private var full: some View {
-        HStack(alignment: .top, spacing: 10) {
-            icon
-                .padding(.top, -2)
+    private func requestDismiss() {
+        if action.dismissCloses { confirmingClose = true } else { store.dismiss(action) }
+    }
+}
 
-            VStack(alignment: .leading, spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(action.title)
-                        .font(.geist(13, .semibold))
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
+/// A card opened in full: in Needs you, in place of its row, and in the session's detail
+/// under the session it is about. Its title and detail sit where the row's did, so opening
+/// a row doesn't move what you were reading.
+struct ActionCard: View {
+    @Environment(Store.self) private var store
+    let action: Action
+    /// Its place in the list's selection, in Needs you.
+    var pick: RowPick?
+    @Binding var confirmingClose: Bool
+    /// Folds the card back into its row; nil where it stands alone.
+    var collapse: (() -> Void)?
+    @ViewState private var reply = ""
+    /// Editable copy of a `reply` action's draft.
+    @ViewState private var draft: String
+
+    init(action: Action, pick: RowPick? = nil, confirmingClose: Binding<Bool>, collapse: (() -> Void)? = nil) {
+        self.action = action
+        self.pick = pick
+        _confirmingClose = confirmingClose
+        self.collapse = collapse
+        _draft = ViewState(initialValue: action.detail)
+    }
+
+    /// For `reply` the detail is the draft itself, edited below rather than shown as text.
+    private var showsDetail: Bool { !action.detail.isEmpty && action.kind != .reply }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: action.failed(in: store.snapshot) ? Tone.failure.stopSymbol : action.kind.symbol)
+                .font(.system(size: 12))
+                .foregroundStyle(action.failed(in: store.snapshot) ? AnyShapeStyle(Ink.red) : AnyShapeStyle(.secondary))
+                .frame(width: 16)
+                .centeredOnRowTitle()
+
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(action.title).rowTitle()
                     if showsDetail {
-                        ClampedText(markdown: action.detail, lineLimit: 3, size: 11, lineSpacing: 1)
+                        ClampedText(markdown: action.detail, lineLimit: 4, size: 12, lineSpacing: Typo.rowLineSpacing)
                             .foregroundStyle(.secondary)
                     }
                 }
-                .padding(.trailing, 16)  // clear the dismiss button
+                .padding(.trailing, 20)  // clear the dismiss button
                 .contentShape(Rectangle())
-                .onTapGesture { onToggle?() }
+                .onTapGesture { collapse?() }
                 if confirmingClose {
                     closeConfirmation
                 } else if action.inFlight {
@@ -222,30 +169,39 @@ struct ActionCard: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(12)
-        .background {
-            // In the overview the open card is a row of the table; elsewhere it stands alone.
-            if onToggle == nil {
-                Color.clear.outlined()
-            } else {
-                Color.white.opacity(0.03)
-            }
-        }
+        .padding(.horizontal, Metrics.inset)
+        .padding(.vertical, 16)
+        .background(pick?.selected == true ? Ink.picked : Color.white.opacity(0.03))
         .overlay(alignment: .topTrailing) {
             if !action.inFlight {
-                IconButton(systemName: "xmark", help: dismissLabel, size: 9, weight: .semibold, action: requestDismiss)
-                    .accessibilityIdentifier("action.dismiss.\(action.id)")
-                    .padding(6)
+                IconButton(
+                    systemName: "xmark",
+                    help: action.dismissCloses ? "Close session" : "Dismiss",
+                    size: 9,
+                    weight: .semibold,
+                    action: requestDismiss
+                )
+                .accessibilityIdentifier("action.dismiss.\(action.id)")
+                .padding(.top, 12)
+                .padding(.trailing, 6)
             }
         }
+        .animation(Easing.quick, value: confirmingClose)
+        .onChange(of: action.detail) { old, new in
+            if draft == old { draft = new }  // the agent revised its draft; keep user edits
+        }
+        .contextMenu {
+            ActionMenu(action: action, requestDismiss: requestDismiss)
+            if let pick {
+                Divider()
+                Button(pick.selected ? "Deselect" : "Select", action: pick.toggle)
+            }
+        }
+        .accessibilityElement(children: .contain)
     }
 
     private func requestDismiss() {
-        if action.dismissCloses {
-            confirmingClose = true
-        } else {
-            store.dismiss(action)
-        }
+        if action.dismissCloses { confirmingClose = true } else { store.dismiss(action) }
     }
 
     /// Closing is not fixing: say so before it's recorded.
@@ -343,6 +299,26 @@ struct ActionCard: View {
     }
 }
 
+/// A card's own menu items, for its row and for the opened card.
+private struct ActionMenu: View {
+    @Environment(Store.self) private var store
+    let action: Action
+    let requestDismiss: () -> Void
+
+    var body: some View {
+        if !action.inFlight, action.isOneClick {
+            Button(action.primaryLabel) { store.resolve(action) }
+            Divider()
+        }
+        if let session = action.sessionId {
+            Button("Show session") { store.show(.session(session)) }
+        }
+        if !action.inFlight {
+            Button(action.dismissCloses ? "Close session…" : "Dismiss", action: requestDismiss)
+        }
+    }
+}
+
 /// Quick replies for `answer` actions. Wraps onto multiple lines.
 private struct OptionChips: View {
     let options: [String]
@@ -351,14 +327,26 @@ private struct OptionChips: View {
     var body: some View {
         FlowLayout(spacing: 6) {
             ForEach(Array(options.enumerated()), id: \.offset) { index, option in
-                if index == 0 {
-                    Button(option) { choose(option) }
-                        .buttonStyle(.stage(.primary))
-                } else {
-                    Button(option) { choose(option) }
-                        .buttonStyle(.stage(.secondary))
-                }
+                Button(option) { choose(option) }
+                    .buttonStyle(.stage(index == 0 ? .primary : .secondary))
             }
         }
+    }
+}
+
+extension Action {
+    /// The agent behind it failed (a re-run, or a review of a failed session): marked red on
+    /// its row, where every other meaning is left to the group's header.
+    func failed(in snapshot: Snapshot?) -> Bool {
+        kind == .rerun || (kind == .review && snapshot?.session(id: sessionId)?.tone == .failure)
+    }
+}
+
+extension View {
+    /// Dimmed while a request for it is in flight, and closed to a second click.
+    func busy(_ busy: Bool, dims: Bool = true) -> some View {
+        disabled(busy)
+            .opacity(busy && dims ? 0.6 : 1)
+            .animation(Easing.quick, value: busy)
     }
 }

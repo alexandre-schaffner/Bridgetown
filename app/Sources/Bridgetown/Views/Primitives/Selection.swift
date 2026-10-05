@@ -97,7 +97,7 @@ extension Binding where Value == RowSelection {
 // MARK: Mark
 
 /// A row's leading column: its own glyph at rest; a hollow circle to pick it on hover or
-/// while the list is picking; filled with the accent and a check once picked.
+/// while the list is picking; filled white with a dark check once picked.
 struct SelectMark<Glyph: View>: View {
     let pick: RowPick?
     var hovering: Bool
@@ -114,10 +114,10 @@ struct SelectMark<Glyph: View>: View {
                 Button(action: pick.toggle) {
                     ZStack {
                         if pick.selected {
-                            Circle().fill(Ink.blue)
+                            Circle().fill(Ink.text)
                             Image(systemName: "checkmark")
                                 .font(.system(size: 7.5, weight: .bold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(Ink.stage)
                         } else {
                             Circle().strokeBorder(Ink.outline, lineWidth: 1)
                         }
@@ -180,7 +180,7 @@ struct SelectionHeader<Actions: View>: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
-            .hoverHighlight(radius: Ink.tagRadius)
+            .hoverFill(radius: Ink.tagRadius)
             .keyboardShortcut(.cancelAction)
             .help("Clear selection (Esc)")
             .accessibilityLabel("Clear selection")

@@ -120,7 +120,7 @@ struct AppMenu: View {
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .foregroundStyle(.secondary)
-        .hoverHighlight(radius: 6)
+        .hoverFill(radius: 6)
         .fixedSize()
         .help("Settings, logs, quit")
         .accessibilityLabel("Bridgetown menu")

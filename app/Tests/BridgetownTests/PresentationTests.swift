@@ -223,6 +223,23 @@ import Testing
     }
 }
 
+@Suite struct FailedActionTests {
+    /// Only an agent that failed is marked red on its row; a review of a session that merely
+    /// ended without a fix is not a failure.
+    @Test func failureComesFromTheSessionNotTheKind() throws {
+        var snapshot = try Fixture.snapshot()
+        var review = try #require(snapshot.actions.first { $0.id == "act_review_1" })
+        #expect(!review.failed(in: snapshot))
+        let closed = try #require(snapshot.sessions.firstIndex { $0.id == review.sessionId })
+        snapshot.sessions[closed].tone = .failure
+        #expect(review.failed(in: snapshot))
+        review.kind = .rerun
+        #expect(review.failed(in: nil))
+        review.kind = .merge
+        #expect(!review.failed(in: snapshot))
+    }
+}
+
 @Suite struct TimeFormatTests {
     private let now = Date(timeIntervalSince1970: 1_791_115_200)
 

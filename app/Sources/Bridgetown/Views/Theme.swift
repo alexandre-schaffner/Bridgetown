@@ -13,8 +13,8 @@ enum Ink {
     /// Hover on a row, the selected tab.
     static let hover = Color.white.opacity(0.045)
     static let selected = Color.white.opacity(0.09)
-    /// A row picked for a bulk action: the accent, faintly, as macOS shows a selection.
-    static let picked = blue.opacity(0.13)
+    /// A row picked for a bulk action: firmer than hover, monochrome like every control.
+    static let picked = Color.white.opacity(0.075)
     /// `hover` over the stage, opaque: for something laid over a hovered row's text.
     static let hoverSolid = Color(white: 0.045)
     /// Panel outlines and the dividers between rows.
@@ -79,6 +79,39 @@ enum Typo {
     static let rowDetail = Font.geist(12)
     static let rowTime = Font.geist(11.5).monospacedDigit()
     static let rowLineSpacing: CGFloat = 2.5
+    /// How far above a row title's baseline the middle of its first line sits: where a
+    /// row's leading mark is centred.
+    static let rowTitleMidline: CGFloat = 5
+}
+
+extension Text {
+    /// A row's title: up to two lines, then cut at the end.
+    func rowTitle() -> some View {
+        font(Typo.rowTitle)
+            .tracking(Typo.rowTitleTracking)
+            .lineSpacing(Typo.rowLineSpacing)
+            .lineLimit(2)
+            .truncationMode(.tail)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// The line of detail under a row's title, a step quieter: up to two lines.
+    func rowDetail() -> some View {
+        font(Typo.rowDetail)
+            .lineSpacing(Typo.rowLineSpacing)
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+            .truncationMode(.tail)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+extension View {
+    /// A row's leading mark (its glyph, the selection mark) centred on the first line of
+    /// the title beside it, in an `HStack` aligned on first baselines.
+    func centeredOnRowTitle() -> some View {
+        alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + Typo.rowTitleMidline }
+    }
 }
 
 // MARK: Stage

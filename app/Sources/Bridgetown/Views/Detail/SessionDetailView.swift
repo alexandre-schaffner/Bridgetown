@@ -7,6 +7,7 @@ struct SessionDetailView: View {
     @ViewState private var transcript = Loadable<[TranscriptEntry]>()
     @ViewState private var message = ""
     @ViewState private var confirmingStop = false
+    @ViewState private var closingCard = false
     @Environment(\.now) private var now
 
     /// The card this session has in "Needs you": its next step, offered here too.
@@ -27,7 +28,8 @@ struct SessionDetailView: View {
                     }
                     .bleedInset()
                     if let action {
-                        ActionCard(action: action)
+                        ActionCard(action: action, confirmingClose: $closingCard)
+                            .tableFrame()
                     }
                     GrafanaSection(alertId: session.alertId)
                     let diagnosis = session.diagnosis.flatMap { $0.isEmpty ? nil : $0 }

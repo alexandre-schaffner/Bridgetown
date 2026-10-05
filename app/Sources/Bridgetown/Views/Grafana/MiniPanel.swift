@@ -109,7 +109,7 @@ struct MiniPanel: View {
         .contentShape(Rectangle())
         // Open, only its header and chart close it: the stats under them can be read and
         // hovered without it folding away.
-        .rowHighlight(layout != .detail)
+        .hoverFill(enabled: layout != .detail)
         .onTapGesture { if layout != .detail { onSelect() } }
         .contextMenu { Button("Open in Grafana") { SystemActions.open(panel.link) } }
         .help(layout == .detail ? "" : "\(panel.title) · \(layout == .line ? "show above" : "show details")")
@@ -144,7 +144,7 @@ struct MiniPanel: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
-            .hoverHighlight(radius: Ink.tagRadius)
+            .hoverFill(radius: Ink.tagRadius)
             .help("Close")
             .accessibilityLabel("Close \(panel.title)")
         }
