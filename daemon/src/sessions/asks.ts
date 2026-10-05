@@ -72,7 +72,6 @@ export const AsksLive = Layer.effect(Asks)(
           options: [...options],
           sessionId: session.id,
           alertId: session.alertId,
-          payload: null,
         })
         const waiting: Pending = { actionId: card.id, sessionId: session.id, reply: yield* Deferred.make<string | undefined>() }
         yield* SynchronizedRef.update(pending, (current) => new Map([...current, [card.id, waiting]]))

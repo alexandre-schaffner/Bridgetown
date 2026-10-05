@@ -42,7 +42,7 @@ const fakeGitHub = (pr: { current: Partial<PullRequest> }, tagLookup?: Deferred.
 
 const mergeCard = (overrides: Partial<Action> = {}): Action => ({
   id: "a_merge", kind: "merge", title: "Merge", detail: "", primaryLabel: "Merge", options: [], sessionId: "s_m", alertId: "C1:m",
-  payload: PR, url: null, createdAt: "2026-10-01T00:00:00.000Z", ...overrides,
+  fingerprint: null, retry: false, url: null, createdAt: "2026-10-01T00:00:00.000Z", ...overrides,
 })
 
 const shipping = (status: Session["status"], overrides: Partial<Session> = {}) =>

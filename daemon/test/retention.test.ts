@@ -15,7 +15,7 @@ const session = (id: string, alertId: string, status: SessionStatus, updatedAt: 
 })
 const card = (id: string, createdAt: string, ids: { readonly sessionId?: string; readonly alertId?: string } = {}): Action => ({
   id, kind: "review", title: "", detail: "", primaryLabel: "", options: [], sessionId: ids.sessionId ?? null, alertId: ids.alertId ?? null,
-  payload: null, url: null, createdAt,
+  fingerprint: null, retry: false, url: null, createdAt,
 })
 
 /** Enough newer rows that the snapshot's floors (30 alerts, 20 finished sessions) never keep the ones under test. */

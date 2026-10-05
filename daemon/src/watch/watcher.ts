@@ -156,7 +156,7 @@ export const WatcherLive = Layer.effect(Watcher)(
     const settle = (measured: Measure, now: Date) =>
       Effect.gen(function* () {
         const fingerprint = watchFingerprint(measured.panel.id)
-        for (const card of (yield* queue.list).filter((a) => a.kind === "investigate" && a.payload === fingerprint)) {
+        for (const card of (yield* queue.list).filter((a) => a.kind === "investigate" && a.fingerprint === fingerprint)) {
           const finding = card.alertId === null ? undefined : yield* store.getAlert(card.alertId)
           // A spike was over when it was raised: what it needs is an explanation, not a signal back to normal.
           if (finding === undefined || finding.sessionId !== null || finding.fields._tag !== "watch" || finding.fields.shape === "spike") continue

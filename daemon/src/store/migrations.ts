@@ -96,8 +96,24 @@ export const legacyRelease = (session: Json): Json | undefined => {
 export const legacyTracker = (session: Json, hashOf: (alertId: string) => string | undefined): Json | undefined =>
   typeof session.tracker === "string" ? { ...session, tracker: { id: session.tracker, applied: hashOf(session.tracker) ?? null } } : undefined
 
+/**
+ * Before cards had typed fields, `payload` was one string read six ways by kind. An investigate or escalate card's was
+ * its alert's fingerprint and a retry card's was "retry"; the rest (a tag, a PR, a run, a draft) are read from the
+ * session, its alert or the card's own detail now. `undefined` for a card already rewritten.
+ */
+export const legacyPayload = (action: Json): Json | undefined => {
+  if (!("payload" in action)) return undefined
+  const { payload, ...rest } = action
+  const kind = action.kind
+  return {
+    ...rest,
+    fingerprint: (kind === "investigate" || kind === "escalate") && typeof payload === "string" ? payload : null,
+    retry: kind === "review" && payload === "retry",
+  }
+}
+
 /** Rewrites the rows of `table` that `f` changes. */
-const rewrite = (table: "alerts" | "sessions", f: (row: Json) => Json | undefined) =>
+const rewrite = (table: "alerts" | "sessions" | "actions", f: (row: Json) => Json | undefined) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const rows = yield* sql<{ readonly id: string; readonly json: string }>`SELECT id, json FROM ${sql(table)}`
@@ -106,7 +122,7 @@ const rewrite = (table: "alerts" | "sessions", f: (row: Json) => Json | undefine
       const after = before === undefined ? undefined : f(before)
       if (after === undefined) continue
       if (table === "sessions") yield* sql`UPDATE sessions SET json = ${JSON.stringify(after)}, status = ${String(after.status)} WHERE id = ${row.id}`
-      else yield* sql`UPDATE alerts SET json = ${JSON.stringify(after)} WHERE id = ${row.id}`
+      else yield* sql`UPDATE ${sql(table)} SET json = ${JSON.stringify(after)} WHERE id = ${row.id}`
     }
   })
 
@@ -160,4 +176,5 @@ export const migrations = SqliteMigrator.fromRecord({
     const hashes = new Map((yield* sql<{ readonly id: string; readonly hash: string }>`SELECT id, content_hash AS hash FROM alerts`).map((row) => [row.id, row.hash]))
     yield* rewrite("sessions", (session) => legacyTracker(session, (id) => hashes.get(id)))
   }),
+  "008_action_fields": rewrite("actions", legacyPayload),
 })

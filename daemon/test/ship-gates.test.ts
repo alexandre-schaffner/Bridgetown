@@ -48,7 +48,7 @@ const releasable: Session = makeSession("awaiting_release", {
 })
 const releaseCard: Action = {
   id: "a_rel", kind: "release", title: "Ship", detail: "", primaryLabel: "Cut dispute-v0.4.3", options: [], sessionId: "s_rel", alertId: "C1:rel",
-  payload: "dispute-v0.4.3", url: null, createdAt: "2026-10-01T00:00:00.000Z",
+  fingerprint: null, retry: false, url: null, createdAt: "2026-10-01T00:00:00.000Z",
 }
 
 const seed = (session: Session, card: Action) =>
@@ -152,7 +152,7 @@ describe("the release gate through the real shipper", () => {
     try {
       const out = await world.runPromise(
         Effect.gen(function* () {
-          yield* seed(mergeable, { ...releaseCard, id: "a_merge", kind: "merge", primaryLabel: "Merge", payload: mergeable.prUrl })
+          yield* seed(mergeable, { ...releaseCard, id: "a_merge", kind: "merge", primaryLabel: "Merge" })
           const store = yield* Store
           const first = yield* (yield* Actions).resolve("a_merge", null).pipe(Effect.forkChild)
           const during = yield* waitFor(store.getSession("s_rel"), (s) => s?.activity !== mergeable.activity)
@@ -183,7 +183,7 @@ describe("a card whose session moved on acts on nothing and goes", () => {
     try {
       const out = await world.runPromise(
         Effect.gen(function* () {
-          yield* seed(running, { ...releaseCard, id: "a_merge", kind: "merge", primaryLabel: "Merge", payload: running.prUrl })
+          yield* seed(running, { ...releaseCard, id: "a_merge", kind: "merge", primaryLabel: "Merge" })
           const failure = yield* (yield* Actions).resolve("a_merge", null).pipe(Effect.flip)
           const store = yield* Store
           return { failure, session: yield* store.getSession("s_rel"), cards: yield* store.listActions() }
@@ -252,7 +252,7 @@ describe("a card whose session moved on acts on nothing and goes", () => {
     try {
       const out = await world.runPromise(
         Effect.gen(function* () {
-          yield* seed(stalled, { ...releaseCard, id: "a_stalled", kind: "review", primaryLabel: "Close session", payload: null })
+          yield* seed(stalled, { ...releaseCard, id: "a_stalled", kind: "review", primaryLabel: "Close session" })
           yield* (yield* Shipper).trackDeploy(tracker)
           const store = yield* Store
           return { session: yield* store.getSession("s_rel"), cards: yield* store.listActions() }

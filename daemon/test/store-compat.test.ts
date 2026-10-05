@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite"
 import { join } from "node:path"
 import { Effect } from "effect"
 import { alertDetail, snapshot } from "../src/api/views.ts"
-import { legacyClosed, legacyDisposition, legacyRelease, legacyReviewPosted, legacyTracker } from "../src/store/migrations.ts"
+import { legacyClosed, legacyDisposition, legacyPayload, legacyRelease, legacyReviewPosted, legacyTracker } from "../src/store/migrations.ts"
 import { Store } from "../src/store/store.ts"
 import { OLD_ALERTS, OLD_SESSIONS, oldStore } from "./fixtures/old-store.ts"
 import { makeWorld } from "./fixtures/world.ts"
@@ -35,7 +35,7 @@ describe("a store the first daemon wrote", () => {
     })
     expect(out.ci).toMatchObject({ mergeRequestedAt: null, releaseTag: null, deployStage: null, releasePrefix: "api" })
     expect(out.stopped?.releasePrefix).toBeNull()
-    expect(out.actions).toEqual([expect.objectContaining({ id: "a_old_review", url: null })])
+    expect(out.actions).toEqual([expect.objectContaining({ id: "a_old_review", url: null, fingerprint: null, retry: false })])
     expect(out.transcript).toHaveLength(1)
   })
 
@@ -103,6 +103,7 @@ describe("a store the first daemon wrote", () => {
         { migration_id: 5, name: "global_horizon" },
         { migration_id: 6, name: "release_prefix" },
         { migration_id: 7, name: "tracker_version" },
+        { migration_id: 8, name: "action_fields" },
       ])
       expect(db.query("SELECT status FROM sessions WHERE id = ?").get(OLD_SESSIONS.closedAsResolved.id)).toEqual({ status: "closed" })
       expect(db.query("SELECT key FROM kv ORDER BY key").all()).toEqual([{ key: "paused" }])
@@ -159,5 +160,14 @@ describe("legacy rewrites", () => {
     expect(legacyTracker({ tracker: "C1:gone" }, (id) => hashes[id])).toEqual({ tracker: { id: "C1:gone", applied: null } })
     expect(legacyTracker({ tracker: null }, (id) => hashes[id])).toBeUndefined()
     expect(legacyTracker({ tracker: { id: "C1:t", applied: "h1" } }, (id) => hashes[id])).toBeUndefined()
+  })
+  test("payload: an investigate or escalate card keeps its fingerprint, a retry card says so, the rest is read elsewhere now", () => {
+    expect(legacyPayload({ kind: "investigate", payload: "watch:api_5xx" })).toEqual({ kind: "investigate", fingerprint: "watch:api_5xx", retry: false })
+    expect(legacyPayload({ kind: "escalate", payload: "inbox:D1:1" })).toEqual({ kind: "escalate", fingerprint: "inbox:D1:1", retry: false })
+    expect(legacyPayload({ kind: "review", payload: "retry" })).toEqual({ kind: "review", fingerprint: null, retry: true })
+    for (const [kind, payload] of [["review", null], ["release", "admin-v0.6.1"], ["merge", "https://ghe/pull/1"], ["rerun", "42"], ["reply", "draft"]]) {
+      expect(legacyPayload({ kind, payload })).toEqual({ kind, fingerprint: null, retry: false })
+    }
+    expect(legacyPayload({ kind: "review", fingerprint: null, retry: true })).toBeUndefined()
   })
 })

@@ -99,7 +99,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
 
     const suggest = (alert: Alert) =>
       Effect.gen(function* () {
-        yield* queue.removeWhere((a) => a.kind === "investigate" && a.payload === alert.fingerprint)
+        yield* queue.removeWhere((a) => a.kind === "investigate" && a.fingerprint === alert.fingerprint)
         yield* queue.put({
           kind: "investigate",
           title: alert.title,
@@ -108,7 +108,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
           options: [],
           sessionId: null,
           alertId: alert.id,
-          payload: alert.fingerprint,
+          fingerprint: alert.fingerprint,
         })
       })
 

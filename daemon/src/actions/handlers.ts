@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { type AdapterError, type DaemonError, InvalidInput, NotFound, SlackApiError } from "../domain/errors.ts"
-import { type Action, type ActionKind, type Alert, RETRY, type Session } from "../domain/model.ts"
+import type { Action, ActionKind, Alert, Session } from "../domain/model.ts"
 import type { SessionRepoShape } from "../sessions/repo.ts"
 import type { SessionRunnerShape } from "../sessions/runner.ts"
 import type { ShipperShape } from "../ship/shipper.ts"
@@ -48,8 +48,7 @@ export const makeHandlers = (deps: HandlerDeps): Readonly<Record<ActionKind, Han
 
   release: ({ session }) => (session === undefined ? Effect.void : deps.shipper.release(session.id)),
 
-  rerun: ({ action, session }) =>
-    session === undefined || action.payload === null ? Effect.void : deps.shipper.rerun(session.id, action.payload),
+  rerun: ({ session }) => (session === undefined ? Effect.void : deps.shipper.rerun(session.id)),
 
   answer: ({ action, response }) => deps.runner.answer(action.id, response ?? "").pipe(Effect.asVoid),
 
@@ -58,7 +57,8 @@ export const makeHandlers = (deps: HandlerDeps): Readonly<Record<ActionKind, Han
       // Nothing to send, or nowhere to send it: the card stays, and nothing is recorded as replied.
       const alert = yield* alertOf(deps.store, action)
       if (alert === undefined) return yield* new NotFound({ message: "The message this replies to is gone" })
-      const text = (response ?? action.payload ?? "").trim()
+      // The draft is the card's detail; what you edited it to, the response.
+      const text = (response ?? action.detail).trim()
       if (text === "") return yield* new InvalidInput({ message: "The reply is empty" })
       const posted = yield* deps.thread.post(alert, toMrkdwn(text))
       if (posted._tag === "NotPosted" && posted.reason === "error") {
@@ -83,7 +83,7 @@ export const makeHandlers = (deps: HandlerDeps): Readonly<Record<ActionKind, Han
   review: ({ action, session }) =>
     session === undefined
       ? Effect.void
-      : action.payload === RETRY
+      : action.retry
         ? deps.runner.retry(session.id)
         : deps.runner.close(session.id),
 })

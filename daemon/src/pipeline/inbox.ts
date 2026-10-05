@@ -52,7 +52,7 @@ export const InboxLive = Layer.effect(Inbox)(
         options: [],
         sessionId: null,
         alertId: alert.id,
-        payload: alert.fingerprint,
+        fingerprint: alert.fingerprint,
         url: revv ?? alert.permalink,
       })
     }
@@ -111,7 +111,7 @@ export const InboxLive = Layer.effect(Inbox)(
         events: [{ at: now(), text: triageEvent(triage) }],
       })
       yield* store.putAlert(alert)
-      yield* queue.removeWhere((a) => a.payload === alert.fingerprint && a.kind !== "reply")
+      yield* queue.removeWhere((a) => a.fingerprint === alert.fingerprint)
       if (triage.decision === "escalate") yield* escalate(alert)
       else yield* alerts.act(alert)
       yield* hub.notify

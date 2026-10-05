@@ -387,7 +387,7 @@ describe("Watcher.tick on a spike", () => {
     burst.on = false
     await tick(false)
     const cards = await world.runPromise(ActionQueue.use((queue) => queue.list))
-    expect(cards).toEqual([expect.objectContaining({ kind: "investigate", payload: "watch:api_5xx" })])
+    expect(cards).toEqual([expect.objectContaining({ kind: "investigate", fingerprint: "watch:api_5xx" })])
     await world.dispose()
   })
 })

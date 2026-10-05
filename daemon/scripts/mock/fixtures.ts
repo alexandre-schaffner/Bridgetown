@@ -1,5 +1,5 @@
 import { DEFAULT_CHANNELS, DEFAULT_SETTINGS } from "../../src/config.ts"
-import { type Action, type Alert, type AlertFields, type AlertSource, type Channel, type Disposition, NO_MILESTONES, RETRY, type Session, type Settings, type TranscriptEntry, type Triage, triageEvent, WATCH_CHANNEL } from "../../src/domain/model.ts"
+import { type Action, type Alert, type AlertFields, type AlertSource, type Channel, type Disposition, NO_MILESTONES, type Session, type Settings, type TranscriptEntry, type Triage, triageEvent, WATCH_CHANNEL } from "../../src/domain/model.ts"
 import { newSession } from "../../src/sessions/new-session.ts"
 import { sessionEndEvent } from "../../src/sessions/repo.ts"
 import { releaseDetail } from "../../src/ship/cards.ts"
@@ -337,26 +337,26 @@ export const buildFixtures = (options: WorldOptions) => {
     preparing: session(STILL_A.preparing, "preparing", { started: 1, updated: 0.8 }, { activity: "Creating worktree…", claudeSessionId: null }),
   } satisfies Record<keyof typeof STILL_SESSION, Session>
 
-  const card = (spec: Omit<Action, "id" | "createdAt" | "url" | "options"> & { readonly url?: string | null; readonly options?: ReadonlyArray<string>; readonly minutesAgo: number }): Action => {
+  const card = (spec: Omit<Action, "id" | "createdAt" | "url" | "options" | "fingerprint" | "retry"> & Partial<Pick<Action, "url" | "options" | "fingerprint" | "retry">> & { readonly minutesAgo: number }): Action => {
     const { minutesAgo, ...rest } = spec
-    return { options: [], url: null, ...rest, id: `a_mock_${spec.kind}_${spec.sessionId ?? spec.alertId ?? ""}`.replace(/[^a-z0-9_]/gi, "_"), createdAt: ago(minutesAgo) }
+    return { options: [], url: null, fingerprint: null, retry: false, ...rest, id: `a_mock_${spec.kind}_${spec.sessionId ?? spec.alertId ?? ""}`.replace(/[^a-z0-9_]/gi, "_"), createdAt: ago(minutesAgo) }
   }
   const forSession = (s: Session) => ({ sessionId: s.id, alertId: s.alertId })
 
   const actions: ReadonlyArray<Action> = [
-    card({ kind: "escalate", title: A.escalated.title, detail: A.escalated.triage.reason, primaryLabel: "Open in Slack", sessionId: null, alertId: A.escalated.id, payload: A.escalated.fingerprint, url: A.escalated.permalink, minutesAgo: 1 }),
-    card({ kind: "reply", title: "Reply to Pierre", detail: "Reproduced: /opportunities 500s when chainId is empty because the param parses as NaN and slips past validation. A one-line fix coerces empty strings to undefined; I can open the PR.", primaryLabel: "Send reply", ...forSession(S.reply), payload: "Reproduced: /opportunities 500s when chainId is empty because the param parses as NaN and slips past validation. A one-line fix coerces empty strings to undefined; I can open the PR.", minutesAgo: 1.5 }),
-    card({ kind: "review", title: `Root cause not found · ${S.review.title}`, detail: S.review.diagnosis ?? "", primaryLabel: "Close session", ...forSession(S.review), payload: null, minutesAgo: 4 }),
-    card({ kind: "investigate", title: A.logs.title, detail: `Grafana · ${A.logs.triage.reason}`, primaryLabel: "Investigate", sessionId: null, alertId: A.logs.id, payload: A.logs.fingerprint, minutesAgo: 9 }),
-    card({ kind: "investigate", title: A.watch.title, detail: `Grafana · ${A.watch.triage.reason}`, primaryLabel: "Investigate", sessionId: null, alertId: A.watch.id, payload: A.watch.fingerprint, minutesAgo: 3 }),
-    card({ kind: "investigate", title: A.investigate.title, detail: `#${A.investigate.channelName} · ${A.investigate.triage.reason}`, primaryLabel: "Investigate", sessionId: null, alertId: A.investigate.id, payload: A.investigate.fingerprint, minutesAgo: 7 }),
-    card({ kind: "merge", title: "Merge fix(app): import d3-shape from the package root", detail: "#3345 · approved by julien · CI green, 6 checks · Codex passed", primaryLabel: "Merge", ...forSession(S.merge), payload: S.merge.prUrl, minutesAgo: 12 }),
-    card({ kind: "release", title: `Ship ${S.release.title}`, detail: releaseDetail(pr(3338), "dispute-v0.4.3", "dispute"), primaryLabel: "Cut dispute-v0.4.3", ...forSession(S.release), payload: "dispute-v0.4.3", minutesAgo: 30 }),
-    card({ kind: "release", title: `Ship ${S.inFlight.title}`, detail: releaseDetail(pr(3336), IN_FLIGHT_TAG, "indexer"), primaryLabel: `Cut ${IN_FLIGHT_TAG}`, ...forSession(S.inFlight), payload: IN_FLIGHT_TAG, minutesAgo: 20 }),
-    card({ kind: "review", title: `Agent failed · ${S.failedSetup.title}`, detail: "Could not start: git fetch: The requested URL returned error: 403 (the Merkl IP allow list refused this network)", primaryLabel: "Retry", ...forSession(S.failedSetup), payload: RETRY, minutesAgo: 139 }),
-    card({ kind: "review", title: `Agent failed · ${S.failedCi.title}`, detail: "Agent stopped: error_max_turns", primaryLabel: "Retry", ...forSession(S.failedCi), payload: RETRY, minutesAgo: 540 }),
+    card({ kind: "escalate", title: A.escalated.title, detail: A.escalated.triage.reason, primaryLabel: "Open in Slack", sessionId: null, alertId: A.escalated.id, fingerprint: A.escalated.fingerprint, url: A.escalated.permalink, minutesAgo: 1 }),
+    card({ kind: "reply", title: "Reply to Pierre", detail: "Reproduced: /opportunities 500s when chainId is empty because the param parses as NaN and slips past validation. A one-line fix coerces empty strings to undefined; I can open the PR.", primaryLabel: "Send reply", ...forSession(S.reply), minutesAgo: 1.5 }),
+    card({ kind: "review", title: `Root cause not found · ${S.review.title}`, detail: S.review.diagnosis ?? "", primaryLabel: "Close session", ...forSession(S.review), minutesAgo: 4 }),
+    card({ kind: "investigate", title: A.logs.title, detail: `Grafana · ${A.logs.triage.reason}`, primaryLabel: "Investigate", sessionId: null, alertId: A.logs.id, fingerprint: A.logs.fingerprint, minutesAgo: 9 }),
+    card({ kind: "investigate", title: A.watch.title, detail: `Grafana · ${A.watch.triage.reason}`, primaryLabel: "Investigate", sessionId: null, alertId: A.watch.id, fingerprint: A.watch.fingerprint, minutesAgo: 3 }),
+    card({ kind: "investigate", title: A.investigate.title, detail: `#${A.investigate.channelName} · ${A.investigate.triage.reason}`, primaryLabel: "Investigate", sessionId: null, alertId: A.investigate.id, fingerprint: A.investigate.fingerprint, minutesAgo: 7 }),
+    card({ kind: "merge", title: "Merge fix(app): import d3-shape from the package root", detail: "#3345 · approved by julien · CI green, 6 checks · Codex passed", primaryLabel: "Merge", ...forSession(S.merge), minutesAgo: 12 }),
+    card({ kind: "release", title: `Ship ${S.release.title}`, detail: releaseDetail(pr(3338), "dispute-v0.4.3", "dispute"), primaryLabel: "Cut dispute-v0.4.3", ...forSession(S.release), minutesAgo: 30 }),
+    card({ kind: "release", title: `Ship ${S.inFlight.title}`, detail: releaseDetail(pr(3336), IN_FLIGHT_TAG, "indexer"), primaryLabel: `Cut ${IN_FLIGHT_TAG}`, ...forSession(S.inFlight), minutesAgo: 20 }),
+    card({ kind: "review", title: `Agent failed · ${S.failedSetup.title}`, detail: "Could not start: git fetch: The requested URL returned error: 403 (the Merkl IP allow list refused this network)", primaryLabel: "Retry", ...forSession(S.failedSetup), retry: true, minutesAgo: 139 }),
+    card({ kind: "review", title: `Agent failed · ${S.failedCi.title}`, detail: "Agent stopped: error_max_turns", primaryLabel: "Retry", ...forSession(S.failedCi), retry: true, minutesAgo: 540 }),
     // Live, the asking agent puts this card up itself.
-    ...(options.static ? [card({ kind: "answer", title: ASK.question, detail: S.ask.title, primaryLabel: "Reply", options: ASK.options, ...forSession(S.ask), payload: null, minutesAgo: 2 })] : []),
+    ...(options.static ? [card({ kind: "answer", title: ASK.question, detail: S.ask.title, primaryLabel: "Reply", options: ASK.options, ...forSession(S.ask), minutesAgo: 2 })] : []),
   ]
 
   const t = (minutesAgo: number, kind: TranscriptEntry["kind"], text: string): TranscriptEntry => ({ at: ago(minutesAgo), kind, text })

@@ -57,7 +57,7 @@ import { type Judged, saveJudged } from "../../src/watch/sweep-store.ts"
 import { Watcher } from "../../src/watch/watcher.ts"
 import { scriptedAgent } from "./agent.ts"
 import { fakeJev, fakeReviewer, fakeSlack, makeFakeGitHub } from "./fakes.ts"
-import { buildFixtures, IN_FLIGHT_TAG, LOG_FINDING_FINGERPRINT } from "./fixtures.ts"
+import { buildFixtures, IN_FLIGHT_TAG, LOG_FINDING_FINGERPRINT, SESSION } from "./fixtures.ts"
 import { fakeGrafana, SWEEP_ROWS } from "./grafana.ts"
 import { scriptFor } from "./scripts.ts"
 
@@ -267,7 +267,7 @@ const program = Effect.gen(function* () {
     if (staticWorld && world === "full") yield* watcher.sweepLogs
 
     // The release in flight: a real resolve through the gates, held up in the fake `gh release create`.
-    const inFlight = fixtures.actions.find((a) => a.kind === "release" && a.payload === IN_FLIGHT_TAG)
+    const inFlight = fixtures.actions.find((a) => a.kind === "release" && a.sessionId === SESSION.inFlight)
     if (inFlight !== undefined) {
       yield* actions.resolve(inFlight.id, null).pipe(
         Effect.catchCause((cause) => Effect.logWarning("in-flight release failed", cause)),

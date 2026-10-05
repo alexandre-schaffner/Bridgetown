@@ -1,11 +1,12 @@
 import { Context, Effect, Layer } from "effect"
 import { type AdapterError, NotFound } from "../domain/errors.ts"
 import { newId, now } from "../domain/ids.ts"
-import { type Action, RETRY, type Session } from "../domain/model.ts"
+import type { Action, Session } from "../domain/model.ts"
 import { Hub } from "../hub.ts"
 import { Store } from "../store/store.ts"
 
-export type NewAction = Omit<Action, "id" | "createdAt" | "url"> & { readonly url?: string | null }
+/** A card to put up; what only some kinds carry defaults to nothing. */
+export type NewAction = Omit<Action, "id" | "createdAt" | "url" | "fingerprint" | "retry"> & Partial<Pick<Action, "url" | "fingerprint" | "retry">>
 
 /** "Needs you": every card goes in and out through here, so each kind is shaped (and deduped) the same way. */
 export interface ActionQueueShape {
@@ -34,7 +35,7 @@ export const ActionQueueLive = Layer.effect(ActionQueue)(
 
     const put = (action: NewAction) =>
       Effect.gen(function* () {
-        const stored: Action = { ...action, url: action.url ?? null, id: newId("a"), createdAt: now() }
+        const stored: Action = { ...action, url: action.url ?? null, fingerprint: action.fingerprint ?? null, retry: action.retry ?? false, id: newId("a"), createdAt: now() }
         yield* store.putAction(stored)
         yield* hub.notify
         return stored
@@ -69,12 +70,11 @@ export const ActionQueueLive = Layer.effect(ActionQueue)(
             options: [],
             sessionId: session.id,
             alertId: session.alertId,
-            payload: null,
           })
         }),
       retryCard: (session, title, detail) =>
         Effect.gen(function* () {
-          if ((yield* reviewCards(session.id)).some((a) => a.payload === RETRY)) return
+          if ((yield* reviewCards(session.id)).some((a) => a.retry)) return
           yield* put({
             kind: "review",
             title: `${title} · ${session.title}`,
@@ -83,7 +83,7 @@ export const ActionQueueLive = Layer.effect(ActionQueue)(
             options: [],
             sessionId: session.id,
             alertId: session.alertId,
-            payload: RETRY,
+            retry: true,
           })
         }),
       remove: (id) => store.deleteAction(id).pipe(Effect.andThen(hub.notify)),

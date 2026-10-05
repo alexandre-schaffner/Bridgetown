@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Deferred, Effect, Fiber } from "effect"
 import { makeInFlight } from "../src/actions/in-flight.ts"
 import { AdapterError } from "../src/domain/errors.ts"
-import { acceptsMessages, type Action, cardStands, closedResolution, dismissCloses, NO_MILESTONES, openableUrl, RETRY, type Session, type SessionStatus } from "../src/domain/model.ts"
+import { acceptsMessages, type Action, cardStands, closedResolution, dismissCloses, NO_MILESTONES, openableUrl, type Session, type SessionStatus } from "../src/domain/model.ts"
 import { mergeOnce, releaseOnce } from "../src/ship/gates.ts"
 import { makeSession } from "./fixtures/records.ts"
 
@@ -170,8 +170,8 @@ describe("in-flight resolves", () => {
 })
 
 describe("contract rules", () => {
-  const action = (kind: Action["kind"], payload: string | null = null): Action => ({
-    id: "a", kind, title: "", detail: "", primaryLabel: "", options: [], sessionId: "s", alertId: null, payload, url: null, createdAt: "",
+  const action = (kind: Action["kind"], retry = false): Action => ({
+    id: "a", kind, title: "", detail: "", primaryLabel: "", options: [], sessionId: "s", alertId: null, fingerprint: null, retry, url: null, createdAt: "",
   })
   test("acceptsMessages: live or handed back with a worktree and an agent session", () => {
     expect(acceptsMessages(session("running", { claudeSessionId: null }))).toBe(true)
@@ -188,7 +188,7 @@ describe("contract rules", () => {
   test("dismissCloses: a stranded session's last card", () => {
     expect(dismissCloses(action("review"), session("waiting"))).toBe(true)
     expect(dismissCloses(action("release"), session("awaiting_release"))).toBe(true)
-    expect(dismissCloses(action("review", RETRY), session("failed"))).toBe(true)
+    expect(dismissCloses(action("review", true), session("failed"))).toBe(true)
     expect(dismissCloses(action("answer"), session("waiting"))).toBe(false)
     expect(dismissCloses(action("review"), session("running"))).toBe(false)
     expect(dismissCloses(action("investigate"), undefined)).toBe(false)
@@ -210,8 +210,8 @@ describe("contract rules", () => {
       [action("review"), "waiting", true],
       [action("review"), "running", false],
       [action("review"), "resolved", false],
-      [action("review", RETRY), "failed", true],
-      [action("review", RETRY), "queued", false],
+      [action("review", true), "failed", true],
+      [action("review", true), "queued", false],
       [action("reply"), "resolved", true],
       [action("answer"), "running", true],
     ]

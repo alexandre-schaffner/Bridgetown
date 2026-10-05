@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { ActionQueue } from "../src/actions/queue.ts"
-import { type Action, RETRY, type Session } from "../src/domain/model.ts"
+import { type Action, type Session } from "../src/domain/model.ts"
 import { recoverInterrupted, wasInterrupted } from "../src/sessions/recovery.ts"
 import { SessionRepo } from "../src/sessions/repo.ts"
 import { Store } from "../src/store/store.ts"
@@ -104,9 +104,9 @@ describe("SessionRepo: the finished guard", () => {
 })
 
 describe("SessionRepo: a card goes once its session leaves the stage it was offered for", () => {
-  const card = (sessionId: string, kind: Action["kind"], payload: string | null = null): Action => ({
-    id: `a_${sessionId}_${kind}_${payload ?? ""}`, kind, title: kind, detail: "", primaryLabel: "Go", options: [], sessionId,
-    alertId: null, payload, url: null, createdAt: "2026-10-01T00:00:00.000Z",
+  const card = (sessionId: string, kind: Action["kind"], retry = false): Action => ({
+    id: `a_${sessionId}_${kind}_${retry}`, kind, title: kind, detail: "", primaryLabel: "Go", options: [], sessionId,
+    alertId: null, fingerprint: null, retry, url: null, createdAt: "2026-10-01T00:00:00.000Z",
   })
   const cardsAfter = (session: Session, cards: ReadonlyArray<Action>, patch: Partial<Session>) =>
     run(
@@ -115,12 +115,12 @@ describe("SessionRepo: a card goes once its session leaves the stage it was offe
         yield* seed(session)
         for (const action of cards) yield* store.putAction(action)
         yield* (yield* SessionRepo).patch(session.id, patch)
-        return (yield* store.listActions()).filter((a) => a.sessionId === session.id).map((a) => `${a.kind}:${a.payload ?? ""}`).sort()
+        return (yield* store.listActions()).filter((a) => a.sessionId === session.id).map((a) => `${a.kind}${a.retry ? ":retry" : ""}`).sort()
       }),
     )
 
   test("a PR closed under a merge card leaves no merge card", async () => {
-    const left = await cardsAfter(makeSession("awaiting_merge", { id: "s_closed", alertId: "C1:closed" }), [card("s_closed", "merge", "https://ghe/pull/1")], {
+    const left = await cardsAfter(makeSession("awaiting_merge", { id: "s_closed", alertId: "C1:closed" }), [card("s_closed", "merge")], {
       status: "stopped",
       resolution: "PR closed without merging",
     })
@@ -128,7 +128,7 @@ describe("SessionRepo: a card goes once its session leaves the stage it was offe
   })
 
   test("a deploy that finishes after it was handed off as stalled takes the hand-off card with it", async () => {
-    const left = await cardsAfter(makeSession("waiting", { id: "s_late", alertId: "C1:late" }), [card("s_late", "review"), card("s_late", "release", "api-v1")], {
+    const left = await cardsAfter(makeSession("waiting", { id: "s_late", alertId: "C1:late" }), [card("s_late", "review"), card("s_late", "release")], {
       status: "resolved",
     })
     expect(left).toEqual([])
@@ -137,21 +137,21 @@ describe("SessionRepo: a card goes once its session leaves the stage it was offe
   test("a failed session keeps its draft reply and retry card; everything else goes", async () => {
     const left = await cardsAfter(
       makeSession("waiting", { id: "s_fail", alertId: "C1:fail" }),
-      [card("s_fail", "review"), card("s_fail", "rerun", "42"), card("s_fail", "answer"), card("s_fail", "reply", "Thanks"), card("s_fail", "review", RETRY)],
+      [card("s_fail", "review"), card("s_fail", "rerun"), card("s_fail", "answer"), card("s_fail", "reply"), card("s_fail", "review", true)],
       { status: "failed" },
     )
-    expect(left).toEqual(["reply:Thanks", `review:${RETRY}`])
+    expect(left).toEqual(["reply", "review:retry"])
   })
 
   test("a write that does not move the session leaves its cards alone", async () => {
-    const left = await cardsAfter(makeSession("awaiting_merge", { id: "s_wait", alertId: "C1:wait" }), [card("s_wait", "merge", "https://ghe/pull/1")], {
+    const left = await cardsAfter(makeSession("awaiting_merge", { id: "s_wait", alertId: "C1:wait" }), [card("s_wait", "merge")], {
       activity: "still waiting",
     })
-    expect(left).toEqual(["merge:https://ghe/pull/1"])
+    expect(left).toEqual(["merge"])
   })
 
   test("a session sent back to CI from the merge gate takes the Merge card with it", async () => {
-    const left = await cardsAfter(makeSession("awaiting_merge", { id: "s_back", alertId: "C1:back" }), [card("s_back", "merge", "https://ghe/pull/1")], {
+    const left = await cardsAfter(makeSession("awaiting_merge", { id: "s_back", alertId: "C1:back" }), [card("s_back", "merge")], {
       status: "ci",
     })
     expect(left).toEqual([])
@@ -160,17 +160,17 @@ describe("SessionRepo: a card goes once its session leaves the stage it was offe
   test("a turn starting takes the hand-off, re-run and gate cards; a reply and the turn's own answer stay", async () => {
     const left = await cardsAfter(
       makeSession("awaiting_release", { id: "s_turn", alertId: "C1:turn" }),
-      [card("s_turn", "release", "app-v1.0.1"), card("s_turn", "review"), card("s_turn", "rerun", "42"), card("s_turn", "reply", "Thanks"), card("s_turn", "answer")],
+      [card("s_turn", "release"), card("s_turn", "review"), card("s_turn", "rerun"), card("s_turn", "reply"), card("s_turn", "answer")],
       { status: "running" },
     )
-    expect(left).toEqual(["answer:", "reply:Thanks"])
+    expect(left).toEqual(["answer", "reply"])
   })
 })
 
 describe("recoverInterrupted (M5)", () => {
   const answer = (sessionId: string) => ({
     id: `a_${sessionId}`, kind: "answer" as const, title: "Which fix?", detail: "", primaryLabel: "Reply", options: [],
-    sessionId, alertId: null, payload: null, url: null, createdAt: "2026-10-01T00:00:00.000Z",
+    sessionId, alertId: null, fingerprint: null, retry: false, url: null, createdAt: "2026-10-01T00:00:00.000Z",
   })
   test("pure rule: mid-turn, or blocked on an ask even after a first result", () => {
     expect(wasInterrupted(makeSession("running"), [])).toBe(true)
@@ -193,10 +193,10 @@ describe("recoverInterrupted (M5)", () => {
         return {
           asked: (yield* repo.get("s_ask"))?.status,
           handed: (yield* repo.get("s_handed"))?.status,
-          cards: actions.filter((a) => a.sessionId === "s_ask").map((a) => [a.kind, a.payload]),
+          cards: actions.filter((a) => a.sessionId === "s_ask").map((a) => [a.kind, a.retry]),
         }
       }),
     )
-    expect(out).toEqual({ asked: "failed", handed: "waiting", cards: [["review", RETRY]] })
+    expect(out).toEqual({ asked: "failed", handed: "waiting", cards: [["review", true]] })
   })
 })

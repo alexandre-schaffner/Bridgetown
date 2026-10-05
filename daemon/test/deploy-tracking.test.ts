@@ -164,7 +164,7 @@ describe("a re-run", () => {
         const shipper = yield* Shipper
         yield* store.putAlert(trackerAlert("s_rerun"), "failed once")
         yield* store.putSession(makeSession("waiting", { id: "s_rerun", alertId: TRACKER_ID, outcome: "recommendation", recommendation: "rerun_failed_jobs" }))
-        yield* shipper.rerun("s_rerun", "291250187")
+        yield* shipper.rerun("s_rerun")
         yield* shipper.tick
         return yield* store.getSession("s_rerun")
       }),

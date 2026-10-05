@@ -135,7 +135,7 @@ describe("asks", () => {
           yield* store.putSession(session)
           yield* store.putAction({
             id: "a_draft", kind: "reply", title: "Reply to Pierre", detail: "draft", primaryLabel: "Send reply", options: [],
-            sessionId: session.id, alertId: session.alertId, payload: "draft", url: null, createdAt: "2026-10-01T00:00:00.000Z",
+            sessionId: session.id, alertId: session.alertId, fingerprint: null, retry: false, url: null, createdAt: "2026-10-01T00:00:00.000Z",
           })
           yield* (yield* SessionRunner).message(session.id, "go")
           while (!(yield* store.listActions()).some((a) => a.kind === "answer")) yield* Effect.sleep("5 millis")

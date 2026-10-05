@@ -119,7 +119,7 @@ describe("a new turn", () => {
         yield* seed(handedBack("s_reopen"))
         yield* store.putAction({
           id: "a_handoff", kind: "review", title: "Root cause not found · t", detail: "", primaryLabel: "Close session", options: [],
-          sessionId: "s_reopen", alertId: "C1:s_reopen", payload: null, url: null, createdAt: "2026-10-01T00:00:00.000Z",
+          sessionId: "s_reopen", alertId: "C1:s_reopen", fingerprint: null, retry: false, url: null, createdAt: "2026-10-01T00:00:00.000Z",
         })
         yield* (yield* SessionRunner).message("s_reopen", "look again")
       }))

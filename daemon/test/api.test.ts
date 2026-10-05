@@ -43,7 +43,7 @@ beforeAll(async () => {
       yield* store.putSession(queued)
       yield* store.putAction({
         id: "a_review", kind: "review", title: "Root cause not found · t", detail: "", primaryLabel: "Close session", options: [],
-        sessionId: null, alertId: alert.id, payload: null, url: "file:///etc/passwd", createdAt: "2026-10-01T00:00:00.000Z",
+        sessionId: null, alertId: alert.id, fingerprint: null, retry: false, url: "file:///etc/passwd", createdAt: "2026-10-01T00:00:00.000Z",
       })
       yield* serve(server, { token: TOKEN, sse: { coalesce: "10 millis", ping: "200 millis" } })
     }),
@@ -110,7 +110,8 @@ describe("contract shape", () => {
       actions: [{ id: "a_review", inFlight: false, dismissCloses: false, url: null }],
     })
     expect(text).not.toContain('"phase"')
-    expect(text).not.toContain('"payload"')
+    // What a card acts on is the daemon's business, never on the wire.
+    for (const field of ['"fingerprint"', '"retry"']) expect(text).not.toContain(field)
   })
   test("logs before the first sweep: no patterns, and why none run", async () => {
     const logs: unknown = await (await call("/logs")).json()

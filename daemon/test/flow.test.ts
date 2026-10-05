@@ -15,7 +15,7 @@ import { fakeSlack, makeWorld, verdict } from "./fixtures/world.ts"
 
 const card = (overrides: Partial<Action>): Action => ({
   id: "a_x", kind: "review", title: "t", detail: "", primaryLabel: "Close session", options: [], sessionId: null, alertId: null,
-  payload: null, url: null, createdAt: "2026-10-01T00:00:00.000Z", ...overrides,
+  fingerprint: null, retry: false, url: null, createdAt: "2026-10-01T00:00:00.000Z", ...overrides,
 })
 
 const seed = (session: Session, alert: Partial<Alert> = {}) =>
@@ -73,7 +73,7 @@ describe("cards (L3, L4)", () => {
       Effect.gen(function* () {
         const store = yield* Store
         yield* seed(makeSession("awaiting_merge", { id: "s_merge", alertId: "C1:merge", prUrl: "https://ghe/pull/1", milestones: { ...NO_MILESTONES, prOpened: true, ciGreen: true } }))
-        yield* store.putAction(card({ id: "a_merge", kind: "merge", sessionId: "s_merge", alertId: "C1:merge", payload: "https://ghe/pull/1" }))
+        yield* store.putAction(card({ id: "a_merge", kind: "merge", sessionId: "s_merge", alertId: "C1:merge" }))
         yield* (yield* Actions).dismiss("a_merge")
         return yield* store.getSession("s_merge")
       }),
@@ -86,7 +86,7 @@ describe("cards (L3, L4)", () => {
       Effect.gen(function* () {
         const store = yield* Store
         yield* seed(makeSession("waiting", { id: "s_reply", alertId: "C1:reply" }), inbox)
-        yield* store.putAction(card({ id: "a_reply", kind: "reply", sessionId: "s_reply", alertId: "C1:reply", payload: "Done, see PR" }))
+        yield* store.putAction(card({ id: "a_reply", kind: "reply", sessionId: "s_reply", alertId: "C1:reply", detail: "Done, see PR" }))
         yield* (yield* Actions).resolve("a_reply", null)
         return yield* store.getSession("s_reply")
       }),
@@ -101,7 +101,7 @@ describe("cards (L3, L4)", () => {
         const hub = yield* Hub
         yield* hub.updateSettings({ ...(yield* hub.settings), dryRun: false })
         yield* seed(makeSession("waiting", { id: "s_sent", alertId: "C1:sent" }), inbox)
-        yield* store.putAction(card({ id: "a_sent", kind: "reply", sessionId: "s_sent", alertId: "C1:sent", payload: "Done" }))
+        yield* store.putAction(card({ id: "a_sent", kind: "reply", sessionId: "s_sent", alertId: "C1:sent", detail: "Done" }))
         yield* (yield* Actions).resolve("a_sent", "Done, thanks")
         return yield* store.getSession("s_sent")
       }),

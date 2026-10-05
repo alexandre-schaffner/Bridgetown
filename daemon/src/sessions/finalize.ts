@@ -119,7 +119,7 @@ export const decideOutcome = ({ session, result, alert, pushed, head, adversaria
 
   const reply: ReadonlyArray<CardRequest> =
     inbox !== undefined && result.outcome !== "needs_human"
-      ? [card({ kind: "reply", title: `Reply to ${inbox.fromName}`, detail: result.summary, primaryLabel: "Send reply", payload: result.summary })]
+      ? [card({ kind: "reply", title: `Reply to ${inbox.fromName}`, detail: result.summary, primaryLabel: "Send reply" })]
       : []
 
   // Bridgetown sent the agent back and it found no fix, or none that ships (a failed deploy is only answered by a
@@ -186,7 +186,7 @@ export const decideOutcome = ({ session, result, alert, pushed, head, adversaria
         inbox !== undefined
           ? []
           : result.recommendation === "rerun_failed_jobs" && runId !== null
-            ? [card({ kind: "rerun", title: `Re-run failed jobs · ${session.title}`, detail, primaryLabel: "Re-run failed jobs", payload: runId })]
+            ? [card({ kind: "rerun", title: `Re-run failed jobs · ${session.title}`, detail, primaryLabel: "Re-run failed jobs" })]
             : [{ _tag: "HandOff", title: "Recommendation", detail }]
       return {
         ...none,

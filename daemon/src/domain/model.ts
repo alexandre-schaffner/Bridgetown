@@ -414,7 +414,10 @@ export const Action = Schema.Struct({
   options: Schema.Array(Schema.String),
   sessionId: Schema.NullOr(Schema.String),
   alertId: Schema.NullOr(Schema.String),
-  payload: Schema.NullOr(Schema.String),
+  /** An investigate or escalate card's alert fingerprint: one card per problem, the newest alert's. */
+  fingerprint: Schema.NullOr(Schema.String),
+  /** A review card whose button retries its failed session, rather than closing it. */
+  retry: Schema.Boolean,
   /** Opened by the app when the primary button is pressed (Slack permalink, revv:// link). */
   url: nullByDefault(Schema.String),
   createdAt: Schema.String,
@@ -532,9 +535,6 @@ export const closedResolution = (session: Session): string =>
             ? "PR open, not merged"
             : "not fixed"
 
-/** Marks the review card a failed session gets; resolving it re-queues the same session. */
-export const RETRY = "retry"
-
 /**
  * Whether the card still stands: its session is at the stage the card was offered for. A merge card is for
  * `awaiting_merge`, a release card for `awaiting_release`, a re-run or a hand-off for `waiting`, a retry for
@@ -552,7 +552,7 @@ export const cardStands = (action: Action, session: Session | undefined): boolea
     case "rerun":
       return session?.status === "waiting"
     case "review":
-      return session?.status === (action.payload === RETRY ? "failed" : "waiting")
+      return session?.status === (action.retry ? "failed" : "waiting")
     case "answer":
       return session !== undefined && isActive(session)
     case "investigate":

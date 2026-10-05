@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test"
 import { Deferred, Effect, Fiber } from "effect"
 import { Actions } from "../src/actions/actions.ts"
 import { SlackApiError } from "../src/domain/errors.ts"
-import { type Action, type Alert, RETRY, type Session } from "../src/domain/model.ts"
+import type { Action, Alert, Session } from "../src/domain/model.ts"
 import { Hub } from "../src/hub.ts"
 import { Store } from "../src/store/store.ts"
 import { makeAlert, makeSession } from "./fixtures/records.ts"
@@ -10,7 +10,7 @@ import { fakeSlack, makeWorld } from "./fixtures/world.ts"
 
 const card = (overrides: Partial<Action>): Action => ({
   id: "a_x", kind: "review", title: "t", detail: "", primaryLabel: "Close session", options: [], sessionId: null, alertId: null,
-  payload: null, url: null, createdAt: "2026-10-01T00:00:00.000Z", ...overrides,
+  fingerprint: null, retry: false, url: null, createdAt: "2026-10-01T00:00:00.000Z", ...overrides,
 })
 
 const seed = (alert: Partial<Alert>, action: Action, session?: Session) =>
@@ -93,7 +93,7 @@ describe("resolve", () => {
   test("review on a failed session with Retry: queued again, conversation kept", async () => {
     const out = await world.runPromise(Effect.gen(function* () {
       const failed = makeSession("failed", { id: "s_retry", alertId: "C1:retry", claudeSessionId: "c", resolution: "agent failed" })
-      yield* seed({ id: "C1:retry", sessionId: "s_retry" }, card({ id: "a_retry", kind: "review", sessionId: "s_retry", alertId: "C1:retry", payload: RETRY, primaryLabel: "Retry" }), failed)
+      yield* seed({ id: "C1:retry", sessionId: "s_retry" }, card({ id: "a_retry", kind: "review", sessionId: "s_retry", alertId: "C1:retry", retry: true, primaryLabel: "Retry" }), failed)
       yield* (yield* Actions).resolve("a_retry", null)
       return yield* (yield* Store).getSession("s_retry")
     }))
@@ -116,7 +116,7 @@ describe("resolve", () => {
       const hub = yield* Hub
       yield* hub.updateSettings({ ...(yield* hub.settings), dryRun: false })
       const waiting = makeSession("waiting", { id: "s_rep", alertId: "C1:rep" })
-      yield* seed({ id: "C1:rep", sessionId: "s_rep" }, card({ id: "a_rep", kind: "reply", sessionId: "s_rep", alertId: "C1:rep", payload: "draft" }), waiting)
+      yield* seed({ id: "C1:rep", sessionId: "s_rep" }, card({ id: "a_rep", kind: "reply", sessionId: "s_rep", alertId: "C1:rep", detail: "draft" }), waiting)
       const error = yield* (yield* Actions).resolve("a_rep", "Done").pipe(Effect.flip)
       return { error, cards: (yield* store.listActions()).map((a) => a.id), status: (yield* store.getSession("s_rep"))?.status }
     }))
@@ -139,7 +139,7 @@ describe("resolve", () => {
   test("a blank reply is refused before anything is posted: the card stays, the session waits", async () => {
     const out = await world.runPromise(Effect.gen(function* () {
       const waiting = makeSession("waiting", { id: "s_blank", alertId: "C1:blank" })
-      yield* seed({ id: "C1:blank", sessionId: "s_blank" }, card({ id: "a_blank", kind: "reply", sessionId: "s_blank", alertId: "C1:blank", payload: "draft" }), waiting)
+      yield* seed({ id: "C1:blank", sessionId: "s_blank" }, card({ id: "a_blank", kind: "reply", sessionId: "s_blank", alertId: "C1:blank", detail: "draft" }), waiting)
       const failure = yield* (yield* Actions).resolve("a_blank", "   ").pipe(Effect.flip)
       const store = yield* Store
       return { failure: failure._tag, status: (yield* store.getSession("s_blank"))?.status, cards: (yield* store.listActions()).map((a) => a.id) }
@@ -151,7 +151,7 @@ describe("resolve", () => {
     const out = await world.runPromise(Effect.gen(function* () {
       const store = yield* Store
       yield* store.putSession(makeSession("waiting", { id: "s_gone", alertId: "C1:gone" }))
-      yield* store.putAction(card({ id: "a_gone", kind: "reply", sessionId: "s_gone", alertId: "C1:gone", payload: "draft" }))
+      yield* store.putAction(card({ id: "a_gone", kind: "reply", sessionId: "s_gone", alertId: "C1:gone", detail: "draft" }))
       const failure = yield* (yield* Actions).resolve("a_gone", null).pipe(Effect.flip)
       return { failure: failure._tag, status: (yield* store.getSession("s_gone"))?.status }
     }))
@@ -177,7 +177,7 @@ describe("one resolve or dismiss of a card at a time", () => {
     const out = await slow.runPromise(Effect.gen(function* () {
       yield* (yield* Hub).modifySettings((current) => Effect.succeed({ ...current, dryRun: false }))
       const waiting = makeSession("waiting", { id: "s_once", alertId: "C1:once" })
-      yield* seed({ id: "C1:once", sessionId: "s_once" }, card({ id: "a_once", kind: "reply", sessionId: "s_once", alertId: "C1:once", payload: "Done" }), waiting)
+      yield* seed({ id: "C1:once", sessionId: "s_once" }, card({ id: "a_once", kind: "reply", sessionId: "s_once", alertId: "C1:once", detail: "Done" }), waiting)
       const actions = yield* Actions
       const first = yield* actions.resolve("a_once", null).pipe(Effect.forkChild)
       yield* Deferred.await(answered)

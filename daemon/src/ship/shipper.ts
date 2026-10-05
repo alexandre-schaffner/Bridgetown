@@ -38,8 +38,8 @@ export interface ShipperShape {
   readonly merge: (sessionId: string) => Effect.Effect<void, GitHubError | Conflict>
   /** The release gate: cuts at most one tag for the session's prefix. `Conflict` unless the session is `awaiting_release` with a prefix. */
   readonly release: (sessionId: string) => Effect.Effect<void, GitHubError | Conflict>
-  /** Re-runs a failed workflow run on the agent's recommendation. `Conflict` unless the session is `waiting` on it. */
-  readonly rerun: (sessionId: string, runId: string) => Effect.Effect<void, GitHubError | Conflict>
+  /** Re-runs the failed workflow run of the session's release alert, on the agent's recommendation. `Conflict` unless the session is `waiting` on it. */
+  readonly rerun: (sessionId: string) => Effect.Effect<void, GitHubError | Conflict>
 }
 
 export class Shipper extends Context.Service<Shipper, ShipperShape>()("Shipper") {}
@@ -90,7 +90,6 @@ export const ShipperLive = Layer.effect(Shipper)(
         options: [],
         sessionId: session.id,
         alertId: session.alertId,
-        payload: tag,
       })
 
     /**
@@ -236,7 +235,6 @@ export const ShipperLive = Layer.effect(Shipper)(
               options: [],
               sessionId,
               alertId: session.alertId,
-              payload: session.prUrl,
             })
             return
           }
@@ -388,12 +386,14 @@ export const ShipperLive = Layer.effect(Shipper)(
       if (deploying !== undefined) yield* postFor(deploying, Messages.released(tag))
     })
 
-    const rerun = Effect.fn("Shipper.rerun")(function* (sessionId: string, runId: string) {
+    const rerun = Effect.fn("Shipper.rerun")(function* (sessionId: string) {
       const session = yield* repo.get(sessionId)
       if (session?.status !== "waiting") return yield* movedOn("on a re-run")
-      yield* github.rerunFailedJobs(runId)
       const alert = yield* store.getAlert(session.alertId)
-      const tag = alert?.fields._tag === "release" ? alert.fields.tag : null
+      const fields = alert?.fields._tag === "release" ? alert.fields : null
+      if (fields?.runId === null || fields?.runId === undefined) return yield* new Conflict({ message: "The alert names no workflow run to re-run" })
+      yield* github.rerunFailedJobs(fields.runId)
+      const tag = fields.tag
       yield* repo.patch(sessionId, {
         status: tag === null ? "closed" : "deploying",
         phase: "deploy",
