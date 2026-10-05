@@ -5,6 +5,7 @@
 import { gsap } from "gsap";
 import * as THREE from "three";
 import { createArchScene, type LightName } from "../scripts/scene";
+import { splitText } from "../lib/split";
 import { createIsland } from "../scripts/island";
 import { restView, type View } from "../scripts/view";
 import "./rig";
@@ -99,41 +100,10 @@ const flood = $("[data-flood]");
 
 // MARK: Grammar
 
-/** Wraps each word in a mask so it can rise out of its own line. Keeps <br> and inline spans. */
-function split(el: HTMLElement) {
-  if (el.dataset.splitDone) return;
-  el.dataset.splitDone = "1";
-  const walk = (node: Node) => {
-    for (const child of [...node.childNodes]) {
-      if (child.nodeType === Node.TEXT_NODE) {
-        const parts = child.textContent!.split(/(\s+)/);
-        const frag = document.createDocumentFragment();
-        for (const p of parts) {
-          if (!p) continue;
-          if (/^\s+$/.test(p)) frag.append(" ");
-          else {
-            const w = document.createElement("span");
-            w.className = "w";
-            const wi = document.createElement("span");
-            wi.className = "wi";
-            wi.textContent = p;
-            w.append(wi);
-            frag.append(w);
-          }
-        }
-        child.replaceWith(frag);
-      } else if (child.nodeType === Node.ELEMENT_NODE && (child as Element).tagName !== "BR") walk(child);
-    }
-  };
-  walk(el);
-}
-
 /** Words rise into place, one after another. */
 function reveal(el: HTMLElement, at: number, { stagger = 0.06, dur = 1.0, hit = true } = {}) {
-  split(el);
-  const words = $$(".wi", el);
   tl.fromTo(
-    words,
+    splitText(el, "words"),
     { yPercent: 110, opacity: 0, filter: "blur(10px)" },
     { yPercent: 0, opacity: 1, filter: "blur(0px)", duration: dur, ease: "expo.out", stagger },
     at,

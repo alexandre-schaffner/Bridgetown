@@ -8,6 +8,7 @@ import { gsap } from "gsap";
 import type { Color } from "three";
 import { $, $$, cssRGB } from "../lib/dom";
 import { clamp, band, inOut, lerp, smooth } from "../lib/math";
+import { splitText } from "../lib/split";
 import { createHeroFrames } from "./hero-frames";
 import { createReel } from "./reel";
 import type { ArchScene, LightName } from "./scene";
@@ -145,17 +146,7 @@ ScrollTrigger.create({
 // The headline arrives letter by letter out of a blur, as the light comes up behind it.
 const title = $("[data-split]", hero);
 if (title && !reduced) {
-  const words = title.innerHTML.split(/(\s+|&nbsp;)/);
-  title.innerHTML = words
-    .map((w) =>
-      /^\s+$|^&nbsp;$/.test(w)
-        ? w
-        : `<span class="w" style="display:inline-block;white-space:nowrap">${[...w]
-            .map((ch) => `<span class="ch" style="display:inline-block">${ch}</span>`)
-            .join("")}</span>`,
-    )
-    .join("");
-  gsap.from($$(".ch", title), {
+  gsap.from(splitText(title, "chars"), {
     yPercent: 40,
     opacity: 0,
     filter: "blur(12px)",

@@ -623,6 +623,18 @@ const CHECKS: Check[] = [
     },
   },
   {
+    name: "The hero's headline arrives letter by letter, and reads as one sentence",
+    viewport: LAPTOP,
+    motion: "no-preference",
+    async run(page) {
+      const h1 = page.locator("h1");
+      const letters = await h1.locator(".ch").count();
+      expect(letters > 20, `it is split into ${letters} letters`);
+      const tree = await h1.ariaSnapshot();
+      expect(tree.includes('heading "Your alerts, handled before you look."'), `a screen reader gets ${tree}`);
+    },
+  },
+  {
     name: "Under Reduce Motion, a nav link lands on the light's stage and focuses it",
     viewport: LAPTOP,
     motion: "reduce",
