@@ -19,6 +19,21 @@ const files: Record<string, string> = {
   // Ordinary idioms: `local`/`readonly` with a command substitution the parser already checks, not arithmetic injection.
   "/w/vars.sh": "#!/bin/bash\nreadonly ROOT=$(git rev-parse --show-toplevel)\nf() {\n  local sha=$(git rev-parse HEAD)\n  echo \"$sha\"\n}\nf\n",
   "/tmp/y.sh": "gcloud logging read\n",
+  "/w/package.json": JSON.stringify({
+    scripts: {
+      build: "tsc -p .",
+      type: "tsc --noEmit",
+      ci: "bun run type && bun run build",
+      // `npm test` runs this; `bun test` is bun's own test runner.
+      test: "bun test && gh pr merge 1",
+      deploy: "kubectl apply -f k8s",
+      ship: "bun run deploy",
+      prerelease: "gh release create v1",
+      release: "echo released",
+      gate: "./x.sh",
+    },
+  }),
+  "/w/apps/api/package.json": JSON.stringify({ scripts: { rollout: "helm upgrade api ." } }),
 }
 const context: GuardContext = { branch, cwd: worktree, daemonPort: 47621, readFile: (path) => files[path] }
 
@@ -259,6 +274,22 @@ describe("guard", () => {
     // A GraphQL body the guard cannot read.
     "gh api graphql -F query=@q.graphql",
     "gh api graphql --input q.json",
+    // A package.json script runs its body (and its pre/post scripts), found the way the package manager finds it.
+    "bun run deploy",
+    "npm run deploy",
+    "bun deploy",
+    "pnpm deploy",
+    "yarn deploy",
+    "npm test",
+    "bun run ship",
+    "bun run release",
+    "bun run gate",
+    "cd src && bun run deploy",
+    "cd apps/api && bun run rollout",
+    "bun --cwd apps/api run rollout",
+    "pnpm -C apps/api rollout",
+    "npm --prefix=apps/api run rollout",
+    "bun run $SCRIPT",
     // ./envshebang.sh runs by path with an `env -S bash` shebang: still shell, still checked.
     "./envshebang.sh",
     // Deep nesting is reported, not crashed through (fail closed).
@@ -350,6 +381,12 @@ describe("guard", () => {
     // GraphQL reads.
     "gh api graphql -f query='query { viewer { login } }'",
     `gh api graphql -f query='{ repository(owner: "Merkl", name: "monorepo") { pullRequest(number: 1) { mergeable } } }'`,
+    // Scripts whose bodies are fine, and bun's own `test`/`build` whatever package.json says.
+    "bun run ci",
+    "bun type",
+    "bun test",
+    "bun build ./src/index.ts --outdir dist",
+    "cd apps/api && bun install",
   ]
   for (const command of stillAllowed) {
     test(`allows: ${JSON.stringify(command)}`, () => expect(refusal(command, context)).toBeUndefined())

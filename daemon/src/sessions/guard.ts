@@ -1,6 +1,6 @@
 import { closeSync, openSync, readSync, statSync } from "node:fs"
 import { homedir } from "node:os"
-import { basename, isAbsolute, resolve } from "node:path"
+import { basename, dirname, isAbsolute, join, resolve } from "node:path"
 import { firstPositional, flags, REASONS, runsNothing } from "./guard-reasons.ts"
 import { ghRefusal, githubApiWriteRefusal, gitRefusal } from "./guard-vcs.ts"
 import { type Command, parseShell, type Word } from "./shell.ts"
@@ -335,8 +335,85 @@ const packageManagerRefusal = (name: string, args: ReadonlyArray<Word>, scope: S
     return inner.length === 0 ? undefined : checkCommand(inner, scope)
   }
   // `run <name>` / `run-script <name>`: the script name is the first positional, past run's own flags (`--filter api`).
-  const script = sub.text === "run" || sub.text === "run-script" ? rest.slice(firstPositional(rest, PM_GLOBAL_FLAGS))[0]?.text : sub.text
-  return script !== undefined && /^(migrate|db:push|db:migrate)\b/.test(script) ? REASONS.migration : undefined
+  const run = sub.text === "run" || sub.text === "run-script"
+  const runFlags = run ? rest.slice(0, firstPositional(rest, PM_GLOBAL_FLAGS)) : []
+  const script = run ? rest[runFlags.length] : sub
+  if (script === undefined) return undefined
+  if (script.dynamic) return REASONS.dynamic
+  if (/^(migrate|db:push|db:migrate)\b/.test(script.text)) return REASONS.migration
+  const named = run ? script.text : bareScript(name, script.text)
+  const dir = packageDir([...args.slice(0, start), ...runFlags], scope)
+  return named === undefined || dir === undefined ? undefined : packageScriptRefusal(named, dir, scope)
+}
+
+/** The package managers' own sub-commands, which never run a `package.json` script of the same name. */
+const PM_COMMANDS = new Set([
+  ...["install", "i", "add", "a", "remove", "rm", "update", "up", "upgrade", "outdated", "link", "unlink", "publish", "pack", "patch", "pm"],
+  ...["init", "create", "audit", "info", "why", "list", "ls", "exec", "dlx", "x", "config", "cache", "store", "rebuild", "prune", "dedupe"],
+  ...["workspace", "workspaces", "help"],
+])
+/** What `npm` runs as a script without `run`. */
+const NPM_SCRIPTS: Readonly<Record<string, string>> = { test: "test", t: "test", tst: "test", start: "start", stop: "stop", restart: "restart" }
+
+/** The script a bare `<manager> <word>` runs: `bun type` runs "type", but `bun test` and `bun build` are bun's own; `npm` runs only its few lifecycle names. */
+const bareScript = (manager: string, word: string): string | undefined => {
+  if (manager === "npm") return NPM_SCRIPTS[word]
+  return PM_COMMANDS.has(word) || (manager === "bun" && (word === "test" || word === "build" || word === "repl")) ? undefined : word
+}
+
+/** Flags that point a package manager at other packages (`--filter api`, `-w`, `-r`): which scripts they run is left to the exec-time guard. */
+const PM_PACKAGES = /^(--filter|-F|--workspace|-w|--workspaces|-ws|--recursive|-r)(=|$)/
+const PM_DIR_FLAGS = flags("--cwd", "-C", "--dir", "--prefix")
+
+/** Where the package manager looks for `package.json`: the cwd or a `--cwd`/`--dir`/`--prefix`/`-C`. `undefined` when only known at runtime. */
+const packageDir = (options: ReadonlyArray<Word>, scope: Scope): string | undefined => {
+  let dir = scope.cwdKnown ? scope.cwd : undefined
+  for (let i = 0; i < options.length; i++) {
+    const option = options[i]
+    if (option === undefined) break
+    if (PM_PACKAGES.test(option.text)) return undefined
+    const eq = option.text.indexOf("=")
+    if (!PM_DIR_FLAGS.has(eq === -1 ? option.text : option.text.slice(0, eq))) continue
+    const value = eq === -1 ? options[++i] : { ...option, text: option.text.slice(eq + 1) }
+    if (value === undefined || value.dynamic) return undefined
+    const path = expandHome(value.text)
+    dir = isAbsolute(path) ? path : dir === undefined ? undefined : resolve(dir, path)
+  }
+  return dir
+}
+
+/**
+ * A `package.json` script runs whatever its body says, so the body, with the `pre`
+ * and `post` scripts that run around it, goes through the same guard, from the
+ * directory it runs in. The nearest `package.json` at or above `dir` is the one the
+ * package manager reads.
+ */
+const packageScriptRefusal = (script: string, dir: string, scope: Scope): string | undefined => {
+  for (let at = dir; ; at = dirname(at)) {
+    const file = join(at, "package.json")
+    const content = scope.readFile(file)
+    if (content !== undefined) {
+      const scripts = scriptsOf(content)
+      for (const name of [`pre${script}`, script, `post${script}`]) {
+        const body = scripts[name]
+        const reason = body === undefined ? undefined : nested(body, { ...scope, cwd: at, cwdKnown: true })
+        if (reason !== undefined) return `The "${name}" script in ${file} runs a refused command. ${reason}`
+      }
+      return undefined
+    }
+    if (dirname(at) === at) return undefined
+  }
+}
+
+/** A `package.json`'s string-valued `scripts`; none when it doesn't parse, as the package manager would then run none either. */
+const scriptsOf = (content: string): Readonly<Record<string, string>> => {
+  try {
+    const scripts: unknown = JSON.parse(content).scripts
+    if (typeof scripts !== "object" || scripts === null) return {}
+    return Object.fromEntries(Object.entries(scripts).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
+  } catch {
+    return {}
+  }
 }
 
 /** Hosts a request must never reach: internal prod routes, Slack, and the daemon's own API. Used for network commands and for the WebFetch tool's URL. */
