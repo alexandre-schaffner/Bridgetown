@@ -1,7 +1,6 @@
 import { Effect } from "effect"
-import { type AdapterError, type DaemonError, type NotFound, SlackApiError } from "../domain/errors.ts"
-import type { Action, ActionKind, Alert, Session } from "../domain/model.ts"
-import type { HealthShape } from "../health.ts"
+import { type AdapterError, type DaemonError, InvalidInput, NotFound, SlackApiError } from "../domain/errors.ts"
+import { type Action, type ActionKind, type Alert, RETRY, type Session } from "../domain/model.ts"
 import type { SessionRepoShape } from "../sessions/repo.ts"
 import type { SessionRunnerShape } from "../sessions/runner.ts"
 import type { ShipperShape } from "../ship/shipper.ts"
@@ -9,7 +8,6 @@ import { tagPrefix } from "../ship/transitions.ts"
 import { toMrkdwn } from "../slack/text.ts"
 import type { SlackThreadShape } from "../slack/thread.ts"
 import type { StoreShape } from "../store/store.ts"
-import { RETRY } from "./queue.ts"
 
 /** The honest one-line outcome of a session you close without a verified fix. Never "resolved". */
 export const closedResolution = (session: Session): string =>
@@ -34,7 +32,6 @@ export interface HandlerDeps {
   readonly runner: SessionRunnerShape
   readonly shipper: ShipperShape
   readonly thread: SlackThreadShape
-  readonly health: HealthShape
   readonly investigate: (alertId: string) => Effect.Effect<void, AdapterError | NotFound>
 }
 
@@ -46,9 +43,10 @@ export interface Resolution {
 }
 
 /**
- * What the primary button of each kind does. One exit protocol for all: a
- * handler that succeeds has done its work and the card goes; one that fails
- * leaves the card in place, so the user can try again.
+ * What the primary button of each kind does, once `cardStands` said the card is
+ * still live. One exit protocol for all: a handler that succeeds has done its
+ * work and the card goes; one that fails leaves the card in place, so the user
+ * can try again.
  */
 export type Handler = (resolution: Resolution) => Effect.Effect<void, DaemonError>
 
@@ -82,19 +80,19 @@ export const makeHandlers = (deps: HandlerDeps): Readonly<Record<ActionKind, Han
 
   answer: ({ action, response }) => deps.runner.answer(action.id, response ?? "").pipe(Effect.asVoid),
 
-  grafana: () => deps.health.probeGrafana,
-
   reply: ({ action, session, response }) =>
     Effect.gen(function* () {
+      // Nothing to send, or nowhere to send it: the card stays, and nothing is recorded as replied.
       const alert = yield* alertOf(deps.store, action)
+      if (alert === undefined) return yield* new NotFound({ message: "The message this replies to is gone" })
       const text = (response ?? action.payload ?? "").trim()
-      const posted = alert === undefined || text === "" ? undefined : yield* deps.thread.post(alert, toMrkdwn(text))
-      // A failed post keeps the card: nothing went out, so nothing is recorded.
-      if (posted?._tag === "NotPosted" && posted.reason === "error") {
+      if (text === "") return yield* new InvalidInput({ message: "The reply is empty" })
+      const posted = yield* deps.thread.post(alert, toMrkdwn(text))
+      if (posted._tag === "NotPosted" && posted.reason === "error") {
         return yield* new SlackApiError({ method: "chat.postMessage", code: "not_posted", message: "The reply could not be posted; nothing was sent" })
       }
       if (session === undefined || session.status !== "waiting") return
-      const dryRun = posted?._tag === "NotPosted" && posted.reason === "dry_run"
+      const dryRun = posted._tag === "NotPosted" && posted.reason === "dry_run"
       yield* deps.repo.patch(
         session.id,
         dryRun
@@ -103,15 +101,16 @@ export const makeHandlers = (deps: HandlerDeps): Readonly<Record<ActionKind, Han
               status: "resolved",
               phase: "done",
               activity: "Replied",
-              resolution: `replied to ${alert?.fields._tag === "inbox" ? alert.fields.fromName : "the thread"}`,
+              resolution: `replied to ${alert.fields._tag === "inbox" ? alert.fields.fromName : "the thread"}`,
             },
       )
     }),
 
+  // A retry card stands only on a failed session, a hand-off only on a waiting one (`cardStands`).
   review: ({ action, session }) =>
-    Effect.gen(function* () {
-      if (session === undefined) return
-      if (session.status === "failed" && action.payload === RETRY) return yield* deps.runner.retry(session.id)
-      if (session.status === "waiting" || session.status === "failed") yield* closeUnresolved(deps.repo, session.id)
-    }),
+    session === undefined
+      ? Effect.void
+      : action.payload === RETRY
+        ? deps.runner.retry(session.id)
+        : closeUnresolved(deps.repo, session.id).pipe(Effect.asVoid),
 })

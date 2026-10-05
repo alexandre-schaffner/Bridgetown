@@ -40,6 +40,8 @@ const PullRequest = Schema.Struct({
   state: Schema.String,
   mergedAt: Schema.NullOr(Schema.String),
   isDraft: Schema.optional(Schema.Boolean),
+  /** The head commit, which a passed review must have read for the merge card to say so. */
+  headRefOid: Schema.optional(Schema.String),
   url: Schema.String,
   reviewDecision: Schema.NullOr(Schema.String),
   latestReviews: Schema.Array(Review),
@@ -68,7 +70,7 @@ export const ciState = (pr: PullRequest): CiState => {
 }
 
 const viewPr = (prUrl: string) =>
-  gh(["pr", "view", prUrl, "--json", "number,title,state,mergedAt,isDraft,url,reviewDecision,latestReviews,statusCheckRollup"]).pipe(
+  gh(["pr", "view", prUrl, "--json", "number,title,state,mergedAt,isDraft,headRefOid,url,reviewDecision,latestReviews,statusCheckRollup"]).pipe(
     Effect.flatMap((out) => decodeOr("gh", "pr view", Schema.fromJsonString(PullRequest))(out)),
   )
 

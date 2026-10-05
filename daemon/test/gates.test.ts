@@ -3,7 +3,7 @@ import { Deferred, Effect, Fiber } from "effect"
 import { closedResolution } from "../src/actions/handlers.ts"
 import { makeInFlight } from "../src/actions/in-flight.ts"
 import { AdapterError } from "../src/domain/errors.ts"
-import { acceptsMessages, type Action, dismissCloses, NO_MILESTONES, openableUrl, type Session, type SessionStatus } from "../src/domain/model.ts"
+import { acceptsMessages, type Action, cardStands, dismissCloses, NO_MILESTONES, openableUrl, RETRY, type Session, type SessionStatus } from "../src/domain/model.ts"
 import { mergeOnce, releaseOnce } from "../src/ship/gates.ts"
 import { makeSession } from "./fixtures/records.ts"
 
@@ -12,22 +12,30 @@ const session = (status: SessionStatus, overrides: Partial<Session> = {}): Sessi
 
 const fail = (message: string) => Effect.fail(new AdapterError({ adapter: "gh", operation: "test", message, cause: null }))
 
-/** A session row plus a fake GitHub, counting every call that acts. */
+/** A session row plus a fake GitHub, counting every call that acts. `movedOn`: the session left the gate, so nothing is written. */
 const world = (initial: Session) => {
   let row = initial
   const calls = { merge: 0, create: 0, nextTag: 0 }
-  const github = { merged: false, tags: new Set<string>(), mergeFails: false, createFails: false, createFailsAfterTagging: false }
-  const save = (patch: Partial<Session>) => Effect.sync(() => void (row = { ...row, ...patch }))
+  const github = {
+    merged: false, queued: false, unreachable: false, tags: new Set<string>(), mergeFails: false, createFails: false, createFailsAfterTagging: false,
+  }
+  const state = { movedOn: false }
+  const save = (patch: Partial<Session>) =>
+    Effect.sync(() => {
+      if (state.movedOn) return false
+      row = { ...row, ...patch }
+      return true
+    })
   const mergePorts = {
-    save,
     merge: () =>
       Effect.suspend(() => {
+        if (github.unreachable) return fail("IP allow list")
         calls.merge++
         if (github.mergeFails) return fail("not mergeable")
-        github.merged = true
+        github.merged = !github.queued
         return Effect.void
       }),
-    isMerged: () => Effect.sync(() => github.merged),
+    isMerged: () => (github.unreachable ? fail("IP allow list") : Effect.sync(() => github.merged)),
   }
   const releasePorts = {
     save,
@@ -45,21 +53,21 @@ const world = (initial: Session) => {
         return github.createFailsAfterTagging ? fail("timed out") : Effect.void
       }),
   }
-  return { get row() { return row }, calls, github, mergePorts, releasePorts }
+  return { get row() { return row }, calls, github, state, mergePorts, releasePorts }
 }
 
 describe("merge gate", () => {
-  test("a repeat never merges twice", async () => {
+  test("a repeat never merges twice: GitHub is asked first", async () => {
     const w = world(session("awaiting_merge"))
     expect(await Effect.runPromise(mergeOnce(w.row, "u", w.mergePorts))).toBe(true)
-    expect(w.row.mergeRequestedAt).not.toBeNull()
     expect(await Effect.runPromise(mergeOnce(w.row, "u", w.mergePorts))).toBe(true)
     expect(w.calls.merge).toBe(1)
   })
-  test("a repeat while queued asks GitHub, it does not merge again", async () => {
-    const w = world(session("awaiting_merge", { mergeRequestedAt: "earlier" }))
+  test("queued behind a merge queue: not merged yet", async () => {
+    const w = world(session("awaiting_merge"))
+    w.github.queued = true
     expect(await Effect.runPromise(mergeOnce(w.row, "u", w.mergePorts))).toBe(false)
-    expect(w.calls.merge).toBe(0)
+    expect(w.calls.merge).toBe(1)
   })
   test("a failed call that did merge is a success", async () => {
     const w = world(session("awaiting_merge"))
@@ -67,15 +75,22 @@ describe("merge gate", () => {
     w.github.mergeFails = true
     expect(await Effect.runPromise(mergeOnce(w.row, "u", w.mergePorts))).toBe(true)
   })
-  test("a failed call on a still-open PR clears the record so the user can retry", async () => {
+  test("a failed call on a still-open PR leaves the gate as it was, so the user can retry", async () => {
     const w = world(session("awaiting_merge"))
     w.github.mergeFails = true
     const exit = await Effect.runPromiseExit(mergeOnce(w.row, "u", w.mergePorts))
     expect(exit._tag).toBe("Failure")
-    expect(w.row.mergeRequestedAt).toBeNull()
     w.github.mergeFails = false
     expect(await Effect.runPromise(mergeOnce(w.row, "u", w.mergePorts))).toBe(true)
     expect(w.calls.merge).toBe(2)
+  })
+  test("GHE refusing the network fails the click and the next one, once it is reachable, merges", async () => {
+    const w = world(session("awaiting_merge"))
+    w.github.unreachable = true
+    expect((await Effect.runPromiseExit(mergeOnce(w.row, "u", w.mergePorts)))._tag).toBe("Failure")
+    w.github.unreachable = false
+    expect(await Effect.runPromise(mergeOnce(w.row, "u", w.mergePorts))).toBe(true)
+    expect(w.calls.merge).toBe(1)
   })
 })
 
@@ -103,6 +118,13 @@ describe("release gate", () => {
     const w = world(session("awaiting_release"))
     w.github.createFailsAfterTagging = true
     expect(await Effect.runPromise(releaseOnce(w.row, "admin", w.releasePorts))).toBe("admin-v0.6.1")
+  })
+  test("nothing is cut when the record cannot be written: the session left the gate", async () => {
+    const w = world(session("awaiting_release"))
+    w.state.movedOn = true
+    const failure = await Effect.runPromise(releaseOnce(w.row, "admin", w.releasePorts).pipe(Effect.flip))
+    expect(failure._tag).toBe("Conflict")
+    expect(w.calls.create).toBe(0)
   })
   test("a failed call that left no tag clears the record", async () => {
     const w = world(session("awaiting_release"))
@@ -149,8 +171,8 @@ describe("in-flight resolves", () => {
 })
 
 describe("contract rules", () => {
-  const action = (kind: Action["kind"]): Action => ({
-    id: "a", kind, title: "", detail: "", primaryLabel: "", options: [], sessionId: "s", alertId: null, payload: null, url: null, createdAt: "",
+  const action = (kind: Action["kind"], payload: string | null = null): Action => ({
+    id: "a", kind, title: "", detail: "", primaryLabel: "", options: [], sessionId: "s", alertId: null, payload, url: null, createdAt: "",
   })
   test("acceptsMessages: live or handed back with a worktree and an agent session", () => {
     expect(acceptsMessages(session("running", { claudeSessionId: null }))).toBe(true)
@@ -167,10 +189,36 @@ describe("contract rules", () => {
   test("dismissCloses: a stranded session's last card", () => {
     expect(dismissCloses(action("review"), session("waiting"))).toBe(true)
     expect(dismissCloses(action("release"), session("awaiting_release"))).toBe(true)
-    expect(dismissCloses(action("review"), session("failed"))).toBe(true)
+    expect(dismissCloses(action("review", RETRY), session("failed"))).toBe(true)
     expect(dismissCloses(action("answer"), session("waiting"))).toBe(false)
     expect(dismissCloses(action("review"), session("running"))).toBe(false)
     expect(dismissCloses(action("investigate"), undefined)).toBe(false)
+  })
+  test("dismissCloses: a dead card closes nothing", () => {
+    // A merge card left over from before the session was handed back, and an old hand-off on a session that then failed.
+    expect(dismissCloses(action("merge"), session("waiting"))).toBe(false)
+    expect(dismissCloses(action("review"), session("failed"))).toBe(false)
+  })
+  test("cardStands: a card stands only at the stage it was offered for", () => {
+    const rows: ReadonlyArray<readonly [Action, SessionStatus, boolean]> = [
+      [action("merge"), "awaiting_merge", true],
+      [action("merge"), "running", false],
+      [action("merge"), "closed", false],
+      [action("release"), "awaiting_release", true],
+      [action("release"), "failed", false],
+      [action("rerun"), "waiting", true],
+      [action("rerun"), "deploying", false],
+      [action("review"), "waiting", true],
+      [action("review"), "running", false],
+      [action("review"), "resolved", false],
+      [action("review", RETRY), "failed", true],
+      [action("review", RETRY), "queued", false],
+      [action("reply"), "resolved", true],
+      [action("answer"), "running", true],
+    ]
+    for (const [card, status, stands] of rows) expect([card.kind, status, cardStands(card, session(status))]).toEqual([card.kind, status, stands])
+    expect(cardStands(action("merge"), undefined)).toBe(false)
+    expect(cardStands({ ...action("investigate"), sessionId: null }, undefined)).toBe(true)
   })
   test("L3: dismissing the merge card of a session waiting to merge closes it", () => {
     expect(dismissCloses(action("merge"), session("awaiting_merge"))).toBe(true)

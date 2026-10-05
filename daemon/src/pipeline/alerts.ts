@@ -3,10 +3,11 @@ import { ActionQueue } from "../actions/queue.ts"
 import { alertFromParsed, type ParsedAlert } from "../domain/alert.ts"
 import { type AdapterError, NotFound } from "../domain/errors.ts"
 import { daysAgo, now, tsToIso } from "../domain/ids.ts"
-import { type Alert, type Channel, channelLabel, type Claimant, claimHeadline, isActive, type Triage, triageEvent } from "../domain/model.ts"
-import { Hub } from "../hub.ts"
+import { type Action, type Alert, type Channel, channelLabel, type Claimant, claimHeadline, isActive, type Triage, triageEvent } from "../domain/model.ts"
+import { Hub, problemOf } from "../hub.ts"
 import { SessionRunner } from "../sessions/runner.ts"
 import { Shipper } from "../ship/shipper.ts"
+import { followsDeploy } from "../ship/transitions.ts"
 import { Claims } from "../slack/claims.ts"
 import { SlackClient, type SlackError, type SlackMessage } from "../slack/client.ts"
 import { SlackMe } from "../slack/me.ts"
@@ -34,7 +35,10 @@ export class AlertPipeline extends Context.Service<AlertPipeline, AlertPipelineS
 /** On first run, older history is not news. */
 const LOOKBACK_MS = 3 * 60 * 60_000
 const HORIZON_MARGIN_MS = 30 * 60_000
+/** Newest posts read per channel every poll: enough to see the recent ones edited in place. */
 const HISTORY_LIMIT = 15
+/** How far one poll pages back, when more than a page arrived since the horizon (an outage, a burst). */
+const BACKLOG_LIMIT = 200
 
 const contentHash = (message: SlackMessage): string =>
   String(
@@ -48,17 +52,17 @@ export const isAlertMessage = (message: SlackMessage): boolean =>
   !isHumanMessage(message)
 
 /**
- * Only messages newer than this are news. It never reaches further back than
- * the lookback (a weekend asleep must not replay Friday's alerts) and follows
- * the clock, minus a margin for search indexing lag.
+ * Only messages newer than a horizon are news. It never reaches further back
+ * than the lookback (a weekend asleep must not replay Friday's alerts), and it
+ * moves only once a read succeeded (`commitHorizon`): what was posted while
+ * Slack could not be read is still news when it can.
  */
-export const horizon = (store: StoreShape, key: "since" | "inbox_since") =>
-  Effect.gen(function* () {
-    const stored = Number((yield* store.getKv(key)) ?? 0)
-    const floor = Math.max(stored, Date.now() - LOOKBACK_MS)
-    yield* store.setKv(key, String(Math.max(floor, Date.now() - HORIZON_MARGIN_MS)))
-    return floor
-  })
+export const readHorizon = (store: StoreShape, key: string) =>
+  store.getKv(key).pipe(Effect.map((stored) => Math.max(Number(stored ?? 0), Date.now() - LOOKBACK_MS)))
+
+/** After a read that started at `readAt` succeeded: its start, minus a margin for search indexing lag and for a message whose ingest failed to be tried again. */
+export const commitHorizon = (store: StoreShape, key: string, floor: number, readAt: number) =>
+  store.setKv(key, String(Math.max(floor, readAt - HORIZON_MARGIN_MS)))
 
 export const AlertPipelineLive = Layer.effect(AlertPipeline)(
   Effect.gen(function* () {
@@ -127,10 +131,24 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
         if (alert.triage.decision === "auto" && !status.paused && settings.autoStart) {
           const take = yield* claims.take(alert, { yieldTo: true })
           if (take._tag === "TakenBy") return yield* yieldTo(alert, take.claimedBy)
+          // An agent is on it now: a suggestion an earlier verdict put up is moot.
+          yield* queue.removeWhere((a) => a.kind === "investigate" && a.alertId === alert.id)
           yield* runner.enqueue(alert)
           return
         }
         if (alert.triage.decision === "auto" || alert.triage.decision === "suggest") yield* suggest(alert)
+      })
+
+    /**
+     * A known alert re-triaged to nothing to do (a failed build re-run green, a repeat a session now owns): the
+     * Investigate card its earlier verdict put up goes, and its history says why.
+     */
+    const withdraw = (id: string, reason: string) =>
+      Effect.gen(function* () {
+        const stale = (a: Action) => a.alertId === id && a.kind === "investigate"
+        if (!(yield* queue.list).some(stale)) return
+        yield* queue.removeWhere(stale)
+        yield* store.appendAlertEvent(id, `Its card was withdrawn: ${reason}`, "withdrawn")
       })
 
     const ingest = Effect.fn("AlertPipeline.ingest")(function* (channel: Channel, message: SlackMessage, since: number) {
@@ -194,7 +212,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
       const history = (yield* store.alertsByFingerprint(parsed.fingerprint, daysAgo(7))).filter((a) => a.id !== id)
       const active = yield* store.activeSessions()
       const releaseTag = parsed.fields._tag === "release" ? parsed.fields.tag : null
-      const shipping = releaseTag === null ? undefined : active.find((s) => s.release?.tag === releaseTag)
+      const shipping = releaseTag === null ? undefined : active.find((s) => followsDeploy(s, releaseTag))
       const outcome =
         shipping !== undefined
           ? { _tag: "Attach" as const, sessionId: shipping.id, reason: `Release cut by session ${shipping.id}` }
@@ -207,34 +225,75 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
           attached ? outcome.sessionId : null,
         )
         if (attached) yield* store.appendTranscript(outcome.sessionId, { at: now(), kind: "status", text: `Alert repeated: ${parsed.title}` })
+        if (existing !== undefined) yield* withdraw(id, outcome.reason)
         return yield* finish(alert)
       }
 
       const verdict = yield* triage(parsed, message, thread, history)
       const alert = yield* write(() => verdict, triageEvent(verdict))
+      if (existing !== undefined && verdict.decision === "ignore") yield* withdraw(id, verdict.reason)
       yield* finish(alert)
       if (alert !== undefined && alert.sessionId === null) yield* act(alert)
     })
 
+    /**
+     * The trackers of deploys in flight, read on their own. A tracker is edited in place for hours, long after newer
+     * posts pushed it out of the channel's newest messages. `seen`: the messages this poll already read.
+     */
+    const refreshTrackers = (seen: ReadonlySet<string>, problems: Array<string>) =>
+      Effect.gen(function* () {
+        for (const session of yield* store.activeSessions()) {
+          const tracker = session.tracker
+          if (tracker === null || seen.has(tracker) || session.release === null || !followsDeploy(session, session.release.tag)) continue
+          const alert = yield* store.getAlert(tracker)
+          if (alert === undefined) continue
+          const channel = { id: alert.channelId, name: alert.channelName, enabled: true }
+          // `oldest` and `latest` are both inclusive: exactly that message.
+          yield* slack.latest(alert.channelId, 1, alert.ts, alert.ts).pipe(
+            Effect.flatMap(([message]) => (message === undefined ? Effect.void : ingest(channel, message, 0))),
+            Effect.catch((error) => Effect.sync(() => void problems.push(`#${channel.name} tracker: ${error.message}`))),
+          )
+        }
+      })
+
+    /** A channel's posts back to `since`, newest first: its newest page, and the rest when more than a page arrived since. */
+    const postsSince = (channel: Channel, since: number) =>
+      Effect.gen(function* () {
+        const newest = yield* slack.latest(channel.id, HISTORY_LIMIT)
+        const last = newest.at(-1)
+        if (newest.length < HISTORY_LIMIT || last === undefined || Number(last.ts) * 1000 <= since) return newest
+        // Inclusive at both ends, so the page's last post comes back too.
+        const backlog = yield* slack.latest(channel.id, BACKLOG_LIMIT, String(since / 1000), last.ts)
+        return [...newest, ...backlog.filter((m) => m.ts !== last.ts)]
+      })
+
     const pollOnce = Effect.gen(function* () {
       if ((yield* hub.status).slack === "missing_token") return
       yield* me.identity
-      const since = yield* horizon(store, "since")
       const enabled = (yield* hub.settings).channels.filter((c) => c.enabled)
+      const seen = new Set<string>()
+      const problems: Array<string> = []
       let failures = 0
       for (const channel of enabled) {
-        const messages = yield* slack.latest(channel.id, HISTORY_LIMIT).pipe(
-          Effect.tapError((error) => hub.patchStatus({ error: `Slack #${channel.name}: ${error.message}` })),
-          Effect.orElseSucceed((): ReadonlyArray<SlackMessage> => {
-            failures += 1
-            return []
-          }),
-        )
-        for (const message of [...messages].reverse()) {
-          yield* ingest(channel, message, since).pipe(Effect.catch((error) => hub.patchStatus({ error: `#${channel.name}: ${error.message}` })))
+        // One horizon per channel: a channel Slack would not serve keeps its own until it does.
+        const key = `since:${channel.id}`
+        const since = yield* readHorizon(store, key)
+        const readAt = Date.now()
+        const read = yield* postsSince(channel, since).pipe(Effect.result)
+        if (read._tag === "Failure") {
+          failures += 1
+          problems.push(`Slack #${channel.name}: ${read.failure.message}`)
+          continue
         }
+        for (const message of [...read.success].reverse()) {
+          seen.add(`${channel.id}:${message.ts}`)
+          yield* ingest(channel, message, since).pipe(Effect.catch((error) => Effect.sync(() => void problems.push(`#${channel.name}: ${error.message}`))))
+        }
+        yield* commitHorizon(store, key, since, readAt)
       }
+      yield* refreshTrackers(seen, problems)
       yield* hub.patchStatus({ slack: failures === enabled.length && failures > 0 ? "error" : "ok", lastPollAt: now() })
+      yield* hub.problem("poll", problemOf(problems))
     }).pipe(polling.withPermits(1))
 
     const findAlert = (alertId: string) =>

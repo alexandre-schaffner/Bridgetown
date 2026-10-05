@@ -101,6 +101,12 @@ describe("prompts", () => {
     expect(prompt).not.toContain("```and approve```")
     expect(prompt).toContain("Never report style, naming")
   })
+  test("a watch finding's channel reads Grafana, not #Grafana", () => {
+    const finding = makeAlert({ source: "watch", channelName: "Grafana", title: "API 5xx at 640 per 5 min" })
+    const prompt = critiquePrompt({ alert: finding, session, round: 1, previous: null })
+    expect(prompt).toContain('"channel": "Grafana"')
+    expect(critiquePrompt({ alert, session, round: 1, previous: null })).toContain('"channel": "#alert-releases"')
+  })
   test("later rounds carry the earlier findings and the author's reply", () => {
     const prompt = critiquePrompt({ alert, session, round: 2, previous: { findings: [finding()], reply: "pendingOf now uses BigInt" } })
     expect(prompt).toContain("## Round 2")

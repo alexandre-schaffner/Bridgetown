@@ -1,12 +1,12 @@
 import { Context, Effect, Layer } from "effect"
 import { type AdapterError, NotFound } from "../domain/errors.ts"
 import { newId, now } from "../domain/ids.ts"
-import type { Action, Session } from "../domain/model.ts"
+import { type Action, cardStands, RETRY, type Session } from "../domain/model.ts"
 import { Hub } from "../hub.ts"
 import { Store } from "../store/store.ts"
 
-/** Marks the review card a failed session gets; resolving it re-queues the same session. */
-export const RETRY = "retry"
+/** The mock daemon's fixtures still import it from here. */
+export { RETRY }
 
 export type NewAction = Omit<Action, "id" | "createdAt" | "url"> & { readonly url?: string | null }
 
@@ -26,6 +26,8 @@ export interface ActionQueueShape {
   readonly retryCard: (session: Session, title: string, detail: string) => Effect.Effect<void, AdapterError>
   readonly remove: (id: string) => Effect.Effect<void, AdapterError>
   readonly removeWhere: (predicate: (action: Action) => boolean) => Effect.Effect<void, AdapterError>
+  /** Removes the session's cards its state no longer offers (`cardStands`): what moves a session calls it with the row it wrote. */
+  readonly withdrawDead: (session: Session) => Effect.Effect<void, AdapterError>
 }
 
 export class ActionQueue extends Context.Service<ActionQueue, ActionQueueShape>()("ActionQueue") {}
@@ -42,6 +44,9 @@ export const ActionQueueLive = Layer.effect(ActionQueue)(
         yield* hub.notify
         return stored
       })
+
+    const removeWhere = (predicate: (action: Action) => boolean) =>
+      store.deleteActionsWhere(predicate).pipe(Effect.flatMap((count) => (count > 0 ? hub.notify : Effect.void)))
 
     const reviewCards = (sessionId: string) =>
       store.listActions().pipe(Effect.map((actions) => actions.filter((a) => a.sessionId === sessionId && a.kind === "review")))
@@ -87,8 +92,8 @@ export const ActionQueueLive = Layer.effect(ActionQueue)(
           })
         }),
       remove: (id) => store.deleteAction(id).pipe(Effect.andThen(hub.notify)),
-      removeWhere: (predicate) =>
-        store.deleteActionsWhere(predicate).pipe(Effect.flatMap((count) => (count > 0 ? hub.notify : Effect.void))),
+      removeWhere,
+      withdrawDead: (session) => removeWhere((a) => a.sessionId === session.id && !cardStands(a, session)),
     }
   }),
 )

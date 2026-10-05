@@ -165,7 +165,7 @@ export const triageEvent = (triage: Triage): string => {
   }
 }
 
-/** What became of an alert's last card: you dismissed or opened it, or Bridgetown withdrew it (its signal went back to normal). */
+/** What became of an alert's last card: you dismissed or opened it, or Bridgetown withdrew it (its signal went back to normal, or a later verdict left nothing to do). */
 export const Disposition = Schema.Struct({ kind: Schema.Literals(["dismissed", "opened", "withdrawn"]), at: Schema.String })
 export type Disposition = typeof Disposition.Type
 
@@ -361,7 +361,7 @@ export const Session = Schema.Struct({
       posted: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
     }),
   ),
-  /** When Bridgetown asked GitHub to merge. Set before `gh pr merge`, so a repeat asks GitHub what happened instead of merging again. */
+  /** When GitHub took the merge without merging yet (a merge queue): the PR is GitHub's to merge, and no Merge card is offered again. */
   mergeRequestedAt: nullByDefault(Schema.String),
   /** Adversarial reviews that sent the agent back on this PR. */
   critiqueRounds: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0))),
@@ -371,6 +371,8 @@ export const Session = Schema.Struct({
   releaseTag: nullByDefault(Schema.String),
   /** The release tracker's last state seen for this session's deploy. Only a change moves the session. */
   deployStage: nullByDefault(ReleaseState),
+  /** That tracker's alert id. It is edited in place for hours, so the poll reads it on its own, however far down its channel it is. */
+  tracker: nullByDefault(Schema.String),
   startedAt: Schema.String,
   updatedAt: Schema.String,
 })
@@ -382,7 +384,6 @@ export const ActionKind = Schema.Literals([
   "release",
   "rerun",
   "answer",
-  "grafana",
   "review",
   "reply",
   "escalate",
@@ -502,11 +503,39 @@ export const acceptsMessages = (session: Session): boolean => {
   }
 }
 
+/** Marks the review card a failed session gets; resolving it re-queues the same session. */
+export const RETRY = "retry"
+
+/**
+ * Whether the card still stands: its session is at the stage the card was offered for. A merge card is for
+ * `awaiting_merge`, a release card for `awaiting_release`, a re-run or a hand-off for `waiting`, a retry for
+ * `failed`. Once the session moved on (finished, back at work, past the gate) the card is dead: it must not act,
+ * and it goes. Cards without a session, answers (their `ask` decides) and replies (still sendable after the session
+ * ended) always stand.
+ */
+export const cardStands = (action: Action, session: Session | undefined): boolean => {
+  switch (action.kind) {
+    case "merge":
+      return session?.status === "awaiting_merge"
+    case "release":
+      return session?.status === "awaiting_release"
+    case "rerun":
+      return session?.status === "waiting"
+    case "review":
+      return session?.status === (action.payload === RETRY ? "failed" : "waiting")
+    case "investigate":
+    case "escalate":
+    case "answer":
+    case "reply":
+      return true
+  }
+}
+
 const CLOSING_KINDS: ReadonlyArray<ActionKind> = ["merge", "release", "review", "reply", "rerun"]
 
-/** Dismissing this card leaves its session with nothing left to do, so the session is recorded as closed. */
+/** Dismissing this card leaves its session with nothing left to do, so the session is recorded as closed. A dead card closes nothing. */
 export const dismissCloses = (action: Action, session: Session | undefined): boolean =>
-  session !== undefined && isStranded(session) && CLOSING_KINDS.includes(action.kind)
+  session !== undefined && isStranded(session) && CLOSING_KINDS.includes(action.kind) && cardStands(action, session)
 
 /** The thread an alert lives in: an inbox item's own thread, or the alert message itself. */
 export const threadTsOf = (alert: Alert): string => (alert.fields._tag === "inbox" ? (alert.fields.threadTs ?? alert.ts) : alert.ts)

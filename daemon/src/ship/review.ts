@@ -61,7 +61,14 @@ export const revvLink = (prUrl: string): string | null => {
   return `revv://pr?${params.toString()}`
 }
 
-export const prNumber = (prUrl: string): string | null => PR_URL.exec(prUrl)?.[3] ?? null
+/** The number of any pull request link (`…/pull/3244`, `…/pull/3244/files`), or `null`. */
+export const prNumber = (prUrl: string): string | null => /\/pull\/(\d+)(?:[/?#]|$)/.exec(prUrl)?.[1] ?? null
+
+/** "#3244" for a PR link; a link that is not one stays as it is. */
+export const prLabel = (prUrl: string): string => {
+  const number = prNumber(prUrl)
+  return number === null ? prUrl : `#${number}`
+}
 
 export interface ReviewRequest {
   readonly route: ReviewRoute

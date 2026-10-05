@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { PullRequest } from "../src/ship/github.ts"
 import { mergeDetail, releaseDetail } from "../src/ship/cards.ts"
+import { mergedResolution } from "../src/ship/transitions.ts"
 import { makeSession } from "./fixtures/records.ts"
 
 const PR = "https://nocturlab.ghe.com/Merkl/monorepo/pull/3352"
@@ -15,8 +16,13 @@ const passed = { reviewer: "codex" as const, sha: "abc", findings: [], response:
 describe("merge card", () => {
   test("names who approved, what passed and the second review", () => {
     const session = makeSession("awaiting_merge", { prUrl: PR, critique: passed })
-    const detail = mergeDetail(session, pr({ latestReviews: [review("julien", "APPROVED")], statusCheckRollup: [check, check, check, check] }))
+    const detail = mergeDetail(session, pr({ headRefOid: "abc", latestReviews: [review("julien", "APPROVED")], statusCheckRollup: [check, check, check, check] }))
     expect(detail).toBe("#3352 · approved by julien · CI green, 4 checks · Codex passed")
+  })
+
+  test("a pass on an earlier head is not claimed for the one being merged", () => {
+    const session = makeSession("awaiting_merge", { prUrl: PR, critique: passed })
+    expect(mergeDetail(session, pr({ headRefOid: "def", statusCheckRollup: [check] }))).toBe("#3352 · CI green, 1 check")
   })
 
   test("claims no approval when nobody approved (a repo that requires none)", () => {
@@ -41,6 +47,11 @@ describe("release card", () => {
 
   test("says when it is the first release", () => {
     expect(releaseDetail(PR, "states-exporter-v0.1.0", "states-exporter")).toContain("This is the first states-exporter release.")
+  })
+
+  test("a resolution names the PR by number", () => {
+    expect(mergedResolution(PR)).toBe("merged #3352")
+    expect(mergedResolution(null)).toBe("merged")
   })
 
   test("keeps a link it can't read a number from", () => {

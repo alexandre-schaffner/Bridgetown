@@ -312,4 +312,34 @@ describe("the adversarial review", () => {
       await world.dispose()
     }
   })
+
+  test("a session that left review between failures starts its count again when it is back", async () => {
+    const { github } = fakeGitHub()
+    const reviewer: ReviewerShape = { review: () => Effect.fail(new AdapterError({ adapter: "codex", operation: "exec", message: "codex timed out", cause: null })) }
+    const world = makeWorld({ github, reviewer, jev })
+    const failures = (n: number) => eventually(transcript, (lines) => (lines.filter((l) => l.startsWith("error: Review could not run")).length >= n ? lines : undefined))
+    try {
+      const out = await world.runPromise(
+        Effect.gen(function* () {
+          const store = yield* Store
+          yield* seed(reviewing())
+          for (let round = 1; round <= 2; round++) {
+            yield* (yield* Critic).tick
+            yield* failures(round)
+          }
+          // You messaged it: a turn, out of review, then a new head back in it.
+          yield* store.putSession(reviewing({ status: "running" }))
+          yield* (yield* Critic).tick
+          yield* store.putSession(reviewing())
+          yield* (yield* Critic).tick
+          yield* failures(3)
+          return { session: yield* store.getSession("s_crit"), cards: yield* store.listActions() }
+        }),
+      )
+      expect(out.session?.status).toBe("critiquing")
+      expect(out.cards).toEqual([])
+    } finally {
+      await world.dispose()
+    }
+  })
 })

@@ -3,12 +3,15 @@ import { NO_MILESTONES } from "../src/domain/model.ts"
 import { nextTagFrom, type PullRequest } from "../src/ship/github.ts"
 import {
   afterMerge,
+  APPROVAL_TIMEOUT_MS,
   type CiStep,
   ciTransition,
   DEPLOY_TIMEOUT_MS,
   deployStalled,
   deployTransition,
+  followsDeploy,
   MAX_CI_ROUNDS,
+  MERGE_QUEUE_TIMEOUT_MS,
   needsReviewRequest,
   sendBackOrHandOff,
 } from "../src/ship/transitions.ts"
@@ -19,6 +22,7 @@ const pr = (overrides: Partial<PullRequest> = {}): PullRequest => ({
   reviewDecision: null, latestReviews: [], statusCheckRollup: [], ...overrides,
 })
 const red = { _tag: "Red" as const, failing: [{ name: "lint", url: "https://x/1" }] }
+const NOW = Date.parse("2026-10-05T12:00:00.000Z")
 const shipping = (overrides = {}) => makeSession("ci", { prUrl: "https://ghe/pull/7", ...overrides })
 
 describe("CI-round budget", () => {
@@ -35,7 +39,13 @@ describe("ciTransition", () => {
   const rows: ReadonlyArray<readonly [string, ReturnType<typeof shipping>, PullRequest, Parameters<typeof ciTransition>[2], CiStep["_tag"], string | null]> = [
     ["merged wins", shipping(), pr({ mergedAt: "now" }), red, "Merged", null],
     ["closed PR", shipping(), pr({ state: "CLOSED" }), { _tag: "Green" }, "Closed", null],
-    ["awaiting merge waits for GitHub", shipping({ status: "awaiting_merge" }), pr(), red, "Wait", null],
+    ["waiting to merge, CI went red", shipping({ status: "awaiting_merge" }), pr({ reviewDecision: "APPROVED" }), red, "BackToCi", "CI went red on #7"],
+    ["waiting to merge, CI running again", shipping({ status: "awaiting_merge" }), pr({ reviewDecision: "APPROVED" }), { _tag: "Pending" }, "BackToCi", "CI running again on #7"],
+    ["waiting to merge, changes requested", shipping({ status: "awaiting_merge" }), pr({ reviewDecision: "CHANGES_REQUESTED" }), { _tag: "Green" }, "BackToCi", "Changes requested on #7"],
+    ["waiting to merge, approval dismissed", shipping({ status: "awaiting_merge" }), pr({ reviewDecision: "REVIEW_REQUIRED" }), { _tag: "Green" }, "BackToCi", "#7 needs a review again"],
+    ["waiting to merge, still ready", shipping({ status: "awaiting_merge" }), pr({ reviewDecision: "APPROVED" }), { _tag: "Green" }, "ReadyToMerge", "#7 approved and green, ready to merge"],
+    ["waiting to merge, GitHub took it", shipping({ status: "awaiting_merge", mergeRequestedAt: new Date(NOW - 60_000).toISOString() }), pr({ reviewDecision: "APPROVED" }), { _tag: "Green" }, "Wait", null],
+    ["waiting to merge, GitHub dropped it", shipping({ status: "awaiting_merge", mergeRequestedAt: new Date(NOW - MERGE_QUEUE_TIMEOUT_MS - 60_000).toISOString() }), pr({ reviewDecision: "APPROVED" }), { _tag: "Green" }, "ReadyToMerge", "#7 approved and green, ready to merge"],
     ["pending", shipping(), pr(), { _tag: "Pending" }, "Wait", "CI running on #7"],
     ["red, round 1", shipping(), pr(), red, "Red", "CI red — fixing (round 1)"],
     ["red, budget spent", shipping({ ciRounds: MAX_CI_ROUNDS }), pr(), red, "Red", "CI still red after 3 rounds"],
@@ -46,15 +56,19 @@ describe("ciTransition", () => {
   ]
   for (const [label, session, pull, ci, tag, activity] of rows) {
     test(label, () => {
-      const step = ciTransition(session, pull, ci)
+      const step = ciTransition(session, pull, ci, NOW)
       expect(step._tag).toBe(tag)
       const shown =
-        step._tag === "Wait" || step._tag === "ReadyToMerge" ? step.activity : step._tag === "Red" || step._tag === "ChangesRequested" ? step.escalation.activity : null
+        step._tag === "Wait" || step._tag === "ReadyToMerge" || step._tag === "BackToCi"
+          ? step.activity
+          : step._tag === "Red" || step._tag === "ChangesRequested"
+            ? step.escalation.activity
+            : null
       expect(shown).toBe(activity)
     })
   }
   test("changes requested share the CI budget", () => {
-    const step = ciTransition(shipping({ ciRounds: MAX_CI_ROUNDS }), pr({ reviewDecision: "CHANGES_REQUESTED", latestReviews: [review] }), { _tag: "Green" })
+    const step = ciTransition(shipping({ ciRounds: MAX_CI_ROUNDS }), pr({ reviewDecision: "CHANGES_REQUESTED", latestReviews: [review] }), { _tag: "Green" }, NOW)
     expect(step).toMatchObject({ _tag: "ChangesRequested", escalation: { _tag: "HandOff", title: "Changes requested" } })
   })
   test("review requested once, unless approved; dry run records it once", () => {
@@ -90,12 +104,38 @@ describe("deployTransition (M3: only a changed release state moves the session)"
 })
 
 describe("deployStalled reads the stored stage, not the status line", () => {
-  const old = new Date(Date.now() - DEPLOY_TIMEOUT_MS - 60_000).toISOString()
-  test("quiet for 3h outside approval is stalled; approval never is", () => {
-    expect(deployStalled(makeSession("deploying", { updatedAt: old }), Date.now())).toBe(true)
-    expect(deployStalled(makeSession("deploying", { updatedAt: old, deployStage: { _tag: "AwaitingApproval" }, activity: "anything" }), Date.now())).toBe(false)
-    expect(deployStalled(makeSession("deploying", { updatedAt: new Date().toISOString() }), Date.now())).toBe(false)
-    expect(deployStalled(makeSession("ci", { updatedAt: old }), Date.now())).toBe(false)
+  const ago = (ms: number) => new Date(NOW - ms - 60_000).toISOString()
+  const approval = { _tag: "AwaitingApproval" } as const
+  const release = { image: "", tag: "admin-v0.6.1", version: "" }
+  test("quiet for 3h outside approval is stalled", () => {
+    expect(deployStalled(makeSession("deploying", { updatedAt: ago(DEPLOY_TIMEOUT_MS), release }), NOW)).toMatchObject({ title: "Deploy stalled", detail: "No tracker update for admin-v0.6.1 in 3 hours." })
+    expect(deployStalled(makeSession("deploying", { updatedAt: new Date(NOW).toISOString() }), NOW)).toBeNull()
+    expect(deployStalled(makeSession("ci", { updatedAt: ago(DEPLOY_TIMEOUT_MS) }), NOW)).toBeNull()
+  })
+  test("approval gets a day, then it is handed to you too", () => {
+    expect(deployStalled(makeSession("deploying", { updatedAt: ago(DEPLOY_TIMEOUT_MS), deployStage: approval, activity: "anything" }), NOW)).toBeNull()
+    expect(deployStalled(makeSession("deploying", { updatedAt: ago(APPROVAL_TIMEOUT_MS), deployStage: approval, release }), NOW)).toMatchObject({ title: "Release not approved" })
+  })
+})
+
+describe("followsDeploy: a tracker moves only the session shipping its tag", () => {
+  const tag = "admin-v0.6.0"
+  const release = { image: "merkl-admin", tag, version: "" }
+  test("before a release, an agent-named full tag is only a prefix", () => {
+    for (const status of ["ci", "critiquing", "awaiting_merge", "awaiting_release", "waiting"] as const) {
+      expect([status, followsDeploy(makeSession(status, { release }), tag)]).toEqual([status, false])
+    }
+  })
+  test("a cut release, a re-run, and a deploy it already followed (handed back meanwhile)", () => {
+    expect(followsDeploy(makeSession("deploying", { release }), tag)).toBe(true)
+    expect(followsDeploy(makeSession("waiting", { release, milestones: { ...NO_MILESTONES, merged: true, released: true } }), tag)).toBe(true)
+    expect(followsDeploy(makeSession("waiting", { release, deployStage: { _tag: "Failed", stage: "Build", detail: "" } }), tag)).toBe(true)
+    expect(followsDeploy(makeSession("deploying", { release }), "admin-v0.6.1")).toBe(false)
+    expect(followsDeploy(makeSession("waiting", { release, milestones: { ...NO_MILESTONES, released: true, deployed: true } }), tag)).toBe(false)
+  })
+  test("a re-run whose agent then opened a PR (naming the full tag) ships that PR, not the re-run's deploy", () => {
+    const failed = { _tag: "Failed" as const, stage: "Build", detail: "" }
+    expect(followsDeploy(makeSession("ci", { release, deployStage: failed, prUrl: "https://ghe/pull/9" }), tag)).toBe(false)
   })
 })
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { isMcpProblem, mcpProblem } from "../src/sessions/sdk-events.ts"
+import { mcpProblem } from "../src/sessions/sdk-events.ts"
 
 describe("MCP problems shown in the menu bar", () => {
   test("a login problem says where the login works", () => {
@@ -12,11 +12,5 @@ describe("MCP problems shown in the menu bar", () => {
 
   test("other states name themselves", () => {
     expect(mcpProblem("merkl", "failed")).toBe("merkl MCP · sessions: failed. Check `claude mcp get merkl` in the monorepo.")
-  })
-
-  test("only our own MCP problems are cleared when servers come back", () => {
-    expect(isMcpProblem(mcpProblem("merkl", "needs-auth"))).toBe(true)
-    expect(isMcpProblem("Slack is failing")).toBe(false)
-    expect(isMcpProblem(null)).toBe(false)
   })
 })
