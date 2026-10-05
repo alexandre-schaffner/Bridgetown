@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { execSync } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { Effect } from "effect"
 import { createWorktree, pinnedBunVersion } from "../src/sessions/worktree.ts"
+import { scratchDir } from "./fixtures/tmp.ts"
 
 const scratchRepo = (manifest: object): string => {
-  const root = mkdtempSync(join(tmpdir(), "bt-wt-"))
+  const root = scratchDir("bt-wt-")
   const repo = join(root, "repo")
   mkdirSync(join(repo, ".shared"), { recursive: true })
   writeFileSync(join(repo, "package.json"), JSON.stringify(manifest))

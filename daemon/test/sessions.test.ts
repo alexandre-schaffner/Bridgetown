@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtempSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { impliedPhase } from "../src/sessions/sdk-events.ts"
 import { repoMcpServers } from "../src/sessions/sdk-options.ts"
+import { scratchDir } from "./fixtures/tmp.ts"
 
 describe("implied phase", () => {
   test("edits mean fixing, gh pr create means pr", () => {
@@ -16,7 +16,7 @@ describe("implied phase", () => {
 
 describe("session MCP servers", () => {
   test("stdio entries in .mcp.json do not drop the http servers sessions need", () => {
-    const dir = mkdtempSync(join(tmpdir(), "bt-mcp-"))
+    const dir = scratchDir("bt-mcp-")
     writeFileSync(
       join(dir, ".mcp.json"),
       JSON.stringify({
