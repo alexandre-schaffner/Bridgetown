@@ -18,6 +18,11 @@ export interface ModifyOptions {
    * finished session, which is how a stop always wins.
    */
   readonly evenIfFinished?: boolean
+  /**
+   * Whether the write counts as activity (the default): it bumps `updatedAt`. Housekeeping's don't, so
+   * reclaiming a worktree neither reorders the recent sessions nor restarts a retention clock.
+   */
+  readonly touch?: boolean
 }
 
 export interface SessionRepoShape {
@@ -75,7 +80,7 @@ export const SessionRepoLive = Layer.effect(SessionRepo)(
         if (isFinished(current) && options.evenIfFinished !== true) return undefined
         const changed = f(current)
         if (changed === undefined) return undefined
-        const next: Session = { ...changed, id: current.id, updatedAt: now() }
+        const next: Session = { ...changed, id: current.id, updatedAt: options.touch === false ? current.updatedAt : now() }
         yield* store.putSession(next)
         // The alert's history says when its session ended (and if it came back), so the app never has to infer it.
         if (!isFinished(current) && isFinished(next)) {

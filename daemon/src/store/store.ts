@@ -6,9 +6,24 @@ import { Context, Effect, Layer, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { AdapterError, decodeOr, errorMessage } from "../domain/errors.ts"
 import { now } from "../domain/ids.ts"
-import { Action, ACTIVE_STATUSES, Alert, type Disposition, Session, TranscriptEntry } from "../domain/model.ts"
+import { Action, ACTIVE_STATUSES, Alert, type Disposition, Session, SessionStatus, TranscriptEntry } from "../domain/model.ts"
 import { makeKeyedLock } from "./keyed-lock.ts"
 import { migrations } from "./migrations.ts"
+
+/** What retention reads of every alert and session, without decoding their JSON. */
+export const AlertRef = Schema.Struct({ id: Schema.String, receivedAt: Schema.String, sessionId: Schema.NullOr(Schema.String) })
+export type AlertRef = typeof AlertRef.Type
+
+export const SessionRef = Schema.Struct({
+  id: Schema.String,
+  status: SessionStatus,
+  updatedAt: Schema.String,
+  alertId: Schema.String,
+  branch: Schema.NullOr(Schema.String),
+  worktree: Schema.NullOr(Schema.String),
+  repoPath: Schema.String,
+})
+export type SessionRef = typeof SessionRef.Type
 
 export interface StoreShape {
   readonly getAlert: (id: string) => Effect.Effect<Alert | undefined, AdapterError>
@@ -48,6 +63,19 @@ export interface StoreShape {
   readonly transcript: (sessionId: string, limit: number) => Effect.Effect<ReadonlyArray<TranscriptEntry>, AdapterError>
   readonly getKv: (key: string) => Effect.Effect<string | undefined, AdapterError>
   readonly setKv: (key: string, value: string) => Effect.Effect<void, AdapterError>
+  /** Every alert and session, as retention reads them. */
+  readonly pruneRefs: () => Effect.Effect<{ readonly alerts: ReadonlyArray<AlertRef>; readonly sessions: ReadonlyArray<SessionRef> }, AdapterError>
+  /**
+   * In one transaction: these cards; these sessions, unless one became active since it was planned; these
+   * alerts, unless a session still started from one; then every transcript line whose session is gone.
+   */
+  readonly pruneRows: (rows: {
+    readonly actionIds: ReadonlyArray<string>
+    readonly sessionIds: ReadonlyArray<string>
+    readonly alertIds: ReadonlyArray<string>
+  }) => Effect.Effect<void, AdapterError>
+  /** Gives the pages pruning freed back to the disk, truncates the WAL, and refreshes the query planner's statistics. */
+  readonly maintain: () => Effect.Effect<void, AdapterError>
 }
 
 export class Store extends Context.Service<Store, StoreShape>()("Store") {}
@@ -60,15 +88,20 @@ const StoreImpl = Layer.effect(Store)(
     const sql = yield* SqlClient.SqlClient
 
     /** A row that no longer decodes is logged and skipped, so one bad record cannot blank the whole app. */
-    const decodeRows =
+    const decodeEach =
       <A, I>(operation: string, schema: Schema.Codec<A, I>) =>
-      (rows: ReadonlyArray<{ readonly json: string }>) =>
+      (rows: ReadonlyArray<unknown>) =>
         Effect.forEach(rows, (row) =>
-          decodeOr("sqlite", operation, Schema.fromJsonString(schema))(row.json).pipe(
+          decodeOr("sqlite", operation, schema)(row).pipe(
             Effect.tapError((error) => Effect.logWarning(`Skipping undecodable row (${operation}): ${error.message}`)),
             Effect.option,
           ),
         ).pipe(Effect.map((decoded) => decoded.flatMap((value) => (value._tag === "Some" ? [value.value] : []))))
+
+    const decodeRows =
+      <A, I>(operation: string, schema: Schema.Codec<A, I>) =>
+      (rows: ReadonlyArray<{ readonly json: string }>) =>
+        decodeEach(operation, Schema.fromJsonString(schema))(rows.map((row) => row.json))
 
     const first = <A>(rows: ReadonlyArray<A>): A | undefined => rows[0]
     const alertLocks = makeKeyedLock()
@@ -202,7 +235,59 @@ const StoreImpl = Layer.effect(Store)(
           INSERT INTO kv (key, value) VALUES (${key}, ${value})
           ON CONFLICT (key) DO UPDATE SET value = excluded.value
         `.pipe(Effect.asVoid, Effect.mapError(sqlError("set kv"))),
+      pruneRefs: () =>
+        Effect.gen(function* () {
+          const alerts = yield* sql`SELECT id, received_at AS receivedAt, json_extract(json, '$.sessionId') AS sessionId FROM alerts`.pipe(
+            Effect.mapError(sqlError("alert refs")),
+            Effect.flatMap(decodeEach("decode alert ref", AlertRef)),
+          )
+          const sessions = yield* sql`
+            SELECT id, status, updated_at AS updatedAt, json_extract(json, '$.alertId') AS alertId, json_extract(json, '$.branch') AS branch,
+              json_extract(json, '$.worktree') AS worktree, json_extract(json, '$.repoPath') AS repoPath
+            FROM sessions
+          `.pipe(Effect.mapError(sqlError("session refs")), Effect.flatMap(decodeEach("decode session ref", SessionRef)))
+          return { alerts, sessions }
+        }),
+      pruneRows: ({ actionIds, sessionIds, alertIds }) =>
+        sql
+          .withTransaction(
+            Effect.gen(function* () {
+              yield* sql`DELETE FROM actions WHERE id IN ${sql.in(actionIds)}`
+              yield* sql`DELETE FROM sessions WHERE id IN ${sql.in(sessionIds)} AND status NOT IN ${sql.in(ACTIVE_STATUSES)}`
+              yield* sql`
+                DELETE FROM alerts WHERE id IN ${sql.in(alertIds)}
+                AND NOT EXISTS (SELECT 1 FROM sessions WHERE json_extract(sessions.json, '$.alertId') = alerts.id)
+              `
+              yield* sql`DELETE FROM transcript WHERE session_id NOT IN (SELECT id FROM sessions)`
+            }),
+          )
+          .pipe(Effect.mapError(sqlError("prune"))),
+      maintain: () =>
+        Effect.gen(function* () {
+          yield* sql`PRAGMA incremental_vacuum`
+          yield* sql`PRAGMA wal_checkpoint(TRUNCATE)`
+          yield* sql`PRAGMA optimize`
+        }).pipe(Effect.mapError(sqlError("maintain"))),
     }
+  }),
+)
+
+/** `PRAGMA auto_vacuum` for incremental: freed pages wait on the freelist until `PRAGMA incremental_vacuum` returns them. */
+const INCREMENTAL = 2
+
+/**
+ * Space that pruning frees goes back to the disk. An existing file only takes incremental auto-vacuum
+ * through a VACUUM, which cannot run inside the migrations' transaction, so it runs here, once, after
+ * them. The WAL file shrinks back to 8 MB after each checkpoint instead of keeping its peak.
+ */
+const tuning = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`PRAGMA journal_size_limit = 8388608`
+    const [mode] = yield* sql<{ readonly auto_vacuum: number }>`PRAGMA auto_vacuum`
+    if (mode?.auto_vacuum === INCREMENTAL) return
+    yield* sql`PRAGMA auto_vacuum = INCREMENTAL`
+    yield* sql`VACUUM`
   }),
 )
 
@@ -210,5 +295,5 @@ export const StoreLive = (directory: string) => {
   mkdirSync(directory, { recursive: true })
   const sqlLayer = SqliteClient.layer({ filename: join(directory, "bridgetown.db") })
   const migrationLayer = SqliteMigrator.layer({ loader: migrations, table: "bridgetown_migrations" })
-  return StoreImpl.pipe(Layer.provide(migrationLayer), Layer.provide(sqlLayer))
+  return StoreImpl.pipe(Layer.provide(tuning), Layer.provide(migrationLayer), Layer.provide(sqlLayer))
 }

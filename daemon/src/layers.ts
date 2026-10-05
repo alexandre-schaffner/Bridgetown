@@ -7,6 +7,7 @@ import { Reviewer, ReviewerLive } from "./critique/reviewer.ts"
 import { BoardsLive } from "./grafana/board.ts"
 import { Grafana, GrafanaLive } from "./grafana/client.ts"
 import { HealthLive } from "./health.ts"
+import { HousekeepingLive } from "./housekeeping/housekeeping.ts"
 import { HubLive } from "./hub.ts"
 import { AlertPipelineLive } from "./pipeline/alerts.ts"
 import { InboxLive } from "./pipeline/inbox.ts"
@@ -28,7 +29,8 @@ import { WatcherLive } from "./watch/watcher.ts"
 
 /**
  * Store, Slack, Jev, agent SDK, reviewer, GitHub, Grafana → Hub → the record keepers (sessions, cards, Slack threads,
- * identity, health, Grafana boards, worktrees) → asks, claims → runner → shipper, critic → alert pipeline → inbox, actions, prod watcher → scheduler.
+ * identity, health, Grafana boards, worktrees) → asks, claims → runner → shipper, critic, housekeeping → alert pipeline → inbox, actions,
+ * prod watcher → scheduler.
  */
 export const appLayer = (env: Env) =>
   appLayerWith(
@@ -42,7 +44,7 @@ export const appLayerWith = <E>(env: Env, base: Layer.Layer<Store | SlackClient 
   const records = Layer.mergeAll(SlackThreadLive, SessionRepoLive, ActionQueueLive, SlackMeLive, HealthLive, BoardsLive, WorktreesLive).pipe(Layer.provideMerge(withHub))
   const withAsks = Layer.mergeAll(AsksLive, ClaimsLive).pipe(Layer.provideMerge(records))
   const withRunner = SessionRunnerLive.pipe(Layer.provideMerge(withAsks))
-  const withShipper = Layer.mergeAll(ShipperLive, CriticLive).pipe(Layer.provideMerge(withRunner))
+  const withShipper = Layer.mergeAll(ShipperLive, CriticLive, HousekeepingLive).pipe(Layer.provideMerge(withRunner))
   const withPipeline = AlertPipelineLive.pipe(Layer.provideMerge(withShipper))
   const withEdges = Layer.mergeAll(InboxLive, ActionsLive, WatcherLive).pipe(Layer.provideMerge(withPipeline))
   return SchedulerLive.pipe(Layer.provideMerge(withEdges))

@@ -8,7 +8,6 @@ import { ciFailedPrompt, deployFailedPrompt, reviewChangesPrompt } from "../sess
 import { cannotResume, makeHandOff } from "../sessions/hand-off.ts"
 import { SessionRepo } from "../sessions/repo.ts"
 import { SessionRunner, type TurnPatch } from "../sessions/runner.ts"
-import { removeWorktree } from "../sessions/worktree.ts"
 import { SlackThread } from "../slack/thread.ts"
 import { Store } from "../store/store.ts"
 import { mergeDetail, releaseDetail } from "./cards.ts"
@@ -235,13 +234,10 @@ export const ShipperLive = Layer.effect(Shipper)(
           resolution: `deployed ${tag}`.trim(),
           milestones: { ...session.milestones, deployed: true },
           deployStage: { _tag: "Deployed" },
-          // Removed below: nothing may resume a turn in it.
-          worktree: null,
         })
         if (done === undefined) return
         const origin = yield* store.getAlert(session.alertId)
         yield* thread.post(origin ?? alert, Messages.deployed(tag === "" ? alert.title : tag))
-        if (session.worktree !== null) yield* removeWorktree(session.repoPath, session.worktree).pipe(Effect.ignore)
       })
 
     const trackDeploy = Effect.fn("Shipper.trackDeploy")(function* (alert: Alert) {

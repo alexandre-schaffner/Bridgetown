@@ -168,6 +168,3 @@ export const WorktreesLive = Layer.sync(Worktrees)(() => {
       sessionBranch(branch).pipe(Effect.flatMap((valid) => remove(repoPath, valid, options).pipe(locks.withLock(worktreePath(repoPath, valid))))),
   }
 })
-
-export const removeWorktree = (repoPath: string, path: string) =>
-  run(["git", "worktree", "remove", "--force", path], { cwd: repoPath }).pipe(Effect.asVoid)
