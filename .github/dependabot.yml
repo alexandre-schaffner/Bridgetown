@@ -1,0 +1,41 @@
+version: 2
+updates:
+  # Keeps the SHA-pinned actions current; the `# vX.Y.Z` comments move with them.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ["*"]
+    cooldown:
+      default-days: 7
+
+  # What ships in the app: runtime bumps are `deps`, which release-please releases.
+  - package-ecosystem: bun
+    directory: /daemon
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: deps
+      prefix-development: chore
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    cooldown:
+      default-days: 7
+
+  # The landing page ships on its own (deploy-site.yml), never as a release.
+  - package-ecosystem: bun
+    directory: /site
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    cooldown:
+      default-days: 7

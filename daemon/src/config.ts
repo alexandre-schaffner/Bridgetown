@@ -3,7 +3,7 @@ import { join } from "node:path"
 import { type Channel, FINDING_THRESHOLDS, type Settings } from "./domain/model.ts"
 import { type Secrets, secretsFromEnv } from "./secrets.ts"
 
-export const VERSION = "0.1.0"
+export const VERSION = "0.1.0" // x-release-please-version
 
 export const GH_HOST = "nocturlab.ghe.com"
 export const GHE_REPO = "Merkl/monorepo"

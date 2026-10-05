@@ -1,0 +1,38 @@
+# PRs are squash-merged with their title as the commit message, and release-please reads
+# those commits: `feat` cuts a minor (pre-1.0) release, `fix` and `perf` a patch, the rest none.
+
+name: PR title
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions: {}
+
+jobs:
+  pr-title:
+    name: pr-title
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      pull-requests: read
+    steps:
+      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          types: |
+            feat
+            fix
+            perf
+            revert
+            deps
+            refactor
+            docs
+            test
+            build
+            ci
+            chore
+          requireScope: false
+          subjectPattern: ^.{1,100}$
+          subjectPatternError: Keep the subject under 100 characters.

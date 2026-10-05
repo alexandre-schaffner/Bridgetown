@@ -1,6 +1,7 @@
 ---
 import ArchMark from "./ArchMark.astro";
 import Icon from "./Icon.astro";
+import { download } from "../lib/download";
 ---
 
 <header class="nav" data-nav>
@@ -22,7 +23,7 @@ import Icon from "./Icon.astro";
       <button type="button" data-theme-option="dark" aria-label="Dark theme" title="Dark"><Icon name="moon" size={14} stroke={2} /></button>
       <button type="button" data-theme-option="system" aria-label="Match the system theme" title="System"><Icon name="monitor" size={14} stroke={2} /></button>
     </div>
-    <a class="cta" href="#access">Request access</a>
+    <a class="cta" href={download.url} data-download>Download</a>
   </div>
 </header>
 

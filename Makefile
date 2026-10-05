@@ -1,11 +1,14 @@
 APP     := build/Bridgetown.app
+DMG     := build/Bridgetown.dmg
 DAEMON  := daemon/dist/bridgetown-daemon
 ICON    := build/AppIcon.icns
 # A stable code-signing identity keeps Keychain "Always Allow" valid across rebuilds;
 # ad-hoc signatures change every build. Override with SIGN_IDENTITY="<name>".
 SIGN_IDENTITY ?= Bridgetown Local Signing
+# CFBundleVersion stamped into the bundle; CI passes its run number. Unset keeps Info.plist's.
+BUILD_NUMBER ?=
 
-.PHONY: all app daemon icon dev-app test-app mock clean
+.PHONY: all app dmg daemon icon dev-app test-app mock clean
 
 all: daemon app
 
@@ -27,6 +30,9 @@ app: $(ICON)
 	mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
 	cp "$$(swift build -c release --package-path app --show-bin-path)/Bridgetown" $(APP)/Contents/MacOS/Bridgetown
 	cp app/Info.plist $(APP)/Contents/Info.plist
+	@if [ -n "$(BUILD_NUMBER)" ]; then \
+		/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(BUILD_NUMBER)" $(APP)/Contents/Info.plist; \
+	fi
 	cp -R app/Fonts $(APP)/Contents/Resources/Fonts
 	cp $(ICON) $(APP)/Contents/Resources/AppIcon.icns
 	@if [ -f $(DAEMON) ]; then \
@@ -41,6 +47,21 @@ app: $(ICON)
 		codesign --force --deep -s - $(APP) && echo "ad-hoc signed (no '$(SIGN_IDENTITY)' identity; Keychain will ask again after each rebuild)"; \
 	fi
 	@echo "built $(APP)"
+
+# The download: the built app and an Applications shortcut to drag it onto.
+dmg:
+	@test -d $(APP) || { echo "$(APP) not found; run 'make all' first"; exit 1; }
+	rm -rf build/dmg $(DMG)
+	mkdir -p build/dmg
+	ditto $(APP) build/dmg/Bridgetown.app
+	ln -s /Applications build/dmg/Applications
+	@# hdiutil fails now and then with "Resource busy" on CI runners; a retry gets through.
+	for i in 1 2 3; do \
+		hdiutil create -volname Bridgetown -srcfolder build/dmg -format UDZO -ov $(DMG) && break; \
+		sleep 5; \
+	done; test -f $(DMG)
+	rm -rf build/dmg
+	@echo "built $(DMG)"
 
 # Debug app attached to an already-running daemon (e.g. `make mock` in another shell).
 # Pass extra flags with ARGS, e.g. make dev-app ARGS=--preview-window

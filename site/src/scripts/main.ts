@@ -148,8 +148,8 @@ const watchFor = (ids: string[], rootMargin: string, then: () => void) => {
   }
 };
 // Start once you are into the page; insist once a night chapter is a screen or so away.
-watchFor(["#notch", "#light", "#access"], "100% 0px", () => void loadScene());
-watchFor(["#light", "#access"], "150% 0px", () => {
+watchFor(["#notch", "#light", "#download"], "100% 0px", () => void loadScene());
+watchFor(["#light", "#download"], "150% 0px", () => {
   urgent = true;
   void loadScene();
 });
@@ -802,48 +802,9 @@ if (finePointer && !reduced) {
   }
 }
 
-// MARK: Access
+// MARK: Download
 
-const form = $<HTMLFormElement>("[data-access-form]");
-if (form) {
-  const input = $<HTMLInputElement>("input", form)!;
-  const button = $<HTMLButtonElement>("button", form)!;
-  const status = $("[role=status]", form)!;
-  const say = (text: string, error = false) => {
-    status.textContent = text;
-    status.classList.toggle("error", error);
-  };
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const email = input.value.trim();
-    if (!input.checkValidity() || !email) {
-      say("Enter an email address we can write to.", true);
-      input.focus();
-      return;
-    }
-    const endpoint = form.dataset.endpoint;
-    if (!endpoint) {
-      say("Requests aren't open yet. Check back soon.", true);
-      return;
-    }
-    button.disabled = true;
-    button.textContent = "Sending…";
-    say("");
-    try {
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      if (!res.ok) throw new Error(String(res.status));
-      form.reset();
-      say(`Thanks. We'll write to ${email} when there's a place for you.`);
-      scene?.setLight("rest", 0.4);
-    } catch {
-      say("That didn't go through. Try again in a moment.", true);
-    } finally {
-      button.disabled = false;
-      button.textContent = "Request early access";
-    }
-  });
+// The light comes to rest as the download starts, the way it does when a session is done.
+for (const link of $$<HTMLAnchorElement>("[data-download]")) {
+  link.addEventListener("click", () => scene?.setLight("rest", 0.4));
 }
