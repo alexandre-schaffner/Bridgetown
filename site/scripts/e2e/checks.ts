@@ -103,10 +103,35 @@ export const CHECKS: Check[] = [
       await page.mouse.wheel(0, 300);
       await page.waitForTimeout(1000);
       expect(await page.evaluate(() => document.documentElement.classList.contains("nav-hidden")), "the nav didn't step aside");
-      await page.focus('nav a[href="#notch"]');
+      // Tab past the skip link into the nav, as a keyboard does.
+      for (let i = 0; i < 4 && !(await page.evaluate(() => !!document.activeElement?.closest(".nav"))); i++) {
+        await page.keyboard.press("Tab");
+      }
+      expect(await page.evaluate(() => !!document.activeElement?.closest(".nav")), "Tab never reaches the nav");
       await page.waitForTimeout(800);
       const top = await page.evaluate(() => document.querySelector(".nav")!.getBoundingClientRect().top);
       expect(top > -1, `the focused nav is ${Math.round(-top)}px off the top of the screen`);
+    },
+  },
+  {
+    name: "A theme picked with the mouse doesn't hold the nav in place",
+    viewport: LAPTOP,
+    motion: "no-preference",
+    async run(page) {
+      // The button keeps focus after the click, which must not count as tabbing into the nav.
+      // (Light is the theme already, so no view transition runs over the scroll.)
+      await page.click('[data-theme-option="light"]');
+      await page.mouse.move(640, 400);
+      for (let i = 0; i < 6; i++) {
+        await page.mouse.wheel(0, 400);
+        await page.waitForTimeout(100);
+      }
+      await page.waitForTimeout(1200);
+      const { hidden, top } = await page.evaluate(() => ({
+        hidden: document.documentElement.classList.contains("nav-hidden"),
+        top: document.querySelector(".nav")!.getBoundingClientRect().top,
+      }));
+      expect(hidden && top < -1, `reading down after the click, the nav is still in view (top ${Math.round(top)}px)`);
     },
   },
   {

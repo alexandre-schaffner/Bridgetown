@@ -108,8 +108,9 @@ import Icon from "./Icon.astro";
     transform: translateY(-100%);
   }
 
-  /* Back for whoever tabs into it, however far down the page. */
-  :global(.nav-hidden) .nav:focus-within {
+  /* Back for whoever tabs into it, however far down the page. Keyboard focus only: a theme
+     button clicked with the mouse keeps its focus, and the nav would never step aside again. */
+  :global(.nav-hidden) .nav:has(:focus-visible) {
     transform: none;
   }
 
