@@ -7,6 +7,7 @@
     "build": "node scripts/media-manifest.mjs && astro check && tsc -p tsconfig.tools.json && astro build",
     "preview": "astro preview",
     "test": "node scripts/media-manifest.mjs && bun test",
+    "e2e": "bun scripts/e2e.ts",
     "deploy": "wrangler deploy"
   },
   "dependencies": {
@@ -22,6 +23,7 @@
     "@astrojs/check": "^0.9.10",
     "@types/bun": "^1.4.2",
     "@types/three": "^0.186.0",
+    "playwright-core": "1.63.0",
     "typescript": "6",
     "wrangler": "^4.147.0"
   }
