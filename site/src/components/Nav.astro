@@ -199,6 +199,7 @@ import Icon from "./Icon.astro";
     color: #000;
     font-size: var(--t-small);
     font-weight: 520;
+    white-space: nowrap;
     text-decoration: none;
     transition: transform 400ms var(--ease-out);
   }
@@ -217,6 +218,14 @@ import Icon from "./Icon.astro";
     }
     .nav {
       grid-template-columns: 1fr auto;
+    }
+  }
+
+  /* A phone has room for the mark, the theme and the button, not the name as well: it is the
+     hero's first line. */
+  @media (max-width: 400px) {
+    .brand span {
+      display: none;
     }
   }
 </style>

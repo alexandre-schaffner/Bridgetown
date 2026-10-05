@@ -404,10 +404,12 @@ const H = 120;
     line-height: 1.7;
     overflow-x: auto;
     color: var(--ui-dim);
+    /* One column as wide as the longest line, so a narrow screen scrolls the diff with each
+       line's colour reaching its end. */
+    display: grid;
   }
 
   .dl {
-    display: block;
     padding-right: 1rem;
   }
 

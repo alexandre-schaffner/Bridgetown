@@ -2,9 +2,9 @@
 // if dist/ is older than its sources, serves dist/ on a free port, and walks each page at five
 // viewports, with and without Reduce Motion. At every scroll stop it takes a screenshot and
 // lints what the page drew: sideways scroll, text or media spilling past the screen, text cut
-// off or ellipsised by its box, text drawn over other text, broken images and videos, console
-// errors, page errors and failed requests. Then it checks what the page has to do: focus,
-// landing, the nav, the films (CHECKS).
+// off, ellipsised or grown out of its box, text drawn over other text, broken images and
+// videos, console errors, page errors and failed requests. Then it checks what the page has to
+// do: focus, landing, the nav, the films (CHECKS).
 //
 // Writes .context/e2e/<run>/site/: index.md first (checks, errors with crops, warnings by
 // rule, a contact sheet per walk), report.json, shots/, issues/ (each issue's crop, outlined
@@ -106,6 +106,7 @@ type Rule =
   | "sideways-scroll"
   | "spill"
   | "clipped-text"
+  | "text-overflow"
   | "ellipsis"
   | "text-overlap"
   | "broken-media"
@@ -272,6 +273,17 @@ function lintPage({ allow, shot }: { allow: Allow[]; shot: string }): Issue[] {
       if (!onScreen(v)) continue;
       fragments.push({ node: n, el, rect: v });
       const what = n.data;
+      // Text that has outgrown its own box (a wrapped label in a fixed-height pill, say): past
+      // its edges by more than a line's glyphs reach past it when the line is set tight.
+      let box: Element = el;
+      while (box.parentElement && /^(inline|contents)$/.test(style(box).display)) box = box.parentElement;
+      const b = box.getBoundingClientRect();
+      const line = parseFloat(style(el).lineHeight) || r.height;
+      const slack = 2 + Math.max(0, (r.height - line) / 2);
+      const out = Math.max(b.top - r.top, r.bottom - b.bottom, b.left - r.left, r.right - b.right);
+      if (out > slack && !clipsOf(box).some((c) => c.el === box)) {
+        add("text-overflow", "error", el, `“${what}” runs ${Math.round(out)}px out of ${path(box)}`, toRect(r));
+      }
       if (v.cutX || v.cutY) {
         const cutter = (v.cutX ?? v.cutY)!.el;
         const scrolls = (v.cutX ? v.cutX.x : v.cutY!.y) === "scroll";
