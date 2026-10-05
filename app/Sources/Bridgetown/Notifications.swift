@@ -61,7 +61,7 @@ struct NewActions {
     private var seen: Set<String>?
 
     /// The actions not seen before, in "Needs you" order; none during quiet hours.
-    mutating func update(_ snap: Snapshot, now: Date = .now) -> [Action] {
+    mutating func update(_ snap: Snapshot, now: Date = AppClock.now) -> [Action] {
         let ids = Set(snap.actions.map(\.id))
         defer { seen = (seen ?? []).union(ids) }
         guard let seen, !QuietHours.isActive(snap.settings.quietHours, at: now) else { return [] }
@@ -71,7 +71,7 @@ struct NewActions {
 
 enum QuietHours {
     /// `start`/`end` are "HH:mm"; the window may wrap midnight ("22:00"–"08:00").
-    static func isActive(_ q: Settings.QuietHours, at date: Date = .now, calendar: Calendar = .current) -> Bool {
+    static func isActive(_ q: Settings.QuietHours, at date: Date = AppClock.now, calendar: Calendar = .current) -> Bool {
         guard q.enabled, let start = minutes(q.start), let end = minutes(q.end), start != end else { return false }
         let c = calendar.dateComponents([.hour, .minute], from: date)
         let now = (c.hour ?? 0) * 60 + (c.minute ?? 0)
