@@ -79,10 +79,10 @@ export const makeTurns = (deps: TurnDeps) => {
 
   /**
    * One SDK query, consumed as a stream until the CLI exits. Interrupting it (a
-   * stop, shutdown) aborts the query and kills the CLI. Otherwise the turn ends
-   * the session's turn one way or the other: its result is applied, or the
-   * session fails (the CLI failed or exited without a result, the result could
-   * not be applied, a defect). No `ask` outlives it.
+   * stop, shutdown) aborts the query and kills the CLI. Otherwise it never ends
+   * without an outcome: its result is applied, or the session fails (the CLI
+   * failed or exited without a result, the result could not be applied, a
+   * defect). No `ask` outlives it.
    */
   const runTurn = (id: string, session: Session, input: TurnInput, resume: boolean): Effect.Effect<void> =>
     Effect.scoped(
