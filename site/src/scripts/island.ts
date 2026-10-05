@@ -20,13 +20,29 @@ interface SpringSpec {
   response: number;
   damping: number;
 }
-const OPENING: SpringSpec = { response: 0.5, damping: 0.74 };
-const CLOSING: SpringSpec = { response: 0.38, damping: 0.92 };
 const SWELL: SpringSpec = { response: 0.32, damping: 0.62 };
-// The launch film's: slower and barely bouncing, so a full-screen black panel opening over a
-// white desktop reads as a move, not a flash.
-const FILM_OPENING: SpringSpec = { response: 0.8, damping: 0.9 };
-const FILM_CLOSING: SpringSpec = { response: 0.9, damping: 1 };
+
+/** How the island moves: the springs it grows and shrinks on, and its layers' fades, in ms. */
+interface Pace {
+  opening: SpringSpec;
+  closing: SpringSpec;
+  fade: { in: number; delay: number; out: number };
+}
+/** The app's (IslandController), which the page plays at. */
+const APP: Pace = {
+  opening: { response: 0.5, damping: 0.74 },
+  closing: { response: 0.38, damping: 0.92 },
+  fade: { in: 420, delay: 70, out: 120 },
+};
+/**
+ * The launch film's: slower and barely bouncing, so a full-screen black panel opening over a
+ * white desktop reads as a move, not a flash.
+ */
+const FILM: Pace = {
+  opening: { response: 0.8, damping: 0.9 },
+  closing: { response: 0.9, damping: 1 },
+  fade: { in: 700, delay: 180, out: 220 },
+};
 
 class Spring {
   v = 0;
@@ -68,8 +84,7 @@ export function createIsland(
   root: HTMLElement,
   { reducedMotion, cinematic = false }: { reducedMotion: boolean; cinematic?: boolean },
 ): IslandStage {
-  const opening = cinematic ? FILM_OPENING : OPENING;
-  const closing = cinematic ? FILM_CLOSING : CLOSING;
+  const pace = cinematic ? FILM : APP;
   const screen = root.querySelector<HTMLElement>("[data-screen]")!;
   const mac = root.querySelector<HTMLElement>("[data-mac]")!;
   const island = root.querySelector<HTMLElement>("[data-island]")!;
@@ -115,7 +130,7 @@ export function createIsland(
     corner: new Spring(start.corner),
     lift: new Spring(0),
   };
-  let spec = opening;
+  let spec = pace.opening;
   let visible = false;
   let raf = 0;
   let last = 0;
@@ -163,7 +178,7 @@ export function createIsland(
   const shape = (p: Presentation) => {
     const target = layoutFor(p, hovering);
     const now = layoutFor(presentation, false);
-    spec = hovering && (p === "wings") ? SWELL : target.height * target.width >= now.height * now.width ? opening : closing;
+    spec = hovering && p === "wings" ? SWELL : target.height * target.width >= now.height * now.width ? pace.opening : pace.closing;
     springs.width.target = target.width;
     springs.height.target = target.height;
     springs.shoulder.target = target.shoulder;
@@ -187,8 +202,8 @@ export function createIsland(
       return;
     }
     el.animate(on ? [hidden, rest] : [rest, hidden], {
-      duration: on ? (cinematic ? 700 : 420) : cinematic ? 220 : 120,
-      delay: on ? (cinematic ? 180 : 70) : 0,
+      duration: on ? pace.fade.in : pace.fade.out,
+      delay: on ? pace.fade.delay : 0,
       easing: on ? "cubic-bezier(0.22, 1, 0.36, 1)" : "cubic-bezier(0.4, 0, 1, 1)",
       fill: "both",
     });
