@@ -1,4 +1,4 @@
-import { Context, Effect, FiberMap, FiberSet, Layer, Queue, SynchronizedRef } from "effect"
+import { Context, Effect, Fiber, FiberMap, FiberSet, Layer, Option, Queue, SynchronizedRef } from "effect"
 import { ActionQueue } from "../actions/queue.ts"
 import { MAX_CRITIQUE_ROUNDS } from "../critique/transitions.ts"
 import { type AdapterError, Conflict, errorMessage, NotFound } from "../domain/errors.ts"
@@ -40,8 +40,8 @@ export interface SessionRunnerShape {
   /** Your message: answers a pending `ask`, else reaches the agent. `Conflict` unless the session `acceptsMessages`; may resume a handed-back session. */
   readonly message: (sessionId: string, text: string) => Effect.Effect<void, AdapterError | NotFound | Conflict>
   readonly stop: (sessionId: string) => Effect.Effect<void, AdapterError | NotFound>
-  /** Re-queues a failed session; it resumes its agent conversation if it had one. */
-  readonly retry: (sessionId: string) => Effect.Effect<void, AdapterError>
+  /** Re-queues a failed session; it resumes its agent conversation if it had one. `Conflict` while its last turn is still winding down. */
+  readonly retry: (sessionId: string) => Effect.Effect<void, AdapterError | Conflict>
   /** Hands the user's reply to a blocked `ask` call. False when nobody is waiting on that action. */
   readonly answer: (actionId: string, text: string) => Effect.Effect<boolean, AdapterError>
   /** A turn is running or parked for a slot: the ship loop leaves the session alone. */
@@ -124,6 +124,16 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
     const fibers = yield* FiberMap.make<string>()
     /** The SDK tool callbacks' Promise boundary; what it runs is interrupted with the layer too. */
     const runPromise = yield* FiberSet.makeRuntimePromise()
+    // Parked turns and queued follow-ups only live here: when the daemon stops, the transcript says they went undelivered.
+    yield* Effect.addFinalizer(() =>
+      Effect.gen(function* () {
+        const state = yield* SynchronizedRef.get(turns)
+        for (const id of state.parked.keys()) yield* repo.log(id, "status", "Not delivered: Bridgetown quit while it waited for an agent slot")
+        for (const [id, live] of state.live) {
+          if ((yield* Queue.size(live.followUps)) > 0) yield* repo.log(id, "status", "Not delivered: Bridgetown quit before the current turn ended")
+        }
+      }).pipe(Effect.ignore),
+    )
 
     const freeSlots = (state: Turns) =>
       Effect.gen(function* () {
@@ -279,6 +289,8 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
           if (session === undefined) return ["refused", state] as const
           const live = state.live.get(id)
           if (live !== undefined) {
+            // No claim will carry the patch: the text joins a turn that already has one.
+            if (Object.keys(patch).length > 0) yield* repo.patch(id, patch)
             if (yield* Queue.offer(live.input, userMessage(text, "next"))) return ["sent", state] as const
             yield* Queue.offer(live.followUps, { text, reopen })
             yield* repo.log(id, "status", "Queued for after the current turn")
@@ -312,6 +324,7 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
           )
           state = after
           if (started) free -= 1
+          else yield* repo.log(id, "status", "Not delivered: the session no longer takes messages").pipe(Effect.ignore)
         }
         return [free, state] as const
       }),
@@ -362,7 +375,8 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
       }),
 
       retry: Effect.fn("SessionRunner.retry")(function* (sessionId: string) {
-        if ((yield* SynchronizedRef.get(turns)).live.has(sessionId)) return
+        // The failed turn has not let go of the session yet; the retry card stays for a second click.
+        if ((yield* SynchronizedRef.get(turns)).live.has(sessionId)) return yield* new Conflict({ message: "The agent is still winding down; retry in a moment" })
         const retried = yield* repo.modify(
           sessionId,
           (current) => (current.status === "failed" ? { ...current, status: "queued", activity: "Retrying…", resolution: null } : undefined),
@@ -375,11 +389,18 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
         const session = yield* repo.get(sessionId)
         if (session === undefined) return yield* new NotFound({ message: "unknown session" })
         if (!isActive(session)) return
-        // Interrupting the session's fiber aborts its query (the CLI exits) or its worktree setup.
-        yield* FiberMap.remove(fibers, sessionId)
-        yield* SynchronizedRef.update(turns, (state) => withParked(withLive(state, sessionId, undefined), sessionId, undefined))
-        yield* asks.cancelFor(sessionId)
-        yield* repo.patch(sessionId, { status: "stopped", activity: "Stopped by you", resolution: "stopped by you" })
+        // Under the lock, so no delivery starts a turn in between: stopped first, which every later claim of
+        // Bridgetown's respects, then nothing live or parked, and the fiber of whatever turn did start.
+        const fiber = yield* SynchronizedRef.modifyEffect(turns, (state) =>
+          Effect.gen(function* () {
+            yield* repo.patch(sessionId, { status: "stopped", activity: "Stopped by you", resolution: "stopped by you" })
+            const running = yield* FiberMap.get(fibers, sessionId)
+            return [running, withParked(withLive(state, sessionId, undefined), sessionId, undefined)] as const
+          }),
+        )
+        // Outside the lock, which the turn's own cleanup takes. Interrupting aborts its query (the CLI exits, its
+        // asks are cancelled) or its worktree setup.
+        if (Option.isSome(fiber)) yield* Fiber.interrupt(fiber.value)
         yield* queue.removeWhere((action) => action.sessionId === sessionId)
       }),
 
