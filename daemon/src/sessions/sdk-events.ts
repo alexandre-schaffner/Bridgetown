@@ -37,19 +37,15 @@ export const describeTool = (name: string, input: unknown): string => {
   return truncate(`${name.replace(/^mcp__/, "")} ${detail}`.trim(), 160)
 }
 
-const MCP_PROBLEM_MARK = "MCP · sessions:"
-
 /**
  * What to tell the user about an MCP server sessions couldn't use. merkl and grafana
  * come from the monorepo's `.mcp.json`, so `claude mcp login` only finds them there.
  */
 export const mcpProblem = (name: string, status: string): string => {
-  if (name === "grafana") return `grafana ${MCP_PROBLEM_MARK} not reachable. Run \`bun grafana:mcp\` in the monorepo.`
-  if (status === "needs-auth") return `${name} ${MCP_PROBLEM_MARK} needs a login. Run \`claude mcp login ${name}\` in the monorepo.`
-  return `${name} ${MCP_PROBLEM_MARK} ${status}. Check \`claude mcp get ${name}\` in the monorepo.`
+  if (name === "grafana") return "grafana MCP · sessions: not reachable. Run `bun grafana:mcp` in the monorepo."
+  if (status === "needs-auth") return `${name} MCP · sessions: needs a login. Run \`claude mcp login ${name}\` in the monorepo.`
+  return `${name} MCP · sessions: ${status}. Check \`claude mcp get ${name}\` in the monorepo.`
 }
-
-export const isMcpProblem = (error: string | null): boolean => error?.includes(MCP_PROBLEM_MARK) === true
 
 /** How a turn ended: a structured result to act on, or a reason it cannot be trusted. */
 export type TurnEnd =
@@ -79,9 +75,8 @@ export const handleMessage = (id: string, message: SDKMessage, sink: EventSink):
             down.length === 0 ? "status" : "error",
             `MCP: ${servers.map((server) => `${server.name} ${server.status}`).join(", ") || "none configured"}`,
           )
-          for (const server of down) yield* hub.patchStatus({ error: mcpProblem(server.name, server.status) })
           // Every server connected: a problem an earlier session reported is fixed now.
-          if (down.length === 0 && isMcpProblem((yield* hub.status).error)) yield* hub.patchStatus({ error: null })
+          yield* hub.problem("mcp", down.length === 0 ? null : down.map((server) => mcpProblem(server.name, server.status)).join(" "))
         }
         return
       case "assistant":

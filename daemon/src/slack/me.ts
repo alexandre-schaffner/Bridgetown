@@ -35,9 +35,12 @@ export const SlackMeLive = Layer.effect(SlackMe)(
 
     const identity = yield* Effect.cachedWithTTL(
       slack.identity().pipe(
-        Effect.tap((found) => Ref.set(known, found)),
+        Effect.tap((found) => Ref.set(known, found).pipe(Effect.andThen(hub.problem("slack", null)))),
         Effect.tapError((error) =>
-          hub.patchStatus({ slack: error._tag === "MissingCredential" ? "missing_token" : "error", error: `Slack: ${error.message}` }),
+          Effect.andThen(
+            hub.patchStatus({ slack: error._tag === "MissingCredential" ? "missing_token" : "error" }),
+            hub.problem("slack", `Slack: ${error.message}`),
+          ),
         ),
       ),
       successesOnly,
@@ -47,7 +50,8 @@ export const SlackMeLive = Layer.effect(SlackMe)(
       const me = yield* Ref.get(known)
       if (me === undefined) return []
       return yield* slack.groupsOf(me.user_id).pipe(
-        Effect.tapError((error) => hub.patchStatus({ error: `Slack user groups: ${error.message} (add the usergroups:read scope)` })),
+        Effect.tap(() => hub.problem("groups", null)),
+        Effect.tapError((error) => hub.problem("groups", `Slack user groups: ${error.message} (add the usergroups:read scope)`)),
         Effect.orElseSucceed((): ReadonlyArray<UserGroup> => []),
       )
     }).pipe(Effect.cachedWithTTL(GROUPS_TTL))

@@ -226,7 +226,7 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
         yield* repo.log(id, "status", `Worktree ready: ${worktree}`)
         for (const warning of warnings) yield* repo.log(id, "error", `Setup: ${warning}`)
         const upgrade = warnings.find((w) => w.includes("bun upgrade"))
-        if (upgrade !== undefined) yield* hub.patchStatus({ error: upgrade })
+        yield* hub.problem("setup", upgrade ?? null)
         const ready = yield* repo.modify(id, (current) => (current.status === "preparing" ? { ...current, worktree } : undefined))
         if (ready === undefined) return
         const prompt = yield* firstPrompt(ready, warnings)

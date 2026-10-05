@@ -4,7 +4,7 @@ import { type AdapterError, Conflict, type GitHubError } from "../domain/errors.
 import { now } from "../domain/ids.ts"
 import type { Alert, Session } from "../domain/model.ts"
 import { releaseState } from "../domain/release.ts"
-import { Hub } from "../hub.ts"
+import { Hub, problemOf } from "../hub.ts"
 import { ciFailedPrompt, deployFailedPrompt, reviewChangesPrompt } from "../sessions/prompts.ts"
 import { cannotResume, makeHandOff } from "../sessions/hand-off.ts"
 import { SessionRepo, withPatch } from "../sessions/repo.ts"
@@ -285,17 +285,19 @@ export const ShipperLive = Layer.effect(Shipper)(
     const tick = Effect.gen(function* () {
       // GHE refusing this network is already shown once; every CI check would only repeat it.
       if ((yield* hub.status).github === "blocked") return
+      const problems: Array<string> = []
       for (const session of yield* store.activeSessions()) {
         if (yield* runner.busy(session.id)) continue
         if (session.status === "ci" || session.status === "awaiting_merge") {
           yield* checkCi(session.id).pipe(
             Effect.catchTag("GheBlocked", () => hub.patchStatus({ github: "blocked" })),
-            Effect.catch((error) => hub.patchStatus({ error: `CI check: ${error.message}` })),
+            Effect.catch((error) => Effect.sync(() => void problems.push(`CI check: ${error.message}`))),
           )
         }
         const stalled = deployStalled(session, Date.now())
         if (stalled !== null) yield* handOff(session.id, stalled)
       }
+      yield* hub.problem("ci", problemOf(problems))
     })
 
     /** A write that only lands while the session is still at the gate the click was for. */

@@ -38,13 +38,12 @@ export const SlackThreadLive = Layer.effect(SlackThread)(
             return skipped
           }
           const ts = yield* slack.post(alert.channelId, threadTsOf(alert), `${BOT_PREFIX} ${text}`)
+          yield* hub.problem("post", null)
           const posted: ThreadPost = { _tag: "Posted", ts }
           return posted
         }).pipe(
           Effect.catch((error) =>
-            hub.patchStatus({ error: `Slack post failed: ${error.message}` }).pipe(
-              Effect.as<ThreadPost>({ _tag: "NotPosted", reason: "error" }),
-            ),
+            hub.problem("post", `Slack post failed: ${error.message}`).pipe(Effect.as<ThreadPost>({ _tag: "NotPosted", reason: "error" })),
           ),
         ),
       postChannel: (channelId, text) =>
@@ -55,14 +54,13 @@ export const SlackThreadLive = Layer.effect(SlackThread)(
             return skipped
           }
           const ts = yield* slack.post(channelId, undefined, `${BOT_PREFIX} ${text}`)
+          yield* hub.problem("post", null)
           const permalink = yield* slack.permalink(channelId, ts).pipe(Effect.orElseSucceed(() => null))
           const posted: ChannelPost = { _tag: "Posted", permalink }
           return posted
         }).pipe(
           Effect.catch((error) =>
-            hub.patchStatus({ error: `Slack post failed: ${error.message}` }).pipe(
-              Effect.as<ChannelPost>({ _tag: "NotPosted", reason: "error" }),
-            ),
+            hub.problem("post", `Slack post failed: ${error.message}`).pipe(Effect.as<ChannelPost>({ _tag: "NotPosted", reason: "error" })),
           ),
         ),
       nearby: (alert, minutes) => {

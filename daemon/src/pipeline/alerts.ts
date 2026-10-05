@@ -4,7 +4,7 @@ import { alertFromParsed, type ParsedAlert } from "../domain/alert.ts"
 import { type AdapterError, NotFound } from "../domain/errors.ts"
 import { daysAgo, now, tsToIso } from "../domain/ids.ts"
 import { type Alert, type Channel, channelLabel, type Claimant, claimHeadline, isActive, type Triage, triageEvent } from "../domain/model.ts"
-import { Hub } from "../hub.ts"
+import { Hub, problemOf } from "../hub.ts"
 import { SessionRunner } from "../sessions/runner.ts"
 import { Shipper } from "../ship/shipper.ts"
 import { followsDeploy } from "../ship/transitions.ts"
@@ -224,7 +224,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
      * The trackers of deploys in flight, read on their own. A tracker is edited in place for hours, long after newer
      * posts pushed it out of the channel's newest messages. `seen`: the messages this poll already read.
      */
-    const refreshTrackers = (seen: ReadonlySet<string>) =>
+    const refreshTrackers = (seen: ReadonlySet<string>, problems: Array<string>) =>
       Effect.gen(function* () {
         for (const session of yield* store.activeSessions()) {
           const tracker = session.tracker
@@ -235,7 +235,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
           // `oldest` and `latest` are both inclusive: exactly that message.
           yield* slack.latest(alert.channelId, 1, alert.ts, alert.ts).pipe(
             Effect.flatMap(([message]) => (message === undefined ? Effect.void : ingest(channel, message, 0))),
-            Effect.catch((error) => hub.patchStatus({ error: `#${channel.name} tracker: ${error.message}` })),
+            Effect.catch((error) => Effect.sync(() => void problems.push(`#${channel.name} tracker: ${error.message}`))),
           )
         }
       })
@@ -256,6 +256,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
       yield* me.identity
       const enabled = (yield* hub.settings).channels.filter((c) => c.enabled)
       const seen = new Set<string>()
+      const problems: Array<string> = []
       let failures = 0
       for (const channel of enabled) {
         // One horizon per channel: a channel Slack would not serve keeps its own until it does.
@@ -265,17 +266,18 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
         const read = yield* postsSince(channel, since).pipe(Effect.result)
         if (read._tag === "Failure") {
           failures += 1
-          yield* hub.patchStatus({ error: `Slack #${channel.name}: ${read.failure.message}` })
+          problems.push(`Slack #${channel.name}: ${read.failure.message}`)
           continue
         }
         for (const message of [...read.success].reverse()) {
           seen.add(`${channel.id}:${message.ts}`)
-          yield* ingest(channel, message, since).pipe(Effect.catch((error) => hub.patchStatus({ error: `#${channel.name}: ${error.message}` })))
+          yield* ingest(channel, message, since).pipe(Effect.catch((error) => Effect.sync(() => void problems.push(`#${channel.name}: ${error.message}`))))
         }
         yield* commitHorizon(store, key, since, readAt)
       }
-      yield* refreshTrackers(seen)
+      yield* refreshTrackers(seen, problems)
       yield* hub.patchStatus({ slack: failures === enabled.length && failures > 0 ? "error" : "ok", lastPollAt: now() })
+      yield* hub.problem("poll", problemOf(problems))
     }).pipe(polling.withPermits(1))
 
     const findAlert = (alertId: string) =>

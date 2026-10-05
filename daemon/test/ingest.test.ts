@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { SlackApiError } from "../src/domain/errors.ts"
+import { Hub } from "../src/hub.ts"
 import { AlertPipeline, commitHorizon, readHorizon } from "../src/pipeline/alerts.ts"
 import type { SlackMessage } from "../src/slack/client.ts"
 import { Store } from "../src/store/store.ts"
@@ -114,6 +115,7 @@ describe("the horizon only moves past what was read", () => {
   afterAll(() => world.dispose())
   const poll = () => world.runPromise(AlertPipeline.use((pipeline) => pipeline.pollOnce))
   const stored = (ts: string) => world.runPromise(Store.use((store) => store.getAlert(`${CHANNEL}:${ts}`)))
+  const error = () => world.runPromise(Hub.use((hub) => hub.status.pipe(Effect.map((s) => s.error))))
   const key = `since:${CHANNEL}`
 
   test("an alert posted while Slack could not be read is still news once it can", async () => {
@@ -122,11 +124,14 @@ describe("the horizon only moves past what was read", () => {
     down = true
     await poll()
     expect(Number(await world.runPromise(Store.use((store) => store.getKv(key))))).toBe(lastGood)
+    expect(await error()).toBe("Slack #alert-releases: ratelimited")
     down = false
     const during = recent(50)
     messages = [{ ts: during, text: "[RESOLVED] posted during the outage", bot_id: "B1" }]
     await poll()
     expect(await stored(during)).toBeDefined()
+    // Read again: the problem no longer stands.
+    expect(await error()).toBeNull()
   })
 
   test("more than a page since the horizon: the poll reads back to it instead of skipping the older ones", async () => {

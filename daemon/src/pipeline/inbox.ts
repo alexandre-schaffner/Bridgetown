@@ -4,7 +4,7 @@ import { alertFromParsed, type ParsedAlert } from "../domain/alert.ts"
 import type { AdapterError } from "../domain/errors.ts"
 import { now, tsToIso } from "../domain/ids.ts"
 import { type Alert, type Session, triageEvent } from "../domain/model.ts"
-import { Hub } from "../hub.ts"
+import { Hub, problemOf } from "../hub.ts"
 import { followUpPrompt } from "../sessions/prompts.ts"
 import { SessionRepo } from "../sessions/repo.ts"
 import { SessionRunner } from "../sessions/runner.ts"
@@ -122,25 +122,28 @@ export const InboxLive = Layer.effect(Inbox)(
         const identity = yield* me.known
         if ((yield* hub.status).slack !== "ok" || identity === undefined) return
         const settings = yield* hub.settings
-        if (!settings.inbox) return
+        // Turned off: whatever the inbox last ran into no longer stands.
+        if (!settings.inbox) return yield* hub.problem("inbox", null)
         const since = yield* readHorizon(store, INBOX_HORIZON)
         const readAt = Date.now()
         const alertChannels = new Set(settings.channels.filter((c) => c.enabled).map((c) => c.id))
+        const problems: Array<string> = []
         let complete = true
         for (const query of inboxQueries(identity.user_id, yield* me.groups)) {
           const matches = yield* slack.search(query.query, SEARCH_COUNT).pipe(
-            Effect.tapError((error) => hub.patchStatus({ error: `Slack search: ${error.message} (add the search:read scope)` })),
-            Effect.orElseSucceed((): ReadonlyArray<SearchMatch> => {
+            Effect.orElseSucceed((error): ReadonlyArray<SearchMatch> => {
               complete = false
+              problems.push(`Slack search: ${error.message} (add the search:read scope)`)
               return []
             }),
           )
           for (const match of [...matches].reverse()) {
-            yield* ingest(match, query.via, since, alertChannels).pipe(Effect.catch((error) => hub.patchStatus({ error: `Inbox: ${error.message}` })))
+            yield* ingest(match, query.via, since, alertChannels).pipe(Effect.catch((error) => Effect.sync(() => void problems.push(`Inbox: ${error.message}`))))
           }
         }
         // A search that failed leaves the horizon: its mentions are still news next time.
         if (complete) yield* commitHorizon(store, INBOX_HORIZON, since, readAt)
+        yield* hub.problem("inbox", problemOf(problems))
       }),
     }
   }),

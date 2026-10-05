@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, PubSub, Ref, Schema, type Scope, Stream } from "effect"
+import { Context, Effect, Layer, PubSub, Ref, Schema, type Scope, Semaphore, Stream } from "effect"
 import { DEFAULT_CHANNELS, DEFAULT_SETTINGS, type Env } from "./config.ts"
 import { type AdapterError, errorMessage } from "./domain/errors.ts"
 import { Settings } from "./domain/model.ts"
@@ -12,12 +12,26 @@ export interface Status {
   /** GitHub Enterprise reachability. `blocked` is the Merkl org's IP allow list refusing this network. */
   readonly github: "ok" | "blocked" | "unknown"
   readonly lastPollAt: string | null
+  /** The latest problem still standing (`HubShape.problem`). */
   readonly error: string | null
+}
+
+/** What can go wrong, each reported by the part that saw it, and cleared by that part once it works again. */
+export type ProblemSource = "slack" | "poll" | "inbox" | "groups" | "post" | "jev" | "mcp" | "ci" | "setup"
+
+/** One line for a round's problems: the first, and how many more. `null` for a round with none. */
+export const problemOf = (lines: ReadonlyArray<string>): string | null => {
+  const [first] = lines
+  if (first === undefined) return null
+  return lines.length === 1 ? first : `${first} (+${lines.length - 1} more)`
 }
 
 export interface HubShape {
   readonly status: Effect.Effect<Status>
-  readonly patchStatus: (patch: Partial<Status>) => Effect.Effect<void>
+  /** Every field but `error`, which only `problem` sets. Atomic: concurrent patches never drop each other. */
+  readonly patchStatus: (patch: Partial<Omit<Status, "error">>) => Effect.Effect<void>
+  /** `source`'s problem now, or `null` once it works again. */
+  readonly problem: (source: ProblemSource, message: string | null) => Effect.Effect<void>
   readonly settings: Effect.Effect<Settings>
   readonly updateSettings: (next: Settings) => Effect.Effect<Settings, AdapterError>
   /** Effective dry-run: the settings toggle or the `--dry-run` flag. */
@@ -35,6 +49,20 @@ export interface HubShape {
 export class Hub extends Context.Service<Hub, HubShape>()("Hub") {}
 
 const SETTINGS_KEY = "settings"
+
+interface State {
+  readonly status: Omit<Status, "error">
+  /** By source, in the order they arose: a changed message counts as new and moves to the end. */
+  readonly problems: ReadonlyMap<ProblemSource, string>
+}
+
+const withProblem = (problems: ReadonlyMap<ProblemSource, string>, source: ProblemSource, message: string | null): ReadonlyMap<ProblemSource, string> => {
+  if ((problems.get(source) ?? null) === message) return problems
+  const next = new Map(problems)
+  next.delete(source)
+  if (message !== null) next.set(source, message)
+  return next
+}
 
 /**
  * Stored settings decode against the current schema; new fields fall back to
@@ -62,29 +90,48 @@ export const HubLive = (env: Env) =>
       const store = yield* Store
       const stored = yield* store.getKv(SETTINGS_KEY)
       const settings = yield* Ref.make(loadSettings(stored))
-      const status = yield* Ref.make<Status>({
-        paused: (yield* store.getKv("paused")) === "true",
-        slack: env.slackToken === undefined || env.slackToken === "" ? "missing_token" : "ok",
-        jev: env.typesafeKey === undefined || env.typesafeKey === "" ? "missing_key" : "ok",
-        grafanaMcp: "down",
-        github: "unknown",
-        lastPollAt: null,
-        error: null,
+      const state = yield* Ref.make<State>({
+        status: {
+          paused: (yield* store.getKv("paused")) === "true",
+          slack: env.slackToken === undefined || env.slackToken === "" ? "missing_token" : "ok",
+          jev: env.typesafeKey === undefined || env.typesafeKey === "" ? "missing_key" : "ok",
+          grafanaMcp: "down",
+          github: "unknown",
+          lastPollAt: null,
+        },
+        problems: new Map(),
       })
+      const persisting = yield* Semaphore.make(1)
       // Sliding: a subscriber that has not caught up only needs to know that something changed, not how often.
       const changed = yield* Effect.acquireRelease(PubSub.sliding<void>(1), PubSub.shutdown)
       const notify = PubSub.publish(changed, undefined).pipe(Effect.asVoid)
+
+      /** Applies `f` in one step; true when anything the snapshot shows changed. */
+      const update = (f: (current: State) => State) =>
+        Ref.modify(state, (before): readonly [boolean, State] => {
+          const after = f(before)
+          return [after.problems !== before.problems || JSON.stringify(after.status) !== JSON.stringify(before.status), after]
+        })
+
       return {
-        status: Ref.get(status),
+        status: Ref.get(state).pipe(Effect.map(({ status, problems }) => ({ ...status, error: [...problems.values()].at(-1) ?? null }))),
         patchStatus: (patch) =>
           Effect.gen(function* () {
-            const before = yield* Ref.get(status)
-            const after = { ...before, ...patch }
-            if (JSON.stringify(before) === JSON.stringify(after)) return
-            yield* Ref.set(status, after)
-            if (patch.paused !== undefined) yield* store.setKv("paused", String(patch.paused)).pipe(Effect.ignore)
+            if (!(yield* update((current) => ({ ...current, status: { ...current.status, ...patch } })))) return
+            // Written from the state as it is by then, one write at a time, so the stored flag always ends where memory did.
+            if (patch.paused !== undefined) {
+              yield* Ref.get(state).pipe(
+                Effect.flatMap((current) => store.setKv("paused", String(current.status.paused))),
+                persisting.withPermits(1),
+                Effect.ignore,
+              )
+            }
             yield* notify
           }),
+        problem: (source, message) =>
+          update((current) => ({ ...current, problems: withProblem(current.problems, source, message) })).pipe(
+            Effect.flatMap((changed) => (changed ? notify : Effect.void)),
+          ),
         settings: Ref.get(settings),
         updateSettings: (next) =>
           Effect.gen(function* () {
