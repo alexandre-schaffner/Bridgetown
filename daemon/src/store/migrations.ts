@@ -124,4 +124,6 @@ export const migrations = SqliteMigrator.fromRecord({
   "002_dispositions": rewrite("alerts", legacyDisposition),
   "003_closed_sessions": rewrite("sessions", legacyClosed),
   "004_review_posted": rewrite("sessions", legacyReviewPosted),
+  // One poll horizon for every channel, from before each channel kept its own (`since:<channel id>`): nothing reads it.
+  "005_global_horizon": SqlClient.SqlClient.pipe(Effect.flatMap((sql) => sql`DELETE FROM kv WHERE key = 'since'`)),
 })

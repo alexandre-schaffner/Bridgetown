@@ -103,6 +103,7 @@ export const oldStore = (): string => {
     db.query("INSERT INTO sessions VALUES (?, ?, ?, ?)").run(session.id, session.status, session.updatedAt, JSON.stringify(session))
   }
   db.query("INSERT INTO actions VALUES (?, ?, ?)").run(OLD_ACTION.id, OLD_ACTION.createdAt, JSON.stringify(OLD_ACTION))
+  db.query("INSERT INTO kv VALUES ('since', '1790933000000'), ('paused', 'false')").run()
   db.query("INSERT INTO transcript (session_id, json) VALUES (?, ?)").run(OLD_SESSIONS.ci.id, JSON.stringify({ at: "2026-10-03T21:00:00.000Z", kind: "status", text: "Opened #3371" }))
   db.close()
   return home

@@ -99,8 +99,10 @@ describe("a store the first daemon wrote", () => {
         { migration_id: 2, name: "dispositions" },
         { migration_id: 3, name: "closed_sessions" },
         { migration_id: 4, name: "review_posted" },
+        { migration_id: 5, name: "global_horizon" },
       ])
       expect(db.query("SELECT status FROM sessions WHERE id = ?").get(OLD_SESSIONS.closedAsResolved.id)).toEqual({ status: "closed" })
+      expect(db.query("SELECT key FROM kv ORDER BY key").all()).toEqual([{ key: "paused" }])
     } finally {
       db.close()
     }
