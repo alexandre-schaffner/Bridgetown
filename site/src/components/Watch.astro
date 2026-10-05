@@ -41,7 +41,7 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
           <circle cx={x(values.length - 1)} cy={y(values.at(-1)!)} r="5" class="head" data-head></circle>
         </svg>
         <span class="usual-label" style={`top:${(y(usual) / H) * 100}%`}>usual · {Math.round(usual)}</span>
-        <div class="finding" data-finding>
+        <div class="finding">
           <p class="f-kind"><i class="dot dot-amber" aria-hidden="true"></i> Rise</p>
           <p class="f-text">Median of the last 3 steps is {(median / usual).toFixed(1)}× usual. No Slack alert covers it.</p>
           <p class="f-session"><i class="dot dot-blue live" aria-hidden="true"></i> Investigation started</p>
