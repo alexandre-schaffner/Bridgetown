@@ -11,8 +11,9 @@ import { EXEC_GUARDED, execRefusal, type GuardContext, readScript } from "./guar
  * if the same policy allows it. That catches what a check of the command line cannot
  * see: a package.json script or Makefile recipe, a command a program spawns (`bun x.ts`,
  * `node -e`), a variable that holds the command (`x=gh; $x pr merge 1`), a git hook.
- * A program that calls a binary by its absolute path still goes around it; the
- * command-line guard sees those by name.
+ * A program that calls a binary by its absolute path, or with a PATH of its own, still
+ * goes around it: this is a backstop for what runs out of sight, not a sandbox. The
+ * command-line guard judges an absolute path by its name.
  */
 
 /** Where the shims live: outside every worktree, where the session's write tools are refused. */

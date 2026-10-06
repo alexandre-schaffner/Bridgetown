@@ -77,8 +77,10 @@ const MAX_DEPTH = 4
 /**
  * The commands the exec-time guard (guard-exec.ts) stands in front of: those this
  * policy refuses or restricts by name that reach production, a remote or a
- * credential. Not `security`: the Claude CLI reads its own login from the Keychain
- * through it, by name, and the Keychain asks before handing over anyone else's item.
+ * credential. Not `security`: the Claude CLI reads its own login through it by name
+ * and saves a refreshed one with `security -i`, its commands on stdin where a shim
+ * can't see them, so a shim could only pass every call or break the CLI's login. A
+ * Keychain read on the command line is still refused.
  */
 export const EXEC_GUARDED: ReadonlyArray<string> = ["gh", "git", ...CLUSTER, ...GCP, "op", "sudo", "su", "doas", "cast", "curl", "wget"]
 
