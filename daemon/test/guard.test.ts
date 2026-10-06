@@ -391,6 +391,23 @@ describe("guard", () => {
     test(`denies bypass: ${JSON.stringify(command).slice(0, 80)}`, () => expect(refusal(command, context)).toBeDefined())
   }
 
+  test("scripts that each run the next many times cost a bounded number of checks, not one per path through them", () => {
+    // Three levels of 60 make 216,000 checks of the last one; one at a time they hold the daemon for minutes.
+    const chain = (fan: number) =>
+      JSON.stringify({ scripts: { a: Array(fan).fill("bun run b").join(" && "), b: Array(fan).fill("bun run c").join(" && "), c: Array(fan).fill("bun run d").join(" && "), d: "echo hi" } })
+    const run = (fan: number) => {
+      const reads = { count: 0 }
+      const pkg = chain(fan)
+      const reason = refusal("bun run a", { ...context, readFile: (path) => (path === "/w/package.json" ? (reads.count++, pkg) : undefined) })
+      return { reason, reads: reads.count }
+    }
+    const wide = run(60)
+    expect(wide.reason).toContain("Too many nested shells")
+    expect(wide.reads).toBeLessThan(100)
+    // The same chain, narrow as real ones are, is checked to the end.
+    expect(run(3)).toEqual({ reason: undefined, reads: 1 + 3 + 9 + 27 })
+  })
+
   const stillAllowed = [
     "bash ok.sh",
     "./tool.ts",

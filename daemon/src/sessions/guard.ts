@@ -73,6 +73,13 @@ const DETACHED = new Set(["at", "batch", "crontab", "launchctl", "systemd-run", 
 const PORT_ARGUMENT = new Set(["nc", "ncat", "netcat", "telnet"])
 const SLACK_HOST = /(^|[^A-Za-z0-9-])([A-Za-z0-9-]+\.)*slack\.com(?![A-Za-z0-9-])/i
 const MAX_DEPTH = 4
+/**
+ * Nested checks (a script, a package.json script, `sh -c`, `eval`) one command may
+ * cost in all. Each can name many more, so depth alone would let a few small files
+ * the session wrote (`"a": "bun run b && bun run b && …"`) hold the daemon for
+ * minutes. The deepest script in the Merkl monorepo takes 8.
+ */
+const MAX_NESTED = 64
 
 /**
  * The commands the exec-time guard (guard-exec.ts) stands in front of: those this
@@ -90,16 +97,19 @@ interface Scope extends GuardContext {
   /** The whole command line, for words whose value is only known at runtime. */
   readonly source: string
   readonly depth: number
+  /** What is left of the command's MAX_NESTED, shared by every nested check. */
+  readonly nestedLeft: { count: number }
 }
 
+const outermost = (context: GuardContext, source: string): Scope => ({ ...context, cwdKnown: true, source, depth: 0, nestedLeft: { count: MAX_NESTED } })
+
 /** Why this command is refused, or `undefined` when it may run. */
-export const refusal = (command: string, context: GuardContext): string | undefined =>
-  check(command, { ...context, cwdKnown: true, source: command, depth: 0 })
+export const refusal = (command: string, context: GuardContext): string | undefined => check(command, outermost(context, command))
 
 /** Why the exec-time guard refuses `name args…`: the argv a program is about to run with, every expansion done, so nothing in it is dynamic. */
 export const execRefusal = (name: string, args: ReadonlyArray<string>, context: GuardContext): string | undefined => {
   const word = (text: string): Word => ({ text, dynamic: false, splits: false, quoted: true })
-  return commandRefusal(name, word(name), args.map(word), { ...context, cwdKnown: true, source: [name, ...args].join(" "), depth: 0 })
+  return commandRefusal(name, word(name), args.map(word), outermost(context, [name, ...args].join(" ")))
 }
 
 const check = (source: string, scope: Scope): string | undefined => {
@@ -115,7 +125,8 @@ const check = (source: string, scope: Scope): string | undefined => {
   return undefined
 }
 
-const nested = (source: string, scope: Scope): string | undefined => check(source, { ...scope, depth: scope.depth + 1 })
+const nested = (source: string, scope: Scope): string | undefined =>
+  --scope.nestedLeft.count < 0 ? REASONS.nesting : check(source, { ...scope, depth: scope.depth + 1 })
 
 /**
  * `cd dir` and `pushd dir` move where later relative script paths resolve. After `popd`,
