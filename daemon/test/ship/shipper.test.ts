@@ -389,6 +389,40 @@ describe("a tracker edit that comes while the agent is busy", () => {
     expect(out.whileBusy).toBe(false)
     expect(out.after).toMatchObject({ status: "resolved", resolution: `deployed ${tag}`, milestones: { deployed: true } })
   })
+
+  test("is progress: a deploy quiet for hours that it moves on is not handed off as stalled in the same tick", async () => {
+    const stages = [
+      { name: "Approval", status: "success", detail: "" },
+      { name: "Build", status: "success", detail: "" },
+      { name: "Production", status: "in_progress", detail: "" },
+    ] as const
+    const out = await world.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store
+        const fields = { _tag: "release", image: "merkl-admin", version: "v0.6.0", actor: null, runId: null, runUrl: null, tag, stages } as const
+        yield* store.putAlert(makeAlert({ id: "C1:quiet-tracker", fields }), "production started")
+        yield* store.putAlert(makeAlert({ id: "C1:quiet", sessionId: "s_quiet" }))
+        const quiet = (id: string, deployStage: Session["deployStage"], applied: string | null) =>
+          makeSession("deploying", {
+            id, alertId: "C1:quiet", releasePrefix: "admin", releaseTag: tag, milestones: released, deployStage,
+            tracker: { id: "C1:quiet-tracker", applied }, updatedAt: new Date(Date.now() - 4 * 3_600_000).toISOString(),
+          })
+        yield* store.putSession(quiet("s_quiet", { _tag: "InProgress", stage: "Build" }, null))
+        // Its twin already took that version in: nothing came since, so it is stalled.
+        yield* store.putSession(quiet("s_stalled", { _tag: "InProgress", stage: "Production" }, "production started"))
+        yield* (yield* Shipper).tick
+        const cards = yield* store.listActions()
+        return {
+          moved: yield* store.getSession("s_quiet"),
+          stalled: yield* store.getSession("s_stalled"),
+          cards: cards.map((a) => `${a.sessionId}: ${a.title}`),
+        }
+      }),
+    )
+    expect(out.moved).toMatchObject({ status: "deploying", activity: "Production in progress", deployStage: { _tag: "InProgress", stage: "Production" } })
+    expect(out.stalled).toMatchObject({ status: "waiting", activity: "No deploy progress for 3h" })
+    expect(out.cards).toEqual(["s_stalled: Deploy stalled · t"])
+  })
 })
 
 describe("a re-run", () => {

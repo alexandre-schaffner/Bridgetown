@@ -323,7 +323,8 @@ export const ShipperLive = Layer.effect(Shipper)(
         if (session.status === "awaiting_release") yield* reofferRelease(session).pipe(reported("Release card"))
         yield* catchUp(session).pipe(reported("Deploy tracker"))
         const stalled = deployStalled(session, Date.now())
-        if (stalled !== null) yield* handOff(session.id, stalled)
+        // Only onto the row as read: a tracker version taken in since (just now by `catchUp`, or by the poll) is progress.
+        if (stalled !== null) yield* handOff(session.id, stalled, (current) => (current.updatedAt === session.updatedAt ? {} : undefined))
       }
       yield* hub.problem("ci", problemOf(problems))
     })
