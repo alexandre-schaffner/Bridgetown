@@ -11,14 +11,21 @@ import { GIT_CREDENTIAL, GIT_VALUE_OPTIONS } from "./guard-vcs.ts"
  * hand the real argv to `bridgetown-daemon --guard-exec` and exec the real binary only
  * if the same policy allows it. That catches what a check of the command line cannot
  * see: a package.json script or Makefile recipe, a command a program spawns (`bun x.ts`,
- * `node -e`), a variable that holds the command (`x=gh; $x pr merge 1`), a git hook.
- * A program that calls a binary by its absolute path, or with a PATH of its own, still
- * goes around it: this is a backstop for what runs out of sight, not a sandbox. The
- * command-line guard judges an absolute path by its name.
+ * `node -e`), a variable that holds the command (`x=gh; $x pr merge 1`), the gh or
+ * kubectl a git hook runs. A program that calls a binary by its absolute path, or with
+ * a PATH of its own, still goes around it, and so does the git a hook or credential
+ * helper runs: git puts its own directory, which holds a git, first on its children's
+ * PATH. This is a backstop for what runs out of sight, not a sandbox. The command-line
+ * guard judges an absolute path by its name.
  */
 
-/** Where the shims live: outside every worktree, where the session's write tools are refused. */
-export const shimDir = (): string => join(appSupportDir(), "guard-bin")
+/**
+ * Where a daemon's shims live: outside every worktree, where the session's write tools
+ * are refused. One directory per port, as the shims name their daemon: a development
+ * daemon run next to the app (`BRIDGETOWN_PORT`) must not swap the app's sessions'
+ * guard for its own source.
+ */
+export const shimDir = (daemonPort: number): string => join(appSupportDir(), "guard-bin", String(daemonPort))
 
 /** How a shim runs the guard: this compiled daemon itself, or bun on main.ts from source. */
 export const guardRunner = (): ReadonlyArray<string> =>

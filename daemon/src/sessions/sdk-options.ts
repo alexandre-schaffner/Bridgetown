@@ -97,12 +97,13 @@ const SESSION_DISALLOWED_TOOLS: ReadonlyArray<string> = ["Task"]
 
 /** The SDK options for one turn: guards (its shims put back first), write confinement, MCP servers, structured output, a scrubbed env. */
 export const sdkOptions = ({ session, abort, resume, tools, onRefused }: TurnSetup): Options => {
-  const shims = shimDir()
-  installShims(shims, daemonPort())
+  const port = daemonPort()
+  const shims = shimDir(port)
+  installShims(shims, port)
   const guard: ToolGuard = {
     branch: session.branch ?? "",
     cwd: session.worktree ?? session.repoPath,
-    daemonPort: daemonPort(),
+    daemonPort: port,
     readFile: readScript,
     worktree: session.worktree,
   }

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { accessSync, constants, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { EXEC_GUARDED, readScript } from "../src/sessions/guard.ts"
-import { execVerdict, installShims, realBinary } from "../src/sessions/guard-exec.ts"
+import { execVerdict, installShims, realBinary, shimDir } from "../src/sessions/guard-exec.ts"
 import { scratchDir } from "./fixtures/tmp.ts"
 
 const branch = "fix-bt-merkl-api-ab12"
@@ -91,6 +91,24 @@ describe("the shims", () => {
     expect(readdirSync(dir)).not.toContain("stray")
     expect(readFileSync(join(dir, "kubectl"), "utf8")).toContain("--guard-exec")
     expect(statSync(join(dir, "gh")).mtimeMs).toBe(untouched)
+  })
+})
+
+describe("a daemon's shim directory", () => {
+  test("is its port's, so a development daemon on another port never swaps the app's sessions' guard for its own", () => {
+    const saved = process.env.BRIDGETOWN_HOME
+    process.env.BRIDGETOWN_HOME = scratchDir("bt-shim-home-")
+    try {
+      installShims(shimDir(47621), 47621)
+      installShims(shimDir(47622), 47622, ["/elsewhere/bun", "/elsewhere/main.ts"])
+      const app = readFileSync(join(shimDir(47621), "git"), "utf8")
+      expect(app).toContain(" 47621 ")
+      expect(app).not.toContain("/elsewhere")
+      expect(readFileSync(join(shimDir(47622), "git"), "utf8")).toContain("/elsewhere/main.ts")
+    } finally {
+      if (saved === undefined) delete process.env.BRIDGETOWN_HOME
+      else process.env.BRIDGETOWN_HOME = saved
+    }
   })
 })
 
