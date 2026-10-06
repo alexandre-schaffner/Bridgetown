@@ -1,7 +1,95 @@
 import SwiftUI
 
-// How each of a session's six steps is drawn, from the daemon's step states, its tone
-// and who has the next move. Kept apart from the views so every state can be tested.
+// Who has a session's next move, and how that, the daemon's step states and the
+// session's tone draw its dot and each of its six steps. Kept apart from the views so
+// every state can be tested.
+
+// MARK: Who has the next move
+
+extension Session {
+    /// Who an active session is waiting on. The tone can't tell: "In review" is live
+    /// (in flight, not on you) yet no agent is working on it.
+    enum Holder {
+        case agent, critic, you, reviewers, ci, deploy, queue
+
+        var label: String {
+            switch self {
+            case .agent: "working"
+            case .critic: "in adversarial review"
+            case .you: "on you"
+            case .reviewers: "in review"
+            case .ci: "on CI"
+            case .deploy: "deploying"
+            case .queue: "queued"
+            }
+        }
+
+        /// Something is progressing with no person involved: the agent, the adversarial review, CI or a deploy.
+        var isMoving: Bool { self == .agent || self == .critic || self == .ci || self == .deploy }
+    }
+
+    /// Nil once the session is finished.
+    var holder: Holder? {
+        switch status {
+        case .preparing, .running: .agent
+        // Findings recorded and the agent's turn parked for a free slot: nobody is reviewing.
+        case .critiquing: tone == .neutral ? .queue : .critic
+        case .waiting, .awaiting_merge, .awaiting_release: .you
+        // CI green but the review request didn't go out: the daemon hands that to you.
+        case .ci: reviewChannel != nil ? .reviewers : tone == .waiting ? .you : .ci
+        case .deploying: .deploy
+        case .queued: .queue
+        case .resolved, .closed, .failed, .stopped, .unknown: nil
+        }
+    }
+
+    /// How the session's dot is drawn, in its tone's colour, the same on its row and in its
+    /// detail. Only motion pulses: the daemon's tone calls "In review" live, yet nobody
+    /// is working on it.
+    enum Dot: Equatable {
+        /// Something moves it (the agent, the adversarial review, CI, a deploy): it pulses.
+        case moving
+        /// A ring: it waits on someone else (reviewers, the queue).
+        case waiting
+        /// Filled and still: it is on you, or it has ended.
+        case still
+    }
+
+    var dot: Dot {
+        switch holder {
+        case let holder? where holder.isMoving: .moving
+        case .you?, nil: .still
+        case _?: .waiting
+        }
+    }
+}
+
+// MARK: Steps
+
+extension Step.State {
+    /// For tooltips and VoiceOver. A stopped step is "failed" only when the session's
+    /// tone says so; a closed or stopped session merely stopped there.
+    func describe(tone: Tone) -> String {
+        switch self {
+        case .done: "done"
+        case .current: tone == .waiting ? "waiting on you" : "in progress"
+        case .pending: "not reached"
+        case .failed: tone == .failure ? "failed here" : "stopped here"
+        case .skipped: "not needed"
+        case .unknown: "unknown"
+        }
+    }
+}
+
+extension Tone {
+    /// Where a session stopped: red only when the daemon calls it a failure; a closed or
+    /// stopped session is gray.
+    var stopTint: Color { self == .failure ? Ink.red : .secondary }
+
+    var stopSymbol: String { self == .failure ? "xmark.circle" : "minus.circle" }
+}
+
+// MARK: Pills
 
 extension StepPill {
     /// How a step stands, which decides its pill.

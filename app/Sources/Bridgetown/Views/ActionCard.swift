@@ -327,14 +327,6 @@ private struct OptionChips: View {
     }
 }
 
-extension Action {
-    /// The agent behind it failed (a re-run, or a review of a failed session): marked red on
-    /// its row, where every other meaning is left to the group's header.
-    func failed(in snapshot: Snapshot?) -> Bool {
-        kind == .rerun || (kind == .review && snapshot?.session(id: sessionId)?.tone == .failure)
-    }
-}
-
 extension View {
     /// Dimmed while a request for it is in flight, and closed to a second click.
     func busy(_ busy: Bool, dims: Bool = true) -> some View {

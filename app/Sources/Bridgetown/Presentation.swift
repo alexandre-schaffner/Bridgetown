@@ -1,13 +1,14 @@
 import SwiftUI
 
 // Every enum → label, colour and symbol mapping, in one place. Colour is reserved for
-// meaning (PRODUCT.md): accent for live work, green only for verified outcomes, orange
-// for "needs you", red for failure. Everything else is neutral.
+// meaning (PRODUCT.md): blue for live work, green only for verified outcomes, amber for
+// "needs you", red for failure. Everything else is neutral. Who has a session's next
+// move, and the marks drawn from it, are in Views/Session/StepModel.swift.
 
 // MARK: - Tone
 
 extension Tone {
-    /// live = accent, waiting = orange, success = green (verified outcomes only),
+    /// live = blue, waiting = amber, success = green (verified outcomes only),
     /// failure = red, everything else neutral.
     var color: Color {
         switch self {
@@ -111,181 +112,6 @@ extension Session {
     }
 }
 
-// MARK: - Who has the next move
-
-extension Session {
-    /// Who an active session is waiting on. The tone can't tell: "In review" is live
-    /// (in flight, not on you) yet no agent is working on it.
-    enum Holder {
-        case agent, critic, you, reviewers, ci, deploy, queue
-
-        var label: String {
-            switch self {
-            case .agent: "working"
-            case .critic: "in adversarial review"
-            case .you: "on you"
-            case .reviewers: "in review"
-            case .ci: "on CI"
-            case .deploy: "deploying"
-            case .queue: "queued"
-            }
-        }
-
-        /// Something is progressing with no person involved: the agent, the adversarial review, CI or a deploy.
-        var isMoving: Bool { self == .agent || self == .critic || self == .ci || self == .deploy }
-    }
-
-    /// Nil once the session is finished.
-    var holder: Holder? {
-        switch status {
-        case .preparing, .running: .agent
-        // Findings recorded and the agent's turn parked for a free slot: nobody is reviewing.
-        case .critiquing: tone == .neutral ? .queue : .critic
-        case .waiting, .awaiting_merge, .awaiting_release: .you
-        // CI green but the review request didn't go out: the daemon hands that to you.
-        case .ci: reviewChannel != nil ? .reviewers : tone == .waiting ? .you : .ci
-        case .deploying: .deploy
-        case .queued: .queue
-        case .resolved, .closed, .failed, .stopped, .unknown: nil
-        }
-    }
-
-    /// How the session's dot is drawn, in its tone's colour, the same on its row and in its
-    /// detail. Only motion pulses: the daemon's tone calls "In review" live, yet nobody
-    /// is working on it.
-    enum Dot: Equatable {
-        /// Something moves it (the agent, the adversarial review, CI, a deploy): it pulses.
-        case moving
-        /// A ring: it waits on someone else (reviewers, the queue).
-        case waiting
-        /// Filled and still: it is on you, or it has ended.
-        case still
-    }
-
-    var dot: Dot {
-        switch holder {
-        case let holder? where holder.isMoving: .moving
-        case .you?, nil: .still
-        case _?: .waiting
-        }
-    }
-}
-
-// MARK: - Steps
-
-extension Step.State {
-    /// For tooltips and VoiceOver. A stopped step is "failed" only when the session's
-    /// tone says so; a closed or stopped session merely stopped there.
-    func describe(tone: Tone) -> String {
-        switch self {
-        case .done: "done"
-        case .current: tone == .waiting ? "waiting on you" : "in progress"
-        case .pending: "not reached"
-        case .failed: tone == .failure ? "failed here" : "stopped here"
-        case .skipped: "not needed"
-        case .unknown: "unknown"
-        }
-    }
-}
-
-extension Tone {
-    /// Where a session stopped: red only when the daemon calls it a failure; a closed or
-    /// stopped session is gray.
-    var stopTint: Color { self == .failure ? Ink.red : .secondary }
-
-    var stopSymbol: String { self == .failure ? "xmark.circle" : "minus.circle" }
-}
-
-// MARK: - Problems
-
-/// Something wrong right now, as one line in the prod column with its fix.
-struct Problem: Identifiable, Equatable {
-    enum Severity {
-        case warning, error
-
-        var symbol: String { self == .error ? "exclamationmark.octagon.fill" : "exclamationmark.triangle.fill" }
-        var color: Color { self == .error ? Ink.red : Ink.amber }
-    }
-    enum Fix: Equatable {
-        case openSettings(String)
-        case restartDaemon(String)
-
-        var label: String {
-            switch self {
-            case let .openSettings(label), let .restartDaemon(label): label
-            }
-        }
-    }
-
-    let id: String
-    let text: String
-    let severity: Severity
-    var fix: Fix?
-
-    /// Everything wrong right now, worst first: the daemon connection, the last failed
-    /// action, then what the daemon reports about its own dependencies.
-    static func list(
-        connection: Store.Connection,
-        daemonState: DaemonProcess.State,
-        daemonMode: DaemonProcess.Mode,
-        port: Int,
-        lastConnectError: String?,
-        flash: String?,
-        status: Status?
-    ) -> [Problem] {
-        var out: [Problem] = []
-        if daemonState == .portInUse {
-            // Our daemon exited 98. A 401 on that port means the holder is another daemon.
-            let text = connection == .rejected
-                ? "Another Bridgetown daemon is running on port \(port). Quit it, then retry."
-                : "Port \(port) is in use by another process. Free it, then retry."
-            out.append(.init(id: "daemon", text: text, severity: .error, fix: .restartDaemon("Retry")))
-        } else {
-            switch connection {
-            case .rejected:
-                let text = daemonMode == .attach
-                    ? "The daemon on port \(port) rejected the API token. Check BRIDGETOWN_API_TOKEN."
-                    : "Another Bridgetown daemon is running on port \(port)."
-                out.append(.init(id: "daemon", text: text, severity: .error))
-            case let .disconnected(reason):
-                out.append(.init(id: "daemon", text: "Daemon disconnected · \(reason)", severity: .error))
-            case .connecting where daemonState == .missing:
-                out.append(.init(id: "daemon", text: "No daemon bundled. Set BRIDGETOWN_DAEMON_CMD or BRIDGETOWN_ATTACH=1.", severity: .error))
-            case .connecting:
-                if let reason = lastConnectError, daemonMode == .attach {
-                    out.append(.init(id: "daemon", text: "Waiting for daemon · \(reason)", severity: .warning))
-                }
-            case .connected:
-                break
-            }
-        }
-        if let flash {
-            out.append(.init(id: "flash", text: flash, severity: .error))
-        }
-        guard let status, connection == .connected else { return out }
-        switch status.slack {
-        case .missing_token: out.append(.init(id: "slack", text: "Slack token missing", severity: .warning, fix: .openSettings("Add token")))
-        case .error: out.append(.init(id: "slack", text: "Slack is failing", severity: .error))
-        default: break
-        }
-        switch status.jev {
-        case .missing_key: out.append(.init(id: "jev", text: "TypeSafe key missing · triage uses rules only", severity: .warning, fix: .openSettings("Add key")))
-        case .error: out.append(.init(id: "jev", text: "Jev unavailable · triage uses rules only", severity: .warning))
-        default: break
-        }
-        if status.github == .blocked {
-            out.append(.init(id: "github", text: "GitHub Enterprise blocks this network (IP allow list) · sessions wait", severity: .warning))
-        }
-        if status.grafanaMcp == .down {
-            out.append(.init(id: "grafana", text: "Grafana MCP down", severity: .warning))
-        }
-        if let error = status.error, !error.isEmpty {
-            out.append(.init(id: "error", text: error, severity: .error))
-        }
-        return out
-    }
-}
-
 // MARK: - Triage
 
 extension Triage.Decision {
@@ -361,7 +187,7 @@ struct OutcomeGlyph {
             case .neutral, .unknown: self.init("minus.circle", .secondary)
             }
         default:
-            // Live: accent while the agent works, orange while it waits on you.
+            // Live: blue while the agent works, amber while it waits on you.
             self.init("bolt.fill", tone == .waiting ? Tone.waiting.color : Tone.live.color)
         }
     }
@@ -463,6 +289,12 @@ extension Action {
         case .reply, .answer: false
         default: options.isEmpty
         }
+    }
+
+    /// The agent behind it failed (a re-run, or a review of a failed session): marked red on
+    /// its row, where every other meaning is left to the group's header.
+    func failed(in snapshot: Snapshot?) -> Bool {
+        kind == .rerun || (kind == .review && snapshot?.session(id: sessionId)?.tone == .failure)
     }
 }
 
