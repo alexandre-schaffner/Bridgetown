@@ -384,7 +384,7 @@ export const ShipperLive = Layer.effect(Shipper)(
       if (session?.status !== "waiting") return yield* movedOn("on a re-run")
       const alert = yield* store.getAlert(session.alertId)
       const fields = alert?.fields._tag === "release" ? alert.fields : null
-      if (fields?.runId === null || fields?.runId === undefined) return yield* new Conflict({ message: "The alert names no workflow run to re-run" })
+      if (fields === null || fields.runId === null) return yield* new Conflict({ message: "The alert names no workflow run to re-run" })
       yield* github.rerunFailedJobs(fields.runId)
       const tag = fields.tag
       yield* repo.patch(sessionId, {

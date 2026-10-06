@@ -445,4 +445,18 @@ describe("a re-run", () => {
     expect(reruns).toEqual(["291250187"])
     expect(out).toMatchObject({ status: "deploying", releaseTag: tag, deployStage: null, tracker: { id: TRACKER_ID, applied: "failed once" } })
   })
+
+  test("of an alert that names no workflow run is refused, and the session waits on as it was", async () => {
+    const out = await world.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store
+        yield* store.putAlert(makeAlert({ id: "C1:norun", sessionId: "s_norun" }))
+        yield* store.putSession(makeSession("waiting", { id: "s_norun", alertId: "C1:norun", outcome: "recommendation", recommendation: "rerun_failed_jobs" }))
+        const before = reruns.length
+        const refused = yield* (yield* Shipper).rerun("s_norun").pipe(Effect.flip)
+        return { refused: refused.message, rerun: reruns.length - before, session: yield* store.getSession("s_norun") }
+      }),
+    )
+    expect(out).toMatchObject({ refused: "The alert names no workflow run to re-run", rerun: 0, session: { status: "waiting" } })
+  })
 })
