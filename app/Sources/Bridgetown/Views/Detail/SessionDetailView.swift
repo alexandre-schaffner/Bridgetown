@@ -331,10 +331,10 @@ private struct TranscriptView: View {
                     TextLink("Show \(hidden) earlier entries") { showAll = true }
                         .font(Typo.label)
                 }
-                LazyVStack(alignment: .leading, spacing: 6) {
-                    ForEach(entries.indices.dropFirst(hidden), id: \.self) { index in
-                        row(entries[index])
-                    }
+                // Not lazy: a lazy stack guesses the height of rows it hasn't drawn, so the
+                // pane's end (the message field) moves once they are, after it was scrolled to.
+                ForEach(entries.indices.dropFirst(hidden), id: \.self) { index in
+                    row(entries[index])
                 }
             }
         }
