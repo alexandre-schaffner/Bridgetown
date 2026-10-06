@@ -11,6 +11,8 @@ export interface Word {
   readonly text: string
   /** Holds an expansion, substitution or glob, so its runtime value is unknown. */
   readonly dynamic: boolean
+  /** May become several words at runtime, or none: an expansion or glob outside quotes (`$X` may be `1 --watch`), or `"$@"`. */
+  readonly splits: boolean
   /** Some part of it was quoted; a quoted heredoc delimiter disables expansion of the body. */
   readonly quoted: boolean
 }
@@ -35,6 +37,13 @@ const NAME_CHAR = /[A-Za-z0-9_]/
 const SPECIAL_PARAMETER = /[0-9@*#?$!-]/
 /** Unquoted text that the shell would expand as a glob or brace pattern. */
 const PATTERN = /[*?]|\[[^\]]*\]|\{[^}]*(,|\.\.)[^}]*\}/
+/**
+ * An expansion that is one word per element even inside double quotes: `"$@"`,
+ * `"${args[@]}"`, `"${!prefix@}"`, and in zsh, the shell the CLI runs commands in on a
+ * Mac, any flags or `=`/`^` (`"${(@)x}"`, `"${(f)x}"`, `"${(s: :)x}"`, `"${=x}"`), which
+ * bash refuses as a bad substitution.
+ */
+const ELEMENTS = /^\$(@|\{(@|[=^(]|!?[A-Za-z_][A-Za-z0-9_]*\[@\]|![A-Za-z_][A-Za-z0-9_]*@))/
 
 /** Nesting (`$(…)`, subshells, `"…"`) past this many levels is reported rather than recursed into, so a pathological `$(` chain cannot blow the stack. Far above anything a real command reaches. */
 const MAX_NESTING = 256
@@ -62,11 +71,16 @@ class Parser {
     if (++this.depth > MAX_NESTING) throw new ParseError("too deeply nested")
   }
 
-  /** A complete list. `closer` is the `)` of an enclosing subshell or `$(…)`. */
-  parseList(closer: ")" | undefined): void {
+  /**
+   * A complete list. `closer` is the `)` of an enclosing subshell or `$(…)`, or the
+   * `}` of a `${ …; }`, which closes it only where a command starts and no `{ …; }`
+   * group of its own is open.
+   */
+  parseList(closer: ")" | "}" | undefined): void {
     this.enter()
     let words: Array<Word> = []
     let redirectTarget = false
+    let groups = 0
     const endCommand = () => {
       if (words.length > 0) this.commands.push(words)
       words = []
@@ -74,6 +88,11 @@ class Parser {
     }
     while (!this.done) {
       const c = this.peek()
+      if (closer === "}" && c === "}" && words.length === 0 && groups === 0) {
+        this.i++
+        this.depth--
+        return
+      }
       if (c === " " || c === "\t") {
         this.i++
       } else if (c === "\\" && this.peek(1) === "\n") {
@@ -111,11 +130,14 @@ class Parser {
         const { word, fd } = this.readWord()
         // `2>&1`: digits glued to a redirection are a file descriptor, not an argument.
         if (fd && (this.peek() === "<" || this.peek() === ">")) continue
+        // Every unquoted `{` word counts as a group, an argument `{` too: one counted too many leaves a `${ …; }` unterminated, never closed early.
+        if (!word.quoted && word.text === "{") groups++
+        else if (!word.quoted && word.text === "}" && words.length === 0 && groups > 0) groups--
         if (redirectTarget) redirectTarget = false
         else words.push(word)
       }
     }
-    if (closer !== undefined) throw new ParseError("unterminated (")
+    if (closer !== undefined) throw new ParseError(`unterminated ${closer === ")" ? "(" : "${"}`)
     endCommand()
     this.depth--
   }
@@ -132,7 +154,7 @@ class Parser {
     if (this.peek() === "(") {
       this.i++
       this.parseList(")")
-      return { _tag: "Substitution", word: { text: `${op}(…)`, dynamic: true, quoted: false } }
+      return { _tag: "Substitution", word: { text: `${op}(…)`, dynamic: true, splits: false, quoted: false } }
     }
     if (op === "<" && this.peek() === "<") {
       this.i++
@@ -173,6 +195,7 @@ class Parser {
     let text = ""
     let unquoted = ""
     let dynamic = false
+    let splits = false
     let quoted = false
     let plainDigits = true
     while (!this.done && !WORD_END.has(this.peek())) {
@@ -197,6 +220,7 @@ class Parser {
         const inner = this.readExpanding('"')
         text += inner.text
         dynamic ||= inner.dynamic
+        splits ||= inner.splits
         quoted = true
         plainDigits = false
       } else if (c === "\\") {
@@ -212,7 +236,7 @@ class Parser {
       } else if (c === "$" || c === "`") {
         const expansion = this.readExpansion()
         text += expansion
-        dynamic ||= expansion !== "$"
+        splits ||= expansion !== "$"
         plainDigits = false
       } else {
         text += c
@@ -221,8 +245,8 @@ class Parser {
         this.i++
       }
     }
-    dynamic ||= PATTERN.test(unquoted)
-    return { word: { text, dynamic, quoted }, fd: plainDigits && text !== "" }
+    splits ||= PATTERN.test(unquoted)
+    return { word: { text, dynamic: dynamic || splits, splits, quoted }, fd: plainDigits && text !== "" }
   }
 
   /** `$'…'`: escapes decoded, nothing expanded. */
@@ -268,10 +292,11 @@ class Parser {
    * Double-quoted text (terminated by `"`), `${…}` contents (by `}`) or an
    * expanding heredoc body (by the end of input). Substitutions inside run.
    */
-  readExpanding(terminator: '"' | "}" | undefined): { readonly text: string; readonly dynamic: boolean } {
+  readExpanding(terminator: '"' | "}" | undefined): { readonly text: string; readonly dynamic: boolean; readonly splits: boolean } {
     this.enter()
     let text = ""
     let dynamic = false
+    let splits = false
     while (!this.done && this.peek() !== terminator) {
       const c = this.peek()
       if (c === "\\") {
@@ -289,6 +314,7 @@ class Parser {
         const expansion = this.readExpansion()
         text += expansion
         dynamic ||= expansion !== "$"
+        splits ||= ELEMENTS.test(expansion)
       } else {
         text += c
         this.i++
@@ -299,7 +325,7 @@ class Parser {
       this.i++
     }
     this.depth--
-    return { text, dynamic }
+    return { text, dynamic, splits }
   }
 
   /** At `$` or a backtick. Returns the raw text; any command it runs is recorded. */
@@ -332,7 +358,13 @@ class Parser {
       this.parseList(")")
     } else if (next === "{") {
       this.i++
-      this.readExpanding("}")
+      // bash 5.3 `${ cmd; }` / `${| cmd; }` run a command list (a space or `|` after the brace), not a parameter expansion.
+      if (this.peek() === "|" || this.peek() === " " || this.peek() === "\t" || this.peek() === "\n") {
+        if (this.peek() === "|") this.i++
+        this.parseList("}")
+      } else {
+        this.readExpanding("}")
+      }
     } else if (NAME_START.test(next)) {
       while (NAME_CHAR.test(this.peek())) this.i++
     } else if (SPECIAL_PARAMETER.test(next) && next !== "") {

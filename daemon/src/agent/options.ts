@@ -5,6 +5,7 @@ import { Schema } from "effect"
 import { GH_HOST } from "../config.ts"
 import type { Session } from "../domain/session.ts"
 import { readScript } from "../guard/bash.ts"
+import { installShims, shimDir } from "../guard/exec.ts"
 import { type ToolGuard, toolGuard, toolRefusal } from "../guard/hook.ts"
 import { childEnv } from "../secrets.ts"
 import { SESSION_RESULT_JSON_SCHEMA } from "./result.ts"
@@ -39,11 +40,20 @@ export const repoMcpServers = (repoPath: string): Record<string, McpServerConfig
   return out
 }
 
-/** The agent's environment: no daemon credential or config, plus what sessions need. */
-export const sessionEnv = (env: Record<string, string | undefined>, sessionId: string): Record<string, string> => ({
+/**
+ * The agent's environment: no daemon credential or config, the exec-time guard's
+ * shims first on PATH, and the session's branch, which is all the guard needs to know
+ * about it (the command-line guard refuses setting either). The CLI goes back to the
+ * worktree after every Bash call, so a `cd` in one never moves where the guard resolves
+ * the next one's `./x.sh`, nor where a relative Write lands.
+ */
+export const sessionEnv = (env: Record<string, string | undefined>, session: Pick<Session, "id" | "branch">, shims: string): Record<string, string> => ({
   ...childEnv(env),
+  PATH: env.PATH === undefined ? shims : `${shims}:${env.PATH}`,
   GH_HOST,
-  BRIDGETOWN_SESSION: sessionId,
+  CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: "1",
+  BRIDGETOWN_SESSION: session.id,
+  BRIDGETOWN_BRANCH: session.branch ?? "",
 })
 
 export interface TurnSetup {
@@ -56,6 +66,8 @@ export interface TurnSetup {
   readonly onRefused: (what: string, reason: string) => void
   /** The daemon's API port, which the session may not reach. */
   readonly daemonPort: number
+  /** The daemon's home (`Env.home`), where the exec-time guard's shims live. */
+  readonly home: string
 }
 
 /**
@@ -74,8 +86,10 @@ const SESSION_TOOLS: ReadonlyArray<string> = ["Bash", "Read", "Glob", "Grep", "E
  */
 const SESSION_DISALLOWED_TOOLS: ReadonlyArray<string> = ["Task"]
 
-/** The SDK options for one turn: guards, write confinement, MCP servers, structured output, a scrubbed env. */
-export const sdkOptions = ({ session, abort, resume, tools, onRefused, daemonPort }: TurnSetup): Options => {
+/** The SDK options for one turn: guards (its shims put back first), write confinement, MCP servers, structured output, a scrubbed env. */
+export const sdkOptions = ({ session, abort, resume, tools, onRefused, daemonPort, home }: TurnSetup): Options => {
+  const shims = shimDir(home, daemonPort)
+  installShims(shims, daemonPort)
   const guard: ToolGuard = {
     branch: session.branch ?? "",
     cwd: session.worktree ?? session.repoPath,
@@ -110,7 +124,7 @@ export const sdkOptions = ({ session, abort, resume, tools, onRefused, daemonPor
     outputFormat: { type: "json_schema", schema: SESSION_RESULT_JSON_SCHEMA },
     persistSession: true,
     maxTurns: MAX_TURNS,
-    env: sessionEnv(process.env, session.id),
+    env: sessionEnv(process.env, session, shims),
     ...(resume && session.claudeSessionId !== null ? { resume: session.claudeSessionId } : {}),
   }
 }

@@ -14,10 +14,11 @@ export const REASONS = {
   force: "Force pushes are not allowed. Add a new commit instead.",
   deleteRemote: "Deleting remote branches is not allowed.",
   apiWrite: "Write calls to the GitHub API are not allowed from Bridgetown sessions. Use `gh pr create` / `gh pr comment` for your own pull request.",
-  graphql: "GraphQL mutations are not allowed from Bridgetown sessions.",
+  graphql: "GraphQL mutations are not allowed from Bridgetown sessions. Pass a read query inline (`gh api graphql -f query='{ … }'`) so it can be checked.",
   ghCommand:
-    "Only read-only `gh` commands and your own PR's create/comment/edit are allowed (pr, run, workflow, issue, repo, search views; `gh api` GETs). Describe anything else in your result.",
-  gitExec: "This git command runs an arbitrary command (rebase --exec, submodule foreach, filter-branch, difftool -x, bisect run). Run the command directly so it can be checked.",
+    "Only read-only `gh` commands and your own PR's create/comment/edit are allowed (pr, run, workflow, issue, repo, search views; `gh api` GETs and GraphQL queries). Describe anything else in your result.",
+  gitExec:
+    "This git command runs an arbitrary command (rebase --exec, submodule foreach, filter-branch, difftool -x, bisect run, --exec-path). Run the command directly so it can be checked.",
   gitConfig: "Setting this git config could run a command or push a tag on a later git call. It is not allowed.",
   credential: "Reading git credentials is not allowed. If a credential is missing, call the ask tool.",
   review: "Reviews and PR state changes are the user's call.",
@@ -34,7 +35,12 @@ export const REASONS = {
   transaction: "Sending transactions is never allowed.",
   privilege: "Privilege escalation is not allowed.",
   dynamic: "Run commands by name, not through a variable, substitution or glob, so they can be checked.",
+  computedFlag:
+    'A computed word here could become one of the flags Bridgetown checks. Write flags out, and quote a computed value (`--body "$BODY"`) so it stays one word.',
   pipeToShell: "Piping commands into a shell is not allowed. Run the commands directly.",
+  detached:
+    "A scheduled or detached command (at, cron, launchd, tmux, screen) runs outside the session, where nothing checks it. Run it directly, in the background if it must keep running.",
+  interactive: "An interactive shell runs startup files ($ENV, ~/.bashrc) the guard does not see. Run the command with `bash -c` instead.",
   dangerousEnv: "That environment variable would make a later command run something the guard cannot see. Run the command directly.",
   nesting: "Too many nested shells to check. Run the commands directly.",
 } as const
@@ -54,3 +60,17 @@ export const firstPositional = (args: ReadonlyArray<Word>, withValue: ReadonlySe
 }
 
 export const flags = (...names: ReadonlyArray<string>): ReadonlySet<string> => new Set(names)
+
+/** Programs that run nothing else. */
+const INERT = new Set(["", ":", "true", "false", "cat", "less", "more"])
+
+/**
+ * A command-valued setting (an editor, pager, ssh or askpass, from a variable or git
+ * config) that runs nothing: empty, or an inert program with only its own flags.
+ * `GIT_EDITOR=true git rebase --continue` and the Claude CLI's own
+ * `git -c core.pager=` turn a command off, not on.
+ */
+export const runsNothing = (value: string): boolean => {
+  const [program = "", ...rest] = value.trim().split(/\s+/)
+  return INERT.has(program) && rest.every((word) => word.startsWith("-"))
+}

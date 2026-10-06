@@ -34,12 +34,13 @@ import { join } from "node:path"
 import { Effect, Fiber, Schedule, Schema } from "effect"
 import { Actions } from "../../src/actions/actions.ts"
 import { bind, serve } from "../../src/api/server.ts"
+import { readEnv } from "../../src/config.ts"
 import type { Alert, Stage } from "../../src/domain/alert.ts"
 import { now } from "../../src/domain/ids.ts"
 import { GrafanaLive } from "../../src/grafana/client.ts"
 import { Health } from "../../src/health.ts"
 import { Hub } from "../../src/hub.ts"
-import { readLaunch, runDaemon } from "../../src/launch.ts"
+import { type Launch, readLaunch, runDaemon } from "../../src/launch.ts"
 import { loop, SCHEDULER_TIMING, Scheduler, type SchedulerTiming } from "../../src/scheduler.ts"
 import { SessionRepo } from "../../src/sessions/repo.ts"
 import { Shipper } from "../../src/ship/shipper.ts"
@@ -61,19 +62,18 @@ const staticWorld = process.env.MOCK_STATIC === "1"
 const world = process.env.MOCK_WORLD === "empty" ? "empty" : "full"
 const holdSeconds = Number(process.env.MOCK_RELEASE_HOLD_SECONDS ?? 600)
 
-// Launched by hand, the token defaults to "dev"; launched by the app, it comes on stdin and this is ignored.
-process.env.BRIDGETOWN_API_TOKEN ??= "dev"
 /**
- * Launched like the daemon, one branch of stdin carries the launch (the secrets line, then
- * EOF when the app goes) and the other the control lines. By hand stdin is the terminal and
- * is left alone: reading it from a background job (`make mock &`) would stop the mock.
+ * Launched like the daemon (`BRIDGETOWN_SECRETS=stdin`), one branch of stdin carries the
+ * launch (the secrets line, then EOF when the app goes) and the other the control lines.
+ * By hand stdin is the terminal and is left alone: reading it from a background job
+ * (`make mock &`) would stop the mock. Its token is then BRIDGETOWN_API_TOKEN, or "dev";
+ * it holds no real secret to keep out of the environment.
  */
-let controlInput: ReturnType<typeof Bun.stdin.stream> | undefined
-const launch = await readLaunch(() => {
-  const [launchInput, control] = Bun.stdin.stream().tee()
-  controlInput = control
-  return launchInput
-})
+const [launchInput, controlInput] = process.env.BRIDGETOWN_SECRETS === "stdin" ? Bun.stdin.stream().tee() : []
+const launch: Launch =
+  launchInput === undefined
+    ? { env: { ...readEnv(), apiToken: process.env.BRIDGETOWN_API_TOKEN || "dev" }, closed: new Promise<void>(() => {}) }
+    : await readLaunch(launchInput)
 const token = process.env.MOCK_API_TOKEN || launch.env.apiToken
 
 // Bound first, like the daemon: a taken port exits 98 before anything is created.

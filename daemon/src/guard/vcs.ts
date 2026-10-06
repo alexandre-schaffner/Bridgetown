@@ -1,7 +1,7 @@
 import { GH_HOST } from "../config.ts"
 import { isOwnBranch } from "../domain/session.ts"
 import { escapeRegExp } from "../lib/text.ts"
-import { flags, REASONS } from "./reasons.ts"
+import { flags, REASONS, runsNothing } from "./reasons.ts"
 import type { Word } from "./shell.ts"
 
 /**
@@ -11,8 +11,11 @@ import type { Word } from "./shell.ts"
  * config that would run a command or push a tag on a later call.
  */
 
-const GH_API_VALUE_FLAGS = flags("-H", "--header", "-q", "--jq", "-t", "--template", "--hostname", "-p", "--preview", "--cache")
 const GH_API_FIELD_FLAGS = flags("-f", "-F", "--field", "--raw-field", "--input")
+const GH_API_VALUE_FLAGS = flags(
+  ...["-X", "--method", ...GH_API_FIELD_FLAGS],
+  ...["-H", "--header", "-q", "--jq", "-t", "--template", "--hostname", "-p", "--preview", "--cache"],
+)
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"])
 /** Flags that may sit between `gh`, the group and the sub-command (`gh pr -R o/r merge`), whose value is not a positional. */
 const GH_VALUE_FLAGS = flags("-R", "--repo", "--hostname")
@@ -29,11 +32,67 @@ const ghPositionals = (args: ReadonlyArray<Word>): ReadonlyArray<Word> => {
   return positional
 }
 
+/** One option as gh reads it: its name as written (`--base`, `-B`) and its value, when it takes one or has `=value`. */
+interface GhOption {
+  readonly name: string
+  readonly value: Word | undefined
+}
+
+interface GhArgs {
+  readonly options: ReadonlyArray<GhOption>
+  readonly positionals: ReadonlyArray<Word>
+}
+
+/**
+ * `args` the way gh's flag parser (pflag) reads them, so a check sees a flag in every
+ * form it can take: `--base main`, `--base=main`, `-B main`, `-Bmain`, `-B=main`, and
+ * inside a cluster of short flags (`-at` is `-a -t`, `-iXPUT` is `-i -X PUT`), where the
+ * first that takes a value takes the rest of the word, or the next word. `valueFlags`
+ * are the command's flags that take a value. A name holding `$` or a backtick was computed.
+ */
+const ghOptions = (args: ReadonlyArray<Word>, valueFlags: ReadonlySet<string>): GhArgs => {
+  const options: Array<GhOption> = []
+  const positionals: Array<Word> = []
+  for (let i = 0; i < args.length; i++) {
+    const word = args[i]
+    if (word === undefined) break
+    const text = word.text
+    if (text === "--") {
+      positionals.push(...args.slice(i + 1))
+      break
+    }
+    if (text.startsWith("--")) {
+      const eq = text.indexOf("=")
+      const name = eq === -1 ? text : text.slice(0, eq)
+      options.push({ name, value: eq !== -1 ? { ...word, text: text.slice(eq + 1) } : valueFlags.has(name) ? args[++i] : undefined })
+    } else if (text.startsWith("-") && text !== "-") {
+      for (let at = 1; at < text.length; at++) {
+        const name = `-${text[at]}`
+        const rest = text.slice(at + 1)
+        if (rest.startsWith("=")) {
+          options.push({ name, value: { ...word, text: rest.slice(1) } })
+          break
+        }
+        if (!valueFlags.has(name)) {
+          options.push({ name, value: undefined })
+          continue
+        }
+        options.push({ name, value: rest === "" ? args[++i] : { ...word, text: rest } })
+        break
+      }
+    } else {
+      positionals.push(word)
+    }
+  }
+  return { options, positionals }
+}
+
 export const ghRefusal = (args: ReadonlyArray<Word>): string | undefined => {
   const positional = ghPositionals(args)
   const [group, sub] = positional
   if (positional.some((word) => word.dynamic)) return REASONS.dynamic
-  const has = (flag: string) => args.some((arg) => arg.text === flag || arg.text.startsWith(`${flag}=`))
+  const sets = (valueFlags: ReadonlySet<string>, ...names: ReadonlyArray<string>) => ghOptions(args, valueFlags).options.some((option) => names.includes(option.name))
+  const runtimeFlag = (valueFlags: ReadonlySet<string>, takesId: boolean) => runtimeFlagRefusal(args.filter((arg) => arg !== group && arg !== sub), valueFlags, takesId)
   switch (group?.text) {
     case "pr":
       switch (sub?.text) {
@@ -45,11 +104,11 @@ export const ghRefusal = (args: ReadonlyArray<Word>): string | undefined => {
         case "comment":
           return undefined
         case "checks":
-          return has("--watch") || has("-w") ? REASONS.watch : undefined
+          return runtimeFlag(PR_CHECKS_VALUE_FLAGS, true) ?? (sets(PR_CHECKS_VALUE_FLAGS, "--watch", "-w") ? REASONS.watch : undefined)
         case "create":
-          return prCreateRefusal(args)
+          return runtimeFlag(PR_CREATE_VALUE_FLAGS, false) ?? prCreateRefusal(args)
         case "edit":
-          return has("--add-reviewer") || has("--base") || has("-B") ? REASONS.review : undefined
+          return runtimeFlag(PR_EDIT_VALUE_FLAGS, true) ?? (sets(PR_EDIT_VALUE_FLAGS, "--add-reviewer", "--base", "-B") ? REASONS.review : undefined)
         default:
           return sub?.text === "merge" ? REASONS.merge : REASONS.ghCommand
       }
@@ -65,7 +124,8 @@ export const ghRefusal = (args: ReadonlyArray<Word>): string | undefined => {
       return undefined
     case "auth":
       // The token itself must stay out of reach; status may reveal it with these flags.
-      return sub?.text === "status" && !has("-t") && !has("--show-token") ? undefined : REASONS.ghCommand
+      if (sub?.text !== "status") return REASONS.ghCommand
+      return runtimeFlag(AUTH_STATUS_VALUE_FLAGS, false) ?? (sets(AUTH_STATUS_VALUE_FLAGS, "-t", "--show-token") ? REASONS.ghCommand : undefined)
     case "api":
       return ghApiRefusal(args.slice(args.findIndex((arg) => arg === group) + 1))
     default:
@@ -73,64 +133,82 @@ export const ghRefusal = (args: ReadonlyArray<Word>): string | undefined => {
   }
 }
 
+/**
+ * Where a `gh` command's verdict rests on its flags (`--watch`, `--base`, `--draft`,
+ * `--show-token`), a word known only at runtime could become one of them. Only two may
+ * be dynamic: the pull request's id, the first positional (`gh pr checks $PR`; the
+ * exec-time guard sees what it expands to), and a value flag's value that stays one
+ * word (`--body "$(cat …)"`, `--title="$T"`). A computed flag name, a value outside
+ * quotes (`--body $B` may be `x --base main`) or any other computed word is refused.
+ */
+const runtimeFlagRefusal = (args: ReadonlyArray<Word>, valueFlags: ReadonlySet<string>, takesId: boolean): string | undefined => {
+  let idSlot = takesId
+  for (let i = 0; i < args.length; i++) {
+    const word = args[i]
+    if (word === undefined) break
+    if (valueFlags.has(word.text)) {
+      if (args[i + 1]?.splits) return REASONS.computedFlag
+      i++
+    } else if (word.text.startsWith("-")) {
+      if (word.splits || /[$`]/.test(word.text.split("=")[0] ?? "")) return REASONS.computedFlag
+    } else if (idSlot) {
+      idSlot = false
+    } else if (word.dynamic) {
+      return REASONS.computedFlag
+    }
+  }
+  return undefined
+}
+
+const PR_CHECKS_VALUE_FLAGS = flags("-i", "--interval", "-q", "--jq", "-t", "--template", "--json", "-R", "--repo")
+const PR_EDIT_VALUE_FLAGS = flags(
+  ...["-t", "--title", "-b", "--body", "-F", "--body-file", "-B", "--base", "-m", "--milestone", "-R", "--repo", "--attach"],
+  ...["--add-label", "--remove-label", "--add-reviewer", "--remove-reviewer", "--add-assignee", "--remove-assignee", "--add-project", "--remove-project"],
+)
+const AUTH_STATUS_VALUE_FLAGS = flags("-h", "--hostname", "-q", "--jq", "--json", "--template")
+
 /** `gh pr create` options whose value is the next word: `--body --draft` sets the body, not the draft. */
 const PR_CREATE_VALUE_FLAGS = flags(
   ...["-t", "--title", "-b", "--body", "-F", "--body-file", "-B", "--base", "-H", "--head", "-a", "--assignee", "-l", "--label"],
-  ...["-m", "--milestone", "-p", "--project", "-r", "--reviewer", "-T", "--template", "-R", "--repo", "--recover"],
+  ...["-m", "--milestone", "-p", "--project", "-r", "--reviewer", "-T", "--template", "-R", "--repo", "--recover", "--attach"],
 )
 
 /** `gh pr create` must open a draft against `main`: an independent review gates every pushed fix before it is readied. */
 const prCreateRefusal = (args: ReadonlyArray<Word>): string | undefined => {
+  const drafts = ghOptions(args, PR_CREATE_VALUE_FLAGS).options.filter((option) => option.name === "--draft" || option.name === "-d")
   // gh takes the last occurrence, so any `=false` may win over a bare `--draft`.
-  const drafts = draftFlags(args)
-  return drafts.length === 0 || drafts.some((flag) => !["--draft", "-d", "--draft=true", "-d=true"].includes(flag)) ? REASONS.draft : undefined
+  return drafts.length === 0 || drafts.some((draft) => draft.value !== undefined && draft.value.text !== "true") ? REASONS.draft : undefined
 }
 
-/** Every draft flag `gh pr create` will read, combined boolean shorthands (`-dw`) included. */
-const draftFlags = (args: ReadonlyArray<Word>): ReadonlyArray<string> => {
-  const found: Array<string> = []
-  for (let i = 0; i < args.length; i++) {
-    const text = args[i]?.text ?? ""
-    if (PR_CREATE_VALUE_FLAGS.has(text)) i++
-    else if (/^(--draft|-d)(=|$)/.test(text)) found.push(text)
-    else if (/^-[dfw]{2,}$/.test(text) && text.includes("d")) found.push("-d")
-  }
-  return found
+/** A `key=value` field whose GraphQL `query` (the operation itself) is only known at runtime: computed, or under a computed key. */
+const hidesQuery = (field: Word | undefined): boolean => {
+  if (field === undefined || !field.dynamic) return false
+  const key = field.text.split("=")[0] ?? ""
+  return key === "query" || /[$`]/.test(key)
 }
 
 const ghApiRefusal = (args: ReadonlyArray<Word>): string | undefined => {
+  // A word outside quotes splits at runtime and could add -X, -f or --input (`--jq $Q`, `-f q=$Q`), turning a read into a write.
+  if (args.some((word) => word.splits)) return REASONS.computedFlag
+  const { options, positionals } = ghOptions(args, GH_API_VALUE_FLAGS)
+  // A computed flag could be -X or -f, a computed endpoint anything.
+  if (options.some((option) => /[$`]/.test(option.name)) || positionals.some((word) => word.dynamic)) return REASONS.dynamic
   let method: string | undefined
   let fields = false
-  let endpoint: string | undefined
-  for (let i = 0; i < args.length; i++) {
-    const word = args[i]
-    const text = word?.text ?? ""
-    const next = args[i + 1]
-    if (text === "-X" || text === "--method") {
-      if (next?.dynamic) return REASONS.dynamic
-      method = next?.text.toUpperCase()
-      i++
-    } else if (text.startsWith("--method=")) {
-      if (word?.dynamic) return REASONS.dynamic
-      method = text.slice("--method=".length).toUpperCase()
-    } else if (/^-X./.test(text)) {
-      if (word?.dynamic) return REASONS.dynamic
-      method = text.slice(2).toUpperCase()
-    } else if (GH_API_FIELD_FLAGS.has(text)) {
+  // The query is read from a file or a variable, so whether it mutates is unseen.
+  let queryUnseen = false
+  for (const { name, value } of options) {
+    if (name === "-X" || name === "--method") {
+      if (value?.dynamic) return REASONS.dynamic
+      method = value?.text.toUpperCase()
+    } else if (GH_API_FIELD_FLAGS.has(name)) {
       fields = true
-      i++
-    } else if (/^(--field|--raw-field|--input)=/.test(text) || /^-[fF]./.test(text)) {
-      fields = true
-    } else if (GH_API_VALUE_FLAGS.has(text)) {
-      i++
-    } else if (!text.startsWith("-") && !word?.dynamic && endpoint === undefined) {
-      endpoint = text
-    } else if (word?.dynamic) {
-      // A dynamic word undergoes word-splitting and could introduce -X/-f/--input, turning a read into a write (`gh api …/merge $X`). It cannot be checked, so it is refused. The value of a known value flag is consumed above and never reaches here.
-      return REASONS.dynamic
+      // `--input` and a typed field's `@file` value send a file's contents.
+      queryUnseen ||= name === "--input" || ((name === "-F" || name === "--field") && /^[^=]*=@/.test(value?.text ?? "")) || hidesQuery(value)
     }
   }
-  if (endpoint === "graphql" && args.some((arg) => /\bmutation\b/i.test(arg.text))) return REASONS.graphql
+  // A GraphQL read POSTs its query too: one with no `mutation` is a read, unless the guard can't see the query. Its variables (`-F number=$PR`) are values, never operations.
+  if (positionals[0]?.text === "graphql") return queryUnseen || args.some((arg) => /\bmutation\b/i.test(arg.text)) ? REASONS.graphql : undefined
   if (method !== undefined && WRITE_METHODS.has(method)) return REASONS.apiWrite
   if (fields && method !== "GET") return REASONS.apiWrite
   return undefined
@@ -151,21 +229,42 @@ export const githubApiWriteRefusal = (args: ReadonlyArray<Word>): string | undef
   return writes ? REASONS.apiWrite : undefined
 }
 
-const GIT_VALUE_OPTIONS = flags("-C", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--attr-source")
+/** `git credential` and the helpers git runs as `git credential-<name>`: `git credential-osxkeychain get` prints a stored password. */
+export const GIT_CREDENTIAL = /^credential(-|$)/
+
+/** git's options before the sub-command that take the next word as their value. */
+export const GIT_VALUE_OPTIONS = flags("-c", "--config-env", "-C", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--attr-source")
 
 const explicitPush = (branch: string) => `Push only your own branch, explicitly: git push -u origin ${branch}`
 
-/** Config keys that, once set, could run a command or push a tag on a later git call. */
-const forbiddenConfig = (key: string): boolean =>
-  /^(alias\.|push\.(followtags|default)|remote\..+\.(push|mirror|pushurl)|core\.(sshcommand|pager|fsmonitor|editor|hookspath)|pager\.|sequence\.editor|diff\.external|credential\.(helper|.*\.helper))/i.test(
-    key.trim(),
-  )
+/** Keys that push tags or every ref on a later push, or name one git command after another. */
+const PUSH_CONFIG = /^(alias\.|push\.(followtags|default)|remote\..+\.(push|mirror|pushurl))/i
+/** Keys whose value is a command a later git call runs (a pager, editor, ssh, askpass, diff, merge or filter driver, credential helper, signing program). */
+const COMMAND_CONFIG =
+  /^(core\.(sshcommand|pager|fsmonitor|editor|askpass|gitproxy)|pager\.|sequence\.editor|diff\.(external|.+\.(command|textconv))|difftool\.|mergetool\.|merge\..+\.driver|filter\.|credential\.(helper|.+\.helper)|gpg\.(program|.+\.program)|sendemail\.|uploadpack\.packobjectshook)/i
+/** Keys whose value is a path git runs hooks from or reads more config from. A relative one is in the worktree, where the session writes: `core.hooksPath=true` runs `true/pre-commit`. */
+const PATH_CONFIG = /^(core\.hookspath|include\.|includeif\.)/i
 
-/** The `key` of a `-c key=value`, `--config-env=key=env` or bare config word, or `undefined` when it is dynamic. */
-const configKey = (word: Word | undefined): string | undefined => {
+/**
+ * Whether setting `key` to `value` (`undefined` when only known at runtime) could run
+ * a command or push a tag on a later git call. A command key may be set to one that
+ * runs nothing and a path key to none, as the Claude CLI's own git calls do
+ * (`-c core.pager= -c core.hooksPath=/dev/null`).
+ */
+const forbiddenConfig = (key: string, value: string | undefined): boolean => {
+  const name = key.trim()
+  if (PUSH_CONFIG.test(name)) return true
+  if (COMMAND_CONFIG.test(name)) return value === undefined || !runsNothing(value)
+  return PATH_CONFIG.test(name) && value !== "" && value !== "/dev/null"
+}
+
+/** A `-c key=value` (a bare key sets it to true) or `--config-env=key=VAR`, whose value is the environment's. A computed one could set anything. */
+const configOptionRefusal = (word: Word | undefined, fromEnv: boolean): string | undefined => {
   if (word === undefined) return undefined
-  if (word.dynamic) return ""
-  return word.text.replace(/^--config-env=/, "").split("=")[0]
+  if (word.dynamic) return REASONS.gitConfig
+  const eq = word.text.indexOf("=")
+  const value = fromEnv ? undefined : eq === -1 ? "true" : word.text.slice(eq + 1)
+  return forbiddenConfig(eq === -1 ? word.text : word.text.slice(0, eq), value) ? REASONS.gitConfig : undefined
 }
 
 export const gitRefusal = (args: ReadonlyArray<Word>, branch: string): string | undefined => {
@@ -174,15 +273,21 @@ export const gitRefusal = (args: ReadonlyArray<Word>, branch: string): string | 
     const option = args[at]
     if (option === undefined || !option.text.startsWith("-")) break
     if (option.text === "-c" || option.text === "--config-env") {
-      if (forbiddenConfig(configKey(args[at + 1]) ?? "")) return REASONS.gitConfig
+      const reason = configOptionRefusal(args[at + 1], option.text === "--config-env")
+      if (reason !== undefined) return reason
       at++
-    } else if (option.text.startsWith("-c=") || option.text.startsWith("--config-env=")) {
-      if (forbiddenConfig(configKey(option) ?? "")) return REASONS.gitConfig
+    } else if (option.text.startsWith("--config-env=")) {
+      const reason = configOptionRefusal({ ...option, text: option.text.slice("--config-env=".length) }, true)
+      if (reason !== undefined) return reason
+    } else if (option.text.startsWith("--exec-path=")) {
+      // Like GIT_EXEC_PATH: git looks for its sub-commands there and puts it first on its children's PATH.
+      return REASONS.gitExec
     } else if (GIT_VALUE_OPTIONS.has(option.text)) at++
   }
   const sub = args[at]
   if (sub === undefined) return undefined
   if (sub.dynamic) return REASONS.dynamic
+  if (GIT_CREDENTIAL.test(sub.text)) return REASONS.credential
   const rest = args.slice(at + 1)
   switch (sub.text) {
     case "push":
@@ -200,8 +305,6 @@ export const gitRefusal = (args: ReadonlyArray<Word>, branch: string): string | 
       return REASONS.tag
     case "update-ref":
       return rest.some((arg) => arg.text.startsWith("refs/tags/")) ? REASONS.tag : undefined
-    case "credential":
-      return REASONS.credential
     case "rebase":
       return rest.some((arg) => arg.text === "-x" || arg.text === "--exec" || arg.text.startsWith("--exec=")) ? REASONS.gitExec : undefined
     case "submodule":
@@ -219,13 +322,38 @@ export const gitRefusal = (args: ReadonlyArray<Word>, branch: string): string | 
   }
 }
 
-/** `git config` may read freely; it may not write a key that could run a command or push a tag later. */
+/** `git config` options that read or remove, never set. */
+const CONFIG_READS = flags(
+  ...["--get", "--get-all", "--get-regexp", "--get-urlmatch", "--get-color", "--get-colorbool", "-l", "--list"],
+  ...["--unset", "--unset-all", "--remove-section"],
+)
+/** The same as git 2.46's sub-commands (`git config get core.pager`); `set` and `rename-section` are the ones that write. */
+const CONFIG_READ_COMMANDS = flags("get", "list", "unset", "remove-section")
+const CONFIG_VALUE_OPTIONS = flags("-f", "--file", "--blob", "-t", "--type", "--default", "--comment", "--value", "--url")
+
+/**
+ * `git config` may read and remove freely; it may not set a key that could run a
+ * command or push a tag later. Nor may it rename a section, which sets every key in
+ * it anew: `foo.x` set to `!cmd` becomes the alias `x` once `foo` is renamed `alias`.
+ */
 const configRefusal = (args: ReadonlyArray<Word>): string | undefined => {
-  const reading = args.some((arg) => ["--get", "--get-all", "--get-regexp", "--get-urlmatch", "-l", "--list"].includes(arg.text))
-  if (reading) return undefined
-  const key = args.find((arg) => !arg.text.startsWith("-"))
-  if (key?.dynamic) return REASONS.gitConfig
-  return key !== undefined && forbiddenConfig(key.text) ? REASONS.gitConfig : undefined
+  if (args.some((arg) => arg.text === "--rename-section")) return REASONS.gitConfig
+  if (args.some((arg) => CONFIG_READS.has(arg.text))) return undefined
+  const positional: Array<Word> = []
+  for (let i = 0; i < args.length; i++) {
+    const word = args[i]
+    if (word === undefined) break
+    if (CONFIG_VALUE_OPTIONS.has(word.text)) i++
+    else if (!word.text.startsWith("-")) positional.push(word)
+  }
+  const [first, ...rest] = positional
+  if (first?.text === "rename-section") return REASONS.gitConfig
+  if (first !== undefined && CONFIG_READ_COMMANDS.has(first.text)) return undefined
+  const [key, value] = first?.text === "set" ? rest : positional
+  // A key alone reads it.
+  if (key === undefined || value === undefined) return undefined
+  if (key.dynamic) return REASONS.gitConfig
+  return forbiddenConfig(key.text, value.dynamic ? undefined : value.text) ? REASONS.gitConfig : undefined
 }
 
 const PUSH_REF_FLAGS = flags("--tags", "--follow-tags", "--mirror", "--all", "--branches")

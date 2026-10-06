@@ -47,6 +47,8 @@ export interface TurnDeps {
   readonly onFailure: (id: string, reason: string) => Effect.Effect<void>
   /** The daemon's API port, which sessions may not reach. */
   readonly daemonPort: number
+  /** The daemon's home, where the exec-time guard's shims live. */
+  readonly home: string
 }
 
 export const makeTurns = (deps: TurnDeps) => {
@@ -103,7 +105,7 @@ export const makeTurns = (deps: TurnDeps) => {
         }
         const messages = deps.agent.query({
           prompt: Stream.toAsyncIterable(Stream.fromQueue(input)),
-          options: sdkOptions({ session, abort, resume, tools: toolsFor(session, runPromise), onRefused, daemonPort: deps.daemonPort }),
+          options: sdkOptions({ session, abort, resume, tools: toolsFor(session, runPromise), onRefused, daemonPort: deps.daemonPort, home: deps.home }),
         })
         yield* Stream.fromAsyncIterable(
           abortOnReturn(messages, abort),

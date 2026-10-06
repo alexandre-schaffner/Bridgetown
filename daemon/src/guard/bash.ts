@@ -1,7 +1,7 @@
 import { closeSync, openSync, readSync, statSync } from "node:fs"
 import { homedir } from "node:os"
-import { basename, isAbsolute, resolve } from "node:path"
-import { firstPositional, flags, REASONS } from "./reasons.ts"
+import { basename, dirname, isAbsolute, join, resolve } from "node:path"
+import { firstPositional, flags, REASONS, runsNothing } from "./reasons.ts"
 import { type Command, parseShell, type Word } from "./shell.ts"
 import { ghRefusal, githubApiWriteRefusal, gitRefusal } from "./vcs.ts"
 
@@ -44,19 +44,52 @@ export const readScript = (path: string): string | undefined => {
   }
 }
 
-
-const KEYWORDS = new Set(["!", "{", "}", "if", "then", "else", "elif", "fi", "do", "done", "while", "until", "esac", "coproc"])
+const KEYWORDS = new Set(["!", "{", "}", "if", "then", "else", "elif", "fi", "do", "done", "while", "until", "esac"])
 const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)\+?=/
-/** Env assignments that make a later command run something the guard never sees: a startup file, an ssh/pager/diff command, an injected library. */
-const DANGEROUS_ENV = /^(BASH_ENV|ENV|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|GIT_SSH_COMMAND|GIT_SSH|GIT_EXTERNAL_DIFF|GIT_PAGER|GIT_EDITOR|GIT_SEQUENCE_EDITOR|GIT_CONFIG_PARAMETERS|GIT_CONFIG_(COUNT|KEY_[0-9]+|VALUE_[0-9]+)|GIT_PROXY_COMMAND|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|NODE_OPTIONS|PERL5OPT|PERL5LIB|PYTHONSTARTUP|RUBYOPT)$/
+/** Variables whose value is a command a later program runs (an ssh, pager, editor or askpass): only one that runs nothing may be set (`GIT_EDITOR=true`, `PAGER=cat`). */
+const COMMAND_ENV = /^(GIT_SSH_COMMAND|GIT_SSH|GIT_EXTERNAL_DIFF|GIT_PAGER|GIT_EDITOR|GIT_SEQUENCE_EDITOR|GIT_PROXY_COMMAND|GIT_ASKPASS|SSH_ASKPASS|PAGER|GH_PAGER|EDITOR|VISUAL|GH_EDITOR)$/
+/**
+ * Variables no value of which is safe: a startup file or option string a shell or runtime runs (`ZDOTDIR` holds zsh's
+ * `.zshenv`), an injected library, git's config, exec path and hook templates, an exported bash function
+ * (`env 'BASH_FUNC_git%%=() {…}'`), `CDPATH` (which sends `cd` elsewhere than the guard follows), and Bridgetown's own
+ * (`BRIDGETOWN_BRANCH` is the exec-time guard's scope). Not `ENV`, which only an interactive shell reads and
+ * shellRefusal refuses those: `ENV=test bun test` is common.
+ */
+const LOADER_ENV =
+  /^(BASH_ENV|ZDOTDIR|CDPATH|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|BASH_FUNC_.*|GIT_CONFIG_PARAMETERS|GIT_CONFIG_(COUNT|KEY_[0-9]+|VALUE_[0-9]+)|GIT_EXEC_PATH|GIT_TEMPLATE_DIR|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|NODE_OPTIONS|BUN_OPTIONS|PERL5OPT|PERL5LIB|PYTHONSTARTUP|RUBYOPT|BRIDGETOWN_.*)$/
+/** Builtins that set variables from their `NAME=value` arguments. */
+const DECLARATIONS = new Set(["export", "declare", "typeset", "local", "readonly"])
 const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "mksh", "ash", "fish", "csh", "tcsh", "yash", "oksh", "posh", "busybox", "pwsh", "nu", "xonsh", "elvish"])
 const CLUSTER = new Set(["kubectl", "helm", "argocd", "kargo"])
 const GCP = new Set(["gcloud", "gsutil", "bq"])
 const NETWORK = new Set(["curl", "wget", "nc", "ncat", "netcat", "socat", "telnet", "http", "https", "xh", "websocat", "grpcurl", "aria2c"])
+/**
+ * Commands that hand another command to something outside the session to run later or
+ * elsewhere: an at, cron, launchd or systemd job, a terminal multiplexer's window. It runs
+ * without the session's guard, and often without its PATH, so the shims don't see it either.
+ */
+const DETACHED = new Set(["at", "batch", "crontab", "launchctl", "systemd-run", "tmux", "screen"])
 /** Tools that take the port as its own argument (`nc 127.0.0.1 47621`). */
 const PORT_ARGUMENT = new Set(["nc", "ncat", "netcat", "telnet"])
 const SLACK_HOST = /(^|[^A-Za-z0-9-])([A-Za-z0-9-]+\.)*slack\.com(?![A-Za-z0-9-])/i
 const MAX_DEPTH = 4
+/**
+ * Nested checks (a script, a package.json script, `sh -c`, `eval`) one command may
+ * cost in all. Each can name many more, so depth alone would let a few small files
+ * the session wrote (`"a": "bun run b && bun run b && …"`) hold the daemon for
+ * minutes. The deepest script in the Merkl monorepo takes 8.
+ */
+const MAX_NESTED = 64
+
+/**
+ * The commands the exec-time guard (exec.ts) stands in front of: those this
+ * policy refuses or restricts by name that reach production, a remote or a
+ * credential. Not `security`: the Claude CLI reads its own login through it by name
+ * and saves a refreshed one with `security -i`, its commands on stdin where a shim
+ * can't see them, so a shim could only pass every call or break the CLI's login. A
+ * Keychain read on the command line is still refused.
+ */
+export const EXEC_GUARDED: ReadonlyArray<string> = ["gh", "git", ...CLUSTER, ...GCP, "op", "sudo", "su", "doas", "cast", "curl", "wget"]
 
 interface Scope extends GuardContext {
   /** Unknown after a `cd` to a computed directory. */
@@ -64,11 +97,20 @@ interface Scope extends GuardContext {
   /** The whole command line, for words whose value is only known at runtime. */
   readonly source: string
   readonly depth: number
+  /** What is left of the command's MAX_NESTED, shared by every nested check. */
+  readonly nestedLeft: { count: number }
 }
 
+const outermost = (context: GuardContext, source: string): Scope => ({ ...context, cwdKnown: true, source, depth: 0, nestedLeft: { count: MAX_NESTED } })
+
 /** Why this command is refused, or `undefined` when it may run. */
-export const refusal = (command: string, context: GuardContext): string | undefined =>
-  check(command, { ...context, cwdKnown: true, source: command, depth: 0 })
+export const refusal = (command: string, context: GuardContext): string | undefined => check(command, outermost(context, command))
+
+/** Why the exec-time guard refuses `name args…`: the argv a program is about to run with, every expansion done, so nothing in it is dynamic. */
+export const execRefusal = (name: string, args: ReadonlyArray<string>, context: GuardContext): string | undefined => {
+  const word = (text: string): Word => ({ text, dynamic: false, splits: false, quoted: true })
+  return commandRefusal(name, word(name), args.map(word), outermost(context, [name, ...args].join(" ")))
+}
 
 const check = (source: string, scope: Scope): string | undefined => {
   if (scope.depth > MAX_DEPTH) return REASONS.nesting
@@ -83,22 +125,43 @@ const check = (source: string, scope: Scope): string | undefined => {
   return undefined
 }
 
-const nested = (source: string, scope: Scope): string | undefined => check(source, { ...scope, depth: scope.depth + 1 })
+const nested = (source: string, scope: Scope): string | undefined =>
+  --scope.nestedLeft.count < 0 ? REASONS.nesting : check(source, { ...scope, depth: scope.depth + 1 })
 
-/** `cd dir` moves where later relative script paths resolve. */
+/**
+ * `cd dir` and `pushd dir` move where later relative script paths resolve. After `popd`,
+ * `cd -`, a computed directory or a `pushd` that rotates the stack, the guard no longer
+ * knows where it is. (A Bash call always starts in the worktree: agent/options.ts has the
+ * CLI go back there after each one.)
+ */
 const afterCd = (command: Command, scope: Scope): Scope => {
-  const [head, target] = command
-  if (head?.text !== "cd") return scope
-  if (target === undefined) return { ...scope, cwd: homedir() }
+  const [head, ...args] = command
+  switch (head?.text) {
+    case "cd": {
+      const target = args[firstPositional(args, flags())]
+      return target === undefined ? { ...scope, cwd: homedir(), cwdKnown: true } : moveTo(target, scope)
+    }
+    case "pushd": {
+      const [target] = args
+      return args.length === 1 && target !== undefined && !/^[-+]/.test(target.text) ? moveTo(target, scope) : { ...scope, cwdKnown: false }
+    }
+    case "popd":
+      return { ...scope, cwdKnown: false }
+    default:
+      return scope
+  }
+}
+
+const moveTo = (target: Word, scope: Scope): Scope => {
   if (target.dynamic || target.text === "-") return { ...scope, cwdKnown: false }
-  return { ...scope, cwd: resolve(scope.cwd, expandHome(target.text)) }
+  const path = expandHome(target.text)
+  return { ...scope, cwd: resolve(scope.cwd, path), cwdKnown: scope.cwdKnown || isAbsolute(path) }
 }
 
 const expandHome = (path: string): string => (path === "~" || path.startsWith("~/") ? `${homedir()}${path.slice(1)}` : path)
 
 const literal = (words: ReadonlyArray<Word>): string | undefined =>
   words.some((word) => word.dynamic) ? undefined : words.map((word) => word.text).join(" ")
-
 
 /** Commands that run another command: what follows their options is checked instead. */
 const WRAPPERS: Readonly<Record<string, ReadonlySet<string>>> = {
@@ -116,6 +179,9 @@ const WRAPPERS: Readonly<Record<string, ReadonlySet<string>>> = {
   setsid: flags(),
   noglob: flags(),
   nocorrect: flags(),
+  // zsh: `- cmd` runs cmd with a dash before its argv[0]; `repeat 3 cmd` runs it three times.
+  "-": flags(),
+  repeat: flags(),
   arch: flags("-arch", "-d", "-e"),
   parallel: flags("-j", "-P", "-n", "-N"),
   // `script -q out cmd …`: the command follows the file operand; `-a`/`-t`/`-T` take a value.
@@ -137,7 +203,7 @@ const xargsReplstr = (args: ReadonlyArray<Word>): string | undefined => {
 }
 
 /** A word whose value is only known at runtime, appended so a wrapper that feeds extra arguments (xargs from stdin) cannot smuggle a subcommand past the gate. */
-const RUNTIME_WORD: Word = { text: "", dynamic: true, quoted: false }
+const RUNTIME_WORD: Word = { text: "", dynamic: true, splits: true, quoted: false }
 
 const checkCommand = (command: Command, scope: Scope): string | undefined => {
   let argv = [...command]
@@ -148,10 +214,21 @@ const checkCommand = (command: Command, scope: Scope): string | undefined => {
       argv = argv.slice(1)
       continue
     }
+    // `function name { body; }`: drop the keyword and the name so the body is checked as commands. The `name()` form already splits at `(` into its own command, and so does `function name()`.
+    if (!first.quoted && first.text === "function") {
+      argv = argv.slice(2)
+      continue
+    }
+    // `coproc command` runs it; `coproc name { body; }` labels a body that starts right away. Drop the keyword, and the name when a brace group follows, so the body is checked either way.
+    if (!first.quoted && first.text === "coproc") {
+      argv = argv.slice(1)
+      if (argv[0] !== undefined && !argv[0].quoted && argv[1]?.text === "{") argv = argv.slice(1)
+      continue
+    }
     // A leading `NAME=value` is an environment assignment, not the command. Quoting of the value does not change that (`GIT_SSH_COMMAND='…' git fetch`), so it is stripped even when the word is marked quoted.
-    const assignment = ASSIGNMENT.exec(first.text)
-    if (assignment !== null) {
-      if (DANGEROUS_ENV.test(assignment[1] ?? "")) return REASONS.dangerousEnv
+    if (ASSIGNMENT.test(first.text)) {
+      const reason = assignmentRefusal(first)
+      if (reason !== undefined) return reason
       argv = argv.slice(1)
       continue
     }
@@ -170,8 +247,8 @@ const checkCommand = (command: Command, scope: Scope): string | undefined => {
         return call === undefined ? undefined : call.dynamic ? REASONS.dynamic : nested(call.text, scope)
       }
       let rest = args.slice(firstPositional(args, options))
-      // `timeout 30 cmd`, `script -q out cmd`: a positional operand precedes the command.
-      if (name === "timeout" || name === "script") rest = rest.slice(1)
+      // `timeout 30 cmd`, `script -q out cmd`, `repeat 3 cmd`: a positional operand precedes the command.
+      if (name === "timeout" || name === "script" || name === "repeat") rest = rest.slice(1)
       // With a command, xargs appends words from stdin the guard never sees, and -I substitutes them into the template, so a runtime word is appended and -I slots are marked dynamic. With no command it runs `echo` on its stdin, where there is nothing to smuggle a subcommand into.
       if (name === "xargs" && rest.length > 0) {
         const replstr = xargsReplstr(args)
@@ -191,6 +268,48 @@ const checkCommand = (command: Command, scope: Scope): string | undefined => {
   return undefined
 }
 
+/** Why setting `name` is refused; `value` is what it is set to, `undefined` when unknown (computed, appended, or exported as it already is). */
+const variableRefusal = (name: string, value: string | undefined): string | undefined => {
+  if (LOADER_ENV.test(name)) return REASONS.dangerousEnv
+  return COMMAND_ENV.test(name) && (value === undefined || !runsNothing(value)) ? REASONS.dangerousEnv : undefined
+}
+
+/** `NAME=value` or `NAME+=value`, whether a prefix, an `env` argument or a `declare`/`export` one. The name ends at the first `=`: `env` takes any such word as an assignment, a bash function's `BASH_FUNC_git%%` included. */
+const assignmentRefusal = (word: Word): string | undefined => {
+  const eq = word.text.indexOf("=")
+  const append = word.text[eq - 1] === "+"
+  return variableRefusal(word.text.slice(0, append ? eq - 1 : eq), append || word.dynamic ? undefined : word.text.slice(eq + 1))
+}
+
+/** `$(…)` or a backtick in an argument. */
+const substitutes = (word: Word): boolean => /\$\(|`/.test(word.text)
+
+/**
+ * `export NAME=value` and `declare`/`local`/`readonly NAME=value` set a variable as
+ * surely as a prefix does. Exporting a dangerous name bare passes on a value set where
+ * the guard never saw it (`read GIT_SSH_COMMAND; export GIT_SSH_COMMAND`), and a
+ * computed name could be any. The integer forms (`declare -i`) evaluate their arguments
+ * as arithmetic, which runs any `$(…)` inside, even quoted (`declare -i y='$(…)'`); a
+ * plain `local x=$(…)` is an ordinary substitution the parser has already checked.
+ */
+const declarationRefusal = (name: string, args: ReadonlyArray<Word>): string | undefined => {
+  const options = args.filter((arg) => arg.text.startsWith("-")).map((arg) => arg.text)
+  if (options.some((option) => /^-[a-zA-Z]*i/.test(option)) && args.some(substitutes)) return REASONS.dynamic
+  const exporting = name === "export" || options.some((option) => /^-[a-zA-Z]*x/.test(option))
+  for (const arg of args) {
+    if (arg.text.startsWith("-")) continue
+    const reason = ASSIGNMENT.test(arg.text)
+      ? assignmentRefusal(arg)
+      : arg.dynamic
+        ? REASONS.dynamic
+        : exporting
+          ? variableRefusal(arg.text, undefined)
+          : undefined
+    if (reason !== undefined) return reason
+  }
+  return undefined
+}
+
 const ENV_VALUE_FLAGS = flags("-u", "--unset", "-C", "--chdir", "-P", "-a", "--argv0")
 
 /** `env [options] [NAME=value…] [cmd …]`, including the `-S`/`-iS'…'` split-string form that parses the rest as one shell string. */
@@ -199,11 +318,13 @@ const envRefusal = (args: ReadonlyArray<Word>, scope: Scope): string | undefined
     const word = args[i]
     if (word === undefined) break
     const text = word.text
-    if (!text.startsWith("-") || text === "-") {
-      // The first non-flag word is either `NAME=value` (an assignment, kept scanning) or the command.
-      const name = ASSIGNMENT.exec(text)?.[1]
-      if (name === undefined) return checkCommand(args.slice(i), scope)
-      if (DANGEROUS_ENV.test(name)) return REASONS.dangerousEnv
+    // A lone `-` is `-i`, not the command.
+    if (text === "-") continue
+    if (!text.startsWith("-")) {
+      // Every word with an `=` before the command is an assignment, whatever its name; the first without one is the command.
+      if (!text.includes("=")) return checkCommand(args.slice(i), scope)
+      const reason = assignmentRefusal(word)
+      if (reason !== undefined) return reason
       continue
     }
     // -S / --split-string / a short-flag cluster containing S: the remaining text is one shell string.
@@ -229,8 +350,9 @@ const commandRefusal = (name: string, head: Word, args: ReadonlyArray<Word>, sco
   if (CLUSTER.has(name)) return REASONS.cluster
   if (GCP.has(name)) return REASONS.gcp
   if (name === "op") return REASONS.secrets
+  if (DETACHED.has(name)) return REASONS.detached
   if (name === "security" && args.some((arg) => /^(find-(generic|internet)-password|dump-keychain|export)$/.test(arg.text))) return REASONS.secrets
-  // `ps eww`/`ps -E` dumps a process's initial environment: in development the daemon still carries its tokens there (the kernel's envp copy survives the delete). The env dump is never needed for the task. (`-e`/`-ef` is the all-processes flag, not the environment one.)
+  // `ps eww`/`ps -E` dumps a process's initial environment, where a token the user exported in a shell would show. The env dump is never needed for the task. (`-e`/`-ef` is the all-processes flag, not the environment one.)
   if (name === "ps" && args.some((arg) => isPsEnvDump(arg.text))) return REASONS.secrets
   if (name === "cat" && args.some((arg) => /\/proc\/[^/]+\/environ\b/.test(arg.text))) return REASONS.secrets
   if (name === "cast" && (args[0]?.text === "send" || args[0]?.text === "publish")) return REASONS.transaction
@@ -245,11 +367,11 @@ const commandRefusal = (name: string, head: Word, args: ReadonlyArray<Word>, sco
   }
   // `trap 'cmd' SIGNAL` runs its first argument as a command when the signal fires.
   if (name === "trap") return args[0] === undefined ? undefined : checkString(args[0], scope)
-  // `let`, and the integer forms `declare -i` / `typeset -i` / `local -i` / `readonly -i`, evaluate their argument as arithmetic, which runs any `$(…)`/backtick inside it — even from a quoted argument the parser left intact (`declare -i y='$(…)'`). A plain `local x=$(…)` is an ordinary substitution the parser has already seen and checked, so it is left alone.
-  const arithmetic =
-    name === "let" ||
-    ((name === "declare" || name === "typeset" || name === "local" || name === "readonly") && args.some((arg) => /^-[a-zA-Z]*i/.test(arg.text)))
-  if (arithmetic && args.some((arg) => /\$\(|`/.test(arg.text))) return REASONS.dynamic
+  // `mapfile`/`readarray -C cmd` evaluates `cmd` as a shell command as it reads.
+  if (name === "mapfile" || name === "readarray") return callbackRefusal(args, scope)
+  // `let` evaluates its arguments as arithmetic, which runs any `$(…)` inside, even quoted (`let 'a[$(…)]'`).
+  if (name === "let" && args.some(substitutes)) return REASONS.dynamic
+  if (DECLARATIONS.has(name)) return declarationRefusal(name, args)
   if (SHELLS.has(name)) return shellRefusal(args, scope)
   if (name === "source" || name === ".") return args[0] === undefined ? undefined : scriptRefusal(args[0], scope, true)
   if (name === "watch") {
@@ -288,8 +410,85 @@ const packageManagerRefusal = (name: string, args: ReadonlyArray<Word>, scope: S
     return inner.length === 0 ? undefined : checkCommand(inner, scope)
   }
   // `run <name>` / `run-script <name>`: the script name is the first positional, past run's own flags (`--filter api`).
-  const script = sub.text === "run" || sub.text === "run-script" ? rest.slice(firstPositional(rest, PM_GLOBAL_FLAGS))[0]?.text : sub.text
-  return script !== undefined && /^(migrate|db:push|db:migrate)\b/.test(script) ? REASONS.migration : undefined
+  const run = sub.text === "run" || sub.text === "run-script"
+  const runFlags = run ? rest.slice(0, firstPositional(rest, PM_GLOBAL_FLAGS)) : []
+  const script = run ? rest[runFlags.length] : sub
+  if (script === undefined) return undefined
+  if (script.dynamic) return REASONS.dynamic
+  if (/^(migrate|db:push|db:migrate)\b/.test(script.text)) return REASONS.migration
+  const named = run ? script.text : bareScript(name, script.text)
+  const dir = packageDir([...args.slice(0, start), ...runFlags], scope)
+  return named === undefined || dir === undefined ? undefined : packageScriptRefusal(named, dir, scope)
+}
+
+/** The package managers' own sub-commands, which never run a `package.json` script of the same name. */
+const PM_COMMANDS = new Set([
+  ...["install", "i", "add", "a", "remove", "rm", "update", "up", "upgrade", "outdated", "link", "unlink", "publish", "pack", "patch", "pm"],
+  ...["init", "create", "audit", "info", "why", "list", "ls", "exec", "dlx", "x", "config", "cache", "store", "rebuild", "prune", "dedupe"],
+  ...["workspace", "workspaces", "help"],
+])
+/** What `npm` runs as a script without `run`. */
+const NPM_SCRIPTS: Readonly<Record<string, string>> = { test: "test", t: "test", tst: "test", start: "start", stop: "stop", restart: "restart" }
+
+/** The script a bare `<manager> <word>` runs: `bun type` runs "type", but `bun test` and `bun build` are bun's own; `npm` runs only its few lifecycle names. */
+const bareScript = (manager: string, word: string): string | undefined => {
+  if (manager === "npm") return NPM_SCRIPTS[word]
+  return PM_COMMANDS.has(word) || (manager === "bun" && (word === "test" || word === "build" || word === "repl")) ? undefined : word
+}
+
+/** Flags that point a package manager at other packages (`--filter api`, `-w`, `-r`): which scripts they run is left to the exec-time guard. */
+const PM_PACKAGES = /^(--filter|-F|--workspace|-w|--workspaces|-ws|--recursive|-r)(=|$)/
+const PM_DIR_FLAGS = flags("--cwd", "-C", "--dir", "--prefix")
+
+/** Where the package manager looks for `package.json`: the cwd or a `--cwd`/`--dir`/`--prefix`/`-C`. `undefined` when only known at runtime. */
+const packageDir = (options: ReadonlyArray<Word>, scope: Scope): string | undefined => {
+  let dir = scope.cwdKnown ? scope.cwd : undefined
+  for (let i = 0; i < options.length; i++) {
+    const option = options[i]
+    if (option === undefined) break
+    if (PM_PACKAGES.test(option.text)) return undefined
+    const eq = option.text.indexOf("=")
+    if (!PM_DIR_FLAGS.has(eq === -1 ? option.text : option.text.slice(0, eq))) continue
+    const value = eq === -1 ? options[++i] : { ...option, text: option.text.slice(eq + 1) }
+    if (value === undefined || value.dynamic) return undefined
+    const path = expandHome(value.text)
+    dir = isAbsolute(path) ? path : dir === undefined ? undefined : resolve(dir, path)
+  }
+  return dir
+}
+
+/**
+ * A `package.json` script runs whatever its body says, so the body, with the `pre`
+ * and `post` scripts that run around it, goes through the same guard, from the
+ * directory it runs in. The nearest `package.json` at or above `dir` is the one the
+ * package manager reads.
+ */
+const packageScriptRefusal = (script: string, dir: string, scope: Scope): string | undefined => {
+  for (let at = dir; ; at = dirname(at)) {
+    const file = join(at, "package.json")
+    const content = scope.readFile(file)
+    if (content !== undefined) {
+      const scripts = scriptsOf(content)
+      for (const name of [`pre${script}`, script, `post${script}`]) {
+        const body = scripts[name]
+        const reason = body === undefined ? undefined : nested(body, { ...scope, cwd: at, cwdKnown: true })
+        if (reason !== undefined) return `The "${name}" script in ${file} runs a refused command. ${reason}`
+      }
+      return undefined
+    }
+    if (dirname(at) === at) return undefined
+  }
+}
+
+/** A `package.json`'s string-valued `scripts`; none when it doesn't parse, as the package manager would then run none either. */
+const scriptsOf = (content: string): Readonly<Record<string, string>> => {
+  try {
+    const scripts: unknown = JSON.parse(content).scripts
+    if (typeof scripts !== "object" || scripts === null) return {}
+    return Object.fromEntries(Object.entries(scripts).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
+  } catch {
+    return {}
+  }
 }
 
 /** Hosts a request must never reach: internal prod routes, Slack, and the daemon's own API. Used for network commands and for the WebFetch tool's URL. */
@@ -323,10 +522,13 @@ const shellRefusal = (args: ReadonlyArray<Word>, scope: Scope): string | undefin
       return script === undefined ? REASONS.pipeToShell : command ? checkString(script, scope) : scriptRefusal(script, scope, true)
     }
     if (text === "-o" || text === "+o" || text === "-O" || text === "+O" || text === "--rcfile" || text === "--init-file") {
+      if (text === "-o" && args[i + 1]?.text === "interactive") return REASONS.interactive
       i++
       continue
     }
+    if (text === "--interactive") return REASONS.interactive
     if (/^[-+][a-zA-Z]+$/.test(text)) {
+      if (text.startsWith("-") && text.includes("i")) return REASONS.interactive
       if (text.startsWith("-") && text.includes("c")) command = true
       if (text.startsWith("-") && text.includes("s")) return REASONS.pipeToShell
       continue
@@ -338,6 +540,25 @@ const shellRefusal = (args: ReadonlyArray<Word>, scope: Scope): string | undefin
 }
 
 const checkString = (word: Word, scope: Scope): string | undefined => (word.dynamic ? REASONS.dynamic : nested(word.text, scope))
+
+/** `mapfile`/`readarray -C cmd` runs `cmd` as a shell command every `-c` lines read. The callback is its own word, or glued (`-Ccmd`). */
+const callbackRefusal = (args: ReadonlyArray<Word>, scope: Scope): string | undefined => {
+  for (let i = 0; i < args.length; i++) {
+    const word = args[i]
+    if (word === undefined) break
+    if (word.text === "-C") {
+      const next = args[++i]
+      if (next !== undefined) {
+        const reason = checkString(next, scope)
+        if (reason !== undefined) return reason
+      }
+    } else if (word.text.startsWith("-C") && word.text.length > 2) {
+      const reason = checkString({ ...word, text: word.text.slice(2) }, scope)
+      if (reason !== undefined) return reason
+    }
+  }
+  return undefined
+}
 
 /** `find … -exec cmd {} ;` runs `cmd` with `{}` replaced by each found path, so `{}` is a runtime value. */
 const findRefusal = (args: ReadonlyArray<Word>, scope: Scope): string | undefined => {

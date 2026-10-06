@@ -129,6 +129,7 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
     const agent = yield* Agent
     const github = yield* GitHub
     const worktrees = yield* Worktrees
+    const env = yield* Environment
 
     const turns = yield* SynchronizedRef.make<Turns>({ live: new Map(), parked: new Map() })
     /** One fiber per session (preparing its worktree, or driving its turns), interrupted by a stop or when the layer shuts down. */
@@ -162,7 +163,8 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
       agent,
       onEnd: (id) => (end: TurnEnd) => (end._tag === "Failed" ? finishFailed(id, end.reason) : finish(id, end.result)),
       onFailure: (id, reason) => finishFailed(id, reason).pipe(Effect.ignore),
-      daemonPort: (yield* Environment).port,
+      daemonPort: env.port,
+      home: env.home,
     })
 
     /**
