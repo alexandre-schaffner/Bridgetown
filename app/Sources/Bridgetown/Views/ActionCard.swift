@@ -22,6 +22,11 @@ struct ActionRow: View {
         Group {
             if expanded || confirmingClose {
                 ActionCard(action: action, pick: pick, confirmingClose: $confirmingClose, collapse: toggle)
+                    .accessibilityIdentifier("needsYou.card.\(action.id)")
+                    // What a click on its title does, for VoiceOver.
+                    .accessibilityActions {
+                        if expanded { Button("Collapse", action: toggle) }
+                    }
             } else {
                 row
             }

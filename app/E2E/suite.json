@@ -44,6 +44,9 @@
       {"action": {"on": "needsYou.row.$id", "name": "Expand"}},
       {"shot": "card-$id"}
     ]},
+    {"action": {"on": "needsYou.row.a_mock_merge_s_mock_merge", "name": "Expand"}},
+    {"action": {"on": "needsYou.card.a_mock_merge_s_mock_merge", "name": "Collapse"}},
+    {"action": {"on": "needsYou.row.a_mock_merge_s_mock_merge", "name": "Expand"}},
     {"action": {"on": "needsYou.row.a_mock_review_s_mock_review", "name": "Expand"}},
     {"press": "action.dismiss.a_mock_review_s_mock_review"},
     {"shot": "card-close-confirm"},
