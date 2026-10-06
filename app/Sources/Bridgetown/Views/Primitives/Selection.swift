@@ -185,7 +185,6 @@ struct SelectionHeader<Actions: View>: View {
             if offersSelectAll {
                 TextLink("Select all", action: selectAll)
                     .font(Typo.label)
-                    .fixedSize()
             }
             Spacer(minLength: 0)
             actions

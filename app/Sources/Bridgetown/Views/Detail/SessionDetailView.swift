@@ -96,7 +96,9 @@ struct SessionDetailView: View {
     /// "From #alert-releases · View alert · Slack thread": the way back to what started it.
     private var origin: some View {
         HStack(spacing: 4) {
-            Text("From \(Format.channel(session.channelName))")
+            // Short of room, the channel's name gives way, in its middle: never "From" or a link.
+            Text("From").foregroundStyle(.tertiary)
+            Text(Format.channel(session.channelName))
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
                 .truncationMode(.middle)

@@ -3,7 +3,8 @@ import SwiftUI
 /// A text button: monochrome like every control (colour is for status), brightening under
 /// the pointer, with a glyph that leans the way it goes: right into the app, up and out
 /// to the browser (it stays put under Reduce Motion). However small its type, it is 20pt
-/// tall to hit.
+/// tall to hit; however narrow its line, its label is whole, since it says what a click
+/// does: the words beside it give way first.
 struct TextLink: View {
     enum Direction {
         /// Somewhere else in the island: a chevron that nudges right.
@@ -43,6 +44,7 @@ struct TextLink: View {
                 }
             }
             .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
             .frame(minHeight: 20)
             .contentShape(Rectangle())
         }
