@@ -71,40 +71,28 @@ import Icon from "./Icon.astro";
       { threshold: 0.25 },
     ).observe(video);
 
-    if (!reduced) {
-      // In screens of scroll since the pin took hold: the first stretch lies over the hero's
-      // walk into the light, and the screen develops out of it; then the clip grows.
-      const play = (d: number) => {
-        recording.style.setProperty("--enter", smooth(0.05, 0.65, d).toFixed(3));
-        recording.style.setProperty("--grow", lerp(0.34, 1, inOut(clamp((d - 0.75) / 1.15))).toFixed(4));
-        recording.style.setProperty("--out", smooth(0.95, 1.45, d).toFixed(3));
-        recording.style.setProperty("--caption", smooth(1.65, 2.05, d).toFixed(3));
-      };
-      play(0);
-      ScrollTrigger.create({
-        trigger: recording,
-        start: "top top",
-        end: "bottom bottom",
-        onUpdate: (s) => play((s.progress * (recording.offsetHeight - innerHeight)) / innerHeight),
-      });
-    } else {
+    // In screens of scroll since the pin took hold: the first stretch lies over the hero's walk
+    // into the light, and the screen develops out of it; then the clip grows.
+    const set = (name: string, v: number) => recording.style.setProperty(name, v.toFixed(4));
+    const play = (d: number) => {
+      set("--enter", smooth(0.05, 0.65, d));
+      if (reduced) return;
+      set("--grow", lerp(0.34, 1, inOut(clamp((d - 0.75) / 1.15))));
+      set("--out", smooth(0.95, 1.45, d));
+      set("--caption", smooth(1.65, 2.05, d));
+    };
+    if (reduced) {
       // The clip at full size; the line's halves would only stand cut off at its sides. It still
       // fades in out of the light, or it would stand over the hero's board.
-      recording.style.setProperty("--grow", "1");
-      recording.style.setProperty("--out", "1");
-      recording.style.setProperty("--caption", "1");
-      recording.style.setProperty("--enter", "0");
-      ScrollTrigger.create({
-        trigger: recording,
-        start: "top top",
-        end: "bottom bottom",
-        onUpdate: (s) =>
-          recording.style.setProperty(
-            "--enter",
-            smooth(0.05, 0.65, (s.progress * (recording.offsetHeight - innerHeight)) / innerHeight).toFixed(3),
-          ),
-      });
+      for (const name of ["--grow", "--out", "--caption"]) set(name, 1);
     }
+    play(0);
+    ScrollTrigger.create({
+      trigger: recording,
+      start: "top top",
+      end: "bottom bottom",
+      onUpdate: (s) => play((s.progress * (recording.offsetHeight - innerHeight)) / innerHeight),
+    });
   }
 </script>
 
