@@ -1,6 +1,8 @@
 import { toMrkdwn } from "../slack/text.ts"
 import { prNumber, revvLink } from "./pr.ts"
 
+/** Who approves a fix before it merges: the approvals channel and owning team for what it ships, and the message that asks them. */
+
 /** Slack user groups, as `packages/alerting/src/deployment.reviewers.ts` encodes them. */
 const DEV_PRODUCT = "<!subteam^S0ATVUW9T7V|dev-product>"
 const ENGINE_TEAM = "<!subteam^S0AU07798EA|engine-team>"
