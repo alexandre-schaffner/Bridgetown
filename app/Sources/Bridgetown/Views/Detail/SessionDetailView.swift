@@ -270,27 +270,21 @@ struct SessionDetailView: View {
 
             if session.isActive {
                 if confirmingStop {
-                    ConfirmButtons(confirmLabel: "Stop session") {
-                        confirmingStop = false
+                    ConfirmPrompt(question: "Stop this session?", label: "Stop session", isPresented: $confirmingStop) {
                         store.stop(session)
-                    } onCancel: {
-                        confirmingStop = false
                     }
+                    .fixedSize()
                 } else {
-                    Button(role: .destructive) {
-                        confirmingStop = true
-                    } label: {
-                        Text("Stop").foregroundStyle(Ink.red)
-                    }
-                    .buttonStyle(.stage(.secondary))
-                    .disabled(store.isBusy(session.id))
-                    .accessibilityIdentifier("session.stop")
+                    Button("Stop…") { confirmingStop = true }
+                        .buttonStyle(.stage(.secondary))
+                        .disabled(store.isBusy(session.id))
+                        .accessibilityIdentifier("session.stop")
                 }
             }
         }
         .padding(.horizontal, Metrics.inset)
         .padding(.vertical, 10)
-        .animation(.snappy(duration: 0.18), value: confirmingStop)
+        .animation(Easing.quick, value: confirmingStop)
     }
 }
 

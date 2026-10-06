@@ -32,6 +32,7 @@ struct AlertRow: View {
         }
         .help(tooltip)
         .accessibilityHint("Shows how this alert was triaged and how it ended")
+        .accessibilityIdentifier("recent.row.\(alert.id)")
         .busy(store.isBusy(alert.id))
     }
 

@@ -192,17 +192,39 @@ struct SelectionHeader<Actions: View>: View {
     }
 }
 
-/// A section's header, or its selection header while rows are picked.
-struct PickingHeader<Header: View, Actions: View>: View {
+/// A section's header, or its selection header while rows are picked. A bulk action that
+/// asks first (`confirming`) puts its prompt in place of the whole selection header, so the
+/// question has the width to say what will happen; clearing the selection withdraws it.
+struct PickingHeader<Header: View, Actions: View, Prompt: View>: View {
     @Binding var selection: RowSelection
     let order: [String]
-    @ViewBuilder var header: Header
-    @ViewBuilder var actions: Actions
+    @Binding var confirming: Bool
+    let header: Header
+    let actions: Actions
+    let prompt: Prompt
+
+    init(
+        selection: Binding<RowSelection>,
+        order: [String],
+        confirming: Binding<Bool>,
+        @ViewBuilder header: () -> Header,
+        @ViewBuilder actions: () -> Actions,
+        @ViewBuilder prompt: () -> Prompt
+    ) {
+        _selection = selection
+        self.order = order
+        _confirming = confirming
+        self.header = header()
+        self.actions = actions()
+        self.prompt = prompt()
+    }
 
     var body: some View {
         ZStack(alignment: .leading) {
             if selection.isEmpty {
                 header.transition(.opacity)
+            } else if confirming {
+                prompt.transition(.opacity)
             } else {
                 SelectionHeader(
                     count: selection.count,
@@ -215,6 +237,15 @@ struct PickingHeader<Header: View, Actions: View>: View {
         }
         .frame(height: SectionHeader.height)
         .animation(Easing.quick, value: selection.isEmpty)
+        .animation(Easing.quick, value: confirming)
         .onChange(of: order) { _, ids in selection.keep(only: ids) }
+        .onChange(of: selection.isEmpty) { _, empty in if empty { confirming = false } }
+    }
+}
+
+extension PickingHeader where Prompt == EmptyView {
+    /// For a list whose bulk actions never ask first.
+    init(selection: Binding<RowSelection>, order: [String], @ViewBuilder header: () -> Header, @ViewBuilder actions: () -> Actions) {
+        self.init(selection: selection, order: order, confirming: .constant(false), header: header, actions: actions) { EmptyView() }
     }
 }

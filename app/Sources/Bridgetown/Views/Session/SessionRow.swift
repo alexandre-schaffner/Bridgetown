@@ -17,17 +17,8 @@ struct SessionRow: View {
         VStack(alignment: .leading, spacing: 0) {
             main
             if confirmingStop {
-                HStack(spacing: 8) {
-                    Text("Stop this session?")
-                        .font(.geist(11))
-                        .foregroundStyle(.secondary)
-                    Spacer(minLength: 0)
-                    ConfirmButtons(confirmLabel: "Stop session") {
-                        confirmingStop = false
-                        store.stop(session)
-                    } onCancel: {
-                        confirmingStop = false
-                    }
+                ConfirmPrompt(question: "Stop this session?", label: "Stop session", isPresented: $confirmingStop) {
+                    store.stop(session)
                 }
                 .padding(.horizontal, Metrics.inset)
                 .padding(.bottom, Metrics.inset)

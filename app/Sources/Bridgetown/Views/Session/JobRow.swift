@@ -19,6 +19,7 @@ struct JobRow: View {
         }
         .help(session.headline)
         .accessibilityHint("Shows session details")
+        .accessibilityIdentifier("agents.row.\(session.id)")
     }
 
     private func content(_ hovering: Bool) -> some View {

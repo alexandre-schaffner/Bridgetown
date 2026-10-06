@@ -160,24 +160,35 @@ struct IconButton: View {
 
 // MARK: Confirmation
 
-/// An inline "are you sure" for destructive actions, in place of the button that asked.
-/// A sheet or alert would take the island's focus away, so this stays in the view.
-/// Cancels itself after 5 seconds.
-struct ConfirmButtons: View {
-    let confirmLabel: String
-    let onConfirm: () -> Void
-    let onCancel: () -> Void
+/// An inline "are you sure" for a destructive action, in place of the control that asked:
+/// what will happen, Cancel, and the action in red. A sheet or an alert would take the
+/// island's focus away, so it stays in the view. It withdraws itself after 5 seconds.
+///
+/// It fills the width it is given, the question first; `.fixedSize()` keeps it to its own.
+struct ConfirmPrompt: View {
+    let question: String
+    let label: String
+    @Binding var isPresented: Bool
+    let action: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
-            Button("Cancel", action: onCancel)
+            Text(question)
+                .font(.geist(11.5))
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Cancel") { isPresented = false }
                 .buttonStyle(.stage(.secondary))
-            Button(confirmLabel, role: .destructive, action: onConfirm)
-                .buttonStyle(.stage(.danger))
+            Button(label, role: .destructive) {
+                isPresented = false
+                action()
+            }
+            .buttonStyle(.stage(.danger))
         }
         .task {
             try? await Task.sleep(for: .seconds(5))
-            if !Task.isCancelled { onCancel() }
+            if !Task.isCancelled { isPresented = false }
         }
     }
 }

@@ -206,17 +206,8 @@ struct ActionCard: View {
 
     /// Closing is not fixing: say so before it's recorded.
     private var closeConfirmation: some View {
-        HStack(spacing: 8) {
-            Text("Close without a fix?")
-                .font(.geist(11))
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 0)
-            ConfirmButtons(confirmLabel: "Close session") {
-                confirmingClose = false
-                store.dismiss(action)
-            } onCancel: {
-                confirmingClose = false
-            }
+        ConfirmPrompt(question: "Close the session without a fix?", label: "Close session", isPresented: $confirmingClose) {
+            store.dismiss(action)
         }
     }
 

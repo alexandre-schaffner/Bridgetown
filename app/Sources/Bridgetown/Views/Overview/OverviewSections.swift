@@ -40,10 +40,19 @@ struct NeedsYouSection: View {
         let groups = snapshot.actionGroups
         let order = groups.flatMap { $0.actions.map(\.id) }
         VStack(alignment: .leading, spacing: 8) {
-            PickingHeader(selection: $selection, order: order) {
+            PickingHeader(selection: $selection, order: order, confirming: $confirmingClose) {
                 SectionHeader(title: "Needs you", count: snapshot.actions.count)
             } actions: {
                 bulkActions
+            } prompt: {
+                let closes = picked.filter(\.dismissCloses).count
+                ConfirmPrompt(
+                    question: closes == 1 ? "Close 1 session without a fix?" : "Close \(closes) sessions without a fix?",
+                    label: "Close",
+                    isPresented: $confirmingClose
+                ) {
+                    finish { picked.forEach(store.dismiss) }
+                }
             }
             .padding(.horizontal, Metrics.inset)
             VStack(spacing: 0) {
@@ -69,7 +78,6 @@ struct NeedsYouSection: View {
             }
             .animation(Easing.state, value: order)
         }
-        .onChange(of: selection.isEmpty) { confirmingClose = false }
     }
 
     private var picked: [Action] {
@@ -82,31 +90,17 @@ struct NeedsYouSection: View {
     private var bulkActions: some View {
         let picked = picked
         let closes = picked.filter(\.dismissCloses).count
-        if confirmingClose {
-            Text(closes == 1 ? "Close 1 session without a fix?" : "Close \(closes) sessions without a fix?")
-                .font(.geist(11))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-            ConfirmButtons(confirmLabel: "Close") {
-                confirmingClose = false
-                finish { picked.forEach(store.dismiss) }
-            } onCancel: {
-                confirmingClose = false
+        Button(closes > 0 ? "Close…" : "Dismiss") {
+            if closes > 0 { confirmingClose = true } else { finish { picked.forEach(store.dismiss) } }
+        }
+        .buttonStyle(.stage(.secondary))
+        .disabled(picked.isEmpty)
+        .help(closes > 0 ? "Some of these close their session without a fix" : "Dismiss the selected cards")
+        if let label = picked.sharedPrimary {
+            Button("\(label) \(picked.count)") {
+                finish { picked.forEach { store.resolve($0) } }
             }
-        } else {
-            Button(closes > 0 ? "Close…" : "Dismiss") {
-                if closes > 0 { confirmingClose = true } else { finish { picked.forEach(store.dismiss) } }
-            }
-            .buttonStyle(.stage(.secondary))
-            .disabled(picked.isEmpty)
-            .help(closes > 0 ? "Some of these close their session without a fix" : "Dismiss the selected cards")
-            if let label = picked.sharedPrimary {
-                Button("\(label) \(picked.count)") {
-                    finish { picked.forEach { store.resolve($0) } }
-                }
-                .buttonStyle(.stage(.primary))
-            }
+            .buttonStyle(.stage(.primary))
         }
     }
 
@@ -173,13 +167,28 @@ struct AgentsSection: View {
     @ViewState private var selection = RowSelection()
     @ViewState private var confirmingStop = false
 
+    private var picked: [Session] { running.filter { selection.contains($0.id) && !store.isBusy($0.id) } }
+
     var body: some View {
         let order = running.map(\.id)
         VStack(alignment: .leading, spacing: 8) {
-            PickingHeader(selection: $selection, order: order) {
+            PickingHeader(selection: $selection, order: order, confirming: $confirmingStop) {
                 SectionHeader(title: "Agents", count: running.count)
             } actions: {
-                stopActions
+                Button("Stop…") { confirmingStop = true }
+                    .buttonStyle(.stage(.secondary))
+                    .disabled(picked.isEmpty)
+            } prompt: {
+                let picked = picked
+                ConfirmPrompt(
+                    question: picked.count == 1 ? "Stop 1 session?" : "Stop \(picked.count) sessions?",
+                    label: "Stop",
+                    isPresented: $confirmingStop
+                ) {
+                    picked.forEach(store.stop)
+                    Haptics.perform(.alignment, "agents.bulk")
+                    selection.clear()
+                }
             }
             .padding(.horizontal, Metrics.inset)
             VStack(spacing: 0) {
@@ -191,30 +200,6 @@ struct AgentsSection: View {
                 Hairline()
             }
             .animation(Easing.state, value: order)
-        }
-        .onChange(of: selection.isEmpty) { confirmingStop = false }
-    }
-
-    @ViewBuilder
-    private var stopActions: some View {
-        let picked = running.filter { selection.contains($0.id) && !store.isBusy($0.id) }
-        if confirmingStop {
-            ConfirmButtons(confirmLabel: picked.count == 1 ? "Stop session" : "Stop \(picked.count) sessions") {
-                confirmingStop = false
-                picked.forEach(store.stop)
-                Haptics.perform(.alignment, "agents.bulk")
-                selection.clear()
-            } onCancel: {
-                confirmingStop = false
-            }
-        } else {
-            Button(role: .destructive) {
-                confirmingStop = true
-            } label: {
-                Text("Stop…").foregroundStyle(Ink.red)
-            }
-            .buttonStyle(.stage(.secondary))
-            .disabled(picked.isEmpty)
         }
     }
 }
