@@ -364,6 +364,8 @@ export function createIsland(
   // MARK: Pointer
 
   // After the tour, the island answers the pointer: it swells under it and opens on a click.
+  // The screen is drawn scaled down by --k, so the strip grows to stay a finger's height.
+  const hitHeight = "max(40px, calc(44px / var(--k)))";
   const hit = document.createElement("button");
   hit.type = "button";
   hit.className = "island-hit";
@@ -373,7 +375,7 @@ export function createIsland(
     top: "0",
     left: "50%",
     width: "300px",
-    height: "40px",
+    height: hitHeight,
     translate: "-50% 0",
     zIndex: "7",
     background: "transparent",
@@ -398,11 +400,11 @@ export function createIsland(
     hovering = false;
     if (presentation === "open") {
       present("wings");
-      hit.style.height = "40px";
+      hit.style.height = hitHeight;
       hit.style.width = "300px";
     } else {
       present("open");
-      hit.style.height = "40px";
+      hit.style.height = hitHeight;
       hit.style.width = "1128px";
     }
   });

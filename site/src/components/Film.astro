@@ -15,7 +15,8 @@ import Icon from "./Icon.astro";
 
 <style>
   .film {
-    width: min(100vw - 2 * var(--gutter), 160vh, 96rem);
+    /* Short enough that the close button, 3.25rem above the film, stays on screen. */
+    width: min(100vw - 2 * var(--gutter), (100svh - 8rem) * 16 / 9, 96rem);
     max-width: none;
     max-height: none;
     padding: 0;

@@ -270,4 +270,21 @@ const states = [
       opacity: 1;
     }
   }
+
+  /* A phone sideways: the picker has to fit under the words in one short screen. */
+  @media (max-height: 560px) and (orientation: landscape) {
+    :global(html.js) .stage {
+      padding: calc(var(--nav-h) + 0.5rem) var(--gutter) 1.25rem;
+      gap: 1rem;
+    }
+    .intro {
+      gap: 0.75rem;
+    }
+    .intro .display {
+      font-size: var(--t-h2);
+    }
+    .intro .lead {
+      font-size: var(--t-body);
+    }
+  }
 </style>
