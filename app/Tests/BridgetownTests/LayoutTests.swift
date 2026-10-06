@@ -81,3 +81,23 @@ import Testing
         #expect(!tracker.follows(growingTo: 500))
     }
 }
+
+@MainActor
+@Suite struct SelectionHeaderTests {
+    /// Recent's header: Investigate, and the Rate menu, which is fixed to its size.
+    private func width(proposed: CGFloat) -> CGFloat {
+        let header = SelectionHeader(count: 2, total: 9, selectAll: {}, clear: {}) {
+            Button("Investigate 2") {}.buttonStyle(.stage(.secondary))
+            Button("Rate") {}.buttonStyle(.stage(.secondary)).fixedSize()
+        }
+        return NSHostingController(rootView: header).sizeThatFits(in: CGSize(width: proposed, height: 100)).width
+    }
+
+    /// Wider than its column, the header would widen every list under it past the island's
+    /// edge; it gives up "Select all" and the word "selected" instead, and squeezes its
+    /// actions last. 218pt is the overview's narrowest column, on a 1024pt-wide screen.
+    @Test func keepsToItsColumn() {
+        #expect(width(proposed: 218) <= 218)
+        #expect(width(proposed: 160) <= 160)
+    }
+}

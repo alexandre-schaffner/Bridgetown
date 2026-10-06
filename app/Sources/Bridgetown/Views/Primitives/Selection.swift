@@ -148,6 +148,10 @@ struct SelectMark<Glyph: View>: View {
 
 /// Stands in for a section's header while rows are picked: how many, the bulk actions,
 /// and Clear. The same height as the header it replaces, so nothing jumps.
+///
+/// It keeps to its column: short of room it drops "Select all", then says only the count,
+/// with the actions' labels whole until nothing else is left to give. Wider than its
+/// column, it would widen every list under it past the island's edge.
 struct SelectionHeader<Actions: View>: View {
     let count: Int
     /// All of the list's rows, to offer "Select all" until they are.
@@ -157,20 +161,35 @@ struct SelectionHeader<Actions: View>: View {
     @ViewBuilder var actions: Actions
 
     var body: some View {
+        ViewThatFits(in: .horizontal) {
+            row(counted: "\(count) selected", offersSelectAll: count < total)
+            row(counted: "\(count) selected", offersSelectAll: false)
+            row(counted: "\(count)", offersSelectAll: false)
+            row(counted: "\(count)", offersSelectAll: false, squeezed: true)
+        }
+        .frame(height: Metrics.headerHeight)
+        .animation(Easing.quick, value: count)
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    private func row(counted: String, offersSelectAll: Bool, squeezed: Bool = false) -> some View {
         HStack(spacing: 8) {
-            Text("\(count) selected")
+            Text(counted)
                 .sectionTitle()
                 .monospacedDigit()
                 .contentTransition(.numericText())
                 .lineLimit(1)
                 .fixedSize()
-            if count < total {
+                .accessibilityLabel("\(count) selected")
+            if offersSelectAll {
                 TextLink("Select all", action: selectAll)
                     .font(Typo.label)
                     .fixedSize()
             }
             Spacer(minLength: 0)
             actions
+                .fixedSize(horizontal: !squeezed, vertical: false)
             Button(action: clear) {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .semibold))
@@ -184,16 +203,13 @@ struct SelectionHeader<Actions: View>: View {
             .help("Clear selection (Esc)")
             .accessibilityLabel("Clear selection")
         }
-        .frame(height: Metrics.headerHeight)
-        .animation(Easing.quick, value: count)
-        .accessibilityElement(children: .contain)
-        .accessibilityAddTraits(.isHeader)
     }
 }
 
 /// A section's header, or its selection header while rows are picked. A bulk action that
 /// asks first (`confirming`) puts its prompt in place of the whole selection header, so the
-/// question has the width to say what will happen; clearing the selection withdraws it.
+/// question has the width to say what will happen, and a second line in a narrow column;
+/// clearing the selection withdraws it.
 struct PickingHeader<Header: View, Actions: View, Prompt: View>: View {
     @Binding var selection: RowSelection
     let order: [String]
@@ -234,7 +250,7 @@ struct PickingHeader<Header: View, Actions: View, Prompt: View>: View {
                 .transition(.opacity)
             }
         }
-        .frame(height: Metrics.headerHeight)
+        .frame(minHeight: Metrics.headerHeight)
         .animation(Easing.quick, value: selection.isEmpty)
         .animation(Easing.quick, value: confirming)
         .onChange(of: order) { _, ids in selection.keep(only: ids) }
