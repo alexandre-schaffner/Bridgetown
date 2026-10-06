@@ -4,6 +4,7 @@ import { DEFAULT_SETTINGS } from "../src/domain/settings.ts"
 import { Hub } from "../src/hub.ts"
 import { SCHEDULER_TIMING, Scheduler, type SchedulerTiming } from "../src/scheduler.ts"
 import { fakeGitHub, fakeSlack } from "./support/fakes.ts"
+import { eventually } from "./support/wait.ts"
 import { makeWorld } from "./support/world.ts"
 
 describe("the scheduler", () => {
@@ -20,24 +21,26 @@ describe("the scheduler", () => {
       poll: { every: (s) => Duration.millis(s.pollSeconds) },
       github: { every: "10 millis", first: "1 hour" },
     }
+    const channels = DEFAULT_SETTINGS.channels.filter((c) => c.enabled).length
+    const reads = Effect.sync(() => calls.reads)
     try {
       const rounds = await world.runPromise(
         Effect.gen(function* () {
           const hub = yield* Hub
           yield* hub.updateSettings({ ...(yield* hub.settings), pollSeconds: 1_000 })
           const running = yield* (yield* Scheduler).run(timing).pipe(Effect.forkChild)
-          yield* Effect.sleep("300 millis")
+          // The first round reads every enabled channel once, at once; the next one is a second after it.
+          yield* eventually(reads, (n) => (n >= channels ? n : undefined))
+          yield* Effect.sleep("200 millis")
           const once = calls.reads
           yield* hub.updateSettings({ ...(yield* hub.settings), pollSeconds: 10 })
           // The wait already under way runs out first; then rounds are 10 ms apart.
-          yield* Effect.sleep("1 second")
+          const later = yield* eventually(reads, (n) => (n > 10 * channels ? n : undefined), 5_000)
           yield* Fiber.interrupt(running)
-          return { once, later: calls.reads }
+          return { once, later }
         }),
       )
-      const channels = DEFAULT_SETTINGS.channels.filter((c) => c.enabled).length
       expect(calls.probes).toBe(1)
-      // One read per enabled channel per round.
       expect(rounds.once).toBe(channels)
       expect(rounds.later).toBeGreaterThan(10 * channels)
     } finally {
