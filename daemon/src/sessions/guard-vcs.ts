@@ -207,7 +207,8 @@ export const githubApiWriteRefusal = (name: string, args: ReadonlyArray<Word>): 
   return writes ? REASONS.apiWrite : undefined
 }
 
-const GIT_VALUE_OPTIONS = flags("-C", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--attr-source")
+/** git's options before the sub-command that take the next word as their value. */
+export const GIT_VALUE_OPTIONS = flags("-c", "--config-env", "-C", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--attr-source")
 
 const explicitPush = (branch: string) => `Push only your own branch, explicitly: git push -u origin ${branch}`
 
