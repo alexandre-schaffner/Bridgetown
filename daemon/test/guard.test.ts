@@ -327,6 +327,10 @@ describe("guard", () => {
     // `"$@"` and `"${args[@]}"` are one word per element even quoted: `-f "$@"` may be `-f x=1 -X DELETE`.
     'gh api -X GET repos/o/r/git/refs/heads/main -f "$@"',
     'gh pr edit 1 --body "${args[@]}"',
+    // So are zsh's splitting flags and `=`: `"${=B}"` may be `x --base main`.
+    'gh pr edit 1 --body "${=B}"',
+    'gh pr edit 1 --title "${(f)T}"',
+    'gh api -X GET search/issues -f "${(s: :)Q}"',
     // A GraphQL body the guard cannot read: from a file, or a query from a variable that may hold a mutation.
     "gh api graphql -F query=@q.graphql",
     "gh api graphql --input q.json",
@@ -569,7 +573,7 @@ describe("shell parser", () => {
       const parsed = parseShell(source)
       return parsed._tag === "Parsed" ? parsed.commands.flat().map((w) => [w.text, w.dynamic, w.splits]) : parsed.reason
     }
-    expect(words(`c $X "$X" "a"$X --b="$X" *.ts '*' "$@" "\${a[@]}" "\${#a[@]}" "\${a[0]}"`)).toEqual([
+    expect(words(`c $X "$X" "a"$X --b="$X" *.ts '*' "$@" "\${a[@]}" "\${#a[@]}" "\${a[0]}" "\${(f)x}" "\${=x}" "\${x}"`)).toEqual([
       ["c", false, false],
       ["$X", true, true],
       ["$X", true, false],
@@ -582,6 +586,10 @@ describe("shell parser", () => {
       ["${a[@]}", true, true],
       ["${#a[@]}", true, false],
       ["${a[0]}", true, false],
+      // zsh splits on its flags and `=` inside quotes too.
+      ["${(f)x}", true, true],
+      ["${=x}", true, true],
+      ["${x}", true, false],
     ])
   })
   test("sibling substitutions do not accumulate nesting", () => {

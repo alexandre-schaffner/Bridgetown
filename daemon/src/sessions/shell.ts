@@ -37,8 +37,13 @@ const NAME_CHAR = /[A-Za-z0-9_]/
 const SPECIAL_PARAMETER = /[0-9@*#?$!-]/
 /** Unquoted text that the shell would expand as a glob or brace pattern. */
 const PATTERN = /[*?]|\[[^\]]*\]|\{[^}]*(,|\.\.)[^}]*\}/
-/** An expansion that is one word per element even inside double quotes: `"$@"`, `"${args[@]}"`, `"${!prefix@}"`, zsh's `"${(@)x}"`. */
-const ELEMENTS = /^\$(@|\{(@|!?[A-Za-z_][A-Za-z0-9_]*\[@\]|![A-Za-z_][A-Za-z0-9_]*@|\([^)]*@[^)]*\)))/
+/**
+ * An expansion that is one word per element even inside double quotes: `"$@"`,
+ * `"${args[@]}"`, `"${!prefix@}"`, and in zsh, the shell the CLI runs commands in on a
+ * Mac, any flags or `=`/`^` (`"${(@)x}"`, `"${(f)x}"`, `"${(s: :)x}"`, `"${=x}"`), which
+ * bash refuses as a bad substitution.
+ */
+const ELEMENTS = /^\$(@|\{(@|[=^(]|!?[A-Za-z_][A-Za-z0-9_]*\[@\]|![A-Za-z_][A-Za-z0-9_]*@))/
 
 /** Nesting (`$(…)`, subshells, `"…"`) past this many levels is reported rather than recursed into, so a pathological `$(` chain cannot blow the stack. Far above anything a real command reaches. */
 const MAX_NESTING = 256
