@@ -200,6 +200,10 @@ describe("guard", () => {
     "git subtree push --prefix=apps origin main",
     "git push https://other.host/x HEAD:fix-bt-merkl-admin-v0-6-0",
     "git credential fill",
+    // The helpers git asks, run by hand, print what they hold; git's exec path is GIT_EXEC_PATH's flag.
+    "git credential-osxkeychain get",
+    "git credential-store --file ~/.git-credentials get",
+    "git --exec-path=/tmp/x fetch",
     "git rebase --exec 'gh pr merge 1' main",
     "git submodule foreach 'gh pr merge 1'",
     "git bisect run ./x.sh",
@@ -393,6 +397,7 @@ describe("guard", () => {
     "git tag --sort=-creatordate",
     "git tag --contains HEAD",
     "git config --get remote.origin.url",
+    "git --exec-path",
     "git -c color.ui=always log --oneline -5",
     "git rebase origin/main",
     "git submodule update --init",

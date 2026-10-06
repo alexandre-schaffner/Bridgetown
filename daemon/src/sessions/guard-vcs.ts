@@ -227,6 +227,9 @@ export const githubApiWriteRefusal = (name: string, args: ReadonlyArray<Word>): 
   return writes ? REASONS.apiWrite : undefined
 }
 
+/** `git credential` and the helpers git runs as `git credential-<name>`: `git credential-osxkeychain get` prints a stored password. */
+export const GIT_CREDENTIAL = /^credential(-|$)/
+
 /** git's options before the sub-command that take the next word as their value. */
 export const GIT_VALUE_OPTIONS = flags("-c", "--config-env", "-C", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--attr-source")
 
@@ -267,11 +270,15 @@ export const gitRefusal = (args: ReadonlyArray<Word>, branch: string): string | 
     } else if (option.text.startsWith("--config-env=")) {
       const reason = configOptionRefusal({ ...option, text: option.text.slice("--config-env=".length) }, true)
       if (reason !== undefined) return reason
+    } else if (option.text.startsWith("--exec-path=")) {
+      // Like GIT_EXEC_PATH: git looks for its sub-commands there and puts it first on its children's PATH.
+      return REASONS.gitExec
     } else if (GIT_VALUE_OPTIONS.has(option.text)) at++
   }
   const sub = args[at]
   if (sub === undefined) return undefined
   if (sub.dynamic) return REASONS.dynamic
+  if (GIT_CREDENTIAL.test(sub.text)) return REASONS.credential
   const rest = args.slice(at + 1)
   switch (sub.text) {
     case "push":
@@ -289,8 +296,6 @@ export const gitRefusal = (args: ReadonlyArray<Word>, branch: string): string | 
       return REASONS.tag
     case "update-ref":
       return rest.some((arg) => arg.text.startsWith("refs/tags/")) ? REASONS.tag : undefined
-    case "credential":
-      return REASONS.credential
     case "rebase":
       return rest.some((arg) => arg.text === "-x" || arg.text === "--exec" || arg.text.startsWith("--exec=")) ? REASONS.gitExec : undefined
     case "submodule":

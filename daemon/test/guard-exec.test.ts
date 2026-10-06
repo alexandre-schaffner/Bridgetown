@@ -44,6 +44,7 @@ describe("the exec-time guard's verdict", () => {
     // git's credential helper (config.ts) and git-lfs's lookup.
     expect(verdict("gh", "auth", "git-credential", "get")._tag).toBe("Run")
     expect(verdict("git", "credential", "fill")._tag).toBe("Run")
+    expect(verdict("git", "credential-osxkeychain", "get")._tag).toBe("Run")
     // The lookup is plumbing; a helper set on it is not.
     expect(verdict("git", "-c", "credential.helper=!/opt/homebrew/bin/gh pr merge 1", "credential", "fill")._tag).toBe("Refused")
     // gh hands the git it runs its own helper, by its real path or by name.

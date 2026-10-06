@@ -3,7 +3,7 @@ import { isAbsolute, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { appSupportDir } from "../config.ts"
 import { EXEC_GUARDED, execRefusal, type GuardContext, readScript } from "./guard.ts"
-import { GIT_VALUE_OPTIONS } from "./guard-vcs.ts"
+import { GIT_CREDENTIAL, GIT_VALUE_OPTIONS } from "./guard-vcs.ts"
 
 /**
  * The exec-time backstop to the command-line guard. Every session's PATH starts with
@@ -100,8 +100,9 @@ const GH_CREDENTIAL_HELPER = /^credential\.(.+\.)?helper=!"?([^"]+)"? auth git-c
  * agent types it and the command-line policy would refuse it: gh passes the git it
  * runs its own credential helper (by its real path, or by name, which comes back
  * through its shim), git runs `gh auth git-credential` (config.ts's helper) on a push
- * or fetch, and git-lfs asks `git credential fill`, which is judged by its options
- * alone. Anything else stays for the policy.
+ * or fetch, and git-lfs asks `git credential fill`, as git asks its own helpers
+ * (`git credential-osxkeychain get`); those are judged by their options alone.
+ * Anything else stays for the policy.
  */
 const withoutPlumbing = (name: string, args: ReadonlyArray<string>, path: string, shims: string): ReadonlyArray<string> | undefined => {
   if (name === "gh" && args[0] === "auth" && args[1] === "git-credential") return undefined
@@ -119,7 +120,7 @@ const withoutPlumbing = (name: string, args: ReadonlyArray<string>, path: string
     if (option === "-c" && ghHelper(args[at + 1])) dropped.add(at).add(at + 1)
     at += GIT_VALUE_OPTIONS.has(option) ? 2 : 1
   }
-  return args.filter((_, i) => !dropped.has(i) && (args[at] !== "credential" || i < at))
+  return args.filter((_, i) => !dropped.has(i) && (!GIT_CREDENTIAL.test(args[at] ?? "") || i < at))
 }
 
 export interface ExecRequest {
