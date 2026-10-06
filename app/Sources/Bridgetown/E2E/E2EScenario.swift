@@ -188,6 +188,9 @@ enum E2EStep {
     case back
     case telemetry(TelemetryPanel.Mode)
     case press(Element)
+    /// A mouse click on the element: at its centre, or `at` points from its top-left corner
+    /// (a control inside a row that is one button has no element of its own).
+    case click(Element, at: CGPoint?)
     case action(on: Element, name: String)
     case type(into: Element, text: String)
     case scroll(in: String, to: String)
@@ -201,6 +204,9 @@ enum E2EStep {
     case restart(world: String?, tokenMismatch: Bool)
     case appearance([E2EAppearance])
     case wait(Wait, timeoutMs: Int)
+    /// Fails the run unless the app's state (`GET /state`: route, actions, alerts…) comes
+    /// to hold these values within 2s: what a step did, where a shot can't say it.
+    case expect([String: E2EJSON])
     case shot(name: String, lint: Lint, appearances: [E2EAppearance]?)
     case each(String, [E2EJSON])
 
@@ -282,6 +288,13 @@ enum E2EStep {
             self = .island(island, action: json["action"]?.string)
         } else if let target = json["press"]?.string {
             self = .press(Element(target: target, within: json["in"]?.string))
+        } else if let target = json["click"]?.string {
+            var at: CGPoint?
+            if let offset = json["at"] {
+                guard let xy = offset.array?.compactMap(\.number), xy.count == 2 else { throw bad("click \"at\" is [x, y]") }
+                at = CGPoint(x: xy[0], y: xy[1])
+            }
+            self = .click(Element(target: target, within: json["in"]?.string), at: at)
         } else if let action = json["action"] {
             self = .action(on: Element(target: try text("on", in: action), within: json["in"]?.string), name: try text("name", in: action))
         } else if let type = json["type"] {
@@ -314,6 +327,9 @@ enum E2EStep {
                 guard let name = wait.string, let parsed = waits[name] else { throw bad("wait for \(waits.keys.sorted()) or {\"ms\": n}") }
                 self = .wait(parsed, timeoutMs: timeout)
             }
+        } else if let expect = json["expect"] {
+            guard case let .object(fields) = expect, !fields.isEmpty else { throw bad("expect takes {\"route\": …, \"actions\": n, …}") }
+            self = .expect(fields)
         } else if let shot = json["shot"]?.string {
             let lint: Lint = switch json["lint"] {
             case .bool(false)?: .off

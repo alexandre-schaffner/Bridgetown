@@ -119,6 +119,18 @@ final class E2ERunner {
             guard E2EAccessibility.press(node) else {
                 throw Failure(description: "\(target.target) (\(element.role), \(type(of: node))) doesn't take a press")
             }
+        case let .click(target, at):
+            // A point is only where it was meant to be once the layout has stopped moving.
+            try await wait(.settled, timeoutMs: 0)
+            let (element, _) = try await find(target)
+            let point = at.map { CGPoint(x: element.frame.minX + $0.x, y: element.frame.minY + $0.y) }
+                ?? CGPoint(x: element.frame.midX, y: element.frame.midY)
+            guard element.frame.contains(point) else {
+                throw Failure(description: "\(point) is outside \(target.target) (\(element.frame))")
+            }
+            guard let host = surfaces.current?.host, await E2EAccessibility.click(at: point, in: host) else {
+                throw Failure(description: "nothing to click at \(point) on \(surfaces.current?.name ?? "?")")
+            }
         case let .action(target, name):
             let (element, node) = try await find(target)
             guard E2EAccessibility.perform(name, on: node) else {
@@ -168,6 +180,16 @@ final class E2ERunner {
             appearances = next
         case let .wait(condition, timeoutMs):
             try await wait(condition, timeoutMs: timeoutMs)
+        case let .expect(wanted):
+            let unknown = wanted.keys.filter { state[$0] == nil }
+            guard unknown.isEmpty else { throw Failure(description: "expect: no state \(unknown.sorted()) (there is \(state.keys.sorted()))") }
+            let differing = { wanted.filter { self.state[$0.key] != $0.value } }
+            do {
+                try await until("the state \(E2EJSON.object(wanted).line)", timeoutMs: 2_000) { differing().isEmpty }
+            } catch {
+                let found = E2EJSON.object(state.filter { wanted[$0.key] != nil }).line
+                throw Failure(description: "expected \(E2EJSON.object(wanted).line), found \(found)")
+            }
         case let .shot(name, lint, only):
             return try await shoot(name, lint: lint, appearances: only ?? appearances)
         case let .each(collection, steps):

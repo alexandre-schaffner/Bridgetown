@@ -83,6 +83,40 @@ enum E2EAccessibility {
         return true
     }
 
+    /// A left click at `point` (window points from the top-left): a mouse down and up to
+    /// the view under it, which hit-tests from there as for a real click, so a control
+    /// nested in another is reached as the pointer reaches it, where an AX press goes to
+    /// an element alone. The window is never key, and would take a mouse down sent through
+    /// it as the click that activates it, so the view gets the events directly. The mouse
+    /// up waits in the queue for a control that tracks the mouse in a loop of its own (an
+    /// AppKit button); if none took it, it goes to the view. False when no view is there.
+    ///
+    /// Not a hover: SwiftUI doesn't take a moved pointer in a window that is never ordered
+    /// in, so what shows only under the pointer can't be clicked this way.
+    static func click(at point: CGPoint, in host: NSView) async -> Bool {
+        guard let window = host.window else { return false }
+        let location = NSPoint(x: point.x, y: window.frame.height - point.y)
+        guard let target = host.hitTest(host.superview?.convert(location, from: nil) ?? location) else { return false }
+        func event(_ type: NSEvent.EventType) -> NSEvent? {
+            NSEvent.mouseEvent(
+                with: type, location: location, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                pressure: type == .leftMouseDown ? 1 : 0
+            )
+        }
+        guard let down = event(.leftMouseDown), let up = event(.leftMouseUp) else { return false }
+        NSApp.postEvent(up, atStart: true)
+        target.mouseDown(with: down)
+        if let untaken = NSApp.nextEvent(matching: .leftMouseUp, until: Date(), inMode: .default, dequeue: true) {
+            // As long as a hand takes to let go: the press is seen before the release.
+            try? await Task.sleep(for: .milliseconds(30))
+            target.mouseUp(with: untaken)
+        }
+        // Until the click's action has run.
+        try? await Task.sleep(for: .milliseconds(120))
+        return true
+    }
+
     /// A named action (`accessibilityAction(named:)`).
     static func perform(_ name: String, on node: AnyObject) -> Bool {
         guard let action = customActions(node).first(where: { $0.name == name }) else { return false }
