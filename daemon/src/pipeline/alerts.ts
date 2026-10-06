@@ -9,8 +9,9 @@ import { followsDeploy } from "../ship/transitions.ts"
 import { Claims } from "../slack/claims.ts"
 import { SlackClient, type SlackError, type SlackMessage } from "../slack/client.ts"
 import { SlackMe } from "../slack/me.ts"
-import { isHumanMessage, parseMessage } from "../slack/parse.ts"
-import { toThreadReplies } from "../slack/text.ts"
+import { parseMessage } from "../slack/parse.ts"
+import { isPerson, toThreadReplies } from "../slack/text.ts"
+import { SlackThread } from "../slack/thread.ts"
 import { Store, type StoreShape } from "../store/store.ts"
 import { Jev } from "../triage/jev.ts"
 import { decide } from "../triage/policy.ts"
@@ -43,7 +44,7 @@ const contentHash = (message: SlackMessage): string =>
 export const isAlertMessage = (message: SlackMessage): boolean =>
   (message.subtype === undefined || message.subtype === "bot_message") &&
   (message.thread_ts === undefined || message.thread_ts === message.ts) &&
-  !isHumanMessage(message)
+  !isPerson(message)
 
 /**
  * Only messages newer than a horizon are news. It never reaches further back
@@ -67,6 +68,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
     const jev = yield* Jev
     const intake = yield* Intake
     const shipper = yield* Shipper
+    const threads = yield* SlackThread
     const queue = yield* ActionQueue
     const claims = yield* Claims
     /** Held by the poll loop and `POST /poll`, so two polls never ingest the same messages at once. */
@@ -102,10 +104,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
       const parsed = parseMessage(message, { channelId: channel.id, channelName: channel.name, myUserId: identity?.user_id })
       const existing = yield* store.getAlert(id)
       const permalink = existing?.permalink ?? (yield* slack.permalink(channel.id, message.ts).pipe(Effect.orElseSucceed(() => null)))
-      const thread =
-        (message.reply_count ?? 0) === 0
-          ? []
-          : yield* slack.replies(channel.id, message.ts).pipe(Effect.orElseSucceed((): ReadonlyArray<SlackMessage> => []))
+      const thread = (message.reply_count ?? 0) === 0 ? [] : yield* threads.messages(parsed)
       const claimedBy = yield* claims.read(message.reactions, thread)
 
       // A known alert whose headline did not change (a reaction, a reply count) keeps its verdict.

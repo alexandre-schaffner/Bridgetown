@@ -91,9 +91,6 @@ describe("engine", () => {
     const alert = parseMessage(m.prismaCancelled, engine)
     expect(alert.title).toContain("Campaign with job index")
   })
-  test("human message", () => {
-    expect(parseMessage(m.humanMessage, engine).fromHuman).toBe(true)
-  })
 })
 
 describe("generic", () => {

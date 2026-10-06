@@ -213,8 +213,8 @@ export const Alert = Schema.Struct({
 })
 export type Alert = typeof Alert.Type
 
-/** The thread an alert lives in: an inbox item's own thread, or the alert message itself. */
-export const threadTsOf = (alert: Alert): string => (alert.fields._tag === "inbox" ? (alert.fields.threadTs ?? alert.ts) : alert.ts)
+/** The thread an alert (or an item about to be one) lives in: an inbox item's own thread, or the alert message itself. */
+export const threadTsOf = (alert: Pick<Alert, "ts" | "fields">): string => (alert.fields._tag === "inbox" ? (alert.fields.threadTs ?? alert.ts) : alert.ts)
 
 /** A Slack message read as an alert or an inbox item, before anything is stored or decided. */
 export interface ParsedAlert {
@@ -229,7 +229,6 @@ export interface ParsedAlert {
   readonly fingerprint: string
   readonly fields: AlertFields
   readonly mentionsMe: boolean
-  readonly fromHuman: boolean
 }
 
 /** One message of a thread, for Jev, labelled by who wrote it. */

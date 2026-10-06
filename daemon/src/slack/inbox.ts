@@ -1,7 +1,7 @@
 import { GH_HOST } from "../config.ts"
 import type { InboxFields, ParsedAlert } from "../domain/alert.ts"
 import type { SearchMatch, SlackMessage } from "./client.ts"
-import { BOT_PREFIX, clean, firstLine, flattenMessage, truncate } from "./text.ts"
+import { BOT_PREFIX, clean, firstLine, flattenMessage, isPerson, truncate } from "./text.ts"
 
 export type InboxVia = InboxFields["via"]
 
@@ -46,13 +46,9 @@ const asMessage = (match: SearchMatch): SlackMessage => ({
   ...(match.attachments === undefined ? {} : { attachments: match.attachments }),
 })
 
-/** A person wrote it: a user id and no bot behind it. */
-const fromPerson = (match: SearchMatch): boolean =>
-  typeof match.user === "string" && match.user !== "" && (match.bot_id === undefined || match.bot_id === null)
-
 export const parseInbox = (match: SearchMatch, via: InboxVia, ctx: InboxContext): ParsedAlert | undefined => {
   if (match.user === ctx.me) return undefined
-  if (ctx.alertChannels.has(match.channel.id) && !fromPerson(match)) return undefined
+  if (ctx.alertChannels.has(match.channel.id) && !isPerson(match)) return undefined
   const text = flattenMessage(asMessage(match))
   if (text.trim().startsWith(BOT_PREFIX)) return undefined
   const channelKind = match.channel.is_im === true ? "dm" : match.channel.is_mpim === true ? "group_dm" : "channel"
@@ -79,6 +75,5 @@ export const parseInbox = (match: SearchMatch, via: InboxVia, ctx: InboxContext)
       prUrl: PR_LINK.exec(text)?.[0] ?? null,
     },
     mentionsMe: via === "mention",
-    fromHuman: false,
   }
 }

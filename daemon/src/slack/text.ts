@@ -133,14 +133,17 @@ export const truncate = (text: string, max: number): string =>
 
 export const stripEmoji = (text: string): string => text.replace(/:[a-z0-9_+-]+:/g, "").replace(/\s+/g, " ").trim()
 
+/** Written by a person: a user behind it, and no app or bot. A history message and a search match alike. */
+export const isPerson = (message: { readonly user?: string | null | undefined; readonly bot_id?: string | null | undefined }): boolean =>
+  typeof message.user === "string" && message.user !== "" && (message.bot_id === undefined || message.bot_id === null)
+
 /**
- * A thread as Jev reads it, with one author rule everywhere: Bridgetown's own
- * 🤖 posts and bot messages are `bot` (the former go out under your name but are
- * not you), then your messages are `me`, everyone else is `teammate`.
+ * Who wrote a thread message, with one rule everywhere: anything no person wrote, and Bridgetown's own 🤖 posts
+ * (they go out under your name but are not you), is `bot`; then your messages are `me`, everyone else's `teammate`.
  */
+export const authorOf = (message: SlackMessage, me: string | undefined): ThreadReply["author"] =>
+  !isPerson(message) || (message.text ?? "").trimStart().startsWith(BOT_PREFIX) ? "bot" : me !== undefined && message.user === me ? "me" : "teammate"
+
+/** A thread as Jev and agents read it: each message readable, with who wrote it. */
 export const toThreadReplies = (messages: ReadonlyArray<SlackMessage>, me: string | undefined): ReadonlyArray<ThreadReply> =>
-  messages.map((message) => {
-    const text = plain(flattenMessage(message))
-    const bot = message.bot_id !== undefined || text.trimStart().startsWith(BOT_PREFIX)
-    return { author: bot ? "bot" : me !== undefined && message.user === me ? "me" : "teammate", text }
-  })
+  messages.map((message) => ({ author: authorOf(message, me), text: plain(flattenMessage(message)) }))

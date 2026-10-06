@@ -143,10 +143,6 @@ const sourceFor = (channelName: string): AlertSource => {
   return "generic"
 }
 
-/** Written by a person: no bot, no subtype (joins, edits, bot posts all carry one). */
-export const isHumanMessage = (message: SlackMessage): boolean =>
-  message.bot_id === undefined && message.user !== undefined && message.subtype === undefined
-
 export interface ParseContext {
   readonly channelId: string
   readonly channelName: string
@@ -163,7 +159,6 @@ export const parseMessage = (message: SlackMessage, ctx: ParseContext): ParsedAl
     ts: message.ts,
     raw,
     mentionsMe: ctx.myUserId !== undefined && (text.includes(`<@${ctx.myUserId}>`) || text.includes(`<@${ctx.myUserId}|`)),
-    fromHuman: isHumanMessage(message),
   }
   const source = sourceFor(ctx.channelName)
 

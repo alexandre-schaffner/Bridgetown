@@ -29,8 +29,8 @@ import { Jev, JevLive } from "./triage/jev.ts"
 import { WatcherLive } from "./watch/watcher.ts"
 
 /**
- * Store, Slack, Jev, agent SDK, reviewer, GitHub, Grafana → Hub → the record keepers (sessions, cards, Slack threads,
- * identity, health, Grafana boards, worktrees) → asks, claims → runner → shipper, critic, housekeeping, intake → what
+ * Store, Slack, Jev, agent SDK, reviewer, GitHub, Grafana → Hub → Slack identity → the record keepers (sessions,
+ * cards, Slack threads, health, Grafana boards, worktrees) → asks, claims → runner → shipper, critic, housekeeping, intake → what
  * feeds intake (alert channels, inbox, prod watcher) and the cards' buttons → scheduler.
  */
 export const appLayer = (env: Env) =>
@@ -42,7 +42,8 @@ export const appLayer = (env: Env) =>
 /** The app over any Store, Slack client, Jev, agent SDK, reviewer, GitHub and Grafana: tests and the mock daemon pass fakes for the outside world. */
 export const appLayerWith = <E>(env: Env, base: Layer.Layer<Store | SlackClient | Jev | Agent | Reviewer | GitHub | Grafana, E>) => {
   const withHub = HubLive(env).pipe(Layer.provideMerge(base))
-  const records = Layer.mergeAll(SlackThreadLive, SessionRepoLive, ActionQueueLive, SlackMeLive, HealthLive, BoardsLive, WorktreesLive).pipe(Layer.provideMerge(withHub))
+  const withMe = SlackMeLive.pipe(Layer.provideMerge(withHub))
+  const records = Layer.mergeAll(SlackThreadLive, SessionRepoLive, ActionQueueLive, HealthLive, BoardsLive, WorktreesLive).pipe(Layer.provideMerge(withMe))
   const withAsks = Layer.mergeAll(AsksLive, ClaimsLive).pipe(Layer.provideMerge(records))
   const withRunner = SessionRunnerLive.pipe(Layer.provideMerge(withAsks))
   const withIntake = Layer.mergeAll(ShipperLive, CriticLive, HousekeepingLive, IntakeLive).pipe(Layer.provideMerge(withRunner))

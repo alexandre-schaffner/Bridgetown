@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { JevVerdict } from "../src/domain/alert.ts"
 import { DEFAULT_SETTINGS } from "../src/domain/settings.ts"
+import { isAlertMessage } from "../src/pipeline/alerts.ts"
 import { parseMessage } from "../src/slack/parse.ts"
 import { decide, decideAnomaly } from "../src/triage/policy.ts"
 import { applyRules } from "../src/triage/rules.ts"
@@ -9,6 +10,14 @@ import * as m from "./fixtures/messages.ts"
 const releases = { channelId: "C0AUKD42N3U", channelName: "alert-releases", myUserId: "U07ALEX" }
 const uptime = { channelId: "C0B001L8UQ1", channelName: "alert-uptime", myUserId: "U07ALEX" }
 const empty = { activeSessions: [], sameFingerprint: [], claimedBy: [] }
+
+describe("what counts as an alert", () => {
+  test("a bot's top-level post; never a person's message, nor a thread reply", () => {
+    expect(isAlertMessage(m.adminBuildFailed)).toBe(true)
+    expect(isAlertMessage(m.humanMessage)).toBe(false)
+    expect(isAlertMessage({ ...m.adminBuildFailed, thread_ts: "1", ts: "2" })).toBe(false)
+  })
+})
 
 describe("rules", () => {
   test("judge failures, filter the rest", () => {
@@ -19,7 +28,6 @@ describe("rules", () => {
     expect(applyRules(parseMessage(m.uptimeResolved, uptime), empty)._tag).toBe("Filtered")
     expect(applyRules(parseMessage(m.degradedEnded, uptime), empty)._tag).toBe("Filtered")
     expect(applyRules(parseMessage(m.uptimeIncident, uptime), empty)._tag).toBe("Judge")
-    expect(applyRules(parseMessage(m.humanMessage, uptime), empty)._tag).toBe("Filtered")
   })
 })
 

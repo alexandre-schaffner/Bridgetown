@@ -288,7 +288,6 @@ export const logFinding = (p: LogPattern, verdict: LogPatternVerdict, now: Date)
     fingerprint: watchFingerprint(`log:${id}`),
     fields: { _tag: "watch", signal: `log:${id}`, query, datasource: "logs", level: p.recent, usual: shownUsual(p), since: since.toISOString(), shape: "rise" },
     mentionsMe: false,
-    fromHuman: false,
   }
 }
 

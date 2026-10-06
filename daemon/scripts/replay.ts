@@ -6,13 +6,14 @@
  *   bun scripts/replay.ts --file messages.json                      ([{ channel, ts, text }])
  */
 import { Effect, Schema } from "effect"
-import { DEFAULT_SETTINGS } from "../src/domain/settings.ts"
 import { readEnv } from "../src/config.ts"
 import { type Alert, alertFromParsed, type Decision, type ThreadReply } from "../src/domain/alert.ts"
+import { now } from "../src/domain/ids.ts"
 import type { Session } from "../src/domain/session.ts"
+import { DEFAULT_SETTINGS } from "../src/domain/settings.ts"
+import { isAlertMessage } from "../src/pipeline/alerts.ts"
 import { makeSlackClient, type SlackMessage } from "../src/slack/client.ts"
 import { parseMessage } from "../src/slack/parse.ts"
-import { now } from "../src/domain/ids.ts"
 import { makeJev } from "../src/triage/jev.ts"
 import { decide } from "../src/triage/policy.ts"
 import { applyRules } from "../src/triage/rules.ts"
@@ -63,7 +64,8 @@ const program = Effect.gen(function* () {
   const items = yield* load
   const seen: Array<Alert> = []
   const counts: Partial<Record<Decision, number>> = {}
-  for (const item of [...items].reverse()) {
+  // What the daemon would ingest: a person's message, or a reply, is never an alert.
+  for (const item of [...items].reverse().filter((i) => isAlertMessage(i.message))) {
     const parsed = parseMessage(item.message, { channelId: item.channel, channelName: item.channel, myUserId: undefined })
     const history = seen.filter((a) => a.fingerprint === parsed.fingerprint)
     const rule = applyRules(parsed, { activeSessions: new Array<Session>(), sameFingerprint: history, claimedBy: [] })

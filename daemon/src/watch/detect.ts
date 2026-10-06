@@ -166,6 +166,5 @@ export const findingOf = (anomaly: Anomaly, spec: PanelSpec, stepSeconds: number
     fingerprint: watchFingerprint(panel.id),
     fields: { _tag: "watch", signal: panel.id, query, datasource: spec.source, level, usual, since: since.toISOString(), shape },
     mentionsMe: false,
-    fromHuman: false,
   }
 }

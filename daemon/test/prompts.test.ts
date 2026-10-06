@@ -31,10 +31,22 @@ describe("slack_context", () => {
   test("names a Slack alert's channel, and a Grafana finding's source without a '#'", () => {
     const slackAlert = { source: "generic", channelName: "alert-dev" } as unknown as Alert
     const finding = { source: "watch", channelName: "Grafana" } as unknown as Alert
-    expect(slackContextText(slackAlert, ["a reply"], ["a neighbour"], 20)).toBe(
-      "Thread replies (1):\n- a reply\n\n#alert-dev within ±20 min (1):\n- a neighbour",
+    expect(slackContextText(slackAlert, [{ author: "teammate", text: "a reply" }], ["a neighbour"], 20)).toBe(
+      "Thread replies (1):\n- [a teammate] a reply\n\n#alert-dev within ±20 min (1):\n- a neighbour",
     )
     expect(slackContextText(finding, [], [], 20)).toContain("\nGrafana within ±20 min (0):")
+  })
+})
+
+describe("a thread in an agent's prompt", () => {
+  test("says who wrote each message: the user, a teammate, or a bot", () => {
+    const thread = [
+      { author: "bot" as const, text: "🤖 Investigating with Bridgetown…" },
+      { author: "teammate" as const, text: "I think it is vite" },
+      { author: "me" as const, text: "agreed, pin it" },
+    ]
+    const prompt = inboxPrompt({ alert, fromName: "Pierre", where: "a DM", branch: "fix-bt-x", thread })
+    expect(prompt).toContain("[a bot or Bridgetown] 🤖 Investigating with Bridgetown…\n---\n[a teammate] I think it is vite\n---\n[the user] agreed, pin it")
   })
 })
 

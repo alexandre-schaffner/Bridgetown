@@ -21,11 +21,10 @@ const filtered = (reason: string): RuleOutcome => ({ _tag: "Filtered", reason })
 /**
  * Decisions that need no judgment: success notices, recoveries, pipelines that
  * are still moving, repeats of something a session already owns, and alerts a
- * teammate is on. Everything else goes to Jev.
+ * teammate is on. Everything else goes to Jev. A person's message never gets
+ * here: it is the inbox's (`isAlertMessage`).
  */
 export const applyRules = (alert: ParsedAlert, ctx: RuleContext): RuleOutcome => {
-  if (alert.fromHuman) return filtered("Posted by a person, not an alert")
-
   const owner = ctx.activeSessions.find((session) =>
     ctx.sameFingerprint.some((earlier) => earlier.sessionId === session.id),
   )

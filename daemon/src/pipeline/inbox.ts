@@ -1,16 +1,17 @@
 import { Context, Effect, Layer } from "effect"
 import { ActionQueue } from "../actions/queue.ts"
-import type { ParsedAlert } from "../domain/alert.ts"
+import { type ParsedAlert, threadTsOf } from "../domain/alert.ts"
 import type { AdapterError } from "../domain/errors.ts"
 import { tsToIso } from "../domain/ids.ts"
 import { Hub, problemOf } from "../hub.ts"
 import { followUpPrompt } from "../sessions/prompts.ts"
 import { SessionRepo } from "../sessions/repo.ts"
 import { SessionRunner } from "../sessions/runner.ts"
-import { type SearchMatch, SlackClient, type SlackMessage } from "../slack/client.ts"
+import { type SearchMatch, SlackClient } from "../slack/client.ts"
 import { type InboxVia, inboxQueries, parseInbox } from "../slack/inbox.ts"
 import { SlackMe } from "../slack/me.ts"
 import { toThreadReplies } from "../slack/text.ts"
+import { SlackThread } from "../slack/thread.ts"
 import { Store } from "../store/store.ts"
 import { Jev } from "../triage/jev.ts"
 import { decideInbox } from "../triage/policy.ts"
@@ -39,6 +40,7 @@ export const InboxLive = Layer.effect(Inbox)(
     const runner = yield* SessionRunner
     const queue = yield* ActionQueue
     const intake = yield* Intake
+    const threads = yield* SlackThread
 
     /** The active session handling this thread: one started from the same thread, or from the alert the thread hangs off. */
     const ownerOf = (parsed: ParsedAlert, threadTs: string) =>
@@ -60,7 +62,7 @@ export const InboxLive = Layer.effect(Inbox)(
       const fromName = match.user === undefined || match.user === null ? (match.username ?? "Someone") : yield* me.nameOf(match.user)
       const parsed = parseInbox(match, via, { me: identity.user_id, fromName, alertChannels })
       if (parsed === undefined) return
-      const threadTs = parsed.fields._tag === "inbox" ? (parsed.fields.threadTs ?? parsed.ts) : parsed.ts
+      const threadTs = threadTsOf(parsed)
       const filing = { permalink: match.permalink ?? null, receivedAt: tsToIso(parsed.ts) }
       const owner = yield* ownerOf(parsed, threadTs)
       if (owner !== undefined) {
@@ -75,8 +77,8 @@ export const InboxLive = Layer.effect(Inbox)(
         if (delivery === "refused") yield* repo.log(owner.id, "status", "The agent cannot take the follow-up right now")
         return
       }
-      const replies = yield* slack.replies(parsed.channelId, threadTs).pipe(Effect.orElseSucceed((): ReadonlyArray<SlackMessage> => []))
-      const judging = jev.judgeInbox({ item: parsed, thread: toThreadReplies(replies, identity.user_id), myName: identity.user })
+      const replies = toThreadReplies(yield* threads.messages(parsed), identity.user_id)
+      const judging = jev.judgeInbox({ item: parsed, thread: replies, myName: identity.user })
       const triage = triageWith(hub, judging, decideInbox, "escalate").pipe(
         // A thread is one conversation: its newest message's verdict stands, so whatever an earlier one put up goes.
         Effect.tap(() => queue.removeWhere((a) => a.fingerprint === parsed.fingerprint)),
