@@ -9,6 +9,7 @@ import SwiftUI
 struct IslandOpenView: View {
     @Environment(Store.self) private var store
     let model: IslandModel
+    @ViewState private var picks = OverviewPicks()
 
     /// The prod column: what's wrong, if anything, then the prod board.
     static let prodWidth: CGFloat = 380
@@ -21,42 +22,44 @@ struct IslandOpenView: View {
         // Only schedules the redraw: the time itself is the app's clock.
         TimelineView(.periodic(from: .now, by: 30)) { _ in
             VStack(spacing: 0) {
-                band(geometry, now: AppClock.now)
+                band(geometry)
                 Hairline()
                 HStack(alignment: .top, spacing: 0) {
-                    status(now: AppClock.now)
+                    status
                         .frame(width: Self.prodWidth)
                     Hairline(vertical: true)
-                    main(now: AppClock.now)
+                    main
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .clipped()
                 }
             }
+            .environment(\.now, AppClock.now)
+            .environment(\.showsLastUpdate, store.connection != .connected)
         }
         .frame(width: geometry.openWidth, height: geometry.notch.height + geometry.openHeight, alignment: .top)
         .stage()
     }
 
-    private func band(_ geometry: NotchGeometry, now: Date) -> some View {
+    private func band(_ geometry: NotchGeometry) -> some View {
         let notch = geometry.notch
         // The wings sit centred; the status line stops short of the left one.
         let beside = (geometry.openWidth - notch.width) / 2 - IslandModel.wing
         return ZStack {
             GlanceWings(glance: model.glance, notch: notch, hovering: false)
-            HeaderView(now: now, room: beside - Self.bandInset - Self.wingGap)
+            HeaderView(room: beside - Self.bandInset - Self.wingGap)
                 .padding(.leading, Self.bandInset)
                 .padding(.trailing, 10)
         }
         .frame(height: notch.height)
     }
 
-    private func status(now: Date) -> some View {
+    private var status: some View {
         PaneScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 ProblemList()
                 // Before the first snapshot the main column says what's happening.
                 if store.snapshot != nil {
-                    TelemetryPanel(now: now)
+                    TelemetryPanel()
                 }
             }
             // Vertical only: the charts run to the column's edges.
@@ -65,13 +68,13 @@ struct IslandOpenView: View {
         .accessibilityIdentifier("pane.status")
     }
 
-    private func main(now: Date) -> some View {
-        RouteContent { overview(now: now) }
-            .animation(.smooth(duration: 0.32), value: store.route)
+    private var main: some View {
+        RouteContent { overview }
+            .animation(Easing.pane, value: store.route)
     }
 
     @ViewBuilder
-    private func overview(now: Date) -> some View {
+    private var overview: some View {
         if let snap = store.snapshot {
             let running = snap.inFlightSessions
             if snap.isQuiet {
@@ -84,7 +87,7 @@ struct IslandOpenView: View {
                             if snap.actions.isEmpty {
                                 ColumnNote(title: "Needs you", text: "Nothing is waiting on you.")
                             } else {
-                                NeedsYouSection(snapshot: snap, now: now)
+                                NeedsYouSection(snapshot: snap, selection: $picks.needsYou)
                             }
                         }
                         // Vertical only: the sections' rows run to the column's edges.
@@ -100,13 +103,23 @@ struct IslandOpenView: View {
                                     text: snap.activeSessions.isEmpty ? "No agent is running." : "Every open session is waiting on you."
                                 )
                             } else {
-                                AgentsSection(running: running, now: now)
+                                AgentsSection(running: running, selection: $picks.agents)
                             }
-                            RecentSection(snapshot: snap, now: now)
+                            RecentSection(snapshot: snap, selection: $picks.recent)
                         }
                         .padding(.vertical, Metrics.inset)
                     }
                     .accessibilityIdentifier("pane.agents")
+                }
+                .background {
+                    // Escape clears what is picked, in every list at once. Draws nothing.
+                    if !picks.isEmpty {
+                        Button("Clear selection") { picks = OverviewPicks() }
+                            .keyboardShortcut(.cancelAction)
+                            .opacity(0)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
                 }
             }
         } else {
@@ -125,7 +138,7 @@ private struct ColumnNote: View {
         VStack(alignment: .leading, spacing: 8) {
             SectionHeader(title: title)
             Text(text)
-                .font(.geist(12))
+                .font(Typo.body)
                 .foregroundStyle(.tertiary)
                 .padding(.vertical, 4)
         }

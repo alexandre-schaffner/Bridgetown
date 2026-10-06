@@ -9,6 +9,7 @@ struct AlertDetailView: View {
     let alertId: String
 
     @ViewState private var detail = Loadable<AlertDetail>()
+    @Environment(\.now) private var now
 
     private var alert: AlertView? { store.snapshot?.alert(id: alertId) ?? detail.value?.alert }
 
@@ -27,37 +28,42 @@ struct AlertDetailView: View {
     private var events: [AlertDetail.Event] { detail.value?.events ?? [] }
 
     /// Refetch when anything the detail depends on changes (feedback, a new session, a
-    /// dismissed card), so the history stays current.
-    private struct RefreshKey: Equatable {
+    /// dismissed card), so the history stays current. Only live data counts: what the
+    /// fetch itself fills in (an aged-out session, the actions while disconnected) would
+    /// change the key and fetch it all again.
+    struct RefreshKey: Equatable {
         var alert: AlertView?
         var sessionUpdatedAt: Date?
         var actionIds: [String]
+
+        init(snapshot: Snapshot?, alertId: String) {
+            alert = snapshot?.alert(id: alertId)
+            sessionUpdatedAt = snapshot?.session(id: alert?.sessionId)?.updatedAt
+            actionIds = snapshot?.actions.filter { $0.alertId == alertId }.map(\.id) ?? []
+        }
     }
 
-    private var refreshKey: RefreshKey {
-        RefreshKey(alert: store.snapshot?.alert(id: alertId), sessionUpdatedAt: session?.updatedAt, actionIds: openActions.map(\.id))
-    }
+    private var refreshKey: RefreshKey { RefreshKey(snapshot: store.snapshot, alertId: alertId) }
 
     var body: some View {
-        VStack(spacing: 0) {
-            DetailTopBar(title: alert?.title ?? "", lineLimit: 2)
-            Hairline()
+        Group {
             if let alert, detail.value != nil || detail.error != nil {
-                TimelineView(.periodic(from: .now, by: 30)) { _ in
-                    PaneScrollView {
-                        content(alert, now: AppClock.now)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 14)
-                    }
-                    .accessibilityIdentifier("pane.detail")
+                DetailScaffold(title: alert.title, titleLineLimit: 2) {
+                    sections(alert)
+                } bar: {
+                    bottomBar(alert)
                 }
-                Hairline()
-                bottomBar(alert)
-            } else if let error = detail.error {
-                failure(error)
             } else {
-                // A local fetch; usually done before the first frame matters.
-                Color.clear.frame(maxHeight: .infinity)
+                VStack(spacing: 0) {
+                    DetailTopBar(title: alert?.title ?? "", lineLimit: 2)
+                    Hairline()
+                    if let error = detail.error {
+                        failure(error)
+                    } else {
+                        // A local fetch; usually done before the first frame matters.
+                        Color.clear.frame(maxHeight: .infinity)
+                    }
+                }
             }
         }
         .task(id: refreshKey) { await load() }
@@ -65,56 +71,61 @@ struct AlertDetailView: View {
 
     // MARK: Content
 
-    private func content(_ alert: AlertView, now: Date) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
-            summary(alert, now: now)
-            DetailSection(title: "How it ended") { howItEnded(alert, now: now) }
-            GrafanaSection(alertId: alert.id)
-            DetailSection(title: "Jev's call") { jevsCall(alert) }
-            if !events.isEmpty {
-                DetailSection(title: "History") { AlertHistory(events: events) }
+    @ViewBuilder
+    private func sections(_ alert: AlertView) -> some View {
+        summary(alert)
+            .padding(.horizontal, Metrics.inset)
+        DetailSection(title: Self.isOpen(alert, session: session, openActions: openActions) ? "Where it stands" : "How it ended") {
+            howItEnded(alert)
+        }
+        GrafanaSection(alertId: alert.id)
+        DetailSection(title: "Jev's call") {
+            jevsCall(alert)
+                .padding(.horizontal, Metrics.inset)
+        }
+        if !events.isEmpty {
+            DetailSection(title: "History") {
+                AlertHistory(events: events)
+                    .padding(.horizontal, Metrics.inset)
             }
-            if let raw = detail.value?.raw, !raw.isEmpty {
-                DetailSection(title: "Message") {
-                    ClampedText(
-                        markdown: Mrkdwn.markdown(raw),
-                        lineLimit: 8,
-                        size: 10.5,
-                        mono: true,
-                        lineSpacing: 1.5,
-                        moreLabel: "Show full message",
-                        lessLabel: "Show less",
-                        boxed: true
-                    )
+        }
+        if let raw = detail.value?.raw, !raw.isEmpty {
+            DetailSection(title: "Message") {
+                // Set apart from the app's own words: a block of its own on a faint fill.
+                ClampedText(markdown: Mrkdwn.markdown(raw), lineLimit: 8, size: 10.5, mono: true, lineSpacing: 1.5, moreLabel: "Show full message")
                     .id(raw)
-                }
+                    .padding(.horizontal, Metrics.inset)
+                    .padding(.vertical, 10)
+                    .background(Ink.band)
+                    .tableFrame()
             }
-            if let error = detail.error {
-                Text("Couldn't load the full alert · \(error)")
-                    .font(.geist(11))
-                    .foregroundStyle(.tertiary)
-            }
+        }
+        if let error = detail.error {
+            Text("Couldn't load the full alert · \(error)")
+                .font(Typo.caption)
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, Metrics.inset)
         }
     }
 
-    private func summary(_ alert: AlertView, now: Date) -> some View {
+    private func summary(_ alert: AlertView) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             // With a session, "How it ended" says where it stands.
             if session == nil {
                 StatusLine(headline: alert.outcome.headline, tone: alert.outcome.tone, size: 13)
             }
+            // Whole, however narrow the pane: it scrolls, and the summary is what the alert says.
             if !alert.summary.isEmpty {
                 Text(alert.summary)
-                    .font(.geist(12))
+                    .font(Typo.body)
                     .foregroundStyle(.secondary)
-                    .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
             HStack(spacing: 8) {
                 ChannelChip(name: alert.channelName)
                 Text(Format.ago(alert.receivedAt, now: now))
-                    .font(.geist(11))
+                    .font(Typo.caption)
                     .monospacedDigit()
                     .foregroundStyle(.tertiary)
                     .help(alert.receivedAt.formatted(date: .abbreviated, time: .shortened))
@@ -126,19 +137,27 @@ struct AlertDetailView: View {
     // MARK: How it ended
 
     @ViewBuilder
-    private func howItEnded(_ alert: AlertView, now: Date) -> some View {
+    private func howItEnded(_ alert: AlertView) -> some View {
         if let session {
-            let canOpen = store.snapshot?.session(id: session.id) != nil
-            SessionRow(session: session, now: now, onOpen: canOpen ? { store.show(.session(session.id)) } : nil)
+            // A session aged out of the snapshot has no detail to open.
+            JobRow(session: session, opens: store.snapshot?.session(id: session.id) != nil)
+                .tableFrame()
         } else {
             // Every outcome but `session` means no agent ran. The daemon's sentence says
             // what happened instead; without one, say just that.
             Text(alert.outcome.sentence.flatMap { $0.isEmpty ? nil : $0 } ?? Self.noSessionLine(alert.outcome.kind))
-                .font(.geist(12, .medium))
+                .font(Typo.strong)
                 .foregroundStyle(.primary)
                 .lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, Metrics.inset)
         }
+    }
+
+    /// Not over yet: not triaged, a card waiting on you, or an agent still on it. Its outcome
+    /// is then where it stands, not how it ended.
+    nonisolated static func isOpen(_ alert: AlertView, session: Session?, openActions: [Action]) -> Bool {
+        alert.outcome.kind == .pending || alert.outcome.kind == .waiting || session?.isActive == true || !openActions.isEmpty
     }
 
     private static func noSessionLine(_ kind: AlertOutcome.Kind) -> String {
@@ -161,10 +180,10 @@ struct AlertDetailView: View {
         return VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(byRule ? "Decided by a rule, no model call" : triage.decision.callLabel)
-                    .font(.geist(12, .medium))
+                    .font(Typo.strong)
                 if showsReason {
                     Text(reason)
-                        .font(.geist(12))
+                        .font(Typo.body)
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
@@ -173,12 +192,12 @@ struct AlertDetailView: View {
             if let jev = triage.jev {
                 JevScores(jev: jev)
                 Text("Kind: \(jev.kindLabel) · Depth: \(jev.depth.rawValue)")
-                    .font(.geist(11))
+                    .font(Typo.caption)
                     .foregroundStyle(.tertiary)
                     .help("Kind confidence \(Format.percent(jev.kindConfidence)) · urgency \(jev.urgencyLabel) of 3")
             } else if !byRule {
                 Text("No scores from Jev for this one")
-                    .font(.geist(11))
+                    .font(Typo.caption)
                     .foregroundStyle(.tertiary)
             }
             FeedbackRow(alert: alert)
@@ -207,32 +226,29 @@ struct AlertDetailView: View {
 
     // MARK: Bottom bar
 
+    @ViewBuilder
     private func bottomBar(_ alert: AlertView) -> some View {
-        HStack(spacing: 8) {
-            Button {
-                SystemActions.open(alert.permalink)
-            } label: {
-                Label(alert.permalinkLabel, systemImage: "arrow.up.right.square")
-            }
-            .buttonStyle(.stage(.secondary, compact: true))
-            .disabled(alert.permalink == nil)
-            .help(alert.permalink == nil ? "No permalink for this message" : alert.source == .watch ? "Open the dashboard in Grafana" : "Open the message in Slack")
-
-            Spacer(minLength: 0)
-
-            if session?.isActive != true {
-                let waiting = openActions.contains { $0.kind == .investigate }
-                let button = Button(session == nil ? "Investigate" : "Investigate again") {
-                    store.investigate(alert)
-                }
-                .disabled(store.isBusy(alert.id))
-                .help("Start an agent on this alert")
-                // Primary only when investigating is the expected next step.
-                button.buttonStyle(.stage(waiting ? .primary : .secondary, compact: true))
-            }
+        Button {
+            SystemActions.open(alert.permalink)
+        } label: {
+            Label(alert.permalinkLabel, systemImage: "arrow.up.right.square")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .buttonStyle(.stage(.secondary))
+        .disabled(alert.permalink == nil)
+        .help(alert.permalink == nil ? "No permalink for this message" : alert.source == .watch ? "Open the dashboard in Grafana" : "Open the message in Slack")
+
+        Spacer(minLength: 0)
+
+        if session?.isActive != true {
+            let waiting = openActions.contains { $0.kind == .investigate }
+            let button = Button(session == nil ? "Investigate" : "Investigate again") {
+                store.investigate(alert)
+            }
+            .disabled(store.isBusy(alert.id))
+            .help("Start an agent on this alert")
+            // Primary only when investigating is the expected next step.
+            button.buttonStyle(.stage(waiting ? .primary : .secondary))
+        }
     }
 
     // MARK: Loading
@@ -240,13 +256,13 @@ struct AlertDetailView: View {
     private func failure(_ message: String) -> some View {
         VStack(spacing: 8) {
             Text("Couldn't load this alert")
-                .font(.geist(12, .medium))
+                .font(Typo.strong)
             Text(message)
-                .font(.geist(11))
+                .font(Typo.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             Button("Try again") { Task { await load() } }
-                .buttonStyle(.stage(.secondary, compact: true))
+                .buttonStyle(.stage(.secondary))
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -274,7 +290,7 @@ private struct FeedbackRow: View {
     var body: some View {
         HStack(spacing: 4) {
             Text(text)
-                .font(.geist(11))
+                .font(Typo.caption)
                 .foregroundStyle(alert.feedback == nil ? .tertiary : .secondary)
             Spacer(minLength: 0)
             FeedbackThumbs(alert: alert)
@@ -298,12 +314,12 @@ private struct AlertHistory: View {
                         .frame(width: 5, height: 5)
                         .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 3.5 }
                     Text(event.at, format: Format.clock)
-                        .font(.geist(11))
+                        .font(Typo.caption)
                         .monospacedDigit()
                         .foregroundStyle(.tertiary)
                         .help(event.at.formatted(date: .abbreviated, time: .standard))
                     Text(event.text)
-                        .font(.geist(11.5))
+                        .font(Typo.small)
                         .foregroundStyle(latest ? .primary : .secondary)
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)

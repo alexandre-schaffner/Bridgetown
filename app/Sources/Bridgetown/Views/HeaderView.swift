@@ -4,13 +4,12 @@ import SwiftUI
 /// sentence, and its menu. Healthy services say nothing; whatever is wrong is listed by
 /// `ProblemList`.
 struct HeaderView: View {
-    let now: Date
     /// How far the status line may run: up to the wings beside the notch, not under them.
     let room: CGFloat
 
     var body: some View {
         HStack(spacing: 8) {
-            StatusSummary(now: now)
+            StatusSummary()
                 .frame(maxWidth: max(0, room), alignment: .leading)
             Spacer(minLength: 0)
             AppMenu()
@@ -24,11 +23,12 @@ struct HeaderView: View {
 struct StatusSummary: View {
     @Environment(Store.self) private var store
     @Environment(DaemonProcess.self) private var daemon
-    let now: Date
+    @Environment(\.now) private var now
 
     var body: some View {
+        let health = DaemonHealth(daemon: daemon, store: store)
         Group {
-            if let status = store.snapshot?.status, store.connection == .connected {
+            if let status = store.snapshot?.status, health == .connected {
                 let facts = facts(status)
                 ViewThatFits(in: .horizontal) {
                     line(status, facts: facts)
@@ -36,11 +36,11 @@ struct StatusSummary: View {
                     line(status, facts: [])
                 }
             } else {
-                Text(connectionLine)
+                Text(Self.connectionLine(health, showingLast: store.snapshot != nil))
                     .foregroundStyle(.secondary)
             }
         }
-        .font(.geist(11))
+        .font(Typo.caption)
         .monospacedDigit()
         .lineLimit(1)
         .contentTransition(.numericText())
@@ -52,15 +52,8 @@ struct StatusSummary: View {
                 Text("Paused")
                     .foregroundStyle(.primary)
                     .help("Alerts are still triaged, but no agent starts on its own")
-                Button { store.setPaused(false) } label: {
-                    // Taller than the word, so it is easy to hit in the band.
-                    Text("Resume")
-                        .padding(.vertical, 4)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.link)
-                .foregroundStyle(Ink.blue)
-                .accessibilityIdentifier("header.resume")
+                TextLink("Resume") { store.setPaused(false) }
+                    .accessibilityIdentifier("header.resume")
             }
             if status.dryRun {
                 if status.paused { dot }
@@ -82,8 +75,7 @@ struct StatusSummary: View {
     private func facts(_ status: Status) -> [String] {
         var parts: [String] = []
         if let poll = status.lastPollAt {
-            let rel = Format.relative(poll, now: now)
-            parts.append(rel == "now" ? "Polled now" : "Polled \(rel) ago")
+            parts.append("Polled \(Format.ago(poll, now: now))")
         }
         if let sessions = store.snapshot?.metrics?.sessions, sessions.started > 0 {
             parts.append("\(sessions.resolved) of \(sessions.started) resolved in 24h")
@@ -91,17 +83,20 @@ struct StatusSummary: View {
         return parts
     }
 
-    private var connectionLine: String {
-        switch DaemonHealth(daemon: daemon, store: store) {
+    /// What the connection is doing, in a few words; the problem line below says why. With
+    /// the last snapshot still on screen, it says that what shows is no longer live.
+    nonisolated static func connectionLine(_ health: DaemonHealth, showingLast: Bool) -> String {
+        let state = switch health {
         case .notBundled: "Daemon not installed"
         case .portInUse: "Daemon couldn't start"
         case .keepsExiting: "Daemon keeps stopping"
         case .restarting: "Restarting daemon…"
         case .rejected: "Not connected"
-        // The store keeps retrying; the problem line below says why it dropped.
+        // The store keeps retrying.
         case .disconnected: "Reconnecting…"
         case .starting, .connected: "Connecting…"
         }
+        return showingLast ? "\(state) · showing the last update" : state
     }
 }
 
@@ -127,7 +122,7 @@ struct AppMenu: View {
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .foregroundStyle(.secondary)
-        .hoverHighlight(radius: 6)
+        .hoverFill(radius: 6)
         .fixedSize()
         .help("Settings, logs, quit")
         .accessibilityLabel("Bridgetown menu")
@@ -199,90 +194,17 @@ struct ProblemList: View {
     }
 }
 
-struct Problem: Identifiable, Equatable {
-    enum Severity { case warning, error }
-    enum Fix: Equatable {
-        case openSettings(String)
-        case restartDaemon(String)
-        case openLogs(String)
-
-        var label: String {
-            switch self {
-            case let .openSettings(label), let .restartDaemon(label), let .openLogs(label): label
-            }
-        }
-    }
-
-    let id: String
-    let text: String
-    let severity: Severity
-    var fix: Fix?
-
-    /// Everything wrong right now, worst first: the daemon connection, the last failed
-    /// action, then what the daemon reports about its own dependencies.
-    static func list(health: DaemonHealth, attached: Bool, port: Int, flash: String?, status: Status?) -> [Problem] {
-        var out: [Problem] = []
-        switch health {
-        case let .portInUse(byAnotherDaemon):
-            // Our daemon exited 98. A 401 on that port means the holder is another daemon.
-            let text = byAnotherDaemon
-                ? "Another Bridgetown daemon is running on port \(port). Quit it, then retry."
-                : "Port \(port) is in use by another process. Free it, then retry."
-            out.append(.init(id: "daemon", text: text, severity: .error, fix: .restartDaemon("Retry")))
-        case .rejected:
-            let text = attached
-                ? "The daemon on port \(port) rejected the API token. Check BRIDGETOWN_API_TOKEN."
-                : "Another Bridgetown daemon is running on port \(port)."
-            out.append(.init(id: "daemon", text: text, severity: .error))
-        case let .keepsExiting(exit):
-            out.append(.init(id: "daemon", text: "The daemon keeps stopping soon after it starts (\(exit))", severity: .error, fix: .openLogs("Open logs")))
-        case let .disconnected(reason):
-            out.append(.init(id: "daemon", text: "Daemon disconnected · \(reason)", severity: .error))
-        case .notBundled:
-            out.append(.init(id: "daemon", text: "No daemon bundled. Set BRIDGETOWN_DAEMON_CMD or BRIDGETOWN_ATTACH=1.", severity: .error))
-        case let .starting(lastError?) where attached:
-            out.append(.init(id: "daemon", text: "Waiting for daemon · \(lastError)", severity: .warning))
-        case .starting, .restarting, .connected:
-            break
-        }
-        if let flash {
-            out.append(.init(id: "flash", text: flash, severity: .error))
-        }
-        guard let status, health == .connected else { return out }
-        switch status.slack {
-        case .missing_token: out.append(.init(id: "slack", text: "Slack token missing", severity: .warning, fix: .openSettings("Add token")))
-        case .error: out.append(.init(id: "slack", text: "Slack is failing", severity: .error))
-        default: break
-        }
-        switch status.jev {
-        case .missing_key: out.append(.init(id: "jev", text: "TypeSafe key missing · triage uses rules only", severity: .warning, fix: .openSettings("Add key")))
-        case .error: out.append(.init(id: "jev", text: "Jev unavailable · triage uses rules only", severity: .warning))
-        default: break
-        }
-        if status.github == .blocked {
-            out.append(.init(id: "github", text: "GitHub Enterprise blocks this network (IP allow list) · sessions wait", severity: .warning))
-        }
-        if status.grafanaMcp == .down {
-            out.append(.init(id: "grafana", text: "Grafana MCP down", severity: .warning))
-        }
-        if let error = status.error, !error.isEmpty {
-            out.append(.init(id: "error", text: error, severity: .error))
-        }
-        return out
-    }
-}
-
 private struct ProblemLine: View {
     let problem: Problem
     let onFix: () -> Void
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: problem.severity == .error ? "exclamationmark.octagon.fill" : "exclamationmark.triangle.fill")
-                .font(.geist(11.5))
-                .foregroundStyle(problem.severity == .error ? Ink.red : Ink.amber)
+            Image(systemName: problem.severity.symbol)
+                .font(Typo.small)
+                .foregroundStyle(problem.severity.color)
             Text(problem.text)
-                .font(.geist(12))
+                .font(Typo.body)
                 .lineSpacing(Typo.rowLineSpacing)
                 .foregroundStyle(.secondary)
                 .lineLimit(3)
@@ -290,9 +212,8 @@ private struct ProblemLine: View {
             Spacer(minLength: 0)
             if let fix = problem.fix {
                 Button(fix.label, action: onFix)
-                    .buttonStyle(.link)
-                    .foregroundStyle(Ink.blue)
-                    .font(.geist(12))
+                    .buttonStyle(.stage(.secondary))
+                    .fixedSize()
             }
         }
     }

@@ -6,7 +6,6 @@ import SwiftUI
 /// its logs, as the last sweep grouped them, suspicious patterns first.
 struct TelemetryPanel: View {
     @Environment(Store.self) private var store
-    let now: Date
 
     enum Mode: String, CaseIterable, Identifiable {
         case incidents = "Incidents"
@@ -21,14 +20,14 @@ struct TelemetryPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
-                .bleedInset()
+                .padding(.horizontal, Metrics.inset)
             // One board crossfades into the next, rather than swapping in a frame.
             Group {
                 switch mode {
                 case .incidents: board("incidents")
                 case .infra: board("infra")
                 case .database: board("database")
-                case .logs: LogSweepView(now: now)
+                case .logs: LogSweepView()
                 }
             }
             .id(mode)
@@ -36,8 +35,6 @@ struct TelemetryPanel: View {
         }
         .animation(Easing.state, value: mode)
         .onHorizontalSwipe(swipedTab)
-        // Its charts run to the column's edges, like the lists beside it.
-        .environment(\.fullBleed, true)
     }
 
     /// Fingers moving left show the next board, right the previous one; nothing past either end.
@@ -65,14 +62,8 @@ struct TelemetryPanel: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 8) {
-            Text("Prod")
-                .font(Typo.title)
-                .tracking(Typo.titleTracking)
-                .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: 0)
+        SectionHeader(title: "Prod") {
             TabSwitch(options: Mode.allCases, selection: $mode) { $0.rawValue }
         }
-        .frame(height: SectionHeader.height)
     }
 }

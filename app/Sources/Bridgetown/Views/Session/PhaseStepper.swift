@@ -6,28 +6,31 @@ struct PhaseStepper: View {
     let session: Session
 
     var body: some View {
-        StepFlow {
-            ForEach(Array(session.steps.enumerated()), id: \.offset) { index, step in
-                VStack(alignment: .leading, spacing: 7) {
-                    StepPill(session: session, index: index)
-                    evidence(step)
+        StepFits { style in
+            StepFlow {
+                ForEach(Array(session.steps.enumerated()), id: \.offset) { index, step in
+                    VStack(alignment: .leading, spacing: 7) {
+                        StepPill(session: session, index: index, style: style)
+                        evidence(step, shown: style == .named || (style == .focused && session.pillKind(at: index).isMarked))
+                    }
                 }
             }
         }
         .animation(StepPill.morph, value: session.pillKinds)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityText)
+        .accessibilityLabel("\(session.headline). \(session.stepsDescription)")
     }
 
-    /// The step's evidence, a line under its pill. Laid over a fixed-height line so it
-    /// truncates to its column instead of widening it.
-    private func evidence(_ step: Step) -> some View {
+    /// The step's evidence, a line under its pill: only under a named one, since a mark's
+    /// column is too narrow to read. Laid over a fixed-height line so it truncates to its
+    /// column instead of widening it.
+    private func evidence(_ step: Step, shown: Bool) -> some View {
         Color.clear
             .frame(height: 14)
             .overlay(alignment: .leading) {
-                if let text = session.evidence(for: step) {
+                if shown, let text = session.evidence(for: step) {
                     Text(text)
-                        .font(.geist(11).monospacedDigit())
+                        .font(Typo.caption.monospacedDigit())
                         .foregroundStyle(step.state == .failed ? AnyShapeStyle(session.tone.stopTint) : AnyShapeStyle(.tertiary))
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -36,11 +39,6 @@ struct PhaseStepper: View {
                 }
             }
     }
-
-    private var accessibilityText: String {
-        let steps = session.steps.map { "\($0.label) \($0.state.describe(tone: session.tone))" }.joined(separator: ", ")
-        return "\(session.headline). \(steps)"
-    }
 }
 
 /// The six steps as pills on a row of the Agents board.
@@ -48,14 +46,16 @@ struct StepTrack: View {
     let session: Session
 
     var body: some View {
-        StepFlow {
-            ForEach(Array(session.steps.indices), id: \.self) { index in
-                StepPill(session: session, index: index, small: true)
+        StepFits { style in
+            StepFlow {
+                ForEach(Array(session.steps.indices), id: \.self) { index in
+                    StepPill(session: session, index: index, small: true, style: style)
+                }
             }
         }
         .animation(StepPill.morph, value: session.pillKinds)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(session.steps.map { "\($0.label) \($0.state.describe(tone: session.tone))" }.joined(separator: ", "))
+        .accessibilityLabel(session.stepsDescription)
     }
 }
 
@@ -69,38 +69,62 @@ struct StepTrack: View {
 ///   deploy), its name shimmering; a ring round a dot while it sits with reviewers or in
 ///   the queue; an amber dot, its halo breathing, when it waits on you
 /// - failed: tinted red with a red dot; stopped or closed: grey with a bar
-/// - resolved: the last chip tinted green with a green dot
+/// - resolved: the last step it reached tinted green with a green dot
 /// - skipped: its name struck through
 /// The hairline is brighter behind the session than ahead, runs into the colour of the
 /// step in progress, and carries a light into it while something moves.
+///
+/// Without its name (`Style`), a step is a small mark in the same ink: a ring ahead, a dot
+/// done, a dash skipped, and the in-play mark itself where the session is.
 struct StepPill: View {
     let session: Session
     let index: Int
     /// The Agents board's smaller size.
     var small = false
+    var style = Style.named
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// How every change between states eases: colour, glow, width and the mark at once.
     static var morph: Animation { Easing.reduceMotion ? Easing.state : .smooth(duration: 0.45) }
 
-    /// Where a pill's name starts, for lining up what goes under it.
+    /// Where a large pill's name starts, for lining up what goes under it.
     static let inset: CGFloat = 9
 
     private var kind: Kind { session.pillKind(at: index) }
     private var step: Step { session.steps[index] }
 
+    private var named: Bool { style == .named || (style == .focused && kind.isMarked) }
+    /// The board's pills sit a little tighter, so a row of six fits its column whole.
+    private var inset: CGFloat { small ? 7 : Self.inset }
     private var height: CGFloat { small ? 20 : 22 }
     private var mark: CGFloat { small ? 7 : 8 }
 
     var body: some View {
         HStack(spacing: 0) {
-            pill
+            if named { pill } else { bare }
             if index < session.steps.count - 1 {
                 Connector(kind: connector, tint: session.pillTint(at: index + 1))
-                    .padding(.horizontal, 4)
-                    .frame(minWidth: 14)
+                    .padding(.horizontal, 3)
+                    .frame(minWidth: style == .named ? 10 : 6)
             }
         }
         .help("\(step.label): \(step.state.describe(tone: session.tone))")
+    }
+
+    /// The step without its name: its mark alone, as wide as the mark and a little air.
+    @ViewBuilder
+    private var bare: some View {
+        Group {
+            switch kind {
+            case .ahead: Circle().strokeBorder(ink, lineWidth: 1)
+            case .done: Circle().fill(ink)
+            case .skipped: Capsule().fill(ink).frame(height: 1.5)
+            default: head
+            }
+        }
+        .frame(width: mark, height: mark)
+        .padding(.horizontal, 2)
+        .frame(height: height)
     }
 
     private var pill: some View {
@@ -108,7 +132,7 @@ struct StepPill: View {
             if kind.isMarked {
                 head
                     .frame(width: mark, height: mark)
-                    .transition(.scale(scale: 0.2).combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.2).combined(with: .opacity))
             }
             Text(step.label)
                 .font(.geist(small ? 10.5 : 11.5, kind.isMarked ? .semibold : .medium))
@@ -117,8 +141,8 @@ struct StepPill: View {
                 .lineLimit(1)
                 .modifier(Shimmer(active: kind == .moving))
         }
-        .padding(.leading, kind.isMarked ? Self.inset - 2 : Self.inset)
-        .padding(.trailing, Self.inset)
+        .padding(.leading, kind.isMarked ? inset - 2 : inset)
+        .padding(.trailing, inset)
         .frame(height: height)
         .background {
             ZStack {
@@ -157,10 +181,10 @@ struct StepPill: View {
 
     private var connector: Connector.Kind {
         let next = session.pillKind(at: index + 1)
-        if index + 1 == session.marker.index, [.moving, .held, .you].contains(next) {
+        if index + 1 == session.markerIndex, [.moving, .held, .you].contains(next) {
             return next == .moving ? .feeding : .leading
         }
-        if index < session.marker.index { return .behind }
+        if index < session.markerIndex { return .behind }
         return session.isActive ? .ahead : .unreached
     }
 
@@ -201,13 +225,6 @@ struct StepPill: View {
         default: tint.opacity(0.4)
         }
     }
-
-    enum Kind: Hashable {
-        case ahead, done, moving, held, you, failed, stopped, resolved, skipped
-
-        /// Tinted, with a mark at its head: where the session is, or how it ended.
-        var isMarked: Bool { ![.ahead, .done, .skipped].contains(self) }
-    }
 }
 
 /// The hairline between two pills, fading out at both ends so it never quite touches
@@ -218,13 +235,13 @@ private struct Connector: View {
 
     let kind: Kind
     let tint: Color
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.marksHoldStill) private var still
 
     var body: some View {
         line
             .frame(height: 1)
             .overlay {
-                if kind == .feeding && !reduceMotion {
+                if kind == .feeding && !still {
                     TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { context in
                         GeometryReader { geo in
                             let t = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6
@@ -252,166 +269,5 @@ private struct Connector: View {
         case .ahead: Color.white.opacity(0.11)
         case .unreached: Color.white.opacity(0.06)
         }
-    }
-}
-
-/// A dot with a soft glow. When it breathes (waiting on you), a halo swells from it and
-/// fades, every couple of seconds; it holds still under Reduce Motion.
-private struct Beacon: View {
-    let color: Color
-    var breathes = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !breathes || reduceMotion)) { context in
-            let t = breathes && !reduceMotion ? context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.4) / 2.4 : 1
-            ZStack {
-                Circle().fill(color.opacity(0.45 * (1 - t)))
-                    .scaleEffect(1 + 1.1 * t)
-                Circle().fill(color)
-                    .scaleEffect(0.8)
-                    .shadow(color: color.opacity(0.8), radius: 2)
-            }
-        }
-    }
-}
-
-/// An arc chasing round a faint ring, as Vercel's builds show one, its length breathing as
-/// it turns: work in motion. Drawn from the clock, like `Pulse`, so it can't drag the
-/// row's layout along. Under Reduce Motion it holds still, still an arc on a ring.
-struct Spinner: View {
-    let color: Color
-    var lineWidth: CGFloat = 1.5
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: reduceMotion)) { context in
-            let time = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate
-            let turn = time.truncatingRemainder(dividingBy: 0.95) / 0.95
-            let length = 0.22 + 0.16 * (0.5 + 0.5 * sin(2 * .pi * time / 1.5))
-            ZStack {
-                Circle().stroke(color.opacity(0.22), lineWidth: lineWidth)
-                Circle().trim(from: 0, to: length)
-                    .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                    .rotationEffect(.degrees(turn * 360 - 90))
-            }
-            .padding(lineWidth / 2)
-        }
-    }
-}
-
-/// A light running through a label, left to right, as Vercel marks work in progress.
-/// Nothing moves under Reduce Motion.
-struct Shimmer: ViewModifier {
-    var active: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private static let period: Double = 2
-
-    func body(content: Content) -> some View {
-        if active && !reduceMotion {
-            content.overlay {
-                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
-                    GeometryReader { geo in
-                        let t = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: Self.period) / Self.period
-                        let band = max(28, geo.size.width * 0.8)
-                        LinearGradient(colors: [.white.opacity(0), .white.opacity(0.8), .white.opacity(0)], startPoint: .leading, endPoint: .trailing)
-                            .frame(width: band)
-                            .offset(x: -band + (geo.size.width + band) * t)
-                    }
-                }
-                .mask(content)
-                .allowsHitTesting(false)
-            }
-        } else {
-            content
-        }
-    }
-}
-
-extension Session {
-    /// Where the session is: the step in progress or the one that failed; the next step
-    /// when it waits between two (ready to merge, approval to release); past the end once
-    /// resolved; where it stopped otherwise.
-    struct Marker: Equatable {
-        var index: Int
-    }
-
-    var marker: Marker {
-        let frontier = steps.firstIndex { $0.state == .pending || $0.state == .unknown } ?? steps.count
-        if let i = steps.firstIndex(where: { $0.state == .failed }) { return Marker(index: i) }
-        if holder != nil { return Marker(index: steps.firstIndex { $0.state == .current } ?? frontier) }
-        if tone == .success { return Marker(index: steps.count) }
-        return Marker(index: frontier)
-    }
-
-    /// How each step's pill stands, for animating a change across the row.
-    var pillKinds: [StepPill.Kind] { steps.indices.map(pillKind(at:)) }
-
-    func pillKind(at index: Int) -> StepPill.Kind {
-        let step = steps[index]
-        let at = marker.index
-        if step.state == .failed { return tone == .failure ? .failed : .stopped }
-        if index == at, let holder {
-            if holder == .you || tone == .waiting { return .you }
-            return holder.isMoving ? .moving : .held
-        }
-        if index == at, !isActive { return .stopped }
-        if step.state == .skipped { return .skipped }
-        if index < at || step.state == .done {
-            return tone == .success && index == steps.count - 1 ? .resolved : .done
-        }
-        return .ahead
-    }
-
-    /// A marked pill's colour: the session's while it's in play (amber on you), red where
-    /// it failed, green once resolved, grey where it stopped.
-    func pillTint(at index: Int) -> Color {
-        switch pillKind(at: index) {
-        case .moving, .held: tone.isQuiet ? Color(white: 0.62) : tone.color
-        case .you: Ink.amber
-        case .failed: Ink.red
-        case .resolved: Ink.green
-        default: Color(white: 0.62)
-        }
-    }
-}
-
-/// The pills at their own widths, left to right, with the room left over shared equally
-/// by the hairlines between them, so the row spreads evenly across the width and every
-/// pill keeps its whole name. Each subview is a column: a pill and its hairline on, with
-/// anything under it.
-struct StepFlow: Layout {
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let widths = Self.widths(minimums: minimums(subviews), total: proposal.width)
-        let height = zip(subviews, widths)
-            .map { $0.sizeThatFits(ProposedViewSize(width: $1, height: nil)).height }
-            .max() ?? 0
-        return CGSize(width: proposal.width ?? widths.reduce(0, +), height: height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX
-        for (sub, width) in zip(subviews, Self.widths(minimums: minimums(subviews), total: bounds.width)) {
-            sub.place(at: CGPoint(x: x, y: bounds.minY), proposal: ProposedViewSize(width: width, height: bounds.height))
-            x += width
-        }
-    }
-
-    /// Each column at its narrowest: the pill whole, the shortest hairline after it.
-    private func minimums(_ subviews: Subviews) -> [CGFloat] {
-        subviews.map { ceil($0.sizeThatFits(ProposedViewSize(width: 0, height: nil)).width) }
-    }
-
-    /// Column widths for `total` points: every column but the last gets an equal share of
-    /// what the minimums leave over, so the hairlines come out the same length. When even
-    /// the minimums don't fit, every column scales down.
-    static func widths(minimums: [CGFloat], total: CGFloat?) -> [CGFloat] {
-        guard let total, !minimums.isEmpty else { return minimums }
-        let sum = minimums.reduce(0, +)
-        guard sum <= total else { return minimums.map { $0 * total / max(sum, 1) } }
-        guard minimums.count > 1 else { return [total] }
-        let share = (total - sum) / CGFloat(minimums.count - 1)
-        return minimums.indices.map { minimums[$0] + ($0 < minimums.count - 1 ? share : 0) }
     }
 }

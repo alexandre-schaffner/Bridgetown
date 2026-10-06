@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Markdown laid out as blocks: paragraphs, headings, lists with hanging indents, outlined
-/// code blocks, quotes behind a rule, and tables separated by hairlines. Selectable.
+/// code blocks, quotes behind a rule, and tables separated by hairlines. Selectable. Each
+/// block reports where it landed (`TextRun`), so a clamp can end between its lines.
 struct MarkdownView: View {
     let blocks: [Markdown.Block]
     var size: CGFloat = 12
@@ -24,9 +25,10 @@ struct MarkdownView: View {
     private func view(for block: Markdown.Block) -> some View {
         switch block {
         case .paragraph(let s):
-            text(s)
+            text(s).textRun(breaksLines: true)
         case .heading(let level, let s):
             text(s).font(font(level == 1 ? size + 1 : size, .semibold)).foregroundStyle(.primary)
+                .textRun(breaksLines: false)
         case .list(let items):
             VStack(alignment: .leading, spacing: size * 0.3) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
@@ -38,6 +40,7 @@ struct MarkdownView: View {
                         text(item.text)
                     }
                     .padding(.leading, CGFloat(item.depth) * size)
+                    .textRun(breaksLines: true)
                 }
             }
         case .code(let code):
@@ -49,6 +52,7 @@ struct MarkdownView: View {
                 .padding(.vertical, 6)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .outlined(radius: Ink.controlRadius)
+                .textRun(breaksLines: false)
         case .quote(let inner):
             HStack(alignment: .top, spacing: 8) {
                 Ink.outline.frame(width: 2).clipShape(Capsule())
@@ -71,17 +75,30 @@ struct MarkdownView: View {
                     }
                 }
             }
+            .textRun(breaksLines: false)
         case .rule:
             Hairline()
         }
     }
 
     private func text(_ s: String) -> some View {
-        Text(Markdown.inline(s, size: size, mono: mono))
+        Text(Markdown.inline(s, size: size, mono: mono).underliningLinks())
             .fixedSize(horizontal: false, vertical: true)
     }
 
     private func font(_ size: CGFloat? = nil, _ weight: Font.Weight = .regular) -> Font {
         mono ? .geistMono(size ?? self.size, weight) : .geist(size ?? self.size, weight)
+    }
+}
+
+extension AttributedString {
+    /// Its links underlined. They take the text's colour (the stage's tint), as colour is
+    /// for status, so the line is what marks them.
+    func underliningLinks() -> AttributedString {
+        var text = self
+        for run in text.runs where run.link != nil {
+            text[run.range].underlineStyle = .single
+        }
+        return text
     }
 }
