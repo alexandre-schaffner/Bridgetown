@@ -21,7 +21,7 @@ struct JobRow: View {
             if session.slackThreadUrl != nil { Button("Open Slack thread") { SystemActions.open(session.slackThreadUrl) } }
         }
         .help(session.headline)
-        .accessibilityHint("Shows session details")
+        .accessibilityHint(opens ? "Shows session details" : "")
         .accessibilityIdentifier("agents.row.\(session.id)")
     }
 
