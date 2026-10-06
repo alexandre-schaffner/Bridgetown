@@ -8,7 +8,7 @@ SIGN_IDENTITY ?= Bridgetown Local Signing
 # CFBundleVersion stamped into the bundle; CI passes its run number. Unset keeps Info.plist's.
 BUILD_NUMBER ?=
 
-.PHONY: all app dmg daemon icon dev dev-app test-app e2e mock clean
+.PHONY: all app dmg daemon icon dev dev-app test-app e2e e2e-site mock clean
 
 all: daemon app
 
@@ -95,6 +95,12 @@ e2e:
 # MOCK_GITHUB=blocked override. `kill -USR1 <pid>` toggles "GitHub blocked".
 mock:
 	cd daemon && bun scripts/mock/main.ts
+
+# The landing page end to end: builds it if stale, serves dist/, screenshots and lints each page
+# at six viewports and runs its checks, into .context/e2e/<run>/site (open index.md).
+# ARGS="--quick" for one stop per section, ARGS="--only 375x812" for one walk.
+e2e-site:
+	cd site && bun scripts/e2e.ts $(ARGS)
 
 clean:
 	rm -rf build app/.build

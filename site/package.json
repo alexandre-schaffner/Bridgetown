@@ -4,9 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "astro dev",
-    "build": "astro check && astro build",
+    "build": "node scripts/media-manifest.mjs && astro check && tsc -p tsconfig.tools.json && astro build && node scripts/csp.mjs",
     "preview": "astro preview",
-    "deploy": "node scripts/ci-only.mjs && node scripts/media-manifest.mjs && astro check && astro build && wrangler deploy"
+    "test": "node scripts/media-manifest.mjs && bun test",
+    "e2e": "bun scripts/e2e.ts",
+    "record": "bun scripts/record.ts",
+    "deploy": "node scripts/ci-only.mjs && wrangler deploy"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",
@@ -19,7 +22,10 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
+    "@types/bun": "^1.4.2",
     "@types/three": "^0.186.0",
+    "playwright-core": "1.63.0",
+    "sharp": "^0.35.5",
     "typescript": "6",
     "wrangler": "^4.147.0"
   }

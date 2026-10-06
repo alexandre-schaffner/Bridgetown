@@ -1,0 +1,239 @@
+---
+// A session, live: the daemon's six steps, its transcript as the app prints it, a message
+// mid-run, and Take over.
+import Icon from "../../components/Icon.astro";
+import Pointer from "../../components/Pointer.astro";
+
+const phases = [["Diagnose", "done"], ["Fix", "done"], ["PR", "current"], ["Review", ""], ["CI", ""], ["Deploy", ""]];
+const transcript = [
+  ["10:04", "tool", "› Grep “region” src/routes"],
+  ["10:04", "tool", "› Read src/routes/orders.ts"],
+  ["10:05", "text", "An empty region is parsed as 0, and findOrders(0) throws."],
+  ["10:06", "tool", "› Edit src/routes/orders.ts"],
+  ["10:06", "tool", "› Bash bun test routes/orders"],
+  ["10:07", "status", "· 214 pass · 0 fail"],
+];
+---
+
+<section class="shot" data-shot="session">
+  <div class="cam session">
+    <div class="team-copy">
+      <h2 class="hl-m">Watch it work.<br /><span class="dim">Or take over.</span></h2>
+      <p class="sub">Every step and tool call, live. Message it mid-run, stop it, or pick it up in Terminal.</p>
+    </div>
+    <div class="sx" data-sx>
+      <p class="sx-from"><span class="mono">#alert-api</span> 5xx rate 3.1% on /v4/orders</p>
+      <h3 class="sx-title">fix(api): reject an empty region</h3>
+      <ol class="stepper">
+        {phases.map(([label, state]) => (
+          <li class:list={[state]} data-phase><i></i><span>{label}</span></li>
+        ))}
+      </ol>
+      <p class="sx-act"><i class="dot dot-blue live"></i> <span data-sxact>Running the orders tests</span></p>
+      <p class="sx-meta mono">Opus · high · <span data-sxtime>6m 12s</span> · <span data-sxcost>$1.84</span></p>
+      <ol class="sx-log mono">
+        {transcript.map(([at, kind, text]) => (
+          <li class={kind} data-tline><span class="faint">{at}</span><span>{text}</span></li>
+        ))}
+        <li class="text you" data-tline><span class="faint">10:07</span><span>You: Also cover negative regions.</span></li>
+      </ol>
+      <div class="sx-input"><span data-type="Also cover negative regions." data-sxin></span><span class="sx-send" data-press><Icon name="arrow-up" size={20} /></span></div>
+      <div class="sx-actions">
+        <span class="sx-btn" data-takeover><Icon name="terminal" size={20} /> Take over in Terminal</span>
+        <span class="sx-btn stop">Stop</span>
+      </div>
+    </div>
+    <div class="term sx-term" data-sxterm>
+      <div class="chrome"><i></i><i></i><i></i><span class="mono">Terminal — fix-bt-api-empty-region</span></div>
+      <div class="term-body mono">
+        <p class="cmd"><span class="p">$</span> <span data-type="cd …/worktrees/fix-bt-api-empty-region && claude --resume 7f3c2a1b"></span></p>
+      </div>
+    </div>
+    <Pointer size={34} class="pointer big" data-pointer />
+  </div>
+</section>
+
+<style>
+  .session {
+    display: grid;
+    grid-template-columns: 720px 900px;
+    gap: 90px;
+    justify-content: center;
+    align-content: center;
+    align-items: center;
+  }
+
+  .sx {
+    padding: 40px 44px 36px;
+    border-radius: 28px;
+    background: var(--card);
+    box-shadow:
+      inset 0 0 0 1px var(--hair),
+      0 60px 140px rgb(0 0 0 / 0.8);
+  }
+
+  .sx-from {
+    display: flex;
+    gap: 12px;
+    font-size: 19px;
+    color: var(--lo);
+  }
+
+  .sx-from .mono {
+    color: var(--mid);
+  }
+
+  .sx-title {
+    margin-top: 8px;
+    font-size: 36px;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    color: var(--hi);
+  }
+
+  .stepper {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 8px;
+    margin: 28px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .stepper i {
+    display: block;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--hair);
+    transform-origin: 0 50%;
+  }
+
+  .stepper span {
+    display: block;
+    margin-top: 10px;
+    font-size: 17px;
+    color: var(--lo);
+  }
+
+  .stepper :global(.done) i {
+    background: var(--mid);
+  }
+
+  .stepper :global(.done) span {
+    color: var(--mid);
+  }
+
+  .stepper :global(.current) i {
+    background: var(--blue);
+    box-shadow: 0 0 12px var(--blue);
+  }
+
+  .stepper :global(.current) span {
+    color: var(--hi);
+  }
+
+  .sx-act {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 28px;
+    font-size: 24px;
+    color: var(--hi);
+  }
+
+  .sx-meta {
+    margin-top: 6px;
+    font-size: 18px;
+    color: var(--lo);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .sx-log {
+    height: 268px;
+    margin: 22px 0 0;
+    padding: 18px 0 0;
+    list-style: none;
+    border-top: 1px solid var(--hair);
+    font-size: 18px;
+    line-height: 1.5;
+    overflow: hidden;
+  }
+
+  .sx-log li {
+    display: grid;
+    grid-template-columns: 70px 1fr;
+    gap: 14px;
+    padding: 3px 0;
+    color: var(--mid);
+    opacity: 0;
+  }
+
+  .sx-log li.text {
+    color: var(--hi);
+  }
+
+  .sx-log li.you {
+    display: none;
+  }
+
+  .sx-input {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 18px;
+    padding: 10px 10px 10px 22px;
+    min-height: 58px;
+    border-radius: 16px;
+    box-shadow: inset 0 0 0 1px var(--hair-strong);
+    font-size: 21px;
+    color: var(--hi);
+  }
+
+  .sx-input > span:first-child:empty::before {
+    content: "Message the agent";
+    color: var(--lo);
+  }
+
+  .sx-send {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: var(--hi);
+    color: #000;
+  }
+
+  .sx-actions {
+    display: flex;
+    gap: 14px;
+    margin-top: 18px;
+  }
+
+  .sx-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 22px;
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1px var(--hair-strong);
+    font-size: 20px;
+    color: var(--hi);
+  }
+
+  .sx-btn.stop {
+    color: #ff9f94;
+  }
+
+  .sx-term {
+    position: absolute;
+    right: 80px;
+    bottom: 110px;
+    width: 860px;
+    opacity: 0;
+  }
+
+  .sx-term .term-body {
+    min-height: 150px;
+  }
+</style>

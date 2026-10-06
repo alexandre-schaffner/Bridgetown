@@ -3,18 +3,12 @@
 // brighten as they cross the middle of the screen. Each carries the app's glyph for it
 // (app/Sources/Bridgetown/Presentation.swift), so no two ends share a mark.
 import Icon from "./Icon.astro";
-
-const outcomes = [
-  { word: "Resolved", glyph: "circle-check", tint: "green", evidence: "Deployed api v1.35.12. The release tracker confirmed it at 10:31." },
-  { word: "Closed", glyph: "circle-minus", tint: "grey", evidence: "Root cause not found. Nothing shipped, and the card says so." },
-  { word: "Failed", glyph: "octagon-x", tint: "red", evidence: "e2e failed twice after the fix. Handed back to you with the logs." },
-  { word: "Stopped", glyph: "circle-stop", tint: "faint", evidence: "You stopped it during Fix. Its worktree is kept for you." },
-];
+import { OUTCOMES } from "../lib/story";
 ---
 
 <section class="outcomes day" id="outcomes" aria-labelledby="outcomes-title">
   <div class="wrap">
-    <div class="intro">
+    <div class="chapter-head">
       <h2 id="outcomes-title" class="display">Green means it happened.</h2>
       <p class="lead">
         A step is done when there is evidence for it: a PR that exists, a check that passed, a deploy the tracker
@@ -24,7 +18,7 @@ const outcomes = [
 
     <ul class="list">
       {
-        outcomes.map((o) => (
+        OUTCOMES.map((o) => (
           <li data-outcome>
             <span class="word">
               <Icon name={o.glyph} size={24} stroke={2} class={`glyph ${o.tint}`} />
@@ -43,15 +37,7 @@ const outcomes = [
     padding-block: clamp(7rem, 16vh, 11rem);
   }
 
-  .intro {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 2rem 4rem;
-    align-items: end;
-    margin-bottom: clamp(3rem, 8vh, 6rem);
-  }
-
-  .intro .display {
+  .chapter-head .display {
     max-width: 10ch;
   }
 
@@ -116,11 +102,8 @@ const outcomes = [
   }
 
   @media (max-width: 900px) {
-    .intro,
     .list li {
       grid-template-columns: 1fr;
-    }
-    .list li {
       gap: 0.75rem;
     }
   }

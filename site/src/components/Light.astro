@@ -23,7 +23,7 @@ const states = [
       <p class="hint">Pick a light<span class="drag">, or drag the arch to walk around it</span>.</p>
     </div>
 
-    <ol class="states" data-light-states>
+    <ol class="states">
       {
         states.map((s, i) => (
           <li data-light-state={s.id} class:list={[i === 0 && "on"]}>
@@ -268,6 +268,23 @@ const states = [
     :global(html.js) .states li.on .name,
     :global(html.js) .states li.on .text {
       opacity: 1;
+    }
+  }
+
+  /* A phone sideways: the picker has to fit under the words in one short screen. */
+  @media (max-height: 560px) and (orientation: landscape) {
+    :global(html.js) .stage {
+      padding: calc(var(--nav-h) + 0.5rem) var(--gutter) 1.25rem;
+      gap: 1rem;
+    }
+    .intro {
+      gap: 0.75rem;
+    }
+    .intro .display {
+      font-size: var(--t-h2);
+    }
+    .intro .lead {
+      font-size: var(--t-body);
     }
   }
 </style>

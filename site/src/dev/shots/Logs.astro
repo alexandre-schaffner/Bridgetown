@@ -1,0 +1,130 @@
+---
+// And the logs: the stream, and the patterns it groups them into.
+
+const logStream = [
+  'level=error msg="deadlock detected on relation 48211" job=rewards-sync',
+  'level=warn msg="rate limited by rpc.ankr.com, retry in 1200ms" job=erpc',
+  'level=info msg="computed 18402 leaves for campaign 0x8f3c…2a1b"',
+  'level=error msg="deadlock detected on relation 48207" job=campaigns-sync',
+  'level=info msg="merkle root posted on chain 42161 block 288104512"',
+  'level=warn msg="token 0x5f98…ab32 retired by issuer, skipping"',
+  'level=error msg="deadlock detected on relation 48211" job=rewards-sync',
+  'level=info msg="GET /v4/opportunities 200 41ms"',
+  'level=warn msg="rate limited by rpc.ankr.com, retry in 2400ms" job=erpc',
+  'level=info msg="dispute window closes in 3600s for chain 8453"',
+  'level=error msg="deadlock detected on relation 48233" job=campaigns-sync',
+  'level=info msg="GET /v4/users/0x91…c2/rewards 200 88ms"',
+];
+const patterns = [
+  { text: 'deadlock detected on relation <n>', jobs: "rewards-sync, campaigns-sync", tag: "New", n: "412 today", answers: [91, 64, 58] },
+  { text: "rate limited by rpc.ankr.com, retry in <n>ms", jobs: "erpc", tag: "6.8× usual", n: "1,904 in 2h", answers: [77, 81, 22] },
+  { text: "token <addr> retired by issuer, skipping", jobs: "rewards-sync", tag: "Risky", n: "steady", answers: [84, 70, 66] },
+];
+---
+
+<section class="shot" data-shot="logs">
+  <div class="cam logs">
+    <h2 class="hl-s">And it reads the logs.</h2>
+    <div class="l-grid">
+      <div class="stream mono" data-stream>
+        {[...logStream, ...logStream, ...logStream].map((l) => <p class:list={[l.includes("error") && "err", l.includes("warn") && "warn"]}>{l}</p>)}
+      </div>
+      <ol class="patterns">
+        <li class="pt-cols mono"><span>Pattern · every 10 minutes</span><span>Real problem</span><span>Agent work</span><span>Users hit</span></li>
+        {patterns.map((p) => (
+          <li class="pt" data-pt>
+            <div>
+              <p class="pt-text mono">{p.text}</p>
+              <p class="pt-meta"><span class="tag">{p.tag}</span><span class="faint">{p.jobs} · {p.n}</span></p>
+            </div>
+            {p.answers.map((a) => <span class="pt-a mono" data-pct={a}>0%</span>)}
+          </li>
+        ))}
+      </ol>
+    </div>
+  </div>
+</section>
+
+<style>
+  .logs {
+    padding: 120px 140px;
+  }
+
+  .l-grid {
+    display: grid;
+    grid-template-columns: 640px 1fr;
+    gap: 60px;
+    margin-top: 56px;
+  }
+
+  .stream {
+    height: 640px;
+    overflow: hidden;
+    font-size: 15px;
+    line-height: 2;
+    color: var(--lo);
+    mask-image: linear-gradient(180deg, transparent, #000 18%, #000 82%, transparent);
+  }
+
+  .stream p {
+    white-space: nowrap;
+  }
+
+  .stream .err {
+    color: #ff9f94;
+  }
+
+  .stream .warn {
+    color: oklch(0.8 0.15 74 / 0.9);
+  }
+
+  .patterns {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .pt-cols,
+  .pt {
+    display: grid;
+    grid-template-columns: 1fr 150px 150px 150px;
+    gap: 20px;
+    align-items: center;
+  }
+
+  .pt-cols {
+    padding-bottom: 16px;
+    font-size: 16px;
+    color: var(--lo);
+    border-bottom: 1px solid var(--hair-strong);
+  }
+
+  .pt-cols span:not(:first-child),
+  .pt-a {
+    text-align: right;
+  }
+
+  .pt {
+    padding: 28px 0;
+    border-bottom: 1px solid var(--hair);
+  }
+
+  .pt-text {
+    font-size: 22px;
+    color: var(--hi);
+  }
+
+  .pt-meta {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    margin-top: 12px;
+    font-size: 18px;
+  }
+
+  .pt-a {
+    font-size: 30px;
+    color: var(--hi);
+    font-variant-numeric: tabular-nums;
+  }
+</style>
