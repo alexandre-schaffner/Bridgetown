@@ -37,13 +37,15 @@ export interface Issue {
 /**
  * Issues that are the design, not a glitch. Each names its rule, the element it is about (an
  * ancestor selector, matched with closest()), and why it is fine. `with` is the other element
- * of an overlap; `media` holds an entry to the screens where the design does this (a media
- * query, as the CSS that lays it out has it), so the same issue anywhere else still counts.
+ * of an overlap; `by` is the box that cuts clipped text off, so text an inner box cuts still
+ * counts; `media` holds an entry to the screens where the design does this (a media query, as
+ * the CSS that lays it out has it), so the same issue anywhere else still counts.
  */
 export interface Allow {
   rule: Rule | Rule[];
   within: string;
   with?: string;
+  by?: string;
   media?: string;
   why: string;
 }
@@ -57,8 +59,12 @@ export const ALLOW: Allow[] = [
   },
   {
     rule: "clipped-text",
-    within: "[data-screen] .menubar",
-    why: "Narrow screens zoom the drawn Mac in on its notch, so its menu bar runs off both sides (island.ts, fit).",
+    within: "[data-screen]",
+    by: "[data-mac] .bezel",
+    // island.ts zooms while the screen inside the bezel is under 900px: the Mac is the page less
+    // two 4vw gutters (MacScreen.astro), so up to a 1008px window.
+    media: "(max-width: 1008px)",
+    why: "Narrow screens zoom the drawn Mac in on its notch (island.ts, fit): its menu bar and terminal run off both sides, and a phone sees only the open island's middle column.",
   },
   {
     rule: "text-overlap",
@@ -70,6 +76,23 @@ export const ALLOW: Allow[] = [
     rule: "ellipsis",
     within: "[data-island] .d",
     why: "An island row's detail is one line and truncates, as the app's does; its title and the banner's never should.",
+  },
+  {
+    rule: "clipped-text",
+    within: "h1 .w",
+    by: "h1 .w",
+    why: "The hero's headline rises word by word, each inside a mask as tall as its line (Hero.astro): the font's box reaches past it, the glyphs don't.",
+  },
+  {
+    rule: "clipped-text",
+    within: "[data-board-wrap]",
+    by: "[data-hero] .stage",
+    why: "The hero's board waits at the foot of the screen, cut by its edge, until scrolling raises it (scripts/main.ts).",
+  },
+  {
+    rule: "ellipsis",
+    within: "[data-board-rows] .title",
+    why: "A board row's message is one line and truncates, as the app's rows do.",
   },
 ];
 
@@ -98,7 +121,8 @@ export function lintPage({ allow }: { allow: Allow[] }): Issue[] {
     }
     return parts.join(" > ");
   };
-  const allowedFor = (rule: Rule, el: Element | null, other?: Element) => {
+  /** `other` is the other element of an overlap, `cutter` the box that clips text off. */
+  const allowedFor = (rule: Rule, el: Element | null, other?: Element, cutter?: Element) => {
     if (!el) return undefined;
     const covers = (a: Allow, el: Element, other?: Element) =>
       el.closest(a.within) && (!a.with || (other && other.closest(a.with)));
@@ -106,11 +130,19 @@ export function lintPage({ allow }: { allow: Allow[] }): Issue[] {
       (a) =>
         (Array.isArray(a.rule) ? a.rule.includes(rule) : a.rule === rule) &&
         (!a.media || matchMedia(a.media).matches) &&
+        (!a.by || cutter?.matches(a.by)) &&
         (covers(a, el, other) || (other && covers(a, other, el))),
     )?.why;
   };
-  const add = (rule: Rule, severity: Severity, el: Element | null, text: string, rect?: Rect) =>
-    issues.push({ rule, severity, text: text.replace(/\s+/g, " ").trim().slice(0, 140), selector: el ? path(el) : undefined, rect, allowed: allowedFor(rule, el) });
+  const add = (rule: Rule, severity: Severity, el: Element | null, text: string, rect?: Rect, cutter?: Element) =>
+    issues.push({
+      rule,
+      severity,
+      text: text.replace(/\s+/g, " ").trim().slice(0, 140),
+      selector: el ? path(el) : undefined,
+      rect,
+      allowed: allowedFor(rule, el, undefined, cutter),
+    });
 
   // How see-through an element is, all its ancestors included.
   const opacities = new Map<Element, number>();
@@ -124,6 +156,27 @@ export function lintPage({ allow }: { allow: Allow[] }): Issue[] {
     return o;
   };
   const shown = (el: Element) => style(el).visibility === "visible" && opacity(el) >= 0.15;
+
+  // Chapters slide in over the one before (the page's data-sheet), each painted over the ones
+  // before it: what a later chapter covers with a background of its own is out of sight,
+  // however opaque it is itself.
+  const alpha = (color: string) => {
+    if (color === "transparent") return 0;
+    const a = /\/\s*([\d.]+)(%?)\s*\)$/.exec(color) ?? /^rgba\(.*,\s*([\d.]+)()\)$/.exec(color);
+    return a ? Number(a[1]) / (a[2] ? 100 : 1) : 1;
+  };
+  const chapters = [...document.querySelectorAll("main > *")].map((el) => ({
+    el,
+    rect: el.getBoundingClientRect(),
+    solid: alpha(style(el).backgroundColor) > 0.99,
+  }));
+  const covered = (el: Element, r: { left: number; top: number; right: number; bottom: number }) => {
+    const own = chapters.findIndex((c) => c.el.contains(el));
+    if (own < 0) return false;
+    const x = (r.left + r.right) / 2;
+    const y = (r.top + r.bottom) / 2;
+    return chapters.some((c, i) => i > own && c.solid && x >= c.rect.left && x <= c.rect.right && y >= c.rect.top && y <= c.rect.bottom);
+  };
 
   // The boxes that clip an element's content: its own if it clips, then each ancestor's whose
   // overflow applies to it (an absolute or fixed box escapes those outside its containing block).
@@ -209,7 +262,7 @@ export function lintPage({ allow }: { allow: Allow[] }): Issue[] {
     for (const r of range.getClientRects()) {
       if (r.width < 1 || r.height < 1) continue;
       const v = clipRect(r, cl);
-      if (!onScreen(v)) continue;
+      if (!onScreen(v) || covered(el, v)) continue;
       fragments.push({ node: n, el, rect: v });
       const what = n.data;
       // Text that has outgrown its own box (a wrapped label in a fixed-height pill, say): past
@@ -227,8 +280,8 @@ export function lintPage({ allow }: { allow: Allow[] }): Issue[] {
         const cutter = (v.cutX ?? v.cutY)!.el;
         const scrolls = (v.cutX ? v.cutX.x : v.cutY!.y) === "scroll";
         if (scrolls) continue;
-        if (style(cutter).textOverflow === "ellipsis") add("ellipsis", "warning", el, `“${what}” is ellipsised by ${path(cutter)}`, toRect(r));
-        else add("clipped-text", "error", el, `“${what}” is cut off by ${path(cutter)}`, toRect(r));
+        if (style(cutter).textOverflow === "ellipsis") add("ellipsis", "warning", el, `“${what}” is ellipsised by ${path(cutter)}`, toRect(r), cutter);
+        else add("clipped-text", "error", el, `“${what}” is cut off by ${path(cutter)}`, toRect(r), cutter);
       } else if (v.left < -1 || v.right > vw + 1) {
         add("spill", "error", el, `“${what}” runs past the ${v.left < -1 ? "left" : "right"} edge`, toRect(r));
       }

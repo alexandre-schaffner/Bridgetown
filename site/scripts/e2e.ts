@@ -1,10 +1,10 @@
 // The landing page, end to end, for whoever changes it next (person or agent). Builds the site
 // if dist/ is older than its sources, serves dist/ on a free port, and walks each page at five
 // viewports, with and without Reduce Motion. At every scroll stop it takes a screenshot and
-// lints what the page drew: sideways scroll, text or media spilling past the screen, text cut
+// lints the frame it shows: sideways scroll, text or media spilling past the screen, text cut
 // off, ellipsised or grown out of its box, text drawn over other text, broken images and
 // videos, console errors, page errors and failed requests (e2e/lint.ts). Then it checks what
-// the page has to do: focus, landing, the nav, the films (e2e/checks.ts).
+// the page has to do: focus, landing, the nav, the film (e2e/checks.ts).
 //
 // Writes .context/e2e/<run>/site/: index.md first (checks, errors with crops, warnings by
 // rule, a contact sheet per walk), report.json, shots/, issues/ (each issue's crop, outlined
@@ -136,6 +136,27 @@ interface Walk {
 const nextFrames = (page: Page) =>
   page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
 
+/**
+ * A screenshot and the lint of the frame it shows. Something can move while the shot is taken
+ * (the island plays its steps on its own), so the page is linted either side of it, and shot
+ * again until both lints agree, three times at most.
+ */
+async function shoot(page: Page, file: string): Promise<Issue[]> {
+  const lint = () => page.evaluate(lintPage, { allow: ALLOW });
+  const same = (a: Issue[], b: Issue[]) => {
+    const key = (issues: Issue[]) => issues.map((i) => `${i.rule} ${i.selector} ${i.text}`).sort().join("\n");
+    return key(a) === key(b);
+  };
+  let before = await lint();
+  for (let shots = 1; ; shots++) {
+    await page.screenshot({ path: file, scale: "css", caret: "hide" });
+    const after = await lint();
+    if (same(before, after) || shots === 3) return after;
+    before = after;
+    await page.waitForTimeout(500);
+  }
+}
+
 /** Where to stop: each section's top, then a screen at a time through the tall ones. */
 async function stopsOf(page: Page): Promise<number[]> {
   const { tops, max, vh } = await page.evaluate(() => {
@@ -201,8 +222,7 @@ async function walk(browser: Browser, base: string, out: string, spec: PageSpec,
       await nextFrames(page);
       await page.waitForTimeout(settle);
       const png = `shots/${shotName}.png`;
-      await page.screenshot({ path: join(out, png), scale: "css", caret: "hide" });
-      const issues = await page.evaluate(lintPage, { allow: ALLOW });
+      const issues = await shoot(page, join(out, png));
       await crop(page, out, shotName, issues);
       result.shots.push({ name: shotName, page: spec.path, size, motion, scrollY: y, png, issues });
     }
