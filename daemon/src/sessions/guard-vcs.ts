@@ -137,10 +137,18 @@ const draftFlags = (args: ReadonlyArray<Word>): ReadonlyArray<string> => {
   return found
 }
 
+/** A `key=value` field whose GraphQL `query` (the operation itself) is only known at runtime: computed, or under a computed key. */
+const hidesQuery = (field: Word | undefined): boolean => {
+  if (field === undefined || !field.dynamic) return false
+  const key = field.text.split("=")[0] ?? ""
+  return key === "query" || /[$`]/.test(key)
+}
+
 const ghApiRefusal = (args: ReadonlyArray<Word>): string | undefined => {
   let method: string | undefined
   let fields = false
-  let fromFile = false
+  // The query is read from a file or a variable, so whether it mutates is unseen.
+  let queryUnseen = false
   let endpoint: string | undefined
   for (let i = 0; i < args.length; i++) {
     const word = args[i]
@@ -162,11 +170,12 @@ const ghApiRefusal = (args: ReadonlyArray<Word>): string | undefined => {
     } else if (GH_API_FIELD_FLAGS.has(text)) {
       fields = true
       // `--input` and a typed field's `@file` value send a file's contents.
-      fromFile ||= text === "--input" || ((text === "-F" || text === "--field") && /^[^=]*=@/.test(next?.text ?? ""))
+      queryUnseen ||= text === "--input" || ((text === "-F" || text === "--field") && /^[^=]*=@/.test(next?.text ?? "")) || hidesQuery(next)
       i++
     } else if (/^(--field|--raw-field|--input)=/.test(text) || /^-[fF]./.test(text)) {
       fields = true
-      fromFile ||= text.startsWith("--input=") || /^(-F|--field=)[^=]*=@/.test(text)
+      const field = { ...word, text: text.replace(/^(--field=|--raw-field=|-[fF])/, "") }
+      queryUnseen ||= text.startsWith("--input=") || /^(-F|--field=)[^=]*=@/.test(text) || hidesQuery(field)
     } else if (GH_API_VALUE_FLAGS.has(text)) {
       i++
     } else if (!text.startsWith("-") && !word.dynamic && endpoint === undefined) {
@@ -176,8 +185,8 @@ const ghApiRefusal = (args: ReadonlyArray<Word>): string | undefined => {
       return REASONS.dynamic
     }
   }
-  // A GraphQL read POSTs its query too: one with no `mutation` is a read, unless its body comes from a file the guard does not see.
-  if (endpoint === "graphql") return fromFile || args.some((arg) => /\bmutation\b/i.test(arg.text)) ? REASONS.graphql : undefined
+  // A GraphQL read POSTs its query too: one with no `mutation` is a read, unless the guard can't see the query. Its variables (`-F number=$PR`) are values, never operations.
+  if (endpoint === "graphql") return queryUnseen || args.some((arg) => /\bmutation\b/i.test(arg.text)) ? REASONS.graphql : undefined
   if (method !== undefined && WRITE_METHODS.has(method)) return REASONS.apiWrite
   if (fields && method !== "GET") return REASONS.apiWrite
   return undefined

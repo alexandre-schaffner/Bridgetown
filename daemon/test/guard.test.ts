@@ -274,9 +274,13 @@ describe("guard", () => {
     // An unquoted value in `gh api` splits into flags (`-X PUT`).
     "gh api repos/o/r/issues --jq $Q",
     "gh api -X GET search/issues -f q=$Q",
-    // A GraphQL body the guard cannot read.
+    // A GraphQL body the guard cannot read: from a file, or a query from a variable that may hold a mutation.
     "gh api graphql -F query=@q.graphql",
     "gh api graphql --input q.json",
+    `Q='mutation { mergePullRequest(input: {pullRequestId: "X"}) { clientMutationId } }'; gh api graphql -f query="$Q"`,
+    'gh api graphql -f "query=$Q"',
+    'gh api graphql --raw-field="query=$Q"',
+    'gh api graphql -f "$K=$Q"',
     // A package.json script runs its body (and its pre/post scripts), found the way the package manager finds it.
     "bun run deploy",
     "npm run deploy",
@@ -394,6 +398,8 @@ describe("guard", () => {
     // GraphQL reads.
     "gh api graphql -f query='query { viewer { login } }'",
     `gh api graphql -f query='{ repository(owner: "Merkl", name: "monorepo") { pullRequest(number: 1) { mergeable } } }'`,
+    // Its variables may be computed: they are values, never the operation.
+    `gh api graphql -f query='query($n: Int!) { repository(owner: "Merkl", name: "monorepo") { pullRequest(number: $n) { mergeable } } }' -F n="$PR"`,
     // Scripts whose bodies are fine, and bun's own `test`/`build` whatever package.json says.
     "bun run ci",
     "bun type",
