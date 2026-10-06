@@ -33,6 +33,9 @@ describe("the exec-time guard's verdict", () => {
     expect(verdict("git", "push", "origin", "main")._tag).toBe("Refused")
     expect(verdict("gh", "pr", "merge", "1")._tag).toBe("Refused")
     expect(verdict("gh", "pr", "checks", "12", "--watch")._tag).toBe("Refused")
+    // Read as gh's own flag parser reads them: `-at` shows the token, `-X=DELETE` deletes.
+    expect(verdict("gh", "auth", "status", "-at")._tag).toBe("Refused")
+    expect(verdict("gh", "api", "-X=DELETE", "repos/o/r/git/refs/heads/main")._tag).toBe("Refused")
     expect(verdict("kubectl", "get", "pods")._tag).toBe("Refused")
     expect(verdict("curl", "-s", "http://127.0.0.1:47621/state")._tag).toBe("Refused")
   })

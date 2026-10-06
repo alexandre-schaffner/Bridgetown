@@ -9,8 +9,11 @@ import type { Word } from "./shell.ts"
  * config that would run a command or push a tag on a later call.
  */
 
-const GH_API_VALUE_FLAGS = flags("-H", "--header", "-q", "--jq", "-t", "--template", "--hostname", "-p", "--preview", "--cache")
 const GH_API_FIELD_FLAGS = flags("-f", "-F", "--field", "--raw-field", "--input")
+const GH_API_VALUE_FLAGS = flags(
+  ...["-X", "--method", ...GH_API_FIELD_FLAGS],
+  ...["-H", "--header", "-q", "--jq", "-t", "--template", "--hostname", "-p", "--preview", "--cache"],
+)
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"])
 /** Flags that may sit between `gh`, the group and the sub-command (`gh pr -R o/r merge`), whose value is not a positional. */
 const GH_VALUE_FLAGS = flags("-R", "--repo", "--hostname")
@@ -27,17 +30,67 @@ const ghPositionals = (args: ReadonlyArray<Word>): ReadonlyArray<Word> => {
   return positional
 }
 
+/** One option as gh reads it: its name as written (`--base`, `-B`) and its value, when it takes one or has `=value`. */
+interface GhOption {
+  readonly name: string
+  readonly value: Word | undefined
+}
+
+interface GhArgs {
+  readonly options: ReadonlyArray<GhOption>
+  readonly positionals: ReadonlyArray<Word>
+}
+
+/**
+ * `args` the way gh's flag parser (pflag) reads them, so a check sees a flag in every
+ * form it can take: `--base main`, `--base=main`, `-B main`, `-Bmain`, `-B=main`, and
+ * inside a cluster of short flags (`-at` is `-a -t`, `-iXPUT` is `-i -X PUT`), where the
+ * first that takes a value takes the rest of the word, or the next word. `valueFlags`
+ * are the command's flags that take a value. A name holding `$` or a backtick was computed.
+ */
+const ghOptions = (args: ReadonlyArray<Word>, valueFlags: ReadonlySet<string>): GhArgs => {
+  const options: Array<GhOption> = []
+  const positionals: Array<Word> = []
+  for (let i = 0; i < args.length; i++) {
+    const word = args[i]
+    if (word === undefined) break
+    const text = word.text
+    if (text === "--") {
+      positionals.push(...args.slice(i + 1))
+      break
+    }
+    if (text.startsWith("--")) {
+      const eq = text.indexOf("=")
+      const name = eq === -1 ? text : text.slice(0, eq)
+      options.push({ name, value: eq !== -1 ? { ...word, text: text.slice(eq + 1) } : valueFlags.has(name) ? args[++i] : undefined })
+    } else if (text.startsWith("-") && text !== "-") {
+      for (let at = 1; at < text.length; at++) {
+        const name = `-${text[at]}`
+        const rest = text.slice(at + 1)
+        if (rest.startsWith("=")) {
+          options.push({ name, value: { ...word, text: rest.slice(1) } })
+          break
+        }
+        if (!valueFlags.has(name)) {
+          options.push({ name, value: undefined })
+          continue
+        }
+        options.push({ name, value: rest === "" ? args[++i] : { ...word, text: rest } })
+        break
+      }
+    } else {
+      positionals.push(word)
+    }
+  }
+  return { options, positionals }
+}
+
 export const ghRefusal = (args: ReadonlyArray<Word>): string | undefined => {
   const positional = ghPositionals(args)
   const [group, sub] = positional
   if (positional.some((word) => word.dynamic)) return REASONS.dynamic
-  const has = (flag: string) => args.some((arg) => arg.text === flag || arg.text.startsWith(`${flag}=`))
-  const runtimeFlag = (valueFlags: ReadonlySet<string>, takesId: boolean) =>
-    runtimeFlagRefusal(
-      args.filter((arg) => arg !== group && arg !== sub),
-      valueFlags,
-      takesId,
-    )
+  const sets = (valueFlags: ReadonlySet<string>, ...names: ReadonlyArray<string>) => ghOptions(args, valueFlags).options.some((option) => names.includes(option.name))
+  const runtimeFlag = (valueFlags: ReadonlySet<string>, takesId: boolean) => runtimeFlagRefusal(args.filter((arg) => arg !== group && arg !== sub), valueFlags, takesId)
   switch (group?.text) {
     case "pr":
       switch (sub?.text) {
@@ -49,11 +102,11 @@ export const ghRefusal = (args: ReadonlyArray<Word>): string | undefined => {
         case "comment":
           return undefined
         case "checks":
-          return runtimeFlag(PR_CHECKS_VALUE_FLAGS, true) ?? (has("--watch") || has("-w") ? REASONS.watch : undefined)
+          return runtimeFlag(PR_CHECKS_VALUE_FLAGS, true) ?? (sets(PR_CHECKS_VALUE_FLAGS, "--watch", "-w") ? REASONS.watch : undefined)
         case "create":
           return runtimeFlag(PR_CREATE_VALUE_FLAGS, false) ?? prCreateRefusal(args)
         case "edit":
-          return runtimeFlag(PR_EDIT_VALUE_FLAGS, true) ?? (has("--add-reviewer") || has("--base") || has("-B") ? REASONS.review : undefined)
+          return runtimeFlag(PR_EDIT_VALUE_FLAGS, true) ?? (sets(PR_EDIT_VALUE_FLAGS, "--add-reviewer", "--base", "-B") ? REASONS.review : undefined)
         default:
           return sub?.text === "merge" ? REASONS.merge : REASONS.ghCommand
       }
@@ -70,7 +123,7 @@ export const ghRefusal = (args: ReadonlyArray<Word>): string | undefined => {
     case "auth":
       // The token itself must stay out of reach; status may reveal it with these flags.
       if (sub?.text !== "status") return REASONS.ghCommand
-      return runtimeFlag(AUTH_STATUS_VALUE_FLAGS, false) ?? (has("-t") || has("--show-token") ? REASONS.ghCommand : undefined)
+      return runtimeFlag(AUTH_STATUS_VALUE_FLAGS, false) ?? (sets(AUTH_STATUS_VALUE_FLAGS, "-t", "--show-token") ? REASONS.ghCommand : undefined)
     case "api":
       return ghApiRefusal(args.slice(args.findIndex((arg) => arg === group) + 1))
     default:
@@ -107,7 +160,7 @@ const runtimeFlagRefusal = (args: ReadonlyArray<Word>, valueFlags: ReadonlySet<s
 
 const PR_CHECKS_VALUE_FLAGS = flags("-i", "--interval", "-q", "--jq", "-t", "--template", "--json", "-R", "--repo")
 const PR_EDIT_VALUE_FLAGS = flags(
-  ...["-t", "--title", "-b", "--body", "-F", "--body-file", "-B", "--base", "-m", "--milestone", "-R", "--repo"],
+  ...["-t", "--title", "-b", "--body", "-F", "--body-file", "-B", "--base", "-m", "--milestone", "-R", "--repo", "--attach"],
   ...["--add-label", "--remove-label", "--add-reviewer", "--remove-reviewer", "--add-assignee", "--remove-assignee", "--add-project", "--remove-project"],
 )
 const AUTH_STATUS_VALUE_FLAGS = flags("-h", "--hostname", "-q", "--jq", "--json", "--template")
@@ -115,26 +168,14 @@ const AUTH_STATUS_VALUE_FLAGS = flags("-h", "--hostname", "-q", "--jq", "--json"
 /** `gh pr create` options whose value is the next word: `--body --draft` sets the body, not the draft. */
 const PR_CREATE_VALUE_FLAGS = flags(
   ...["-t", "--title", "-b", "--body", "-F", "--body-file", "-B", "--base", "-H", "--head", "-a", "--assignee", "-l", "--label"],
-  ...["-m", "--milestone", "-p", "--project", "-r", "--reviewer", "-T", "--template", "-R", "--repo", "--recover"],
+  ...["-m", "--milestone", "-p", "--project", "-r", "--reviewer", "-T", "--template", "-R", "--repo", "--recover", "--attach"],
 )
 
 /** `gh pr create` must open a draft against `main`: an independent review gates every pushed fix before it is readied. */
 const prCreateRefusal = (args: ReadonlyArray<Word>): string | undefined => {
+  const drafts = ghOptions(args, PR_CREATE_VALUE_FLAGS).options.filter((option) => option.name === "--draft" || option.name === "-d")
   // gh takes the last occurrence, so any `=false` may win over a bare `--draft`.
-  const drafts = draftFlags(args)
-  return drafts.length === 0 || drafts.some((flag) => !["--draft", "-d", "--draft=true", "-d=true"].includes(flag)) ? REASONS.draft : undefined
-}
-
-/** Every draft flag `gh pr create` will read, combined boolean shorthands (`-dw`) included. */
-const draftFlags = (args: ReadonlyArray<Word>): ReadonlyArray<string> => {
-  const found: Array<string> = []
-  for (let i = 0; i < args.length; i++) {
-    const text = args[i]?.text ?? ""
-    if (PR_CREATE_VALUE_FLAGS.has(text)) i++
-    else if (/^(--draft|-d)(=|$)/.test(text)) found.push(text)
-    else if (/^-[dfw]{2,}$/.test(text) && text.includes("d")) found.push("-d")
-  }
-  return found
+  return drafts.length === 0 || drafts.some((draft) => draft.value !== undefined && draft.value.text !== "true") ? REASONS.draft : undefined
 }
 
 /** A `key=value` field whose GraphQL `query` (the operation itself) is only known at runtime: computed, or under a computed key. */
@@ -145,48 +186,27 @@ const hidesQuery = (field: Word | undefined): boolean => {
 }
 
 const ghApiRefusal = (args: ReadonlyArray<Word>): string | undefined => {
+  // A word outside quotes splits at runtime and could add -X, -f or --input (`--jq $Q`, `-f q=$Q`), turning a read into a write.
+  if (args.some((word) => word.splits)) return REASONS.computedFlag
+  const { options, positionals } = ghOptions(args, GH_API_VALUE_FLAGS)
+  // A computed flag could be -X or -f, a computed endpoint anything.
+  if (options.some((option) => /[$`]/.test(option.name)) || positionals.some((word) => word.dynamic)) return REASONS.dynamic
   let method: string | undefined
   let fields = false
   // The query is read from a file or a variable, so whether it mutates is unseen.
   let queryUnseen = false
-  let endpoint: string | undefined
-  for (let i = 0; i < args.length; i++) {
-    const word = args[i]
-    if (word === undefined) break
-    const text = word.text
-    const next = args[i + 1]
-    // A word outside quotes splits at runtime and could add -X, -f or --input (`--jq $Q`, `-f q=$Q`), turning a read into a write.
-    if (word.splits || (next?.splits && (GH_API_FIELD_FLAGS.has(text) || GH_API_VALUE_FLAGS.has(text)))) return REASONS.computedFlag
-    if (text === "-X" || text === "--method") {
-      if (next?.dynamic) return REASONS.dynamic
-      method = next?.text.toUpperCase()
-      i++
-    } else if (text.startsWith("--method=")) {
-      if (word.dynamic) return REASONS.dynamic
-      method = text.slice("--method=".length).toUpperCase()
-    } else if (/^-X./.test(text)) {
-      if (word.dynamic) return REASONS.dynamic
-      method = text.slice(2).toUpperCase()
-    } else if (GH_API_FIELD_FLAGS.has(text)) {
+  for (const { name, value } of options) {
+    if (name === "-X" || name === "--method") {
+      if (value?.dynamic) return REASONS.dynamic
+      method = value?.text.toUpperCase()
+    } else if (GH_API_FIELD_FLAGS.has(name)) {
       fields = true
       // `--input` and a typed field's `@file` value send a file's contents.
-      queryUnseen ||= text === "--input" || ((text === "-F" || text === "--field") && /^[^=]*=@/.test(next?.text ?? "")) || hidesQuery(next)
-      i++
-    } else if (/^(--field|--raw-field|--input)=/.test(text) || /^-[fF]./.test(text)) {
-      fields = true
-      const field = { ...word, text: text.replace(/^(--field=|--raw-field=|-[fF])/, "") }
-      queryUnseen ||= text.startsWith("--input=") || /^(-F|--field=)[^=]*=@/.test(text) || hidesQuery(field)
-    } else if (GH_API_VALUE_FLAGS.has(text)) {
-      i++
-    } else if (!text.startsWith("-") && !word.dynamic && endpoint === undefined) {
-      endpoint = text
-    } else if (word.dynamic) {
-      // A computed flag could be -X or -f. The value of a known value flag is consumed above and never reaches here.
-      return REASONS.dynamic
+      queryUnseen ||= name === "--input" || ((name === "-F" || name === "--field") && /^[^=]*=@/.test(value?.text ?? "")) || hidesQuery(value)
     }
   }
   // A GraphQL read POSTs its query too: one with no `mutation` is a read, unless the guard can't see the query. Its variables (`-F number=$PR`) are values, never operations.
-  if (endpoint === "graphql") return queryUnseen || args.some((arg) => /\bmutation\b/i.test(arg.text)) ? REASONS.graphql : undefined
+  if (positionals[0]?.text === "graphql") return queryUnseen || args.some((arg) => /\bmutation\b/i.test(arg.text)) ? REASONS.graphql : undefined
   if (method !== undefined && WRITE_METHODS.has(method)) return REASONS.apiWrite
   if (fields && method !== "GET") return REASONS.apiWrite
   return undefined
