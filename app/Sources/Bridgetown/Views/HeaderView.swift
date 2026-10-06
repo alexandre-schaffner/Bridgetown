@@ -84,7 +84,7 @@ struct StatusSummary: View {
 
     /// What the connection is doing, in a few words; the problem line below says why. With
     /// the last snapshot still on screen, it says that what shows is no longer live.
-    static func connectionLine(daemon: DaemonProcess.State, connection: Store.Connection, showingLast: Bool) -> String {
+    nonisolated static func connectionLine(daemon: DaemonProcess.State, connection: Store.Connection, showingLast: Bool) -> String {
         let state = switch daemon {
         case .missing: "Daemon not installed"
         case .portInUse: "Daemon couldn't start"

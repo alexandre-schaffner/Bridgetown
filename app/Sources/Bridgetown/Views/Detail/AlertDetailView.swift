@@ -156,7 +156,7 @@ struct AlertDetailView: View {
 
     /// Not over yet: not triaged, a card waiting on you, or an agent still on it. Its outcome
     /// is then where it stands, not how it ended.
-    static func isOpen(_ alert: AlertView, session: Session?, openActions: [Action]) -> Bool {
+    nonisolated static func isOpen(_ alert: AlertView, session: Session?, openActions: [Action]) -> Bool {
         alert.outcome.kind == .pending || alert.outcome.kind == .waiting || session?.isActive == true || !openActions.isEmpty
     }
 

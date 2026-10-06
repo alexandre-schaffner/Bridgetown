@@ -11,9 +11,11 @@ struct StatusLine<Mark: View>: View {
     let mark: Mark
 
     var body: some View {
+        // The mark's middle, level with the middle of the headline's capitals.
+        let lift = size * 0.35
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             mark
-                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + size * 0.35 }
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + lift }
             tone.headline(headline)
                 .font(.geist(size, .medium))
                 .foregroundStyle(tone.isQuiet ? .secondary : .primary)
