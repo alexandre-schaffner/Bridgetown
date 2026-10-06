@@ -284,12 +284,13 @@ extension ButtonStyle where Self == StageButtonStyle {
 // MARK: Tab switch
 
 /// A small outlined segmented control: the selected option on a raised fill that slides
-/// to the option you pick.
+/// to the option you pick; under Reduce Motion it is simply there.
 struct TabSwitch<Option: Hashable & Identifiable>: View {
     let options: [Option]
     @Binding var selection: Option
     let title: (Option) -> String
     @Namespace private var fill
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 2) {
@@ -320,6 +321,6 @@ struct TabSwitch<Option: Hashable & Identifiable>: View {
         }
         .padding(2)
         .overlay(PixelStroke(radius: Ink.controlRadius, style: Ink.outline))
-        .animation(Easing.state, value: selection)
+        .animation(reduceMotion ? nil : Easing.state, value: selection)
     }
 }
