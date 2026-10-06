@@ -334,7 +334,7 @@ struct Action: Codable, Sendable, Equatable, Identifiable {
     /// `reply`: `detail` is an agent-drafted reply to a teammate; resolve with the edited text.
     /// `escalate`: needs the user personally; the primary button opens `url`, then resolves.
     enum Kind: String, LenientStringEnum {
-        case investigate, merge, release, rerun, answer, grafana, review, reply, escalate, unknown
+        case investigate, merge, release, rerun, answer, review, reply, escalate, unknown
     }
 
     var id: String

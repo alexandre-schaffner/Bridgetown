@@ -363,7 +363,6 @@ extension Action.Kind {
         case .release: "shippingbox"
         case .rerun: "arrow.clockwise"
         case .answer: "bubble.left"
-        case .grafana: "chart.xyaxis.line"
         case .review: "doc.text.magnifyingglass"
         case .reply: "arrowshape.turn.up.left"
         case .escalate: "person.fill.questionmark"
@@ -431,7 +430,7 @@ extension Action.Kind {
         switch self {
         case .escalate, .reply, .answer, .unknown: .answer
         case .merge, .release: .ship
-        case .investigate, .grafana: .investigate
+        case .investigate: .investigate
         case .review, .rerun: .retry
         }
     }
