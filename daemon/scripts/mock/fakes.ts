@@ -4,7 +4,7 @@ import { GheBlocked, type GitHubError } from "../../src/domain/errors.ts"
 import type { GitHubShape, PullRequest } from "../../src/ship/github.ts"
 import { prLabel, prNumber } from "../../src/ship/pr.ts"
 import { nextTagFrom } from "../../src/ship/tags.ts"
-import type { JevShape } from "../../src/triage/jev.ts"
+import type { JevShape } from "../../src/jev.ts"
 import { fakeSlack, verdict } from "../../test/support/fakes.ts"
 
 /** Slack, as alex, that reads nothing new and swallows every post: the mock never reaches slack.com. */

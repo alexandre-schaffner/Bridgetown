@@ -25,7 +25,7 @@ import { SlackClient, SlackClientLive } from "./slack/client.ts"
 import { SlackMeLive } from "./slack/me.ts"
 import { SlackThreadLive } from "./slack/thread.ts"
 import { Store, StoreLive } from "./store/store.ts"
-import { Jev, JevLive } from "./triage/jev.ts"
+import { Jev, JevLive } from "./jev.ts"
 import { WatcherLive } from "./watch/watcher.ts"
 
 /**

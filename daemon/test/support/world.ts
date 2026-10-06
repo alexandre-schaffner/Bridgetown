@@ -8,7 +8,7 @@ import { Agent, type AgentShape } from "../../src/sessions/agent.ts"
 import { GitHub, type GitHubShape } from "../../src/ship/github.ts"
 import { SlackClient, type SlackClientShape } from "../../src/slack/client.ts"
 import { StoreLive } from "../../src/store/store.ts"
-import { Jev, type JevShape } from "../../src/triage/jev.ts"
+import { Jev, type JevShape } from "../../src/jev.ts"
 import { fakeGitHub, fakeSlack, noAgent, noGrafana, noJev, noReviewer } from "./fakes.ts"
 import { scratchDir } from "./tmp.ts"
 

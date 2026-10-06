@@ -15,7 +15,7 @@ import { pct as percent } from "../src/lib/text.ts"
 import { isAlertMessage } from "../src/pipeline/alerts.ts"
 import { makeSlackClient, type SlackMessage } from "../src/slack/client.ts"
 import { parseMessage } from "../src/slack/parse.ts"
-import { makeJev } from "../src/triage/jev.ts"
+import { makeJev } from "../src/jev.ts"
 import { decide } from "../src/triage/policy.ts"
 import { applyRules } from "../src/triage/rules.ts"
 

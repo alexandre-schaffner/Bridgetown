@@ -1,11 +1,11 @@
 import { type EntryType, type Questions, TypeSafeClient } from "@typesafe-ai/sdk"
 import { Context, Effect, Layer } from "effect"
-import type { JevVerdict } from "../domain/alert.ts"
-import type { FindingVerdict } from "../domain/critique.ts"
-import { type AdapterError, attempt, MissingCredential } from "../domain/errors.ts"
-import { type FindingJudgeInput, findingQuestions, findingState } from "../critique/judge.ts"
-import { type LogPatternInput, type LogPatternVerdict, logPatternQuestions, logPatternState } from "../watch/judge.ts"
-import { alertQuestions, alertState, type InboxJudgeInput, inboxQuestions, inboxState, type JudgeInput } from "./judge.ts"
+import type { JevVerdict } from "./domain/alert.ts"
+import type { FindingVerdict } from "./domain/critique.ts"
+import { type AdapterError, attempt, MissingCredential } from "./domain/errors.ts"
+import { type FindingJudgeInput, findingQuestions, findingState } from "./critique/judge.ts"
+import { type LogPatternInput, type LogPatternVerdict, logPatternQuestions, logPatternState } from "./watch/judge.ts"
+import { alertQuestions, alertState, type InboxJudgeInput, inboxQuestions, inboxState, type JudgeInput } from "./triage/judge.ts"
 
 export interface JevShape {
   readonly judge: (input: JudgeInput) => Effect.Effect<JevVerdict, MissingCredential | AdapterError>
