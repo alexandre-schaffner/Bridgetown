@@ -882,6 +882,11 @@ const recent = [
     width: var(--box-w);
   }
 
+  /* Without script nothing answers a click: no pointer over the notch either. */
+  :global(html:not(.js)) .hit {
+    display: none;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .glyph:global(.working) {
       animation: none;
