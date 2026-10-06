@@ -44,14 +44,18 @@ export const readScript = (path: string): string | undefined => {
   }
 }
 
-
 const KEYWORDS = new Set(["!", "{", "}", "if", "then", "else", "elif", "fi", "do", "done", "while", "until", "esac", "coproc"])
 const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)\+?=/
 /** Variables whose value is a command a later program runs (an ssh, pager, editor or askpass): only one that runs nothing may be set (`GIT_EDITOR=true`, `PAGER=cat`). */
 const COMMAND_ENV = /^(GIT_SSH_COMMAND|GIT_SSH|GIT_EXTERNAL_DIFF|GIT_PAGER|GIT_EDITOR|GIT_SEQUENCE_EDITOR|GIT_PROXY_COMMAND|GIT_ASKPASS|SSH_ASKPASS|PAGER|GH_PAGER|EDITOR|VISUAL|GH_EDITOR)$/
-/** Variables no value of which is safe: a startup file or option string a shell or runtime runs, an injected library, git's config, exec path and hook templates, an exported bash function (`env 'BASH_FUNC_git%%=() {…}'`), and Bridgetown's own (`BRIDGETOWN_BRANCH` is the exec-time guard's scope). */
+/**
+ * Variables no value of which is safe: a startup file or option string a shell or runtime runs (`ZDOTDIR` holds zsh's
+ * `.zshenv`), an injected library, git's config, exec path and hook templates, an exported bash function
+ * (`env 'BASH_FUNC_git%%=() {…}'`), and Bridgetown's own (`BRIDGETOWN_BRANCH` is the exec-time guard's scope). Not
+ * `ENV`, which only an interactive shell reads and shellRefusal refuses those: `ENV=test bun test` is common.
+ */
 const LOADER_ENV =
-  /^(BASH_ENV|ENV|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|BASH_FUNC_.*|GIT_CONFIG_PARAMETERS|GIT_CONFIG_(COUNT|KEY_[0-9]+|VALUE_[0-9]+)|GIT_EXEC_PATH|GIT_TEMPLATE_DIR|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|NODE_OPTIONS|BUN_OPTIONS|PERL5OPT|PERL5LIB|PYTHONSTARTUP|RUBYOPT|BRIDGETOWN_.*)$/
+  /^(BASH_ENV|ZDOTDIR|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|BASH_FUNC_.*|GIT_CONFIG_PARAMETERS|GIT_CONFIG_(COUNT|KEY_[0-9]+|VALUE_[0-9]+)|GIT_EXEC_PATH|GIT_TEMPLATE_DIR|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|NODE_OPTIONS|BUN_OPTIONS|PERL5OPT|PERL5LIB|PYTHONSTARTUP|RUBYOPT|BRIDGETOWN_.*)$/
 /** Builtins that set variables from their `NAME=value` arguments. */
 const DECLARATIONS = new Set(["export", "declare", "typeset", "local", "readonly"])
 const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "mksh", "ash", "fish", "csh", "tcsh", "yash", "oksh", "posh", "busybox", "pwsh", "nu", "xonsh", "elvish"])
@@ -117,7 +121,6 @@ const expandHome = (path: string): string => (path === "~" || path.startsWith("~
 
 const literal = (words: ReadonlyArray<Word>): string | undefined =>
   words.some((word) => word.dynamic) ? undefined : words.map((word) => word.text).join(" ")
-
 
 /** Commands that run another command: what follows their options is checked instead. */
 const WRAPPERS: Readonly<Record<string, ReadonlySet<string>>> = {
@@ -461,10 +464,13 @@ const shellRefusal = (args: ReadonlyArray<Word>, scope: Scope): string | undefin
       return script === undefined ? REASONS.pipeToShell : command ? checkString(script, scope) : scriptRefusal(script, scope, true)
     }
     if (text === "-o" || text === "+o" || text === "-O" || text === "+O" || text === "--rcfile" || text === "--init-file") {
+      if (text === "-o" && args[i + 1]?.text === "interactive") return REASONS.interactive
       i++
       continue
     }
+    if (text === "--interactive") return REASONS.interactive
     if (/^[-+][a-zA-Z]+$/.test(text)) {
+      if (text.startsWith("-") && text.includes("i")) return REASONS.interactive
       if (text.startsWith("-") && text.includes("c")) command = true
       if (text.startsWith("-") && text.includes("s")) return REASONS.pipeToShell
       continue

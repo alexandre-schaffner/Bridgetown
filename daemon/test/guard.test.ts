@@ -31,6 +31,7 @@ const files: Record<string, string> = {
       prerelease: "gh release create v1",
       release: "echo released",
       gate: "./x.sh",
+      fingerprints: "ENV=test bun test tests/fingerprint.test.ts",
     },
   }),
   "/w/apps/api/package.json": JSON.stringify({ scripts: { rollout: "helm upgrade api ." } }),
@@ -246,6 +247,13 @@ describe("guard", () => {
     "GIT_PAGER='gh pr merge 1' git log",
     'NODE_OPTIONS="--require ./x.js" bun test',
     "BUN_OPTIONS='--preload ./x.ts' bun test",
+    // zsh runs $ZDOTDIR/.zshenv first; an interactive shell runs $ENV (and its rc files).
+    "ZDOTDIR=/tmp/z zsh -c 'git status'",
+    "export ZDOTDIR=/tmp/z",
+    "ENV=./x.sh sh -i -c true",
+    "bash -ic 'git status'",
+    "sh -o interactive -c true",
+    "zsh --interactive -c true",
     "GIT_ASKPASS=./x.sh git fetch",
     "GIT_EXEC_PATH=/w/bin git subtree split",
     "GH_PAGER='gh pr merge 1' gh pr view 1",
@@ -402,6 +410,10 @@ describe("guard", () => {
     `gh api graphql -f query='query($n: Int!) { repository(owner: "Merkl", name: "monorepo") { pullRequest(number: $n) { mergeable } } }' -F n="$PR"`,
     // Scripts whose bodies are fine, and bun's own `test`/`build` whatever package.json says.
     "bun run ci",
+    // `ENV` is only read by an interactive shell, which is refused on its own.
+    "ENV=test bun test tests/fingerprint.test.ts",
+    "bun run fingerprints",
+    "bash -lc 'bun test'",
     "bun type",
     "bun test",
     "bun build ./src/index.ts --outdir dist",
