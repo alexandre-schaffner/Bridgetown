@@ -75,6 +75,10 @@ final class E2EHarness {
             options.out = URL(fileURLWithPath: out, isDirectory: true)
             options.suite = suite == "none" ? nil : URL(fileURLWithPath: suite)
             mode = .run(options)
+            // Now, with the app delegate: SwiftUI can draw a Settings window it restores
+            // before `configure`, and its Accounts tab reads the Keychain as it appears. A
+            // rebuilt binary then puts up a Keychain prompt that blocks the run.
+            Keychain.inMemory = [:]
         } else if demo {
             mode = .islandDemo
         } else {
@@ -104,9 +108,13 @@ final class E2EHarness {
         // Lines reach whoever drives the run as they are printed (the control endpoint's URL), not at exit.
         setvbuf(stdout, nil, _IOLBF, 0)
         AppClock.override = suite.now
-        Keychain.inMemory = [:]
         Haptics.muted = true
         app.island.offscreen = true
+        // Unbundled, the debug binary launches as a regular app and SwiftUI opens its one
+        // scene, Settings, on the user's screen. A run draws Settings off screen itself.
+        for window in NSApp.windows where window.identifier?.rawValue == "com_apple_SwiftUI_Settings_window" {
+            window.close()
+        }
         E2EAccessibility.enable()
         let root = Self.mockRoot(for: options.out)
         app.daemon.extraEnvironment = [
