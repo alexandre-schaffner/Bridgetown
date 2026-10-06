@@ -179,6 +179,9 @@ const WRAPPERS: Readonly<Record<string, ReadonlySet<string>>> = {
   setsid: flags(),
   noglob: flags(),
   nocorrect: flags(),
+  // zsh: `- cmd` runs cmd with a dash before its argv[0]; `repeat 3 cmd` runs it three times.
+  "-": flags(),
+  repeat: flags(),
   arch: flags("-arch", "-d", "-e"),
   parallel: flags("-j", "-P", "-n", "-N"),
   // `script -q out cmd …`: the command follows the file operand; `-a`/`-t`/`-T` take a value.
@@ -244,8 +247,8 @@ const checkCommand = (command: Command, scope: Scope): string | undefined => {
         return call === undefined ? undefined : call.dynamic ? REASONS.dynamic : nested(call.text, scope)
       }
       let rest = args.slice(firstPositional(args, options))
-      // `timeout 30 cmd`, `script -q out cmd`: a positional operand precedes the command.
-      if (name === "timeout" || name === "script") rest = rest.slice(1)
+      // `timeout 30 cmd`, `script -q out cmd`, `repeat 3 cmd`: a positional operand precedes the command.
+      if (name === "timeout" || name === "script" || name === "repeat") rest = rest.slice(1)
       // With a command, xargs appends words from stdin the guard never sees, and -I substitutes them into the template, so a runtime word is appended and -I slots are marked dynamic. With no command it runs `echo` on its stdin, where there is nothing to smuggle a subcommand into.
       if (name === "xargs" && rest.length > 0) {
         const replstr = xargsReplstr(args)

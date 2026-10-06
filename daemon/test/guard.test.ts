@@ -265,6 +265,10 @@ describe("guard", () => {
     // `coproc name { body; }` (bash) starts the body at once; the name must not hide it, like the simple `coproc command` form.
     "coproc c { nc 127.0.0.1 47621; }",
     "coproc gh pr merge 1",
+    // zsh's `repeat N` and `-` precommand modifier run the command after them.
+    "repeat 1 nc 127.0.0.1 47621",
+    "repeat $N { security find-generic-password -s x -w }",
+    "- nc 127.0.0.1 47621",
     // `mapfile`/`readarray -C cmd` evaluates `cmd` as a shell command as it reads.
     "mapfile -C 'gh pr merge 1' -c 1 arr",
     "mapfile -t -C 'kubectl delete pod' arr",
@@ -530,6 +534,7 @@ describe("guard", () => {
     "function helper { git status; }",
     "function build { bun run build; }",
     "coproc reader { bun test; }",
+    "repeat 3 bun test",
     // mapfile without a callback, and a callback that runs nothing refused.
     "mapfile -t lines",
     "mapfile -C 'echo $1' -c 1 arr",
