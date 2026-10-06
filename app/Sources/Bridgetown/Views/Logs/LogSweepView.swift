@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 /// Prod → Logs: the daemon's last sweep of prod's logs, its lines grouped into patterns
@@ -177,13 +176,8 @@ private struct PatternRow: View {
             Button("Show finding") { store.show(.alert(alertId)) }
         }
         Divider()
-        Button("Copy example line") { copy(pattern.example) }
-        Button("Copy pattern") { copy(pattern.message) }
-    }
-
-    private func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        Button("Copy example line") { SystemActions.copy(pattern.example) }
+        Button("Copy pattern") { SystemActions.copy(pattern.message) }
     }
 
     private var tooltip: String {

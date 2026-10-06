@@ -1,7 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// Side effects outside the app: URLs, the log file, Terminal takeover, the Settings window.
+/// Side effects outside the app: URLs, the log file, Terminal takeover, the Settings window,
+/// the clipboard.
 @MainActor
 enum SystemActions {
     /// URLs from the daemon originate partly with agents, so only web, Slack and Revv
@@ -17,7 +18,7 @@ enum SystemActions {
 
     #if DEBUG
     enum Effect: String, Codable {
-        case openURL, openLogs, takeOver, openSettings
+        case openURL, openLogs, takeOver, openSettings, copy
     }
 
     /// While set, every side effect is handed here instead of happening: an e2e run
@@ -57,6 +58,14 @@ enum SystemActions {
         #endif
         NSApp.activate()
         openSettings()
+    }
+
+    static func copy(_ text: String) {
+        #if DEBUG
+        if let sink { return sink(.copy, text) }
+        #endif
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     /// `cd '<worktree>' && claude --resume <id>` in a new Terminal window.
