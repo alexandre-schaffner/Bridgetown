@@ -297,6 +297,23 @@ import Testing
         board.to = now.addingTimeInterval(-3600)
         #expect(!board.endsNow(at: now))
     }
+
+    /// Each column holds the largest sample of its bucket; a sample outside the window
+    /// draws nothing, and the crosshair stands in the middle of a bucket.
+    @Test func aPanelIsCutIntoTheBoardsBuckets() throws {
+        let json = """
+        {"title":"Incidents","from":"2026-10-04T11:00:00Z","to":"2026-10-04T11:10:00Z","stepSeconds":120,
+         "marker":null,"fetchedAt":"2026-10-04T11:10:00Z","error":null,"deploys":[],
+         "panels":[{"id":"5xx","title":"API 5xx","unit":"count","latest":3,"link":"https://grafana.example/d/x","error":null,
+           "series":[{"label":"5xx","points":[[1791111610,2],[1791111660,5],[1791111730,3],[1791112300,1]]}]}]}
+        """
+        let board = try JSON.decoder().decode(Board.self, from: Data(json.utf8))
+        let panel = try #require(board.panels.first)
+        #expect(board.columns == 5)
+        #expect(board.buckets(of: panel).map(\.values) == [[5, 3, nil, nil, nil]])
+        #expect(board.time(ofColumn: 0) == board.from.addingTimeInterval(60))
+        #expect(panel.chartTop == 5 * 1.15)
+    }
 }
 
 @Suite struct SessionHolderTests {

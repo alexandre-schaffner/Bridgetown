@@ -29,14 +29,6 @@ struct MiniPanel: View {
     static let lineChartWidth: CGFloat = 92
     static let lineValueWidth: CGFloat = 70
 
-    /// The chart's top: a little above the highest sample.
-    private var yMax: Double {
-        let top = panel.series.flatMap { $0.points.compactMap { $0.count == 2 ? $0[1] : nil } }.max() ?? 0
-        return top > 0 ? top * 1.15 : 1
-    }
-
-    private var hasSamples: Bool { panel.series.contains { $0.points.contains { $0.count == 2 } } }
-
     /// The value under the shared crosshair (summed across series, like `latest`), or the latest.
     private var shown: Double? {
         guard let hover else { return panel.latest }
@@ -304,7 +296,7 @@ struct MiniPanel: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, minHeight: height, alignment: .topLeading)
                 .help(error)
-        } else if !hasSamples {
+        } else if !panel.hasSamples {
             Text("No data in this window")
                 .font(Typo.caption)
                 .foregroundStyle(.tertiary)
@@ -318,37 +310,6 @@ struct MiniPanel: View {
     /// are lines.
     private var style: BucketChart.Style {
         panel.series.count == 1 && (panel.unit == .count || panel.unit == .unknown) ? .bars : .levels
-    }
-
-    private var step: TimeInterval { Double(max(1, board.stepSeconds)) }
-
-    /// One column per bucket across the board's window, the same for every panel, so the
-    /// shared crosshair lands on the same bucket in each.
-    private var columns: Int {
-        max(1, Int((board.to.timeIntervalSince(board.from) / step).rounded(.up)))
-    }
-
-    private func column(of date: Date) -> Int {
-        Int((date.timeIntervalSince(board.from) / step).rounded(.down))
-    }
-
-    private func fraction(of date: Date) -> Double {
-        date.timeIntervalSince(board.from) / max(1, board.to.timeIntervalSince(board.from))
-    }
-
-    private var chartSeries: [BucketChart.Series] {
-        let count = columns
-        return panel.series.map { s in
-            var values = [Double?](repeating: nil, count: count)
-            for p in s.points where p.count == 2 {
-                let c = column(of: Date(timeIntervalSince1970: p[0]))
-                if values.indices.contains(c) { values[c] = max(values[c] ?? 0, p[1]) }
-            }
-            // The series still reporting bright, the rest faint: for pods by version, the
-            // new tag reads as the live one.
-            let reporting = panel.series.count == 1 || (s.points.last?[1] ?? 0) > 0
-            return BucketChart.Series(values: values, current: reporting)
-        }
     }
 
     /// Against the window's median: "near usual", or how far above or below it the latest
@@ -379,17 +340,16 @@ struct MiniPanel: View {
     }
 
     private var chart: some View {
-        let hoveredColumn = hover.map(column(of:))
-        return BucketChart(
-            series: chartSeries,
+        BucketChart(
+            series: board.buckets(of: panel),
             style: style,
-            yMax: yMax,
+            yMax: panel.chartTop,
             typical: panel.typical,
-            hovered: hoveredColumn,
+            hovered: hover.map(board.column(of:)),
             deploys: board.deploys
                 .filter { $0.at >= board.from && $0.at <= board.to }
-                .map { (fraction(of: $0.at), $0.status == .failed) },
-            marker: board.marker.map(fraction(of:))
+                .map { (board.fraction(of: $0.at), $0.status == .failed) },
+            marker: board.marker.map(board.fraction(of:))
         )
         .overlay {
             GeometryReader { geo in
@@ -401,8 +361,9 @@ struct MiniPanel: View {
                         case let .active(location):
                             // The centre of the column under the pointer, so every panel's
                             // value comes from that same bucket.
+                            let columns = board.columns
                             let c = min(columns - 1, max(0, Int(location.x / max(1, geo.size.width) * CGFloat(columns))))
-                            hover = board.from.addingTimeInterval((Double(c) + 0.5) * step)
+                            hover = board.time(ofColumn: c)
                         case .ended:
                             hover = nil
                         }

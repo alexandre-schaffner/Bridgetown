@@ -1,6 +1,7 @@
 import Foundation
 
-// A board's numbers as the charts read them: units, the window's usual level, spikes.
+// A board's numbers as the charts read them: units, the window's usual level, spikes,
+// and the buckets the window is cut into.
 
 extension Board.Panel.Unit {
     /// "1.2k", "423 ms", "0.9/s", "567 MB".
@@ -81,6 +82,52 @@ extension Board.Panel {
     var spikeRatio: Double? {
         guard error == nil, let latest, let typical, Self.isSpike(latest, typical: typical) else { return nil }
         return latest / typical
+    }
+}
+
+extension Board.Panel {
+    var hasSamples: Bool { series.contains { $0.points.contains { $0.count == 2 } } }
+
+    /// The chart's top: a little above the highest sample.
+    var chartTop: Double {
+        let top = series.flatMap { $0.points.compactMap { $0.count == 2 ? $0[1] : nil } }.max() ?? 0
+        return top > 0 ? top * 1.15 : 1
+    }
+}
+
+// MARK: Buckets
+
+extension Board {
+    /// What one bucket covers: the board's step, a second at the least.
+    var step: TimeInterval { Double(max(1, stepSeconds)) }
+
+    /// One column per bucket across the window, the same for every panel, so the shared
+    /// crosshair lands on the same bucket in each.
+    var columns: Int { max(1, Int((to.timeIntervalSince(from) / step).rounded(.up))) }
+
+    /// The column `date` falls in, outside `0..<columns` when it is outside the window.
+    func column(of date: Date) -> Int { Int((date.timeIntervalSince(from) / step).rounded(.down)) }
+
+    /// The middle of a column's bucket: where the crosshair stands over it.
+    func time(ofColumn column: Int) -> Date { from.addingTimeInterval((Double(column) + 0.5) * step) }
+
+    /// How far across the window `date` is: 0 at its start, 1 at its end.
+    func fraction(of date: Date) -> Double { date.timeIntervalSince(from) / max(1, to.timeIntervalSince(from)) }
+
+    /// A panel's series as its chart draws them: a value per column, the largest sample in
+    /// the bucket, nil where there was none. The series still reporting is bright and the
+    /// rest faint, so for pods by version the new tag reads as the live one.
+    func buckets(of panel: Panel) -> [BucketChart.Series] {
+        let count = columns
+        return panel.series.map { s in
+            var values = [Double?](repeating: nil, count: count)
+            for p in s.points where p.count == 2 {
+                let c = column(of: Date(timeIntervalSince1970: p[0]))
+                if values.indices.contains(c) { values[c] = max(values[c] ?? 0, p[1]) }
+            }
+            let reporting = panel.series.count == 1 || (s.points.last?[1] ?? 0) > 0
+            return BucketChart.Series(values: values, current: reporting)
+        }
     }
 }
 
