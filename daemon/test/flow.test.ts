@@ -12,8 +12,8 @@ import { SessionRunner } from "../src/sessions/runner.ts"
 import { Shipper } from "../src/ship/shipper.ts"
 import { MAX_CI_ROUNDS } from "../src/ship/transitions.ts"
 import { Store } from "../src/store/store.ts"
-import { makeAlert, makeSession } from "./support/records.ts"
 import { fakeJev, fakeSlack, postedIn, verdict } from "./support/fakes.ts"
+import { makeAlert, makeSession } from "./support/records.ts"
 import { makeWorld } from "./support/world.ts"
 
 const card = (overrides: Partial<Action>): Action => ({

@@ -1,7 +1,7 @@
 import { passedAt, REVIEWER_NAMES } from "../domain/critique.ts"
 import type { Session } from "../domain/session.ts"
-import { prLabel } from "./pr.ts"
 import type { PullRequest } from "./github.ts"
+import { prLabel } from "./pr.ts"
 
 /**
  * What the human-gate cards say under their title. A gate card is where the user decides,

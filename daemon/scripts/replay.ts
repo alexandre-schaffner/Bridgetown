@@ -11,11 +11,11 @@ import { type Alert, alertFromParsed, type Decision, type ThreadReply } from "..
 import { now } from "../src/domain/ids.ts"
 import type { Session } from "../src/domain/session.ts"
 import { DEFAULT_SETTINGS } from "../src/domain/settings.ts"
-import { pct as percent } from "../src/lib/text.ts"
 import { isAlertMessage } from "../src/intake/alerts.ts"
+import { makeJev } from "../src/jev.ts"
+import { pct as percent } from "../src/lib/text.ts"
 import { makeSlackClient, type SlackMessage } from "../src/slack/client.ts"
 import { parseMessage } from "../src/slack/parse.ts"
-import { makeJev } from "../src/jev.ts"
 import { decide } from "../src/triage/policy.ts"
 import { applyRules } from "../src/triage/rules.ts"
 

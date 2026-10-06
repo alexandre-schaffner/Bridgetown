@@ -5,8 +5,8 @@ import { now } from "../domain/ids.ts"
 import { SESSION_RESUMED_EVENT, sessionEndEvent } from "../domain/progress.ts"
 import { isFinished, type Session, type TranscriptKind, withPatch } from "../domain/session.ts"
 import { Hub } from "../hub.ts"
-import { firstLine, truncate } from "../lib/text.ts"
 import { makeKeyedLock } from "../lib/keyed-lock.ts"
+import { firstLine, truncate } from "../lib/text.ts"
 import { Store } from "../store/store.ts"
 
 export interface ModifyOptions {

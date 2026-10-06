@@ -1,7 +1,7 @@
 import { type ParsedAlert, WATCH_CHANNEL } from "../domain/alert.ts"
 import type { Deploy, Panel } from "../grafana/board.ts"
-import { clock } from "../lib/text.ts"
 import { type BoardSpec, HOUR, type OverviewView, overviewPanels, type PanelSpec, type Unit } from "../grafana/boards.ts"
+import { clock } from "../lib/text.ts"
 
 /** How far back the prod watcher looks: the last 15 minutes against the 3 hours before. */
 export const WATCH_HOURS = 3

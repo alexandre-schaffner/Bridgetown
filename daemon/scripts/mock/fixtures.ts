@@ -3,9 +3,9 @@ import { type Alert, type AlertFields, type AlertSource, type Disposition, type 
 import { sessionEndEvent, sessionStartEvent } from "../../src/domain/progress.ts"
 import { isFinished, NO_MILESTONES, type Session, type TranscriptEntry } from "../../src/domain/session.ts"
 import { type Channel, DEFAULT_CHANNELS, DEFAULT_SETTINGS, type Settings } from "../../src/domain/settings.ts"
+import { truncate } from "../../src/lib/text.ts"
 import { newSession } from "../../src/sessions/new-session.ts"
 import { releaseDetail } from "../../src/ship/cards.ts"
-import { truncate } from "../../src/lib/text.ts"
 import type { MockPr } from "./fakes.ts"
 
 /** The log finding's fingerprint: the Goldsky pattern in the mock's log sweep (grafana.ts) points at it. */
