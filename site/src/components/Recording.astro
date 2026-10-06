@@ -73,11 +73,11 @@ import Icon from "./Icon.astro";
 
     // In screens of scroll since the pin took hold: the first stretch lies over the hero's walk
     // into the light, and the screen develops out of it; then the clip grows.
-    const set = (name: string, v: number) => recording.style.setProperty(name, v.toFixed(4));
+    const set = (name: string, v: number, digits = 3) => recording.style.setProperty(name, v.toFixed(digits));
     const play = (d: number) => {
       set("--enter", smooth(0.05, 0.65, d));
       if (reduced) return;
-      set("--grow", lerp(0.34, 1, inOut(clamp((d - 0.75) / 1.15))));
+      set("--grow", lerp(0.34, 1, inOut(clamp((d - 0.75) / 1.15))), 4);
       set("--out", smooth(0.95, 1.45, d));
       set("--caption", smooth(1.65, 2.05, d));
     };
