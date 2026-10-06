@@ -31,9 +31,9 @@ export interface InboxContext {
   readonly me: string
   readonly fromName: string
   /**
-   * Alert channels. Their bot posts are the alert pipeline's; what people write
-   * there (a teammate pinging you in an alert's thread, or at the top level) is
-   * the inbox's.
+   * Alert channels. Their bot posts are alerts, which `AlertChannels` reads; what
+   * people write there (a teammate pinging you in an alert's thread, or at the
+   * top level) is the inbox's.
    */
   readonly alertChannels: ReadonlySet<string>
 }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { recommendation } from "../src/ship/messages.ts"
+import { recommendation } from "../src/slack/messages.ts"
 import { toMrkdwn } from "../src/slack/text.ts"
 
 describe("toMrkdwn: agent Markdown as Slack mrkdwn", () => {

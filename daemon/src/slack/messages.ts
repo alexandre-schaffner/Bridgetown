@@ -1,4 +1,4 @@
-import { toMrkdwn } from "../slack/text.ts"
+import { toMrkdwn } from "./text.ts"
 
 /**
  * Everything Bridgetown posts in Slack threads, in one place. Each goes out

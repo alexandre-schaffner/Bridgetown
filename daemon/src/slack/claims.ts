@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import type { Alert, Claimant } from "../domain/alert.ts"
-import * as Messages from "../ship/messages.ts"
+import * as Messages from "./messages.ts"
 import { SlackClient, type SlackMessage, type SlackReaction } from "./client.ts"
 import { SlackMe } from "./me.ts"
 import { firstLine, truncate } from "../lib/text.ts"

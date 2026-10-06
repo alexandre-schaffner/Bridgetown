@@ -3,7 +3,7 @@ import { Effect, Schema } from "effect"
 import { DEFAULT_SETTINGS } from "../src/domain/settings.ts"
 import { pct as percent } from "../src/lib/text.ts"
 import { readEnv } from "../src/config.ts"
-import { parseInbox } from "../src/slack/inbox.ts"
+import { parseInbox } from "../src/slack/inbox-parse.ts"
 import { makeJev } from "../src/jev.ts"
 import { decideInbox } from "../src/triage/policy.ts"
 
