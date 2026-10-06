@@ -96,6 +96,16 @@ import Testing
         let status = try Fixture.snapshot().status
         #expect(!problems(connection: .disconnected("gone"), status: status).contains { $0.id == "github" })
     }
+
+    /// The overview keeps the last snapshot while the daemon is away: the status line says
+    /// it isn't live rather than let it pass for the present.
+    @Test func theStatusLineSaysWhenTheOverviewIsNotLive() {
+        #expect(StatusSummary.connectionLine(daemon: .portInUse, connection: .disconnected("gone"), showingLast: true)
+            == "Daemon couldn't start · showing the last update")
+        #expect(StatusSummary.connectionLine(daemon: .running(pid: 1), connection: .disconnected("gone"), showingLast: true)
+            == "Reconnecting… · showing the last update")
+        #expect(StatusSummary.connectionLine(daemon: .running(pid: 1), connection: .connecting, showingLast: false) == "Connecting…")
+    }
 }
 
 @Suite struct SystemActionsTests {

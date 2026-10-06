@@ -29,26 +29,24 @@ struct EmptyState: View {
     }
 }
 
-/// Before the first snapshot: progress while the daemon starts, or why it can't.
+/// Before the first snapshot: progress while the daemon starts, or, when it can't start
+/// or connect, that nothing will show until it does. Why, and the fix, are on the problem
+/// line in the prod column, said once.
 struct ConnectingState: View {
     @Environment(Store.self) private var store
     @Environment(DaemonProcess.self) private var daemon
 
-    /// A reason the wait won't end on its own. The header carries the details and the fix.
-    private var blocker: String? {
-        if daemon.state == .missing { return "The daemon isn't bundled with this build." }
-        if daemon.state == .portInUse { return "The daemon couldn't start: port \(daemon.endpoint.port) is in use." }
-        if store.connection == .rejected { return "The daemon on port \(daemon.endpoint.port) won't accept this app." }
-        return nil
+    private var blocked: Bool {
+        daemon.state == .missing || daemon.state == .portInUse || store.connection == .rejected
     }
 
     var body: some View {
         VStack(spacing: 8) {
-            if let blocker {
+            if blocked {
                 Image(systemName: "exclamationmark.shield")
                     .font(.geist(24, .light))
                     .foregroundStyle(.secondary)
-                Text(blocker)
+                Text("Nothing to show until the daemon is running.")
                     .font(.geist(12))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

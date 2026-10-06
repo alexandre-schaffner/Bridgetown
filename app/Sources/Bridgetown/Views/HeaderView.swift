@@ -35,7 +35,7 @@ struct StatusSummary: View {
                     line(status, facts: [])
                 }
             } else {
-                Text(connectionLine)
+                Text(Self.connectionLine(daemon: daemon.state, connection: store.connection, showingLast: store.snapshot != nil))
                     .foregroundStyle(.secondary)
             }
         }
@@ -82,19 +82,22 @@ struct StatusSummary: View {
         return parts
     }
 
-    private var connectionLine: String {
-        switch daemon.state {
+    /// What the connection is doing, in a few words; the problem line below says why. With
+    /// the last snapshot still on screen, it says that what shows is no longer live.
+    static func connectionLine(daemon: DaemonProcess.State, connection: Store.Connection, showingLast: Bool) -> String {
+        let state = switch daemon {
         case .missing: "Daemon not installed"
         case .portInUse: "Daemon couldn't start"
         case .restarting: "Restarting daemon…"
         default:
-            switch store.connection {
+            switch connection {
             case .rejected: "Not connected"
-            // The store keeps retrying; the problem line below says why it dropped.
+            // The store keeps retrying.
             case .disconnected: "Reconnecting…"
             case .connecting, .connected: "Connecting…"
             }
         }
+        return showingLast ? "\(state) · showing the last update" : state
     }
 }
 
@@ -193,97 +196,15 @@ struct ProblemList: View {
     }
 }
 
-struct Problem: Identifiable, Equatable {
-    enum Severity { case warning, error }
-    enum Fix: Equatable {
-        case openSettings(String)
-        case restartDaemon(String)
-
-        var label: String {
-            switch self {
-            case let .openSettings(label), let .restartDaemon(label): label
-            }
-        }
-    }
-
-    let id: String
-    let text: String
-    let severity: Severity
-    var fix: Fix?
-
-    /// Everything wrong right now, worst first: the daemon connection, the last failed
-    /// action, then what the daemon reports about its own dependencies.
-    static func list(
-        connection: Store.Connection,
-        daemonState: DaemonProcess.State,
-        daemonMode: DaemonProcess.Mode,
-        port: Int,
-        lastConnectError: String?,
-        flash: String?,
-        status: Status?
-    ) -> [Problem] {
-        var out: [Problem] = []
-        if daemonState == .portInUse {
-            // Our daemon exited 98. A 401 on that port means the holder is another daemon.
-            let text = connection == .rejected
-                ? "Another Bridgetown daemon is running on port \(port). Quit it, then retry."
-                : "Port \(port) is in use by another process. Free it, then retry."
-            out.append(.init(id: "daemon", text: text, severity: .error, fix: .restartDaemon("Retry")))
-        } else {
-            switch connection {
-            case .rejected:
-                let text = daemonMode == .attach
-                    ? "The daemon on port \(port) rejected the API token. Check BRIDGETOWN_API_TOKEN."
-                    : "Another Bridgetown daemon is running on port \(port)."
-                out.append(.init(id: "daemon", text: text, severity: .error))
-            case let .disconnected(reason):
-                out.append(.init(id: "daemon", text: "Daemon disconnected · \(reason)", severity: .error))
-            case .connecting where daemonState == .missing:
-                out.append(.init(id: "daemon", text: "No daemon bundled. Set BRIDGETOWN_DAEMON_CMD or BRIDGETOWN_ATTACH=1.", severity: .error))
-            case .connecting:
-                if let reason = lastConnectError, daemonMode == .attach {
-                    out.append(.init(id: "daemon", text: "Waiting for daemon · \(reason)", severity: .warning))
-                }
-            case .connected:
-                break
-            }
-        }
-        if let flash {
-            out.append(.init(id: "flash", text: flash, severity: .error))
-        }
-        guard let status, connection == .connected else { return out }
-        switch status.slack {
-        case .missing_token: out.append(.init(id: "slack", text: "Slack token missing", severity: .warning, fix: .openSettings("Add token")))
-        case .error: out.append(.init(id: "slack", text: "Slack is failing", severity: .error))
-        default: break
-        }
-        switch status.jev {
-        case .missing_key: out.append(.init(id: "jev", text: "TypeSafe key missing · triage uses rules only", severity: .warning, fix: .openSettings("Add key")))
-        case .error: out.append(.init(id: "jev", text: "Jev unavailable · triage uses rules only", severity: .warning))
-        default: break
-        }
-        if status.github == .blocked {
-            out.append(.init(id: "github", text: "GitHub Enterprise blocks this network (IP allow list) · sessions wait", severity: .warning))
-        }
-        if status.grafanaMcp == .down {
-            out.append(.init(id: "grafana", text: "Grafana MCP down", severity: .warning))
-        }
-        if let error = status.error, !error.isEmpty {
-            out.append(.init(id: "error", text: error, severity: .error))
-        }
-        return out
-    }
-}
-
 private struct ProblemLine: View {
     let problem: Problem
     let onFix: () -> Void
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: problem.severity == .error ? "exclamationmark.octagon.fill" : "exclamationmark.triangle.fill")
+            Image(systemName: problem.severity.symbol)
                 .font(.geist(11.5))
-                .foregroundStyle(problem.severity == .error ? Ink.red : Ink.amber)
+                .foregroundStyle(problem.severity.color)
             Text(problem.text)
                 .font(.geist(12))
                 .lineSpacing(Typo.rowLineSpacing)
