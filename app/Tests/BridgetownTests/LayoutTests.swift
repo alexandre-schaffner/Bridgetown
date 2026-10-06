@@ -53,6 +53,13 @@ import Testing
         environment.outOfSight = true
         #expect(environment.marksHoldStill)
     }
+
+    /// With the daemon away, a spinner on the last update would claim an agent still at work.
+    @Test func marksHoldStillOverTheLastUpdate() {
+        var environment = EnvironmentValues()
+        environment.showsLastUpdate = true
+        #expect(environment.marksHoldStill)
+    }
 }
 
 @MainActor

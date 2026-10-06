@@ -1,9 +1,14 @@
 import SwiftUI
 
 // Marks for live work: drawn from the clock rather than animated, so nothing they do
-// can drag a row's layout along. They hold still under Reduce Motion, and out of sight.
+// can drag a row's layout along. They hold still under Reduce Motion, out of sight, and
+// over the last update while the daemon is away.
 
 private struct OutOfSightKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+private struct ShowsLastUpdateKey: EnvironmentKey {
     static let defaultValue = false
 }
 
@@ -15,9 +20,17 @@ extension EnvironmentValues {
         set { self[OutOfSightKey.self] = newValue }
     }
 
-    /// Marks drawn from the clock hold still: under Reduce Motion, and out of sight, where
-    /// every frame they drew would be thrown away.
-    var marksHoldStill: Bool { accessibilityReduceMotion || outOfSight }
+    /// What shows is the last snapshot, kept through a lost connection (`IslandOpenView`):
+    /// the agents run in the daemon, so nothing on it is known to be moving now.
+    var showsLastUpdate: Bool {
+        get { self[ShowsLastUpdateKey.self] }
+        set { self[ShowsLastUpdateKey.self] = newValue }
+    }
+
+    /// Marks drawn from the clock hold still: under Reduce Motion; out of sight, where
+    /// every frame they drew would be thrown away; and over the last update, where motion
+    /// would claim work that nobody can see happening.
+    var marksHoldStill: Bool { accessibilityReduceMotion || outOfSight || showsLastUpdate }
 }
 
 // MARK: Live

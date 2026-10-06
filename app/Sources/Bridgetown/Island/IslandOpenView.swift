@@ -34,6 +34,7 @@ struct IslandOpenView: View {
                 }
             }
             .environment(\.now, AppClock.now)
+            .environment(\.showsLastUpdate, !store.isConnected)
         }
         .frame(width: geometry.openWidth, height: geometry.notch.height + geometry.openHeight, alignment: .top)
         .stage()
