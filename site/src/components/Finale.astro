@@ -15,9 +15,10 @@ import { download } from "../lib/download";
           <Icon name="download" size={15} stroke={2.2} />
           Download for macOS
         </a>
-        <p class="meta mono">{download.meta}</p>
+        <p class="meta mono">{download.metaParts.map((part) => <span>{part}</span>)}</p>
         <p class="note">
-          Not notarized yet. On first launch, open System Settings → Privacy &amp; Security → Open Anyway.
+          Not notarized yet. On first launch, open System&nbsp;Settings → Privacy&nbsp;&amp;&nbsp;Security →
+          Open&nbsp;Anyway.
           <a href={download.notes}>Release notes and signatures</a>
         </p>
       </div>
@@ -106,6 +107,25 @@ import { download } from "../lib/download";
 
   .meta {
     color: var(--night-dim);
+  }
+
+  /* Each half keeps to one line: the release, then what it runs on. A phone stacks them. */
+  .meta span {
+    white-space: nowrap;
+  }
+
+  .meta span + span::before {
+    content: " · ";
+  }
+
+  @media (max-width: 600px) {
+    .meta span {
+      display: block;
+    }
+
+    .meta span + span::before {
+      content: none;
+    }
   }
 
   .note {

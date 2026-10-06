@@ -3,7 +3,7 @@
 // of its own.
 
 import type { Page } from "playwright-core";
-import { LAPTOP, PHONE, type Motion, type Viewport } from "./screens";
+import { LAPTOP, MACBOOK, PHONE, type Motion, type Viewport } from "./screens";
 
 /** One thing the page has to do. `run` throws a sentence saying what went wrong. */
 export interface Check {
@@ -225,6 +225,55 @@ export const CHECKS: Check[] = [
       await page.click("[data-open-film]");
       await page.waitForFunction(() => document.querySelector<HTMLVideoElement>("[data-film-video]")!.readyState >= 2, null, { timeout: 10_000 });
       expect(blocked.length === 0, blocked.join("; "));
+    },
+  },
+  {
+    name: "On a phone the finale's download line breaks only between its halves",
+    viewport: PHONE,
+    motion: "reduce",
+    async run(page) {
+      const halves = await page.evaluate(() => {
+        // Until a release is out the build knows no version or size: the longest it may grow to.
+        const meta = document.querySelector("#download .meta")!;
+        const needs = meta.querySelector("span")!;
+        const release = needs.cloneNode() as HTMLElement;
+        release.textContent = "v10.12.0 · 140 MB";
+        meta.prepend(release);
+        const range = document.createRange();
+        return [release, needs].map((half) => {
+          range.selectNodeContents(half);
+          return { text: half.textContent, lines: new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size, top: half.getBoundingClientRect().top };
+        });
+      });
+      for (const h of halves) expect(h.lines === 1, `“${h.text}” runs over ${h.lines} lines`);
+      expect(halves[1]!.top > halves[0]!.top, "the two halves share a line too narrow for both");
+      const text = await page.evaluate(() => (document.querySelector("#download .meta") as HTMLElement).innerText);
+      expect(!/·\s*$/m.test(text), `a line ends on its separator: ${JSON.stringify(text)}`);
+    },
+  },
+  {
+    name: "The finale's note never splits the name of a System Settings pane",
+    viewport: MACBOOK,
+    motion: "reduce",
+    async run(page) {
+      const torn = await page.evaluate(() => {
+        const note = document.querySelector("#download .note")!;
+        const text = [...note.childNodes].find((n) => n.textContent!.includes("Privacy"))!;
+        const out: string[] = [];
+        for (const name of ["System\u00a0Settings", "Privacy\u00a0&\u00a0Security", "Open\u00a0Anyway"]) {
+          const at = text.textContent!.indexOf(name);
+          if (at < 0) {
+            out.push(`${name} isn't whole`);
+            continue;
+          }
+          const range = document.createRange();
+          range.setStart(text, at);
+          range.setEnd(text, at + name.length);
+          if (new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size > 1) out.push(`${name} breaks across lines`);
+        }
+        return out;
+      });
+      expect(torn.length === 0, torn.join("; "));
     },
   },
   {

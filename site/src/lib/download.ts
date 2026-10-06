@@ -10,6 +10,8 @@ export interface Download {
   url: string;
   /** `v0.2.0 · 14 MB · Apple silicon · macOS 14+`, as much of it as is known. */
   meta: string;
+  /** The same in its halves, the release (when known) and what it runs on, for a line that may wrap. */
+  metaParts: string[];
   notes: string;
 }
 
@@ -34,11 +36,14 @@ async function latest(): Promise<Release | null> {
 
 const release = await latest();
 const dmg = release?.assets.find((a) => a.name === asset);
+const metaParts = [
+  [release?.tag_name, dmg && `${Math.round(dmg.size / 1e6)} MB`].filter(Boolean).join(" · "),
+  "Apple silicon · macOS 14+",
+].filter(Boolean);
 
 export const download: Download = {
   url: `https://github.com/${site.repo}/releases/latest/download/${asset}`,
-  meta: [release?.tag_name, dmg && `${Math.round(dmg.size / 1e6)} MB`, "Apple silicon", "macOS 14+"]
-    .filter(Boolean)
-    .join(" · "),
+  meta: metaParts.join(" · "),
+  metaParts,
   notes: release?.html_url ?? `https://github.com/${site.repo}/releases`,
 };
