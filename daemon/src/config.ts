@@ -1,6 +1,5 @@
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { type Channel, FINDING_THRESHOLDS, type Settings } from "./domain/settings.ts"
 import { type Secrets, secretsFromEnv } from "./secrets.ts"
 
 export const VERSION = "0.1.0" // x-release-please-version
@@ -52,49 +51,3 @@ export const readEnv = (secrets: Secrets = secretsFromEnv(process.env), argv: Re
   forceDryRun: argv.includes("--dry-run") || process.env.BRIDGETOWN_DRY_RUN === "1",
   jevModel: process.env.JEV_MODEL ?? "jev-1.13.0",
 })
-
-const channel = (id: string, name: string, enabled: boolean): Channel => ({ id, name, enabled })
-
-export const DEFAULT_CHANNELS: ReadonlyArray<Channel> = [
-  channel("C0AUKD42N3U", "alert-releases", true),
-  channel("C0B001L8UQ1", "alert-uptime", true),
-  channel("C0AUK4AUER0", "alert-engine", true),
-  channel("C0BL3M3CGUR", "alert-infra", true),
-  channel("C0B7KBYGA11", "alert-exporter", true),
-  channel("C0BUA3C9Y93", "alert-dev", true),
-  channel("C0AUB8LL9MZ", "alert-product", true),
-  channel("C0AUB8NCSMR", "alert-product-report", true),
-  channel("C0AUCLN8LLB", "alert-missing-prices", true),
-  channel("C0AUXV18A7K", "alert-invalid-campaign", true),
-  channel("C0B1GEVBBR6", "alert-creators", true),
-  channel("C0B0Z6ZH3JM", "alert-dumper", true),
-  channel("C0BEBUU5RTQ", "alert-managed-campaigns", true),
-  channel("C0C51MRUBMJ", "alert-security", true),
-  channel("C0BBTKZLF4H", "alert-autoclaim", true),
-  channel("C0BDVR6817G", "alert-unclaimed-rewards", true),
-  channel("C0B9CT54W4A", "alert-token-whitelist", true),
-  channel("C0BKM3NH6TB", "alert_campaign_events", true),
-  channel("C0ATB2GRB70", "general-dungeon-keeper", true),
-]
-
-export const DEFAULT_SETTINGS: Settings = {
-  channels: DEFAULT_CHANNELS,
-  thresholds: {
-    autoActionable: 0.8,
-    autoResolvable: 0.75,
-    autoHumanOnItMax: 0.3,
-    suggestActionable: 0.5,
-    suggestResolvable: 0.4,
-    ...FINDING_THRESHOLDS,
-  },
-  autoStart: true,
-  inbox: true,
-  maxConcurrent: 2,
-  dryRun: true,
-  adversarialReview: true,
-  watchProd: true,
-  pollSeconds: 30,
-  monorepoPath: join(homedir(), "Projects", "merkl", "monorepo"),
-  deploymentRepoPath: join(homedir(), "Projects", "merkl", "apps-deployment"),
-  quietHours: { enabled: false, start: "22:00", end: "08:00" },
-}

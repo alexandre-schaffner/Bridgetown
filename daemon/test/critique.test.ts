@@ -1,11 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
-import { DEFAULT_SETTINGS } from "../src/config.ts"
 import { critiqueFailedPrompt, critiquePrompt } from "../src/critique/prompts.ts"
 import { codexArgs, execFailure, Verdict, VERDICT_JSON_SCHEMA } from "../src/critique/reviewer.ts"
 import { critiqueStep, MAX_CRITIQUE_ROUNDS, MAX_REVIEW_ERRORS, reviewErrorStep } from "../src/critique/transitions.ts"
 import { type Finding, type FindingVerdict, ReviewFinding } from "../src/domain/critique.ts"
-import { Settings } from "../src/domain/settings.ts"
+import { DEFAULT_SETTINGS } from "../src/domain/settings.ts"
 import { findingState } from "../src/critique/judge.ts"
 import { decideFinding, REVIEWERS, reviewerFor } from "../src/triage/policy.ts"
 import { makeAlert, makeSession } from "./fixtures/records.ts"
@@ -138,14 +137,5 @@ describe("Jev's view of a finding", () => {
   test("later rounds include the agent's reply", () => {
     const state = findingState({ ...input, previousRound: { findings: [input.finding], reply: "fixed" } })
     expect(state).toMatchObject({ previousRound: { reply: "fixed", findings: [input.finding] } })
-  })
-})
-
-describe("settings stored before the review existed", () => {
-  test("keep their values and get the review defaults", () => {
-    const { adversarialReview: _, ...old } = DEFAULT_SETTINGS
-    const { findingReal: _r, findingBlocking: _b, findingRebutted: _x, ...oldThresholds } = DEFAULT_SETTINGS.thresholds
-    const settings = Schema.decodeUnknownSync(Settings)({ ...old, maxConcurrent: 3, thresholds: { ...oldThresholds, autoActionable: 0.7 } })
-    expect(settings).toMatchObject({ maxConcurrent: 3, adversarialReview: true, thresholds: { autoActionable: 0.7, findingReal: 0.6, findingBlocking: 0.5, findingRebutted: 0.6 } })
   })
 })

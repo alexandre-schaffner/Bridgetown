@@ -1,7 +1,7 @@
-import { Context, Effect, Layer, PubSub, Ref, Schema, type Scope, Semaphore, Stream } from "effect"
-import { DEFAULT_CHANNELS, DEFAULT_SETTINGS, type Env } from "./config.ts"
-import { type AdapterError, errorMessage } from "./domain/errors.ts"
-import { Settings } from "./domain/settings.ts"
+import { Context, Effect, Layer, PubSub, Ref, type Scope, Semaphore, Stream } from "effect"
+import type { Env } from "./config.ts"
+import type { AdapterError } from "./domain/errors.ts"
+import { loadSettings, type Settings } from "./domain/settings.ts"
 import { Store } from "./store/store.ts"
 
 export interface Status {
@@ -71,26 +71,6 @@ const withProblem = (problems: ReadonlyMap<ProblemSource, string>, source: Probl
   next.delete(source)
   if (message !== null) next.set(source, message)
   return next
-}
-
-/**
- * Stored settings decode against the current schema; new fields fall back to
- * defaults, and default channels added since are appended to the stored ones.
- */
-export const loadSettings = (raw: string | undefined): Settings => {
-  if (raw === undefined) return DEFAULT_SETTINGS
-  try {
-    const parsed: unknown = JSON.parse(raw)
-    const merged = typeof parsed === "object" && parsed !== null ? { ...DEFAULT_SETTINGS, ...parsed } : DEFAULT_SETTINGS
-    const settings = Schema.decodeUnknownSync(Settings)(merged)
-    // A channel added to the defaults later is listed, but off: you never chose to watch it.
-    const known = new Set(settings.channels.map((c) => c.id))
-    const added = DEFAULT_CHANNELS.filter((c) => !known.has(c.id)).map((c) => ({ ...c, enabled: false }))
-    return { ...settings, channels: [...settings.channels, ...added] }
-  } catch (cause) {
-    console.error(`Ignoring stored settings: ${errorMessage(cause)}`)
-    return DEFAULT_SETTINGS
-  }
 }
 
 export const HubLive = (env: Env) =>

@@ -1,6 +1,7 @@
 /** Calibration for inbox triage: `bun scripts/replay-inbox.ts <file.json>` with [{ from, where, kind, text, thread? }]. */
 import { Effect, Schema } from "effect"
-import { DEFAULT_SETTINGS, readEnv } from "../src/config.ts"
+import { DEFAULT_SETTINGS } from "../src/domain/settings.ts"
+import { readEnv } from "../src/config.ts"
 import { parseInbox } from "../src/slack/inbox.ts"
 import { makeJev } from "../src/triage/jev.ts"
 import { decideInbox } from "../src/triage/policy.ts"

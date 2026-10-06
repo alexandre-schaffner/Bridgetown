@@ -7,8 +7,8 @@ import { SlackMe } from "../src/slack/me.ts"
 import { Store } from "../src/store/store.ts"
 import { fakeSlack, makeWorld } from "./fixtures/world.ts"
 import { decideInbox } from "../src/triage/policy.ts"
-import { DEFAULT_SETTINGS } from "../src/config.ts"
 import type { JevVerdict } from "../src/domain/alert.ts"
+import { DEFAULT_SETTINGS } from "../src/domain/settings.ts"
 
 const ctx = { me: "U0ATSF15M4L", fromName: "Pierre", alertChannels: new Set(["C0AUKD42N3U"]) }
 const match = (overrides: Record<string, unknown> = {}) => ({

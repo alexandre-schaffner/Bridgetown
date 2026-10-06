@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { DEFAULT_CHANNELS, DEFAULT_SETTINGS } from "../src/config.ts"
-import { loadSettings } from "../src/hub.ts"
+import { DEFAULT_CHANNELS, DEFAULT_SETTINGS, loadSettings } from "../src/domain/settings.ts"
 
 describe("stored settings", () => {
   test("none stored: the defaults, every default channel on", () => {
@@ -20,5 +19,23 @@ describe("stored settings", () => {
     expect(channels).toHaveLength(DEFAULT_CHANNELS.length)
     expect(channels[0]).toEqual(muted)
     expect(channels.at(-1)).toEqual(added === undefined ? undefined : { ...added, enabled: false })
+  })
+})
+
+describe("settings stored before a setting existed", () => {
+  test("keep their values and take the new settings' defaults, however deep", () => {
+    const { adversarialReview: _, ...old } = DEFAULT_SETTINGS
+    const { findingReal: _r, findingBlocking: _b, findingRebutted: _x, ...oldThresholds } = DEFAULT_SETTINGS.thresholds
+    const settings = loadSettings(JSON.stringify({ ...old, maxConcurrent: 3, thresholds: { ...oldThresholds, autoActionable: 0.7 } }))
+    expect(settings).toMatchObject({ maxConcurrent: 3, adversarialReview: true, thresholds: { autoActionable: 0.7, findingReal: 0.6, findingBlocking: 0.5, findingRebutted: 0.6 } })
+  })
+
+  test("a nested setting missing a key keeps the rest of what was stored", () => {
+    const settings = loadSettings(JSON.stringify({ ...DEFAULT_SETTINGS, maxConcurrent: 3, quietHours: { enabled: true, start: "23:00" } }))
+    expect(settings).toMatchObject({ maxConcurrent: 3, quietHours: { enabled: true, start: "23:00", end: "08:00" } })
+  })
+
+  test("a value out of range is unreadable: the defaults", () => {
+    expect(loadSettings(JSON.stringify({ ...DEFAULT_SETTINGS, maxConcurrent: 0 }))).toEqual(DEFAULT_SETTINGS)
   })
 })

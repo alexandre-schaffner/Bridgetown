@@ -6,7 +6,8 @@
  *   bun scripts/replay.ts --file messages.json                      ([{ channel, ts, text }])
  */
 import { Effect, Schema } from "effect"
-import { DEFAULT_SETTINGS, readEnv } from "../src/config.ts"
+import { DEFAULT_SETTINGS } from "../src/domain/settings.ts"
+import { readEnv } from "../src/config.ts"
 import { type Alert, alertFromParsed, type Decision, type ThreadReply } from "../src/domain/alert.ts"
 import type { Session } from "../src/domain/session.ts"
 import { makeSlackClient, type SlackMessage } from "../src/slack/client.ts"

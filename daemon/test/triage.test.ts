@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { DEFAULT_SETTINGS } from "../src/config.ts"
 import type { JevVerdict } from "../src/domain/alert.ts"
+import { DEFAULT_SETTINGS } from "../src/domain/settings.ts"
 import { parseMessage } from "../src/slack/parse.ts"
 import { decide, decideAnomaly } from "../src/triage/policy.ts"
 import { applyRules } from "../src/triage/rules.ts"
