@@ -17,11 +17,12 @@ export default {
     if (!range || request.method !== "GET" || !size) return env.ASSETS.fetch(request);
 
     const bounds = parseRange(range, size);
-    if (!bounds) {
+    if (bounds === "unsatisfiable") {
       return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${size}`, "Accept-Ranges": "bytes" } });
     }
+    // A Range it can't serve as one range is ignored: the whole film.
     const whole = await env.ASSETS.fetch(new Request(request.url, { method: "GET" }));
-    if (!whole.ok || !whole.body) return whole;
+    if (!bounds || !whole.ok || !whole.body) return whole;
 
     const [start, end] = bounds;
     const headers = new Headers(whole.headers);

@@ -76,9 +76,9 @@ function serve(out: string) {
       }
       const body = Bun.file(path);
       const range = req.headers.get("Range");
-      if (!range) return new Response(body, { headers: { "Accept-Ranges": "bytes" } });
-      const bounds = parseRange(range, body.size);
-      if (!bounds) return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${body.size}` } });
+      const bounds = range ? parseRange(range, body.size) : null;
+      if (bounds === "unsatisfiable") return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${body.size}` } });
+      if (!bounds) return new Response(body, { headers: { "Accept-Ranges": "bytes" } });
       const [start, end] = bounds;
       return new Response(body.slice(start, end + 1), {
         status: 206,

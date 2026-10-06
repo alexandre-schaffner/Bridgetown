@@ -33,13 +33,23 @@ describe("parseRange", () => {
     expect(parseRange("bytes=-500", 100)).toEqual([0, 99]);
   });
 
-  test("unsatisfiable or malformed ranges are null", () => {
-    expect(parseRange("bytes=100-", 100)).toBeNull();
+  test("the unit in any case", () => {
+    expect(parseRange("Bytes=0-1", 100)).toEqual([0, 1]);
+  });
+
+  test("a valid range that misses the file is unsatisfiable", () => {
+    expect(parseRange("bytes=100-", 100)).toBe("unsatisfiable");
+    expect(parseRange("bytes=100-200", 100)).toBe("unsatisfiable");
+    expect(parseRange("bytes=-0", 100)).toBe("unsatisfiable");
+  });
+
+  test("a malformed header, or several ranges, is null: ignored", () => {
     expect(parseRange("bytes=5-2", 100)).toBeNull();
-    expect(parseRange("bytes=-0", 100)).toBeNull();
     expect(parseRange("bytes=-", 100)).toBeNull();
     expect(parseRange("bytes=0-1,4-5", 100)).toBeNull();
     expect(parseRange("items=0-1", 100)).toBeNull();
+    expect(parseRange("bytes=one-two", 100)).toBeNull();
+    expect(parseRange("", 100)).toBeNull();
   });
 });
 
@@ -100,6 +110,17 @@ describe("the Worker", () => {
     expect(res.status).toBe(416);
     expect(res.headers.get("Content-Range")).toBe(`bytes */${size}`);
     expect(calls).toHaveLength(0);
+  });
+
+  test("a malformed or multi-range header gets the whole film, a 200", async () => {
+    for (const range of ["bytes=0-1,4-5", "bytes=5-2", "chapters=1"]) {
+      const { env: e, calls } = env();
+      const res = await worker.fetch(get(path, range), e);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Range")).toBeNull();
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.headers.get("Range")).toBeNull();
+    }
   });
 
   test("no range, or a file it has no length for, goes straight to the assets", async () => {
