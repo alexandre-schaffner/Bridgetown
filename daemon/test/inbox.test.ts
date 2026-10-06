@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { SlackApiError } from "../src/domain/errors.ts"
-import { Inbox } from "../src/pipeline/inbox.ts"
+import { Inbox } from "../src/intake/inbox.ts"
 import { inboxQueries, parseInbox, threadTsFromPermalink } from "../src/slack/inbox.ts"
 import { SlackMe } from "../src/slack/me.ts"
 import { Store } from "../src/store/store.ts"

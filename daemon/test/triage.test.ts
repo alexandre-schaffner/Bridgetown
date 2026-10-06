@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { JevVerdict } from "../src/domain/alert.ts"
 import { DEFAULT_SETTINGS } from "../src/domain/settings.ts"
-import { isAlertMessage } from "../src/pipeline/alerts.ts"
+import { isAlertMessage } from "../src/intake/alerts.ts"
 import { parseMessage } from "../src/slack/parse.ts"
 import { alertState } from "../src/triage/judge.ts"
 import { decide, decideAnomaly } from "../src/triage/policy.ts"
