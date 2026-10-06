@@ -2,7 +2,8 @@ import SwiftUI
 
 /// A text button: monochrome like every control (colour is for status), brightening under
 /// the pointer, with a glyph that leans the way it goes: right into the app, up and out
-/// to the browser. However small its type, it is 20pt tall to hit.
+/// to the browser (it stays put under Reduce Motion). However small its type, it is 20pt
+/// tall to hit.
 struct TextLink: View {
     enum Direction {
         /// Somewhere else in the island: a chevron that nudges right.
@@ -18,6 +19,7 @@ struct TextLink: View {
     let action: () -> Void
     @ViewState private var hovering = false
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(_ title: String, direction: Direction = .none, action: @escaping () -> Void) {
         self.title = title
@@ -37,7 +39,7 @@ struct TextLink: View {
                 if let glyph {
                     Image(systemName: glyph.symbol)
                         .font(.system(size: 8.5, weight: .semibold))
-                        .offset(hovering && isEnabled ? glyph.nudge : .zero)
+                        .offset(hovering && isEnabled && !reduceMotion ? glyph.nudge : .zero)
                 }
             }
             .lineLimit(1)
