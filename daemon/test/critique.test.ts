@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
 import { critiqueFailedPrompt, critiquePrompt } from "../src/critique/prompts.ts"
-import { codexArgs, execFailure, Verdict, VERDICT_JSON_SCHEMA } from "../src/critique/reviewer.ts"
+import { codexArgs, execFailure, REVIEWERS, Verdict, VERDICT_JSON_SCHEMA } from "../src/critique/reviewer.ts"
 import { critiqueStep, MAX_CRITIQUE_ROUNDS, MAX_REVIEW_ERRORS, reviewErrorStep } from "../src/critique/transitions.ts"
 import { type Finding, type FindingVerdict, ReviewFinding } from "../src/domain/critique.ts"
 import { DEFAULT_SETTINGS } from "../src/domain/settings.ts"
 import { findingState } from "../src/critique/judge.ts"
-import { decideFinding, REVIEWERS, reviewerFor } from "../src/triage/policy.ts"
+import { decideFinding } from "../src/triage/policy.ts"
 import { makeAlert, makeSession } from "./fixtures/records.ts"
 
 const finding = (overrides: Partial<Finding> = {}): Finding => ({
@@ -59,13 +59,13 @@ describe("Jev drops the nitpicks", () => {
 describe("the reviewer is another vendor", () => {
   test("at every depth: the coder is always Claude", () => {
     for (const reviewer of Object.values(REVIEWERS)) expect(reviewer.vendor).not.toBe("claude")
-    expect(reviewerFor("deep")).toEqual({ vendor: "codex", model: "gpt-5.6-sol", effort: "xhigh" })
+    expect(REVIEWERS.deep).toEqual({ vendor: "codex", model: "gpt-5.6-sol", effort: "xhigh" })
   })
 })
 
 describe("codex exec", () => {
   test("read-only, ephemeral, without the user's config, with Bridgetown's model and output schema", () => {
-    const args = codexArgs("/opt/homebrew/bin/codex", { worktree: "/w", head: "aaaa111", profile: reviewerFor("standard"), prompt: "review it" }, "/t/schema.json", "/t/out.json")
+    const args = codexArgs("/opt/homebrew/bin/codex", { worktree: "/w", head: "aaaa111", profile: REVIEWERS.standard, prompt: "review it" }, "/t/schema.json", "/t/out.json")
     expect(args).toEqual([
       "/opt/homebrew/bin/codex", "exec", "--ephemeral", "--ignore-user-config", "--sandbox", "read-only", "--cd", "/w",
       "--model", "gpt-5.6-sol", "--config", 'model_reasoning_effort="high"', "--output-schema", "/t/schema.json",

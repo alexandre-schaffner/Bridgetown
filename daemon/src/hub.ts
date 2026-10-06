@@ -2,6 +2,7 @@ import { Context, Effect, Layer, PubSub, Ref, type Scope, Semaphore, Stream } fr
 import type { Env } from "./config.ts"
 import type { AdapterError } from "./domain/errors.ts"
 import { loadSettings, type Settings } from "./domain/settings.ts"
+import type { Reachability } from "./ship/github.ts"
 import { Store } from "./store/store.ts"
 
 export interface Status {
@@ -10,7 +11,7 @@ export interface Status {
   readonly jev: "ok" | "error" | "missing_key"
   readonly grafanaMcp: "up" | "down"
   /** GitHub Enterprise reachability. `blocked` is the Merkl org's IP allow list refusing this network. */
-  readonly github: "ok" | "blocked" | "unknown"
+  readonly github: Reachability
   readonly lastPollAt: string | null
   /** The latest problem still standing (`HubShape.problem`). */
   readonly error: string | null

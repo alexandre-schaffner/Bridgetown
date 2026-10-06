@@ -1,8 +1,19 @@
-import type { Alert } from "../domain/alert.ts"
+import type { Alert, Depth } from "../domain/alert.ts"
 import { now } from "../domain/ids.ts"
-import { NO_MILESTONES, type Session } from "../domain/session.ts"
-import { PROFILES } from "../triage/policy.ts"
+import { type Effort, NO_MILESTONES, type Session } from "../domain/session.ts"
 import { slug } from "./worktree.ts"
+
+export interface LaunchProfile {
+  readonly model: string
+  readonly effort: Effort
+}
+
+/** Jev answers an abstract tier; only this table names models, so the API can never pick one. */
+export const PROFILES: Readonly<Record<Depth, LaunchProfile>> = {
+  quick: { model: "claude-sonnet-5-5", effort: "medium" },
+  standard: { model: "claude-opus-5-5", effort: "high" },
+  deep: { model: "claude-opus-5-5", effort: "max" },
+}
 
 /** `fix-bt-<what>-<id tail>`: the only branch the session's guard lets it push. */
 export const branchFor = (alert: Alert, id: string): string => {

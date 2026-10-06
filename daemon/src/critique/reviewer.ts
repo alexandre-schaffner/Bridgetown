@@ -2,10 +2,28 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Context, Effect, Layer, Schema } from "effect"
-import { ReviewFinding } from "../domain/critique.ts"
+import type { Depth } from "../domain/alert.ts"
+import { ReviewFinding, type ReviewerVendor } from "../domain/critique.ts"
 import { AdapterError, attempt, decodeOr } from "../domain/errors.ts"
+import type { Effort } from "../domain/session.ts"
 import { run, runOk } from "../proc.ts"
-import type { ReviewerProfile } from "../triage/policy.ts"
+
+export interface ReviewerProfile {
+  readonly vendor: ReviewerVendor
+  readonly model: string
+  /** Codex's reasoning efforts stop at xhigh. */
+  readonly effort: Exclude<Effort, "max">
+}
+
+/**
+ * The adversarial reviewer per triage depth, like `PROFILES` for the coder. Never the coder's vendor (every
+ * coder profile is Claude): a different model has different blind spots.
+ */
+export const REVIEWERS: Readonly<Record<Depth, ReviewerProfile>> = {
+  quick: { vendor: "codex", model: "gpt-5.6-sol", effort: "medium" },
+  standard: { vendor: "codex", model: "gpt-5.6-sol", effort: "high" },
+  deep: { vendor: "codex", model: "gpt-5.6-sol", effort: "xhigh" },
+}
 
 export const Verdict = Schema.Struct({
   summary: Schema.String,

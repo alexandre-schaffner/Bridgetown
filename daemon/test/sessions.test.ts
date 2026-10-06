@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { ownPrUrl } from "../src/sessions/output.ts"
+import { ownPrUrl, SESSION_RESULT_JSON_SCHEMA, SessionResult } from "../src/sessions/output.ts"
 import { impliedPhase } from "../src/sessions/sdk-events.ts"
 import { repoMcpServers } from "../src/sessions/sdk-options.ts"
 import { scratchDir } from "./fixtures/tmp.ts"
@@ -56,5 +56,15 @@ describe("session MCP servers", () => {
       merkl: { type: "http", url: "https://mcp.merkl.xyz/mcp" },
       grafana: { type: "http", url: "http://localhost:8000/mcp" },
     })
+  })
+})
+
+describe("the session result's JSON schema", () => {
+  test("is strict and asks for exactly the fields SessionResult decodes", () => {
+    expect(SESSION_RESULT_JSON_SCHEMA.additionalProperties).toBe(false)
+    const keys = (record: object): Array<string> => Object.keys(record).sort()
+    const required: ReadonlyArray<string> = SESSION_RESULT_JSON_SCHEMA.required
+    expect([...required].sort()).toEqual(keys(SESSION_RESULT_JSON_SCHEMA.properties))
+    expect(keys(SESSION_RESULT_JSON_SCHEMA.properties)).toEqual(keys(SessionResult.fields))
   })
 })

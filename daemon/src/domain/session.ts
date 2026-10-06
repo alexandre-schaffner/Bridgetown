@@ -29,6 +29,10 @@ export type Outcome = typeof Outcome.Type
 export const Recommendation = Schema.Literals(["rerun_failed_jobs", "revert", "no_code_change"])
 export type Recommendation = typeof Recommendation.Type
 
+/** How hard the agent thinks, as the Claude SDK takes it. */
+export const Effort = Schema.Literals(["low", "medium", "high", "xhigh", "max"])
+export type Effort = typeof Effort.Type
+
 /** What Bridgetown sent the agent back to fix while shipping: red CI, a reviewer's requested changes, a failed deploy. */
 export const SentBack = Schema.Literals(["ci", "changes", "deploy"])
 export type SentBack = typeof SentBack.Type
@@ -61,7 +65,7 @@ export const Session = Schema.Struct({
   repoPath: Schema.String,
   claudeSessionId: Schema.NullOr(Schema.String),
   model: Schema.String,
-  effort: Schema.String,
+  effort: Effort,
   ciRounds: Schema.Number,
   costUsd: Schema.Number,
   slackThreadUrl: Schema.NullOr(Schema.String),

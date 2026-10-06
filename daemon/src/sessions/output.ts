@@ -28,7 +28,7 @@ export const ownPrUrl = (url: string | null | undefined): string | null => {
   return number === undefined ? null : `https://${GH_HOST}/${GHE_REPO}/pull/${number}`
 }
 
-/** What the SDK enforces on the final message; decoded again with `SessionResult` at the boundary. */
+/** What the SDK enforces on the final message; decoded again with `SessionResult` at the boundary, and a test keeps the two in step. */
 export const SESSION_RESULT_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -36,7 +36,7 @@ export const SESSION_RESULT_JSON_SCHEMA = {
   properties: {
     outcome: {
       type: "string",
-      enum: ["fix_pr", "recommendation", "no_action", "needs_human"],
+      enum: Outcome.literals,
       description:
         "fix_pr: you opened a pull request that fixes it. recommendation: no code change; a person should apply your recommendation. no_action: nothing is actually wrong anymore. needs_human: you could not get far enough.",
     },
@@ -58,7 +58,7 @@ export const SESSION_RESULT_JSON_SCHEMA = {
     prUrl: { type: ["string", "null"], description: "The pull request URL when outcome is fix_pr." },
     recommendation: {
       type: ["string", "null"],
-      enum: ["rerun_failed_jobs", "revert", "no_code_change", null],
+      enum: [...Recommendation.literals, null],
       description: "rerun_failed_jobs for flaky infrastructure; revert when a recent change must be undone; no_code_change for an operational fix you describe.",
     },
     recommendationDetail: { type: ["string", "null"], description: "Exactly what the person should do." },

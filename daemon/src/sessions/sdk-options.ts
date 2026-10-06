@@ -12,9 +12,6 @@ import { makeToolServer, TOOL_SERVER, type ToolCallbacks } from "./tools.ts"
 
 const MAX_TURNS = 400
 
-const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const
-const effortOf = (value: string) => EFFORTS.find((effort) => effort === value) ?? "high"
-
 /** Only the servers sessions need from the repo's `.mcp.json`, so an unrelated broken server cannot fail a run. */
 const SESSION_MCP_SERVERS = ["merkl", "grafana"]
 
@@ -105,7 +102,7 @@ export const sdkOptions = ({ session, abort, resume, tools, onRefused }: TurnSet
   return {
     ...(session.worktree === null ? {} : { cwd: session.worktree }),
     model: session.model,
-    effort: effortOf(session.effort),
+    effort: session.effort,
     abortController: abort,
     systemPrompt: { type: "preset", preset: "claude_code" },
     tools: [...SESSION_TOOLS],
