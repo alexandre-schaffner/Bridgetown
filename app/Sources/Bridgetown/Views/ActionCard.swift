@@ -320,6 +320,8 @@ private struct OptionChips: View {
             ForEach(Array(options.enumerated()), id: \.offset) { index, option in
                 Button(option) { choose(option) }
                     .buttonStyle(.stage(index == 0 ? .primary : .secondary))
+                    // Cut to the card's width when it is longer.
+                    .help(option)
             }
         }
     }
