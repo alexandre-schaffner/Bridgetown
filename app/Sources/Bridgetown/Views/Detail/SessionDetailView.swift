@@ -258,7 +258,7 @@ struct SessionDetailView: View {
     private var bottomBar: some View {
         HStack(spacing: 8) {
             Button {
-                if let err = SystemActions.takeOver(session) { store.report(err) }
+                Task { if let err = await SystemActions.takeOver(session) { store.report(err) } }
             } label: {
                 Label("Take over in Terminal", systemImage: "terminal")
             }

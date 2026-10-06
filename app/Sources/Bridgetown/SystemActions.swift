@@ -61,7 +61,7 @@ enum SystemActions {
 
     /// `cd '<worktree>' && claude --resume <id>` in a new Terminal window.
     /// Returns an error message on failure.
-    static func takeOver(_ session: Session) -> String? {
+    static func takeOver(_ session: Session) async -> String? {
         guard let id = session.claudeSessionId else { return "No Claude session to resume yet" }
         let dir = session.worktree ?? FileManager.default.homeDirectoryForCurrentUser.path
         let shell = "cd \(shellQuote(dir)) && claude --resume \(shellQuote(id))"
@@ -71,18 +71,44 @@ enum SystemActions {
             return nil
         }
         #endif
-        let script = """
+        return await runAppleScript("""
         tell application "Terminal"
             do script "\(appleScriptEscape(shell))"
             activate
         end tell
-        """
-        var error: NSDictionary?
-        NSAppleScript(source: script)?.executeAndReturnError(&error)
-        if let error {
-            return (error[NSAppleScript.errorMessage] as? String) ?? "Couldn't open Terminal"
+        """)
+    }
+
+    /// Runs `source` in osascript and returns its error, if any. Not NSAppleScript, which
+    /// holds the main thread until the script ends: the first takeover waits on the
+    /// Automation prompt, and any on Terminal launching, and the island would freeze.
+    nonisolated static func runAppleScript(_ source: String) async -> String? {
+        await withCheckedContinuation { done in
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            p.arguments = ["-e", source]
+            let errors = Pipe()
+            p.standardError = errors
+            p.standardOutput = FileHandle.nullDevice
+            p.terminationHandler = { p in
+                let stderr = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                done.resume(returning: p.terminationStatus == 0 ? nil : scriptError(stderr))
+            }
+            do {
+                try p.run()
+            } catch {
+                done.resume(returning: error.userMessage)
+            }
         }
-        return nil
+    }
+
+    /// "Not authorized to send Apple events to Terminal." from osascript's
+    /// "0:83: execution error: Not authorized to send Apple events to Terminal. (-1743)".
+    nonisolated static func scriptError(_ stderr: String) -> String {
+        var message = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let range = message.range(of: "execution error: ") { message = String(message[range.upperBound...]) }
+        if let code = message.range(of: #" \(-?\d+\)$"#, options: .regularExpression) { message.removeSubrange(code) }
+        return message.isEmpty ? "Couldn't open Terminal" : message
     }
 
     private static func shellQuote(_ s: String) -> String {
