@@ -46,9 +46,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
         notifier.onOpen = { [weak self] in self?.island.open() }
         // Each new "Needs you" is both a notification and a banner under the notch.
-        store.onSnapshot = { [weak self] _, next in
+        store.onSnapshot = { [weak self] next in
             guard let self else { return }
             let fresh = newActions.update(next)
+            // A notification goes once its action does, here or while the app was closed.
+            notifier.withdraw(allBut: Set(next.actions.map(\.id)))
             guard let first = fresh.first else { return }
             notifier.post(fresh)
             island.announce(first)
@@ -63,9 +65,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func startDaemon() {
-        daemon.start()
-        if daemon.mode != .missing {
+        switch daemon.mode {
+        case .missing:
+            return
+        case .attach:
             store.connect(to: daemon.endpoint)
+        case .command, .bundled:
+            // Each launch is a new daemon: the stream starts over on it at once, and until it
+            // answers it is starting, not lost.
+            daemon.onLaunch = { [weak self] in
+                guard let self else { return }
+                store.connect(to: daemon.endpoint)
+            }
+            daemon.start()
         }
     }
 
@@ -77,6 +89,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    /// Opening Bridgetown again (Finder, Spotlight, `open -a`) unfolds the island: with no
+    /// Dock icon or menu bar item, that is the way in when you can't see where it hangs.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        island.open()
+        return false
+    }
 
     /// Route SIGTERM/SIGINT through `terminate` so the daemon child is cleaned up.
     private func installSignalHandlers() {

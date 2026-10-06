@@ -2,9 +2,6 @@
   "now": "2026-10-04T12:00:00Z",
   "world": "full",
   "appearances": ["dark"],
-  "allow": [
-    {"rule": "blank", "shots": "notch-flat-empty.*", "why": "Without a notch the island stays hidden while it has nothing to show"}
-  ],
   "beforeConnect": [
     {"surface": "open", "preset": "wide"},
     {"shot": "connecting"},
@@ -219,6 +216,9 @@
     {"island": "rest"},
     {"shot": "notch-empty"},
     {"surface": "notch", "preset": "flat"},
-    {"shot": "notch-flat-empty"}
+    {"shot": "notch-flat-empty"},
+    {"island": "hover"},
+    {"shot": "notch-flat-empty-hover"},
+    {"island": "rest"}
   ]
 }

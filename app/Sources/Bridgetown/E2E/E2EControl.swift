@@ -17,6 +17,9 @@ final class E2EControl {
     private let runner: E2ERunner
     private let activity: () -> Void
     private let quit: () -> Void
+    /// The last step asked for. Each waits for the one before: two at once would interleave
+    /// at every `await`, one's clicks landing between the other's.
+    private var lastStep: Task<(Int, E2EJSON), Never>?
 
     init(runner: E2ERunner, activity: @escaping () -> Void, quit: @escaping () -> Void) throws {
         let parameters = NWParameters.tcp
@@ -73,7 +76,13 @@ final class E2EControl {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 let buffer = buffered + (data ?? Data())
-                if let request = Request(buffer) {
+                let request: Request?
+                do {
+                    request = try Request(buffer)
+                } catch {
+                    return self.send(400, .object(["error": .string("not an HTTP request")]), on: connection)
+                }
+                if let request {
                     Task { @MainActor in
                         let (status, body) = await self.respond(to: request)
                         self.send(status, body, on: connection)
@@ -92,14 +101,10 @@ final class E2EControl {
         activity()
         switch (request.method, request.path) {
         case ("POST", "/step"):
-            do {
-                let step = try JSONDecoder().decode(E2EJSON.self, from: request.body)
-                let shots = try await runner.perform(step, as: "control")
-                let encoded = try JSONDecoder().decode(E2EJSON.self, from: JSONEncoder().encode(shots))
-                return (200, .object(["ok": .bool(true), "shots": encoded]))
-            } catch {
-                return (200, .object(["ok": .bool(false), "error": .string("\(error)")]))
-            }
+            let previous = lastStep
+            let step = Task { _ = await previous?.value; return await self.step(request.body) }
+            lastStep = step
+            return await step.value
         case ("GET", "/tree"):
             guard let tree = runner.tree(),
                   let elements = try? JSONDecoder().decode(E2EJSON.self, from: JSONEncoder().encode(tree.elements)),
@@ -119,6 +124,17 @@ final class E2EControl {
         }
     }
 
+    private func step(_ body: Data) async -> (Int, E2EJSON) {
+        do {
+            let step = try JSONDecoder().decode(E2EJSON.self, from: body)
+            let shots = try await runner.perform(step, as: "control")
+            let encoded = try JSONDecoder().decode(E2EJSON.self, from: JSONEncoder().encode(shots))
+            return (200, .object(["ok": .bool(true), "shots": encoded]))
+        } catch {
+            return (200, .object(["ok": .bool(false), "error": .string("\(error)")]))
+        }
+    }
+
     private func send(_ status: Int, _ body: E2EJSON, on connection: NWConnection) {
         let payload = Data(body.line.utf8)
         let head = "HTTP/1.1 \(status) \(status == 200 ? "OK" : "Error")\r\nContent-Type: application/json\r\nContent-Length: \(payload.count)\r\nConnection: close\r\n\r\n"
@@ -126,24 +142,27 @@ final class E2EControl {
     }
 
     /// Enough HTTP/1.1 for curl: a request line, headers, and a body by Content-Length.
-    private struct Request {
+    struct Request {
+        struct Malformed: Error {}
+
         var method: String
         var path: String
         var headers: [String: String]
         var body: Data
 
-        init?(_ data: Data) {
+        /// Nil until the whole request is in; throws once it can't become one.
+        init?(_ data: Data) throws {
             guard let end = data.range(of: Data("\r\n\r\n".utf8)) else { return nil }
             let head = String(decoding: data[..<end.lowerBound], as: UTF8.self).components(separatedBy: "\r\n")
             let line = head.first?.split(separator: " ") ?? []
-            guard line.count >= 2 else { return nil }
+            guard line.count >= 2 else { throw Malformed() }
             method = String(line[0])
             path = String(line[1].split(separator: "?").first ?? "")
             headers = Dictionary(head.dropFirst().compactMap { field -> (String, String)? in
                 guard let colon = field.firstIndex(of: ":") else { return nil }
                 return (field[..<colon].lowercased(), field[field.index(after: colon)...].trimmingCharacters(in: .whitespaces))
             }, uniquingKeysWith: { $1 })
-            let length = Int(headers["content-length"] ?? "0") ?? 0
+            guard let length = Int(headers["content-length"] ?? "0"), length >= 0 else { throw Malformed() }
             let body = data[end.upperBound...]
             guard body.count >= length else { return nil }
             self.body = Data(body.prefix(length))

@@ -253,7 +253,7 @@ struct AlertDetailView: View {
     }
 
     private func load() async {
-        detail = await detail.reloaded { try await store.alertDetail(id: alertId) }
+        detail = await detail.reloaded { try await store.fetch { try await $0.alertDetail(id: alertId) } }
     }
 }
 

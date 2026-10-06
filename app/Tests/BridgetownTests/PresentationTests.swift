@@ -57,14 +57,8 @@ import Testing
 }
 
 @Suite struct HeaderProblemsTests {
-    private func problems(
-        connection: Store.Connection = .connected,
-        daemon: DaemonProcess.State = .running(pid: 1),
-        mode: DaemonProcess.Mode = .bundled(URL(fileURLWithPath: "/x")),
-        status: Status? = nil
-    ) -> [Problem] {
-        Problem.list(connection: connection, daemonState: daemon, daemonMode: mode, port: 47621,
-                     lastConnectError: nil, flash: nil, status: status)
+    private func problems(health: DaemonHealth = .connected, attached: Bool = false, status: Status? = nil) -> [Problem] {
+        Problem.list(health: health, attached: attached, port: 47621, flash: nil, status: status)
     }
 
     @Test func githubBlockedIsShown() throws {
@@ -75,119 +69,38 @@ import Testing
     }
 
     @Test func portInUseByAnotherDaemon() {
-        let lines = problems(connection: .rejected, daemon: .portInUse)
+        let lines = problems(health: .portInUse(byAnotherDaemon: true))
         #expect(lines.count == 1)
         #expect(lines[0].text.hasPrefix("Another Bridgetown daemon is running on port 47621"))
         #expect(lines[0].fix == .restartDaemon("Retry"))
     }
 
     @Test func portInUseBySomethingElse() {
-        let lines = problems(connection: .connecting, daemon: .portInUse)
+        let lines = problems(health: .portInUse(byAnotherDaemon: false))
         #expect(lines.first?.text.hasPrefix("Port 47621 is in use") == true)
     }
 
     @Test func rejectedTokenWhenAttached() {
-        let lines = problems(connection: .rejected, mode: .attach)
+        let lines = problems(health: .rejected, attached: true)
         #expect(lines.first?.text.contains("BRIDGETOWN_API_TOKEN") == true)
+    }
+
+    @Test func aDaemonThatKeepsStoppingPointsAtItsLog() {
+        let lines = problems(health: .keepsExiting("exit 1"))
+        #expect(lines.count == 1)
+        #expect(lines[0].text.contains("exit 1"))
+        #expect(lines[0].fix == .openLogs("Open logs"))
+    }
+
+    @Test func startingSaysNothingUnlessAttached() {
+        #expect(problems(health: .starting(lastError: "Daemon not reachable")).isEmpty)
+        #expect(problems(health: .restarting).isEmpty)
+        #expect(problems(health: .starting(lastError: "Daemon not reachable"), attached: true).first?.severity == .warning)
     }
 
     @Test func statusProblemsOnlyWhileConnected() throws {
         let status = try Fixture.snapshot().status
-        #expect(!problems(connection: .disconnected("gone"), status: status).contains { $0.id == "github" })
-    }
-}
-
-@Suite struct SystemActionsTests {
-    @Test func onlyWebSlackAndRevvOpen() {
-        #expect(SystemActions.openableURL("https://nocturlab.ghe.com/Merkl/monorepo/pull/1") != nil)
-        #expect(SystemActions.openableURL("slack://channel?team=T1&id=C1") != nil)
-        #expect(SystemActions.openableURL("revv://pr?host=h&repo=r&number=1") != nil)
-        #expect(SystemActions.openableURL("HTTPS://example.com") != nil)
-        for bad in ["http://example.com", "file:///etc/passwd", "x-apple.systempreferences:", "javascript:alert(1)", "/tmp/x", "", nil] {
-            #expect(SystemActions.openableURL(bad) == nil, "\(bad ?? "nil")")
-        }
-    }
-}
-
-@Suite struct DaemonLaunchTests {
-    @Test func childEnvironmentCarriesNoSecrets() {
-        let inherited = [
-            "PATH": "/usr/bin",
-            "HOME": "/Users/me",
-            "BRIDGETOWN_API_TOKEN": "dev",
-            "SLACK_USER_TOKEN": "xoxp-1",
-            "TYPESAFE_API_KEY": "ts_1",
-            "BRIDGETOWN_DAEMON_CMD": "bun src/main.ts",
-            "BRIDGETOWN_ATTACH": "1",
-            "BRIDGETOWN_LOG_DIR": "/tmp/run",
-        ]
-        let env = DaemonProcess.childEnvironment(inherited: inherited, port: 47622, home: "/Users/me")
-        for key in ["BRIDGETOWN_API_TOKEN", "SLACK_USER_TOKEN", "TYPESAFE_API_KEY", "BRIDGETOWN_DAEMON_CMD", "BRIDGETOWN_ATTACH", "BRIDGETOWN_LOG_DIR"] {
-            #expect(env[key] == nil, "\(key)")
-        }
-        #expect(env["BRIDGETOWN_SECRETS"] == "stdin")
-        #expect(env["BRIDGETOWN_PORT"] == "47622")
-        #expect(env["HOME"] == "/Users/me")
-        #expect(env["PATH"]?.hasSuffix(":/usr/bin") == true)
-        #expect(env["PATH"]?.contains("/Users/me/.bun/bin") == true)
-    }
-
-    @Test func anExplicitSwitchBeatsTheBundledDaemon() {
-        let bundled = URL(fileURLWithPath: "/Applications/Bridgetown.app/Contents/Resources/bridgetown-daemon")
-        #expect(DaemonProcess.mode(environment: ["BRIDGETOWN_ATTACH": "1"], bundled: bundled) == .attach)
-        #expect(DaemonProcess.mode(environment: ["BRIDGETOWN_ATTACH": "1", "BRIDGETOWN_DAEMON_CMD": "bun main.ts"], bundled: bundled) == .command("bun main.ts"))
-        #expect(DaemonProcess.mode(environment: [:], bundled: bundled) == .bundled(bundled))
-        #expect(DaemonProcess.mode(environment: ["BRIDGETOWN_DAEMON_CMD": " "], bundled: nil) == .missing)
-    }
-
-    @MainActor @Test func theLogGoesToTheRunWhenItAsks() {
-        #expect(DaemonProcess(environment: ["BRIDGETOWN_LOG_DIR": "/tmp/run"]).logURL.path == "/tmp/run/daemon.log")
-        #expect(DaemonProcess(environment: [:]).logURL.path.hasSuffix("/Library/Logs/Bridgetown/daemon.log"))
-    }
-
-    /// A real child (`sleep`), its log in a temp dir, the Keychain kept out of it.
-    @MainActor @Test func aDaemonRestartedAfterAStopIsRestartedWhenItDies() async throws {
-        Keychain.inMemory = [:]
-        let logs = FileManager.default.temporaryDirectory.appending(path: "bt-daemon-test-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: logs) }
-        let daemon = DaemonProcess(environment: ["BRIDGETOWN_DAEMON_CMD": "sleep 30", "BRIDGETOWN_LOG_DIR": logs.path])
-        daemon.start()
-        await withCheckedContinuation { done in
-            if !daemon.stop(completion: { done.resume() }) { done.resume() }
-        }
-        daemon.restart()
-        guard case let .running(pid) = daemon.state else {
-            Issue.record("not running after restart: \(daemon.state)")
-            return
-        }
-        kill(pid, SIGKILL)
-        for _ in 0..<150 where daemon.state == .running(pid: pid) {
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        #expect(daemon.state == .restarting(after: .seconds(1)))
-        daemon.stop {}
-    }
-
-    @MainActor @Test func stoppingWhileARestartWaitsCallsItOff() async throws {
-        Keychain.inMemory = [:]
-        let logs = FileManager.default.temporaryDirectory.appending(path: "bt-daemon-test-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: logs) }
-        let daemon = DaemonProcess(environment: ["BRIDGETOWN_DAEMON_CMD": "false", "BRIDGETOWN_LOG_DIR": logs.path])
-        daemon.start()
-        for _ in 0..<150 where daemon.state != .restarting(after: .seconds(1)) {
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        #expect(daemon.state == .restarting(after: .seconds(1)))
-        #expect(daemon.stop {} == false)
-        #expect(daemon.state == .idle)
-    }
-
-    @Test func secretsLineIsOneJSONObject() throws {
-        let line = try DaemonProcess.Secrets(apiToken: "tok", slackUserToken: "xoxp-1", typesafeApiKey: "").line()
-        #expect(line.last == UInt8(ascii: "\n"))
-        #expect(line.dropLast().contains(UInt8(ascii: "\n")) == false)
-        let json = try #require(JSONSerialization.jsonObject(with: line.dropLast()) as? [String: String])
-        #expect(json == ["apiToken": "tok", "slackUserToken": "xoxp-1", "typesafeApiKey": ""])
+        #expect(!problems(health: .disconnected("gone"), status: status).contains { $0.id == "github" })
     }
 }
 

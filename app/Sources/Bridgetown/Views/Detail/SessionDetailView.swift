@@ -60,7 +60,7 @@ struct SessionDetailView: View {
     }
 
     private func reloadTranscript() async {
-        transcript = await transcript.reloaded { try await store.transcript(for: session) }
+        transcript = await transcript.reloaded { try await store.fetch { [id = session.id] in try await $0.transcript(sessionId: id) } }
     }
 
     // MARK: Summary
@@ -258,7 +258,7 @@ struct SessionDetailView: View {
     private var bottomBar: some View {
         HStack(spacing: 8) {
             Button {
-                if let err = SystemActions.takeOver(session) { store.show(err) }
+                Task { if let err = await SystemActions.takeOver(session) { store.report(err) } }
             } label: {
                 Label("Take over in Terminal", systemImage: "terminal")
             }

@@ -391,10 +391,13 @@ struct ConnectingState: View {
 
     /// A reason the wait won't end on its own. The header carries the details and the fix.
     private var blocker: String? {
-        if daemon.state == .missing { return "The daemon isn't bundled with this build." }
-        if daemon.state == .portInUse { return "The daemon couldn't start: port \(daemon.endpoint.port) is in use." }
-        if store.connection == .rejected { return "The daemon on port \(daemon.endpoint.port) won't accept this app." }
-        return nil
+        switch DaemonHealth(daemon: daemon, store: store) {
+        case .notBundled: "The daemon isn't bundled with this build."
+        case .portInUse: "The daemon couldn't start: port \(daemon.endpoint.port) is in use."
+        case .rejected: "The daemon on port \(daemon.endpoint.port) won't accept this app."
+        case .keepsExiting: "The daemon keeps stopping soon after it starts."
+        case .starting, .restarting, .disconnected, .connected: nil
+        }
     }
 
     var body: some View {

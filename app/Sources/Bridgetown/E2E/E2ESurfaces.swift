@@ -24,8 +24,8 @@ final class E2ESurfaces {
     /// Pro's notch (as IslandLayoutTests), and a screen without one.
     static func geometry(_ preset: String, open: CGSize = CGSize(width: NotchGeometry.maxOpenWidth, height: NotchGeometry.maxOpenHeight)) -> NotchGeometry {
         preset == "flat"
-            ? NotchGeometry(top: 900, centerX: 720, notch: CGSize(width: NotchGeometry.standInWidth, height: 24), hardware: false, openWidth: open.width, openHeight: open.height)
-            : NotchGeometry(top: 982, centerX: 756, notch: CGSize(width: 185, height: 32), hardware: true, openWidth: open.width, openHeight: open.height)
+            ? NotchGeometry(top: 900, centerX: 720, notch: CGSize(width: NotchGeometry.standInWidth, height: 24), openWidth: open.width, openHeight: open.height)
+            : NotchGeometry(top: 982, centerX: 756, notch: CGSize(width: 185, height: 32), openWidth: open.width, openHeight: open.height)
     }
 
     private let store: Store

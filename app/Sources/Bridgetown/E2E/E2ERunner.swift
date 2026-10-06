@@ -150,7 +150,7 @@ final class E2ERunner {
             daemon.sendControl(E2EJSON.object(["mock": .string("crash"), "code": .number(Double(code))]).line)
             // Done once the app has seen it go, so a `wait` after this one waits on what the
             // app does about it, not on the moment before it noticed.
-            try await until("the crashed daemon to go", timeoutMs: 5_000) { daemonPid != crashing && !store.isConnected }
+            try await until("the crashed daemon to go", timeoutMs: 5_000) { daemonPid != crashing && store.connection != .connected }
         case .stopDaemon:
             try await wait(.settled, timeoutMs: 0)
             await withCheckedContinuation { done in
@@ -162,10 +162,7 @@ final class E2ERunner {
             try await wait(.settled, timeoutMs: 0)
             let replaced = daemonPid
             daemon.restart()
-            // The old one can answer for a moment as it goes: the stream starts on the new one,
-            // at once rather than after the backoff a dead daemon built up.
             try await until("the new daemon to run") { daemonPid.map { $0 != replaced } ?? false }
-            store.connect(to: daemon.endpoint)
             try await wait(tokenMismatch ? .rejected : .connected, timeoutMs: 20_000)
         case let .appearance(next):
             appearances = next
@@ -345,7 +342,7 @@ final class E2ERunner {
 
     private func holds(_ condition: E2EStep.Wait) -> Bool {
         switch condition {
-        case .connected: store.isConnected && store.snapshot != nil
+        case .connected: store.connection == .connected && store.snapshot != nil
         case .rejected: store.connection == .rejected
         case .portInUse: daemon.state == .portInUse
         case .disconnected: if case .disconnected = store.connection { true } else { false }

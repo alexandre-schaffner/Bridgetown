@@ -45,7 +45,6 @@ struct IslandView: View {
                     .accessibilityAction(named: "Open Bridgetown", open)
             }
         }
-        .opacity(layout.visible ? 1 : 0)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .font(.geist(12))
         .foregroundStyle(Ink.text, Ink.dim, Ink.faint)
@@ -136,6 +135,10 @@ struct GlanceWings: View {
             Count(value: glance.working, color: Ink.text, dot: Ink.blue, live: true)
         } else if glance.trouble {
             Circle().fill(Ink.red).frame(width: 6, height: 6)
+        } else {
+            // An empty wing still takes its width: without a view here the HStack drops it,
+            // and the arch slides 19pt toward the middle, into the idle island.
+            Color.clear
         }
     }
 

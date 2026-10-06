@@ -79,7 +79,7 @@ struct ActionCard: View {
     private var iconTint: Color? {
         switch action.kind {
         case .merge, .release: Ink.green
-        case .investigate, .grafana: Ink.amber
+        case .investigate: Ink.amber
         case .rerun: Ink.red
         case .review:
             action.sessionId.flatMap { store.snapshot?.session(id: $0)?.tone } == .failure ? Ink.red : nil
