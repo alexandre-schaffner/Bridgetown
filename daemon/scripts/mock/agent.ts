@@ -11,7 +11,7 @@ import * as Sdk from "../../test/support/sdk.ts"
  * it drives the CLI: one query per turn, your messages arrive on its streaming
  * input, `report` and `ask` go through Bridgetown's real in-process MCP tools
  * (so an ask puts up a real answer card and blocks until you reply), and its
- * `result` is finalized by the real `decideOutcome`.
+ * `result` goes through the real `decideOutcome`.
  */
 
 export type Step =

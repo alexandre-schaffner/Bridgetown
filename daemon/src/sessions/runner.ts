@@ -151,7 +151,7 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
         return settings.maxConcurrent - (yield* store.activeSessions()).filter((s) => holdsSlot(s, live)).length
       })
 
-    const { finishFailed, finalize } = makeFinish({ store, thread, repo, queue, github, hub, sendBack: (id, prompt) => deliver(id, prompt, {}, false) })
+    const { finish, finishFailed } = makeFinish({ store, thread, repo, queue, github, hub, sendBack: (id, prompt) => deliver(id, prompt, {}, false) })
 
     const { runTurn } = makeTurns({
       store,
@@ -160,7 +160,7 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
       repo,
       asks,
       agent,
-      onEnd: (id) => (end: TurnEnd) => (end._tag === "Failed" ? finishFailed(id, end.reason) : finalize(id, end.result)),
+      onEnd: (id) => (end: TurnEnd) => (end._tag === "Failed" ? finishFailed(id, end.reason) : finish(id, end.result)),
       onFailure: (id, reason) => finishFailed(id, reason).pipe(Effect.ignore),
       daemonPort: (yield* Environment).port,
     })

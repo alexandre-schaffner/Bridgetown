@@ -53,7 +53,7 @@ let nextPr = 3360
 /** PRs the scripted agents opened this run, so a resumed turn keeps its session's PR. */
 const opened = new Map<string, string>()
 
-/** A fix in a PR: the real finalize moves it to CI, and the fake GitHub takes it through checks, review, merge and release. */
+/** A fix in a PR: the real decideOutcome moves it to CI, and the fake GitHub takes it through checks, review, merge and release. */
 const fixed = (prUrl: string, summary: string): Step => ({
   kind: "result",
   costUsd: 0.74,

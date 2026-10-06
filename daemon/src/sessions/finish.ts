@@ -8,7 +8,7 @@ import { firstLine, truncate } from "../lib/text.ts"
 import type { GitHubShape } from "../ship/github.ts"
 import type { SlackThreadShape } from "../slack/thread.ts"
 import type { StoreShape } from "../store/store.ts"
-import { decideOutcome, type Finalized } from "./finalize.ts"
+import { decideOutcome, type TurnOutcome } from "./outcome.ts"
 import type { SessionRepoShape } from "./repo.ts"
 
 export interface FinishDeps {
@@ -39,7 +39,7 @@ export const makeFinish = ({ store, thread, repo, queue, github, hub, sendBack }
       if (failed !== undefined) yield* queue.retryCard(failed, "Agent failed", reason)
     })
 
-  const applyCards = (session: Session, decision: Finalized) =>
+  const applyCards = (session: Session, decision: TurnOutcome) =>
     Effect.gen(function* () {
       for (const card of decision.cards) {
         if (card._tag === "HandOff") {
@@ -52,7 +52,8 @@ export const makeFinish = ({ store, thread, repo, queue, github, hub, sendBack }
       }
     })
 
-  const finalize = (id: string, result: SessionResult) =>
+  /** Applies the agent's result as `decideOutcome` decides it. A stopped or already finished session is left as it is. */
+  const finish = (id: string, result: SessionResult) =>
     Effect.gen(function* () {
       const before = yield* repo.get(id)
       if (before === undefined || isFinished(before)) return
@@ -61,7 +62,7 @@ export const makeFinish = ({ store, thread, repo, queue, github, hub, sendBack }
       const head = yield* prHead(result.prUrl ?? before.prUrl)
       const { adversarialReview } = yield* hub.settings
       // Decided on the row as it is when written, not on the one read before the slow `git ls-remote`.
-      const decided: { value?: Finalized } = {}
+      const decided: { value?: TurnOutcome } = {}
       const session = yield* repo.modify(id, (current) => {
         const decision = decideOutcome({ session: current, result, alert, pushed, head, adversarialReview })
         decided.value = decision
@@ -82,5 +83,5 @@ export const makeFinish = ({ store, thread, repo, queue, github, hub, sendBack }
       if (decision.post !== null && alert !== undefined) yield* thread.postUpdate(alert, decision.post)
     })
 
-  return { finishFailed, finalize }
+  return { finish, finishFailed }
 }

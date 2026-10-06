@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { SessionResult } from "../src/agent/result.ts"
 import type { Alert } from "../src/domain/alert.ts"
 import { isOwnBranch, NO_MILESTONES, type Session, type SessionStatus, shipStatus } from "../src/domain/session.ts"
-import { decideOutcome, type FinalizeInput } from "../src/sessions/finalize.ts"
+import { decideOutcome, type OutcomeInput } from "../src/sessions/outcome.ts"
 import type { PrHead } from "../src/ship/github.ts"
 import { makeAlert, makeSession } from "./support/records.ts"
 
@@ -20,7 +20,7 @@ const inboxAlert: Alert = makeAlert({
 const running = (overrides: Partial<Session> = {}) => makeSession("running", { pushbacks: 1, ...overrides })
 /** A PR head on the session's own branch. */
 const at = (sha: string): PrHead => ({ sha, branch: running().branch ?? "" })
-const decide = (input: Partial<FinalizeInput> & { readonly result: SessionResult }) =>
+const decide = (input: Partial<OutcomeInput> & { readonly result: SessionResult }) =>
   decideOutcome({ session: running(), alert: releaseAlert, pushed: false, head: null, adversarialReview: false, ...input })
 const cardKinds = (d: ReturnType<typeof decideOutcome>) => d.cards.map((c) => (c._tag === "HandOff" ? `handoff:${c.title}` : c.action.kind))
 

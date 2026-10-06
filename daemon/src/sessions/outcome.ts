@@ -20,7 +20,7 @@ export type CardRequest =
   | ({ readonly _tag: "HandOff" } & Pick<HandOff, "title" | "detail">)
   | { readonly _tag: "Card"; readonly action: NewAction }
 
-export interface FinalizeInput {
+export interface OutcomeInput {
   readonly session: Session
   /** Its `prUrl` already checked to be a PR on the repo Bridgetown ships (`ownPrUrl`). */
   readonly result: SessionResult
@@ -33,7 +33,7 @@ export interface FinalizeInput {
   readonly adversarialReview: boolean
 }
 
-export interface Finalized {
+export interface TurnOutcome {
   readonly patch: Partial<Session>
   readonly cards: ReadonlyArray<CardRequest>
   /** Bridgetown's update in the alert's thread (`SlackThread.postUpdate`, which keeps it out of an inbox item's). */
@@ -60,7 +60,7 @@ export interface Finalized {
  * branch (one quoted in a thread, a guess) fails the turn rather than go up for you to
  * merge; one GitHub did not answer about is taken as reported.
  */
-export const decideOutcome = ({ session, result, alert, pushed, head, adversarialReview }: FinalizeInput): Finalized => {
+export const decideOutcome = ({ session, result, alert, pushed, head, adversarialReview }: OutcomeInput): TurnOutcome => {
   const milestones = {
     ...session.milestones,
     diagnosed: session.milestones.diagnosed || result.rootCauseFound,

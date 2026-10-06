@@ -1,6 +1,6 @@
 /**
  * A real Agent SDK session (it costs money) against a throwaway repo:
- * worktree → Agent SDK session → report tool → structured result → finalize.
+ * worktree → Agent SDK session → report tool → structured result → its outcome.
  * The test world with the real agent and GitHub: Slack is faked (dry run) and `origin` is a
  * local bare repo, so nothing leaves the machine but the agent's own calls.
  * Everything it writes (store, repo, worktree, the agent's conversation) goes on success; on
