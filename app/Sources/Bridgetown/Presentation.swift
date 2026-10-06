@@ -35,12 +35,17 @@ extension Tone {
 
     /// `headline` with its status word, the part before the first " · ", in this tone,
     /// and the rest ("root cause not found", "#product-approvals") left in the line's grey.
-    func headline(_ headline: String) -> Text {
-        guard let split = headline.range(of: " · ") else {
-            return Text(headline).foregroundColor(wordColor)
-        }
-        return Text(headline[..<split.lowerBound]).foregroundColor(wordColor)
-            + Text(headline[split.lowerBound...])
+    func headline(_ headline: String) -> Text { Text(styledHeadline(headline)) }
+
+    /// `headline`'s runs: only a coloured status word carries a colour of its own. A neutral
+    /// one has none rather than a nil colour, which Text draws in the primary white.
+    func styledHeadline(_ headline: String) -> AttributedString {
+        var styled = AttributedString(headline)
+        guard let color = wordColor else { return styled }
+        let end = headline.range(of: " · ").map { headline.distance(from: headline.startIndex, to: $0.lowerBound) } ?? headline.count
+        let word = styled.startIndex..<styled.index(styled.startIndex, offsetByCharacters: end)
+        styled[word].foregroundColor = color
+        return styled
     }
 }
 

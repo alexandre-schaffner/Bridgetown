@@ -321,6 +321,25 @@ import Testing
     }
 }
 
+@Suite struct ToneHeadlineTests {
+    private func colours(_ text: AttributedString) -> [(String, Color?)] {
+        text.runs.map { (String(text[$0.range].characters), $0.foregroundColor) }
+    }
+
+    /// The status word takes the tone's colour; what follows keeps the line's grey.
+    @Test func aStatusWordTakesItsTone() {
+        let runs = colours(Tone.live.styledHeadline("In review · #product-approvals"))
+        #expect(runs.map(\.0) == ["In review", " · #product-approvals"])
+        #expect(runs.map(\.1) == [Ink.blue, nil])
+    }
+
+    /// "Queued", "Closed", "Pierre is on it": grey like the rest of the line, not white.
+    @Test func aNeutralWordKeepsTheLinesGrey() {
+        #expect(colours(Tone.neutral.styledHeadline("Closed · root cause not found")).allSatisfy { $0.1 == nil })
+        #expect(colours(Tone.neutral.styledHeadline("Queued")).allSatisfy { $0.1 == nil })
+    }
+}
+
 @Suite struct SessionHolderTests {
     private func session(_ status: Session.State, tone: Tone = .live, reviewChannel: String? = nil) throws -> Session {
         var s = try #require(try Fixture.snapshot().sessions.first)
