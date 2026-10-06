@@ -168,12 +168,13 @@ final class Store {
         perform(Self.messageKey(session), onSuccess: onSuccess) { try await $0.message(sessionId: session.id, text: text) }
     }
 
+    /// Shown at once, before the daemon answers. If it refuses, no snapshot may come to
+    /// correct the toggle, so it is put back, unless one already has.
     func setPaused(_ paused: Bool) {
-        snapshot?.status.paused = paused  // optimistic
-        perform("pause", onFailure: { [weak self] in
-            // No snapshot may come to correct it, so put it back, unless one already has.
+        let sent = perform("pause", onFailure: { [weak self] in
             if self?.snapshot?.status.paused == paused { self?.snapshot?.status.paused = !paused }
         }) { try await $0.setPaused(paused) }
+        if sent { snapshot?.status.paused = paused }
     }
 
     // MARK: Settings
@@ -241,19 +242,19 @@ final class Store {
 
     /// Runs `call`, applies the Snapshot it returns, and flashes the error unless
     /// `stillWorking` says the daemon is still on it. A key already in flight is a second
-    /// click on the same thing, so it sends nothing.
+    /// click on the same thing, so it sends nothing. False when nothing was sent.
+    @discardableResult
     private func perform(
         _ key: String,
         stillWorking: ((Error) -> Bool)? = nil,
         onSuccess: (() -> Void)? = nil,
         onFailure: (() -> Void)? = nil,
         _ call: @escaping @Sendable (DaemonClient) async throws -> Snapshot
-    ) {
-        guard !busy.contains(key) else { return }
+    ) -> Bool {
+        guard !busy.contains(key) else { return false }
         guard let client else {
-            onFailure?()
             report(DaemonError.notConnected.userMessage)
-            return
+            return false
         }
         busy.insert(key)
         Task {
@@ -267,6 +268,7 @@ final class Store {
                 report(error.userMessage)
             }
         }
+        return true
     }
 
     /// Flashes `message` in the header for a few seconds: a user action that failed.

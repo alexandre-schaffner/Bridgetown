@@ -21,12 +21,25 @@ import Testing
     @Test func aRefusedPauseIsTakenBack() async throws {
         let (store, stub) = try await connected { _ in .init(status: 500, body: Data(#"{"error":"nope"}"#.utf8)) }
         defer { stub.stop() }
-        let before = try #require(store.snapshot?.status.paused)
+        let before = try #require(store.snapshot?.status.paused as Bool?)
         store.setPaused(!before)
         #expect(store.snapshot?.status.paused == !before)
         try await stub.until { store.flash != nil }
         #expect(store.flash == "nope")
         #expect(store.snapshot?.status.paused == before)
+    }
+
+    /// The second click sends nothing, so it mustn't flip the toggle either: the toggle would
+    /// say one thing and the daemon the other.
+    @Test func aSecondPauseClickWhileTheFirstIsOutChangesNothing() async throws {
+        let (store, stub) = try await connected { [snapshot] _ in .init(body: snapshot, after: .milliseconds(200)) }
+        defer { stub.stop() }
+        let before = try #require(store.snapshot?.status.paused as Bool?)
+        store.setPaused(!before)
+        store.setPaused(before)
+        #expect(store.snapshot?.status.paused == !before)
+        try await stub.until { stub.events.count == 2 }
+        #expect(stub.requests.count == 1)
     }
 
     @Test func aSecondClickWhileTheFirstIsOutSendsNothing() async throws {
