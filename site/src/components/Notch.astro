@@ -200,10 +200,13 @@ const steps = [
     padding: 0;
   }
 
+  /* The machine's row gives up height before the words do: on a short phone (320x568) they
+     would run out of the pin's foot. */
   :global(html.js) .pin {
     position: sticky;
     top: 0;
     height: 100svh;
+    grid-template-rows: minmax(0, auto) auto;
     align-content: safe center;
     padding-top: 3.5rem;
     overflow: hidden;
@@ -248,8 +251,12 @@ const steps = [
     }
   }
 
-  /* A phone, pinned: the four steps in a row, and only the playing one's words beneath. */
+  /* A phone, pinned: the four steps in a row, and only the playing one's words beneath, which
+     keep clear of the screen's foot. */
   @media (max-width: 600px), (max-height: 560px) and (orientation: landscape) {
+    :global(html.js) .pin {
+      padding-bottom: 1rem;
+    }
     :global(html.js) .steps {
       position: relative;
       grid-template-columns: repeat(4, auto);

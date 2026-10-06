@@ -71,8 +71,10 @@ Switched to a new branch 'search-cache'
 
   .bezel {
     position: relative;
-    /* Zoomed in on a phone, the screen is cut short so the words below still fit. */
+    /* Zoomed in on a phone, the screen is cut short so the words below still fit; and never
+       taller than the room it is given (the notch chapter's pin). */
     height: calc(min(548px * var(--k), 44svh) + 14px);
+    max-height: 100%;
     padding: 14px 14px 0;
     border-radius: 26px 26px 0 0;
     background: #0d0e10;

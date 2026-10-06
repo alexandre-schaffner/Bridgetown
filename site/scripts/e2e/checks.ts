@@ -3,7 +3,7 @@
 // of its own.
 
 import type { Page } from "playwright-core";
-import { LAPTOP, MACBOOK, PHONE, type Motion, type Viewport } from "./screens";
+import { LAPTOP, MACBOOK, PHONE, SHORT_PHONE, type Motion, type Viewport } from "./screens";
 
 /** One thing the page has to do. `run` throws a sentence saying what went wrong. */
 export interface Check {
@@ -176,6 +176,27 @@ export const CHECKS: Check[] = [
       await hit.click();
       const folded = await state();
       expect(!folded.open && folded.width === 300, `after a second click it is ${JSON.stringify(folded)}, not folded`);
+    },
+  },
+  {
+    name: "On the smallest phone the notch chapter's words stay on its pinned screen",
+    viewport: SHORT_PHONE,
+    motion: "reduce",
+    async run(page) {
+      // Halfway through the pin, the machine above and every line beneath it on screen.
+      await page.evaluate(() => {
+        const notch = document.querySelector<HTMLElement>("#notch")!;
+        scrollTo(0, notch.offsetTop + notch.offsetHeight / 2);
+      });
+      await page.waitForTimeout(300);
+      const out = await page.evaluate(() => {
+        const foot = Math.min(document.querySelector("#notch .pin")!.getBoundingClientRect().bottom, innerHeight);
+        return [...document.querySelectorAll<HTMLElement>("#notch .copy > *")]
+          .filter((el) => !el.hidden)
+          .map((el) => ({ text: el.innerText.trim().slice(0, 40), past: Math.round(el.getBoundingClientRect().bottom - foot) }))
+          .filter((el) => el.past > 0);
+      });
+      expect(out.length === 0, out.map((el) => `“${el.text}…” runs ${el.past}px past the screen's foot`).join("; "));
     },
   },
   {
