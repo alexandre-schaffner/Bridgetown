@@ -190,6 +190,7 @@ const program = Effect.gen(function* () {
   const released: Array<{ readonly tag: string; readonly at: number }> = []
   const fake = mockGitHub({
     prs: fixtures.prs,
+    branches: new Map(fixtures.sessions.flatMap((s) => (s.prUrl === null || s.branch === null ? [] : [[s.prUrl, s.branch] as const]))),
     tags: fixtures.tags,
     latencyMs: 3_000,
     // A static world keeps the release in flight for good.
@@ -211,7 +212,7 @@ const program = Effect.gen(function* () {
   }
 
   // A static world runs no agent: one asked to start is a bug in the world, not something to fake.
-  const agent = staticWorld ? noAgent : scriptedAgent(scriptFor({ extra: process.env.MOCK_EXTRA === "1", prs: new Map(fixtures.sessions.map((s) => [s.id, s.prUrl])) }))
+  const agent = staticWorld ? noAgent : scriptedAgent(scriptFor({ extra: process.env.MOCK_EXTRA === "1", prs: new Map(fixtures.sessions.map((s) => [s.id, s.prUrl])) }), fake.opened)
   const layer = worldLayer(home, {
     env: { port: launch.env.port, apiToken: token, forceDryRun: launch.env.forceDryRun },
     slack: mockSlack,

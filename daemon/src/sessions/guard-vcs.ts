@@ -1,4 +1,5 @@
 import { GH_HOST } from "../config.ts"
+import { isOwnBranch } from "../domain/session.ts"
 import { escapeRegExp } from "../lib/text.ts"
 import { flags, REASONS } from "./guard-reasons.ts"
 import type { Word } from "./shell.ts"
@@ -264,10 +265,7 @@ const pushRefusal = (args: ReadonlyArray<Word>, branch: string): string | undefi
     }
     positional.push(word)
   }
-  const own = (ref: string) => {
-    const name = ref.replace(/^refs\/heads\//, "")
-    return name === branch || new RegExp(`^${escapeRegExp(branch)}-\\d+$`).test(name)
-  }
+  const own = (ref: string) => isOwnBranch(branch, ref.replace(/^refs\/heads\//, ""))
   const explicit = explicitPush(branch)
   const [remote, ...refspecs] = positional
   if (remote === undefined || remote.dynamic || remote.text !== "origin") return explicit

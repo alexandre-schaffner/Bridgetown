@@ -27,7 +27,7 @@ export const makeFinish = ({ store, thread, repo, queue, github, hub, sendBack }
   /** Evidence that the agent pushed its branch: the ref exists on origin. */
   const branchPushed = (session: Session) =>
     session.branch === null ? Effect.succeed(false) : github.branchHead(session.repoPath, session.branch).pipe(Effect.map((sha) => sha !== null))
-  /** The PR's head commit, whichever branch it is on (a follow-up PR after a failed deploy is on `<branch>-2`). */
+  /** Where the PR's head is, `null` with no PR or no answer. */
   const prHead = (prUrl: string | null) => (prUrl === null ? Effect.succeed(null) : github.prHead(prUrl).pipe(Effect.orElseSucceed(() => null)))
 
   /** Fails the session with a retry card. A stopped or already finished session is left as it is. */

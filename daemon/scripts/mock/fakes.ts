@@ -79,6 +79,8 @@ export interface MockPr {
 
 export interface MockGitHubOptions {
   readonly prs: Readonly<Record<string, MockPr>>
+  /** The branch each PR's head is on, by URL (the fixture sessions' PRs); `opened` adds the ones agents open. */
+  readonly branches: ReadonlyMap<string, string>
   readonly tags: ReadonlyArray<string>
   /** How long `gh pr merge` / `gh release create` take, so `inFlight` shows. */
   readonly latencyMs: number
@@ -110,6 +112,7 @@ const checks = (state: MockPr["checks"]): PullRequest["statusCheckRollup"] => [
 export const mockGitHub = (options: MockGitHubOptions) => {
   const prs = new Map(Object.entries(options.prs).map(([url, pr]) => [url, { ...pr, openedAt: Date.now(), mergedAt: pr.merged ? new Date().toISOString() : null }]))
   const tags = [...options.tags]
+  const branches = new Map(options.branches)
   let blocked = options.blocked
 
   const ghe = <A>(operation: string, effect: Effect.Effect<A, GitHubError>): Effect.Effect<A, GitHubError> =>
@@ -178,7 +181,7 @@ export const mockGitHub = (options: MockGitHubOptions) => {
         ),
       ),
     branchHead: (_repoPath, branch) => Effect.succeed(new Bun.CryptoHasher("sha1").update(branch).digest("hex")),
-    prHead: (url) => Effect.succeed(headOf(url)),
+    prHead: (url) => Effect.succeed({ sha: headOf(url), branch: branches.get(url) ?? "" }),
     markReady: () => ghe("pr ready", slow(options.latencyMs / 3)),
     reachability: Effect.sync(() => (blocked ? "blocked" : "ok")),
   }
@@ -187,5 +190,7 @@ export const mockGitHub = (options: MockGitHubOptions) => {
     github,
     /** Flips the IP allow list; returns whether GHE is blocked now. */
     toggleBlocked: () => (blocked = !blocked),
+    /** An agent opened `url` from `branch`. */
+    opened: (url: string, branch: string) => void branches.set(url, branch),
   }
 }

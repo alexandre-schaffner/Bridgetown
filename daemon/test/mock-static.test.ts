@@ -164,10 +164,11 @@ describe("the mock honours the daemon's launch contract", () => {
 
 describe("the mock's GitHub", () => {
   test("a PR's head is one commit, so a review that passed it shows on the merge card the ship loop builds", async () => {
-    const { github } = mockGitHub({ prs: {}, tags: [], latencyMs: 0, holds: {}, blocked: false, onRelease: () => undefined })
+    const { github } = mockGitHub({ prs: {}, branches: new Map(), tags: [], latencyMs: 0, holds: {}, blocked: false, onRelease: () => undefined })
     const [view, head] = await Effect.runPromise(Effect.all([github.viewPr(pr(3360)), github.prHead(pr(3360))]))
-    const session = makeSession("awaiting_merge", { prUrl: pr(3360), critique: { reviewer: "codex", sha: head ?? "", findings: [], response: null } })
-    expect(view.headRefOid).toBe(head ?? "")
+    const sha = head?.sha ?? ""
+    const session = makeSession("awaiting_merge", { prUrl: pr(3360), critique: { reviewer: "codex", sha, findings: [], response: null } })
+    expect(view.headRefOid).toBe(sha)
     expect(mergeDetail(session, view)).toEndWith("· Codex passed")
   })
 })

@@ -100,9 +100,19 @@ const branchHead = (repoPath: string, branch: string) =>
     Effect.orElseSucceed(() => null),
   )
 
-/** The commit a PR's head points at: what the adversarial review reads, whichever branch the PR is on. */
+/** Where a PR's head is: the commit the adversarial review reads, and the branch it is on. */
+export interface PrHead {
+  readonly sha: string
+  readonly branch: string
+}
+
+const HeadRef = Schema.Struct({ headRefOid: Schema.String, headRefName: Schema.String })
+
 const prHead = (prUrl: string) =>
-  gh(["pr", "view", prUrl, "--json", "headRefOid", "-q", ".headRefOid"]).pipe(Effect.map((out) => (out.trim() === "" ? null : out.trim())))
+  gh(["pr", "view", prUrl, "--json", "headRefOid,headRefName"]).pipe(
+    Effect.flatMap((out) => decodeOr("gh", "pr view", Schema.fromJsonString(HeadRef))(out)),
+    Effect.map((head): PrHead | null => (head.headRefOid === "" ? null : { sha: head.headRefOid, branch: head.headRefName })),
+  )
 
 /** Takes a draft PR out of draft once the adversarial review passed. Idempotent: an already ready PR stays ready. */
 const markReady = (prUrl: string) => gh(["pr", "ready", prUrl]).pipe(Effect.asVoid)
@@ -130,7 +140,7 @@ export interface GitHubShape {
   readonly createRelease: (tag: string, notes: string) => Effect.Effect<void, GitHubError>
   /** The commit `branch` points at on origin, `null` when it was not pushed. */
   readonly branchHead: (repoPath: string, branch: string) => Effect.Effect<string | null>
-  readonly prHead: (prUrl: string) => Effect.Effect<string | null, GitHubError>
+  readonly prHead: (prUrl: string) => Effect.Effect<PrHead | null, GitHubError>
   readonly markReady: (prUrl: string) => Effect.Effect<void, GitHubError>
   /** `blocked`: the Merkl org's IP allow list refuses this network. */
   readonly reachability: Effect.Effect<Reachability>

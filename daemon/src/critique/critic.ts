@@ -116,7 +116,7 @@ export const CriticLive = Layer.effect(Critic)(
         const session = yield* repo.get(id)
         if (session === undefined || session.status !== "critiquing" || session.worktree === null || session.prUrl === null) return
         const prUrl = session.prUrl
-        const head = yield* github.prHead(prUrl)
+        const head = (yield* github.prHead(prUrl))?.sha ?? null
         if (head === null) return yield* onError(id, `GitHub reports no head commit for ${prUrl}`)
         if (session.critique !== null && passedAt(session.critique, head)) return yield* ready(session, session.critique)
         // This head's findings were recorded but never reached the agent (its turn was parked for a slot when the
@@ -152,7 +152,7 @@ export const CriticLive = Layer.effect(Critic)(
         errors.delete(id)
 
         // The agent may have pushed again while the reviewer read the old head: that head gets its own review.
-        if ((yield* github.prHead(prUrl)) !== head) {
+        if ((yield* github.prHead(prUrl))?.sha !== head) {
           return yield* repo.log(id, "status", "The branch moved during the review; its result is dropped")
         }
         const critique: Critique = { reviewer: profile.vendor, sha: head, findings, response: null }

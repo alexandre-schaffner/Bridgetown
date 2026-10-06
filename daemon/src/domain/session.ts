@@ -1,4 +1,5 @@
 import { Effect, Schema } from "effect"
+import { escapeRegExp } from "../lib/text.ts"
 import { Critique } from "./critique.ts"
 import { ReleaseState } from "./release.ts"
 import { nullByDefault } from "./schema.ts"
@@ -203,6 +204,12 @@ export const closedResolution = (session: Session): string =>
           : session.milestones.prOpened
             ? "PR open, not merged"
             : "not fixed"
+
+/**
+ * The session's branch, or a follow-up `<branch>-N` (a fix after its first PR merged): the only branches its agent
+ * may push, so the only heads a PR of its may have.
+ */
+export const isOwnBranch = (branch: string, name: string): boolean => name === branch || new RegExp(`^${escapeRegExp(branch)}-\\d+$`).test(name)
 
 /** A patch applied to a session; `milestones` merge instead of replacing. */
 export const withPatch = (session: Session, patch: Partial<Session>): Session => ({

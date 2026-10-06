@@ -67,6 +67,14 @@ describe("a turn always ends", () => {
     expect(out.transcript).toContain("error: Ignored the PR link https://github.com/someone/else/pull/1: not a pull request on Merkl/monorepo")
   })
 
+  test("a PR on the repo but on someone else's branch is not the session's: the turn fails and says why", async () => {
+    const theirs = fakeGitHub({ prHead: () => Effect.succeed({ sha: "abc", branch: "pierre/new-dashboard" }) })
+    const out = await turnOf([{ kind: "result", output: { ...RESULT, outcome: "fix_pr", prUrl: OWN_PR } }], handedBack("s_theirs"), undefined, theirs)
+    expect(out.session).toMatchObject({ status: "failed", prUrl: null })
+    expect(out.cards).toEqual(["review: Agent failed · t"])
+    expect(out.transcript).toContain("error: The agent reported #3401, which is on pierre/new-dashboard, not on its own branch fix-bt-t-s")
+  })
+
   test("a CLI that exits without a result fails the session instead of leaving it running", async () => {
     const out = await turnOf([])
     expect(out.session).toMatchObject({ status: "failed", activity: "The agent exited without a result" })

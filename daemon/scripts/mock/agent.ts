@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { basename } from "node:path"
 import type { Options, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { AgentShape } from "../../src/sessions/agent.ts"
 import type { SessionResult } from "../../src/sessions/output.ts"
@@ -79,7 +80,8 @@ const toolClient = (options: Options) => {
 /** What the agent says when one of your messages reaches it mid-turn. */
 const acknowledge = (text: string) => `Got your message — "${text}". Taking that into account.`
 
-export const scriptedAgent = (scriptFor: (turn: Turn) => Script): AgentShape => ({
+/** `opened` hears of each PR a turn reports, and the branch it is on (the worktree's). */
+export const scriptedAgent = (scriptFor: (turn: Turn) => Script, opened: (prUrl: string, branch: string) => void): AgentShape => ({
   query: ({ prompt, options }) => {
     const sessionId = options.env?.BRIDGETOWN_SESSION ?? "unknown"
     const conversation = options.resume ?? randomUUID()
@@ -121,6 +123,7 @@ export const scriptedAgent = (scriptFor: (turn: Turn) => Script): AgentShape => 
             break
           }
           case "result":
+            if (step.output.prUrl !== null) opened(step.output.prUrl, basename(options.cwd ?? ""))
             yield Sdk.result(conversation, step.output, step.costUsd)
             return
         }

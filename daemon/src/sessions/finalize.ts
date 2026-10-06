@@ -1,8 +1,10 @@
 import type { NewAction } from "../actions/queue.ts"
 import type { Alert } from "../domain/alert.ts"
 import { passedAt } from "../domain/critique.ts"
-import { type HandOff, type SentBack, type Session, type SessionStatus, shipStatus } from "../domain/session.ts"
+import { type HandOff, isOwnBranch, type SentBack, type Session, type SessionStatus, shipStatus } from "../domain/session.ts"
+import type { PrHead } from "../ship/github.ts"
 import * as Messages from "../ship/messages.ts"
+import { prLabel } from "../ship/pr.ts"
 import { releasePrefixOf } from "../ship/tags.ts"
 import type { SessionResult } from "./output.ts"
 import { pushBackPrompt } from "./prompts.ts"
@@ -25,8 +27,8 @@ export interface FinalizeInput {
   readonly alert: Alert | undefined
   /** Evidence that the agent pushed its branch. */
   readonly pushed: boolean
-  /** The commit the PR's head points at, which the review reads; `null` with no PR or no answer. */
-  readonly head: string | null
+  /** Where the PR's head is (the commit the review reads, and its branch); `null` with no PR or no answer from GitHub. */
+  readonly head: PrHead | null
   /** Whether pushed fixes go through the adversarial review (the setting). */
   readonly adversarialReview: boolean
 }
@@ -54,7 +56,9 @@ export interface Finalized {
  * side turn concludes, so a "no action" answer to a teammate never resolves an
  * open PR, but a send-back (red CI, requested changes, a failed deploy) answered
  * without a fix is handed to you. A pushed head that no review has passed yet goes
- * to the adversarial review before CI.
+ * to the adversarial review before CI. A PR the agent reports that is not on its own
+ * branch (one quoted in a thread, a guess) fails the turn rather than go up for you to
+ * merge; one GitHub did not answer about is taken as reported.
  */
 export const decideOutcome = ({ session, result, alert, pushed, head, adversarialReview }: FinalizeInput): Finalized => {
   const milestones = {
@@ -72,9 +76,12 @@ export const decideOutcome = ({ session, result, alert, pushed, head, adversaria
   }
   const notes = result.tried.length > 0 ? [`Tried:\n${result.tried.map((t) => `· ${t}`).join("\n")}`] : []
   const none = { cards: [], post: null, sendBack: null, fail: null, notes, markReady: null }
+  if (result.prUrl !== null && result.prUrl !== session.prUrl && head !== null && session.branch !== null && !isOwnBranch(session.branch, head.branch)) {
+    return { ...none, patch: verdict, fail: `The agent reported ${prLabel(result.prUrl)}, which is on ${head.branch}, not on its own branch ${session.branch}` }
+  }
   const shipping = shipStatus(session)
   /** This head already passed the adversarial review. */
-  const passed = passedAt(session.critique, head)
+  const passed = passedAt(session.critique, head?.sha ?? null)
   /**
    * A head on its way to CI goes to the adversarial review first, unless the setting is off or it already passed.
    * The agent's summary is its reply to the last round's findings, which the next round reads; only the first turn

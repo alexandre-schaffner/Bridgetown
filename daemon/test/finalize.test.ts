@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import type { Alert } from "../src/domain/alert.ts"
-import { NO_MILESTONES, type Session, type SessionStatus, shipStatus } from "../src/domain/session.ts"
+import { isOwnBranch, NO_MILESTONES, type Session, type SessionStatus, shipStatus } from "../src/domain/session.ts"
 import { decideOutcome, type FinalizeInput } from "../src/sessions/finalize.ts"
 import type { SessionResult } from "../src/sessions/output.ts"
+import type { PrHead } from "../src/ship/github.ts"
 import { makeAlert, makeSession } from "./support/records.ts"
 
 const result = (overrides: Partial<SessionResult> = {}): SessionResult => ({
@@ -17,6 +18,8 @@ const inboxAlert: Alert = makeAlert({
   fields: { _tag: "inbox", from: "U2", fromName: "Pierre", channelKind: "channel", via: "mention", threadTs: null, prUrl: null },
 })
 const running = (overrides: Partial<Session> = {}) => makeSession("running", { pushbacks: 1, ...overrides })
+/** A PR head on the session's own branch. */
+const at = (sha: string): PrHead => ({ sha, branch: running().branch ?? "" })
 const decide = (input: Partial<FinalizeInput> & { readonly result: SessionResult }) =>
   decideOutcome({ session: running(), alert: releaseAlert, pushed: false, head: null, adversarialReview: false, ...input })
 const cardKinds = (d: ReturnType<typeof decideOutcome>) => d.cards.map((c) => (c._tag === "HandOff" ? `handoff:${c.title}` : c.action.kind))
@@ -51,12 +54,26 @@ describe("decideOutcome", () => {
   }
 
   test("fix PR records the release prefix and the evidence", () => {
-    const d = decide({ pushed: true, head: "abc", result: result({ outcome: "fix_pr", prUrl: "https://ghe/pull/1", releasePrefix: "admin" }) })
+    const d = decide({ pushed: true, head: at("abc"), result: result({ outcome: "fix_pr", prUrl: "https://ghe/pull/1", releasePrefix: "admin" }) })
     expect(d.patch).toMatchObject({ prUrl: "https://ghe/pull/1", releasePrefix: "admin", milestones: { diagnosed: true, fixed: true, prOpened: true } })
     // A full tag is taken for its prefix.
     expect(decide({ result: result({ outcome: "fix_pr", prUrl: "https://ghe/pull/1", releasePrefix: "admin-v0.6.0" }) }).patch.releasePrefix).toBe("admin")
     expect(d.fail).toBeNull()
     expect(decide({ result: result({ outcome: "fix_pr" }) }).fail).toBe("The agent reported a fix but opened no PR")
+  })
+
+  test("a PR the agent reports must be on its own branch: anyone else's fails the turn instead of going up to merge", () => {
+    const fix = result({ outcome: "fix_pr", prUrl: "https://ghe/pull/7" })
+    const branch = running().branch ?? ""
+    const foreign = decide({ head: { sha: "abc", branch: "pierre/new-dashboard" }, result: fix })
+    expect(foreign.fail).toBe(`The agent reported #7, which is on pierre/new-dashboard, not on its own branch ${branch}`)
+    expect(foreign.patch.prUrl).toBeUndefined()
+    // A follow-up branch is its own; a head GitHub did not answer about is taken as reported.
+    expect(decide({ head: { sha: "abc", branch: `${branch}-2` }, result: fix }).patch).toMatchObject({ status: "ci", prUrl: "https://ghe/pull/7" })
+    expect(decide({ head: null, result: fix }).patch).toMatchObject({ status: "ci", prUrl: "https://ghe/pull/7" })
+    expect(isOwnBranch(branch, `${branch}-12`)).toBe(true)
+    expect(isOwnBranch(branch, `${branch}-2x`)).toBe(false)
+    expect(isOwnBranch(branch, `${branch}x`)).toBe(false)
   })
 
   test("inbox items get a draft reply", () => {
@@ -120,30 +137,30 @@ describe("decideOutcome", () => {
     const failed = { ...passed, findings: [blocker] }
 
     test("a pushed fix goes to review before CI, still in draft", () => {
-      const d = decide({ head: "abc", adversarialReview: true, result: fix })
+      const d = decide({ head: at("abc"), adversarialReview: true, result: fix })
       expect(d.patch).toMatchObject({ status: "critiquing", phase: "critique", activity: "Waiting for review", milestones: { critiqued: false, prOpened: true } })
       expect(d.markReady).toBeNull()
       expect(d.post).toContain("https://ghe/pull/1")
     })
 
     test("a head the review already passed goes straight to CI and leaves draft", () => {
-      const d = decide({ session: running({ critique: passed }), head: "abc", adversarialReview: true, result: fix })
+      const d = decide({ session: running({ critique: passed }), head: at("abc"), adversarialReview: true, result: fix })
       expect(d.patch.status).toBe("ci")
       expect(d.markReady).toBe("https://ghe/pull/1")
     })
 
     test("new commits after a passed review are reviewed again", () => {
-      const d = decide({ session: running({ critique: passed, prUrl: "https://ghe/pull/1" }), head: "def", adversarialReview: true, result: fix })
+      const d = decide({ session: running({ critique: passed, prUrl: "https://ghe/pull/1" }), head: at("def"), adversarialReview: true, result: fix })
       expect(d.patch.status).toBe("critiquing")
     })
 
     test("the agent's summary is its reply to the last findings", () => {
-      const d = decide({ session: running({ critique: failed, prUrl: "https://ghe/pull/1" }), head: "def", adversarialReview: true, result: fix })
+      const d = decide({ session: running({ critique: failed, prUrl: "https://ghe/pull/1" }), head: at("def"), adversarialReview: true, result: fix })
       expect(d.patch.critique).toEqual({ ...failed, response: "fixed the null check" })
     })
 
     test("with the setting off a fix goes to CI and leaves draft", () => {
-      const d = decide({ head: "abc", adversarialReview: false, result: fix })
+      const d = decide({ head: at("abc"), adversarialReview: false, result: fix })
       expect(d.patch).toMatchObject({ status: "ci", phase: "ci" })
       expect(d.markReady).toBe("https://ghe/pull/1")
     })
@@ -155,14 +172,14 @@ describe("decideOutcome", () => {
         critiqueRounds: 2,
         milestones: { ...NO_MILESTONES, prOpened: true, critiqued: true, ciGreen: true, merged: true, released: true },
       })
-      const d = decide({ session: shipped, head: "abc", adversarialReview: true, result: result({ outcome: "fix_pr", prUrl: "https://ghe/pull/2" }) })
+      const d = decide({ session: shipped, head: at("abc"), adversarialReview: true, result: result({ outcome: "fix_pr", prUrl: "https://ghe/pull/2" }) })
       expect(d.patch).toMatchObject({ status: "critiquing", critique: null, critiqueRounds: 0, milestones: { critiqued: false, merged: false } })
     })
 
     test("a side turn on a draft no review passed goes to review, not CI", () => {
       // Handed back after the rounds ran out; your message gets an answer, not a fix.
       const handedBack = running({ prUrl: "https://ghe/pull/1", critique: failed, critiqueRounds: 4, milestones: { ...NO_MILESTONES, prOpened: true } })
-      const d = decide({ session: handedBack, head: "abc", adversarialReview: true, result: result({ outcome: "needs_human", summary: "the finding is wrong because…" }) })
+      const d = decide({ session: handedBack, head: at("abc"), adversarialReview: true, result: result({ outcome: "needs_human", summary: "the finding is wrong because…" }) })
       expect(d.patch).toMatchObject({ status: "critiquing", phase: "critique", milestones: { critiqued: false } })
       // The rebuttal reaches the next round as the agent's reply.
       expect(d.patch.critique?.response).toBe("the finding is wrong because…")
@@ -171,7 +188,7 @@ describe("decideOutcome", () => {
 
     test("a side turn on a reviewed head goes back to CI, out of draft", () => {
       const reviewed = running({ prUrl: "https://ghe/pull/1", critique: passed, milestones: { ...NO_MILESTONES, prOpened: true, critiqued: true } })
-      const d = decide({ session: reviewed, head: "abc", adversarialReview: true, result: result({ outcome: "no_action", summary: "answered" }) })
+      const d = decide({ session: reviewed, head: at("abc"), adversarialReview: true, result: result({ outcome: "no_action", summary: "answered" }) })
       expect(d.patch.status).toBe("ci")
       expect(d.markReady).toBe("https://ghe/pull/1")
     })
@@ -179,36 +196,36 @@ describe("decideOutcome", () => {
     test("a follow-up PR on another branch is reviewed by its own head", () => {
       const shipped = running({ prUrl: "https://ghe/pull/1", critique: passed, milestones: { ...NO_MILESTONES, prOpened: true, critiqued: true, merged: true, released: true } })
       // Even if the new PR's head happened to equal the old passed sha, a new PR starts its review afresh.
-      const d = decide({ session: shipped, head: "abc", adversarialReview: true, result: result({ outcome: "fix_pr", prUrl: "https://ghe/pull/2" }) })
+      const d = decide({ session: shipped, head: at("abc"), adversarialReview: true, result: result({ outcome: "fix_pr", prUrl: "https://ghe/pull/2" }) })
       expect(d.patch.status).toBe("critiquing")
     })
 
     test("a later side turn keeps the agent's reply to the findings", () => {
       const answered = { ...failed, response: "the finding is wrong: amounts are bigint" }
       const fixing = running({ prUrl: "https://ghe/pull/1", critique: answered, milestones: { ...NO_MILESTONES, prOpened: true } })
-      const d = decide({ session: fixing, head: "abc", adversarialReview: true, result: result({ outcome: "no_action", summary: "thanks, will look" }) })
+      const d = decide({ session: fixing, head: at("abc"), adversarialReview: true, result: result({ outcome: "no_action", summary: "thanks, will look" }) })
       expect(d.patch.status).toBe("critiquing")
       expect(d.patch.critique).toBeUndefined()
     })
 
     test("a PR that went through CI before any review is not pulled into one by a follow-up", () => {
       const green = running({ prUrl: "https://ghe/pull/1", milestones: { ...NO_MILESTONES, prOpened: true, ciGreen: true } })
-      const d = decide({ session: green, head: "abc", adversarialReview: true, result: result({ outcome: "no_action", summary: "answered" }) })
+      const d = decide({ session: green, head: at("abc"), adversarialReview: true, result: result({ outcome: "no_action", summary: "answered" }) })
       expect(d.patch.status).toBe("ci")
     })
 
     test("CI and a passed review hold for their head: new commits are reviewed and checked again", () => {
       const green = running({ prUrl: "https://ghe/pull/1", critique: passed, milestones: { ...NO_MILESTONES, prOpened: true, critiqued: true, ciGreen: true } })
-      expect(decide({ session: green, head: "def", adversarialReview: true, result: fix }).patch.milestones).toMatchObject({ critiqued: false, ciGreen: false })
+      expect(decide({ session: green, head: at("def"), adversarialReview: true, result: fix }).patch.milestones).toMatchObject({ critiqued: false, ciGreen: false })
       // With the review off, the old pass is no evidence for the new head either.
-      expect(decide({ session: green, head: "def", adversarialReview: false, result: fix }).patch).toMatchObject({ status: "ci", milestones: { critiqued: false, ciGreen: false } })
+      expect(decide({ session: green, head: at("def"), adversarialReview: false, result: fix }).patch).toMatchObject({ status: "ci", milestones: { critiqued: false, ciGreen: false } })
       // The head the review passed: both stand.
-      expect(decide({ session: green, head: "abc", adversarialReview: true, result: fix }).patch.milestones).toMatchObject({ critiqued: true, ciGreen: true })
+      expect(decide({ session: green, head: at("abc"), adversarialReview: true, result: fix }).patch.milestones).toMatchObject({ critiqued: true, ciGreen: true })
     })
 
     test("a side turn on a merged session never goes back to review", () => {
       const deploying = running({ prUrl: "https://ghe/pull/1", milestones: { ...NO_MILESTONES, prOpened: true, merged: true, released: true } })
-      expect(decide({ session: deploying, head: "new", adversarialReview: true, result: fix }).patch.status).toBe("deploying")
+      expect(decide({ session: deploying, head: at("new"), adversarialReview: true, result: fix }).patch.status).toBe("deploying")
     })
   })
 

@@ -21,7 +21,7 @@ const criticGitHub = () => {
   const state = { head: "aaaa111", ready: [] as Array<string> }
   const github = fakeGitHub({
     branchHead: () => Effect.sync(() => state.head),
-    prHead: () => Effect.sync(() => state.head),
+    prHead: () => Effect.sync(() => ({ sha: state.head, branch: reviewing().branch ?? "" })),
     markReady: (url) => Effect.sync(() => void state.ready.push(url)),
   })
   return { github, state }

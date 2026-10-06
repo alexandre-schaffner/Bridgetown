@@ -35,7 +35,7 @@ const slowGitHub = (release: Deferred.Deferred<void>, options: { readonly create
         ),
       ),
     branchHead: () => Effect.succeed("0000000000000000000000000000000000000001"),
-    prHead: () => Effect.succeed("0000000000000000000000000000000000000001"),
+    prHead: () => Effect.succeed({ sha: "0000000000000000000000000000000000000001", branch: releasable.branch ?? "" }),
   })
   return { github, calls }
 }
