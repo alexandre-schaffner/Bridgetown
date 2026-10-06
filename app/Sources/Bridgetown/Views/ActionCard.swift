@@ -116,7 +116,7 @@ struct ActionRow: View {
 
 /// A card opened in full: in Needs you, in place of its row, and in the session's detail
 /// under the session it is about. Its title and detail sit where the row's did, so opening
-/// a row doesn't move what you were reading.
+/// a row doesn't move what you were reading; the title is whole, where the row cut it.
 struct ActionCard: View {
     @Environment(Store.self) private var store
     let action: Action
@@ -150,7 +150,7 @@ struct ActionCard: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(action.title).rowTitle()
+                    Text(action.title).rowTitle(lines: nil)
                     if showsDetail {
                         ClampedText(markdown: action.detail, lineLimit: 4, size: 12, lineSpacing: Typo.rowLineSpacing)
                             .foregroundStyle(.secondary)

@@ -112,12 +112,12 @@ extension Text {
             .foregroundStyle(.primary)
     }
 
-    /// A row's title: up to two lines, then cut at the end.
-    func rowTitle() -> some View {
+    /// A row's title: up to two lines, then cut at the end; whole with `lines: nil`.
+    func rowTitle(lines: Int? = 2) -> some View {
         font(Typo.rowTitle)
             .tracking(Typo.rowTitleTracking)
             .lineSpacing(Typo.rowLineSpacing)
-            .lineLimit(2)
+            .lineLimit(lines)
             .truncationMode(.tail)
             .fixedSize(horizontal: false, vertical: true)
     }
