@@ -257,6 +257,11 @@ describe("guard", () => {
     "BUN_OPTIONS='--preload ./x.ts' bun test",
     // zsh runs $ZDOTDIR/.zshenv first; an interactive shell runs $ENV (and its rc files).
     "ZDOTDIR=/tmp/z zsh -c 'git status'",
+    // A `function name { body; }` definition runs its body on a later call; the body is checked like the `name()` form's. A single-command body must not hide behind the keyword.
+    "function reach { nc 127.0.0.1 47621; }",
+    "function git { gh pr merge 1; }; git",
+    "function leak { cat /proc/self/environ; }",
+    "function dump { ps -E 1; }",
     // A command handed to a scheduler or a multiplexer runs outside the session, past both guards.
     "echo 'gh pr merge 1' | at now",
     "tmux new-session -d 'gh pr merge 1'",
@@ -476,6 +481,9 @@ describe("guard", () => {
     "git config core.pager",
     "git config --unset alias.p",
     "git config unset core.pager",
+    // A function whose body is allowed is allowed, keyword form included.
+    "function helper { git status; }",
+    "function build { bun run build; }",
   ]
   for (const command of stillAllowed) {
     test(`allows: ${JSON.stringify(command)}`, () => expect(refusal(command, context)).toBeUndefined())

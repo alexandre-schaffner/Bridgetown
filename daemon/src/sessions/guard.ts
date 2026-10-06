@@ -200,6 +200,11 @@ const checkCommand = (command: Command, scope: Scope): string | undefined => {
       argv = argv.slice(1)
       continue
     }
+    // `function name { body; }`: drop the keyword and the name so the body is checked as commands. The `name()` form already splits at `(` into its own command, and so does `function name()`.
+    if (!first.quoted && first.text === "function") {
+      argv = argv.slice(2)
+      continue
+    }
     // A leading `NAME=value` is an environment assignment, not the command. Quoting of the value does not change that (`GIT_SSH_COMMAND='…' git fetch`), so it is stripped even when the word is marked quoted.
     if (ASSIGNMENT.test(first.text)) {
       const reason = assignmentRefusal(first)
