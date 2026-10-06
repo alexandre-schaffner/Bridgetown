@@ -5,11 +5,17 @@ import UserNotifications
 /// back once the action is gone.
 @MainActor
 final class Notifier: NSObject {
-    /// Set by `start`. UNUserNotificationCenter traps when the process has no bundle
-    /// identifier (e.g. under `swift run`), and an e2e run never starts it.
-    private var center: UNUserNotificationCenter?
+    /// Set by `start`, or by a test. UNUserNotificationCenter traps when the process has no
+    /// bundle identifier (e.g. under `swift run`), and an e2e run never starts it.
+    private var center: (any NotificationShelf)?
+    /// The actions standing at the last snapshot; their notifications stay.
+    private var standing: Set<String>?
     /// Clicking a notification opens the island.
     var onOpen: (() -> Void)?
+
+    init(center: (any NotificationShelf)? = nil) {
+        self.center = center
+    }
 
     func start() {
         guard Bundle.main.bundleIdentifier != nil else { return }
@@ -29,22 +35,48 @@ final class Notifier: NSObject {
             content.body = action.detail
             content.sound = .default
             content.threadIdentifier = "actions"
-            center.add(UNNotificationRequest(identifier: Self.identifier(action.id), content: content, trigger: nil))
+            center.post(UNNotificationRequest(identifier: Self.identifier(action.id), content: content, trigger: nil))
         }
     }
 
     /// Takes back every delivered notification whose action is gone: answered here or in
     /// Slack, or before a relaunch. Clicking one would open the island onto nothing.
+    /// Nothing to do while the same actions stand.
     func withdraw(allBut current: Set<String>) {
+        guard current != standing else { return }
+        standing = current
         guard let center else { return }
-        let keep = Set(current.map(Self.identifier))
         Task {
-            let stale = await center.deliveredNotifications().map(\.request.identifier).filter { !keep.contains($0) }
-            if !stale.isEmpty { center.removeDeliveredNotifications(withIdentifiers: stale) }
+            let delivered = await center.delivered()
+            // Kept: the actions standing once the answer is in, not when it was asked. One
+            // that came up in between has just been posted, and stays.
+            let keep = Set((standing ?? []).map(Self.identifier))
+            let stale = delivered.filter { !keep.contains($0) }
+            if !stale.isEmpty { center.remove(stale) }
         }
     }
 
     private static func identifier(_ actionId: String) -> String { "action-\(actionId)" }
+}
+
+/// Notification Center as `Notifier` uses it: the system's, or a test's that holds its
+/// answers back.
+@MainActor
+protocol NotificationShelf: AnyObject {
+    func post(_ request: UNNotificationRequest)
+    /// The identifiers of the notifications still shown.
+    func delivered() async -> [String]
+    func remove(_ identifiers: [String])
+}
+
+extension UNUserNotificationCenter: NotificationShelf {
+    func post(_ request: UNNotificationRequest) { add(request) }
+
+    func delivered() async -> [String] {
+        await deliveredNotifications().map(\.request.identifier)
+    }
+
+    func remove(_ identifiers: [String]) { removeDeliveredNotifications(withIdentifiers: identifiers) }
 }
 
 extension Notifier: UNUserNotificationCenterDelegate {

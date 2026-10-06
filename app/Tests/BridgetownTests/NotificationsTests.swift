@@ -1,6 +1,67 @@
 import Foundation
 import Testing
+import UserNotifications
 @testable import Bridgetown
+
+@MainActor @Suite struct NotifierTests {
+    /// Notification Center that answers `delivered` only once the test says so, with what it
+    /// shows by then.
+    final class Shelf: NotificationShelf {
+        private(set) var shown: [String] = []
+        private(set) var asked = 0
+        private var waiting: [CheckedContinuation<Void, Never>] = []
+
+        func post(_ request: UNNotificationRequest) { shown.append(request.identifier) }
+
+        func delivered() async -> [String] {
+            asked += 1
+            await withCheckedContinuation { waiting.append($0) }
+            return shown
+        }
+
+        func remove(_ identifiers: [String]) { shown.removeAll { identifiers.contains($0) } }
+
+        /// Once `count` callers wait on `delivered`, answers them all and lets them finish.
+        func answer(_ count: Int) async {
+            for _ in 0..<1_000 where waiting.count < count { await Task.yield() }
+            #expect(waiting.count == count)
+            let answers = waiting
+            waiting = []
+            answers.forEach { $0.resume() }
+            for _ in 0..<10 { await Task.yield() }
+        }
+    }
+
+    private func action(_ id: String) throws -> Action {
+        var action = try #require(Fixture.snapshot().actions.first)
+        action.id = id
+        return action
+    }
+
+    @Test func theNotificationsOfActionsGoneAreTakenBack() async throws {
+        let shelf = Shelf()
+        let notifier = Notifier(center: shelf)
+        notifier.post([try action("a"), try action("b")])
+        notifier.withdraw(allBut: ["b"])
+        await shelf.answer(1)
+        #expect(shelf.shown == ["action-b"])
+        notifier.withdraw(allBut: ["b"])
+        #expect(shelf.asked == 1)
+    }
+
+    /// A card that comes up while Notification Center is asked what it shows is posted
+    /// before the answer is in, and must not be taken back with the ones gone.
+    @Test func aCardPostedWhileTheOldOnesAreTakenBackStays() async throws {
+        let shelf = Shelf()
+        let notifier = Notifier(center: shelf)
+        notifier.post([try action("a"), try action("b")])
+        notifier.withdraw(allBut: ["b"])
+        notifier.withdraw(allBut: ["b", "c"])
+        notifier.post([try action("c")])
+        await shelf.answer(2)
+        #expect(shelf.shown == ["action-b", "action-c"])
+    }
+}
 
 @Suite struct NewActionsTests {
     @Test func theFirstSnapshotIsTheBaselineThenOnlyNewIdsCount() throws {
