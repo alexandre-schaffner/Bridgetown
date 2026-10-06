@@ -25,9 +25,12 @@ const daemon = (env: Record<string, string>) => {
 }
 
 describe("the daemon's launch", () => {
+  const saved = { BRIDGETOWN_SECRETS: process.env.BRIDGETOWN_SECRETS, SLACK_USER_TOKEN: process.env.SLACK_USER_TOKEN }
   afterEach(() => {
-    delete process.env.BRIDGETOWN_SECRETS
-    delete process.env.SLACK_USER_TOKEN
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
   })
 
   test("its secrets come from the stdin line, never from the environment", async () => {
