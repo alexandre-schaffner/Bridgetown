@@ -271,6 +271,7 @@ if (journey) {
     if (!sideways) {
       journey.style.height = "";
       pin.style.position = "";
+      pin.style.top = "";
       reel.reset();
       return;
     }

@@ -273,6 +273,13 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
     filter: none !important;
   }
 
+  /* Every other time on a phone; hidden, not removed, so the rest keep their places. */
+  @media (max-width: 400px) {
+    .axis span:nth-child(even) {
+      visibility: hidden;
+    }
+  }
+
   @media (max-width: 900px) {
     .notes {
       grid-template-columns: 1fr;

@@ -12,7 +12,7 @@ export interface Reel {
   measure(): void;
   /** Slides to progress `p`. */
   seek(p: number): void;
-  /** Back to the frames' place in the flow, as narrow screens stack them. */
+  /** Back to the frames' place in the flow, as narrow screens stack them: unslid and unturned. */
   reset(): void;
 }
 
@@ -62,6 +62,7 @@ export function createReel(root: HTMLElement, { tilt }: { tilt: boolean }): Reel
     },
     reset() {
       track.style.transform = "";
+      for (const p of panels) if (p) p.style.transform = "";
     },
   };
 }

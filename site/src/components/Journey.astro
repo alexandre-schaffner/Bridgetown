@@ -384,6 +384,7 @@ const H = 120;
   }
 
   .code pre {
+    --ln-w: 2.25rem;
     margin: 0;
     padding: 0.75rem 0;
     border-block: 0.5px solid var(--ui-hairline);
@@ -392,8 +393,8 @@ const H = 120;
     line-height: 1.7;
     overflow-x: auto;
     color: var(--ui-dim);
-    /* One column as wide as the longest line, so a narrow screen scrolls the diff with each
-       line's colour reaching its end. */
+    /* One column as wide as the longest line, so where the diff scrolls sideways each line's
+       colour reaches its end (a phone wraps it instead, below). */
     display: grid;
   }
 
@@ -403,7 +404,7 @@ const H = 120;
 
   .ln {
     display: inline-block;
-    width: 2.25rem;
+    width: var(--ln-w);
     color: rgb(255 255 255 / 0.3);
   }
 
@@ -601,7 +602,7 @@ const H = 120;
     :global(html.js) .pin {
       display: flex;
       flex-direction: column;
-      justify-content: center;
+      justify-content: safe center;
       height: 100svh;
       padding-top: 4.5rem;
     }
@@ -640,6 +641,21 @@ const H = 120;
     }
     .panel {
       margin-top: 0.75rem;
+    }
+  }
+
+  /* A phone: the diff wraps under its line numbers rather than scrolling sideways. */
+  @media (max-width: 600px) {
+    .code pre {
+      font-size: 0.75rem;
+      white-space: pre-wrap;
+    }
+    .dl {
+      padding-left: var(--ln-w);
+      text-indent: calc(-1 * var(--ln-w));
+    }
+    .ln {
+      text-indent: 0;
     }
   }
 

@@ -100,7 +100,7 @@ import { download } from "../lib/download";
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    height: 4rem;
+    height: var(--nav-h);
     padding-inline: var(--gutter);
     color: #fff;
     mix-blend-mode: difference;
@@ -249,9 +249,8 @@ import { download } from "../lib/download";
     }
   }
 
-  /* Under 360px there is room for the mark, the theme and the button, not the name as well:
-     it is the hero's first line. */
-  @media (max-width: 359px) {
+  /* The smallest phones: the mark alone, so the switch and the button fit beside it. */
+  @media (max-width: 350px) {
     .brand span {
       display: none;
     }
