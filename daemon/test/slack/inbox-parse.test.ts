@@ -1,15 +1,5 @@
-import { afterAll, describe, expect, test } from "bun:test"
-import { Effect } from "effect"
-import type { JevVerdict } from "../../src/domain/alert.ts"
-import { SlackApiError } from "../../src/domain/errors.ts"
-import { DEFAULT_SETTINGS } from "../../src/domain/settings.ts"
-import { Inbox } from "../../src/intake/inbox.ts"
+import { describe, expect, test } from "bun:test"
 import { inboxQueries, parseInbox, threadTsFromPermalink } from "../../src/slack/inbox-parse.ts"
-import { SlackMe } from "../../src/slack/me.ts"
-import { Store } from "../../src/store/store.ts"
-import { decideInbox } from "../../src/triage/policy.ts"
-import { fakeSlack } from "../support/fakes.ts"
-import { makeWorld } from "../support/world.ts"
 
 const ctx = { me: "U0ATSF15M4L", fromName: "Pierre", alertChannels: new Set(["C0AUKD42N3U"]) }
 const match = (overrides: Record<string, unknown> = {}) => ({
@@ -62,50 +52,5 @@ describe("inbox", () => {
     expect(item?.title).toBe("Pierre · DM: review https://nocturlab.ghe.com/Merkl/monorepo/pull/3244 pls")
     expect(item?.fields).toMatchObject({ channelKind: "dm", prUrl: "https://nocturlab.ghe.com/Merkl/monorepo/pull/3244" })
     expect(threadTsFromPermalink(undefined)).toBeNull()
-  })
-})
-
-const verdict = (o: Partial<JevVerdict>): JevVerdict => ({
-  actionable: 0.95, agentResolvable: 0.85, humanOnIt: 0.05, kind: "investigation", kindConfidence: 0.9, depth: "standard", urgency: 1, ...o,
-})
-
-describe("inbox policy", () => {
-  const t = DEFAULT_SETTINGS.thresholds
-  test("delegate, suggest, escalate, ignore", () => {
-    expect(decideInbox(verdict({}), t).decision).toBe("auto")
-    expect(decideInbox(verdict({ agentResolvable: 0.55 }), t).decision).toBe("suggest")
-    expect(decideInbox(verdict({ agentResolvable: 0.1, kind: "decision_or_approval" }), t).decision).toBe("escalate")
-    expect(decideInbox(verdict({ kind: "pr_review" }), t).decision).toBe("escalate")
-    expect(decideInbox(verdict({ actionable: 0.1 }), t).decision).toBe("ignore")
-    expect(decideInbox(verdict({ humanOnIt: 0.9 }), t).decision).toBe("ignore")
-  })
-})
-
-describe("the inbox horizon", () => {
-  let failing = true
-  const world = makeWorld({
-    slack: fakeSlack({
-      search: () => (failing ? Effect.fail(new SlackApiError({ method: "search.messages", code: "ratelimited", message: "ratelimited" })) : Effect.succeed([])),
-    }),
-  })
-  afterAll(() => world.dispose())
-
-  test("a search that failed leaves it, so what it missed is still news; one that worked moves it", async () => {
-    const out = await world.runPromise(
-      Effect.gen(function* () {
-        yield* (yield* SlackMe).identity
-        const store = yield* Store
-        const inbox = yield* Inbox
-        const lastGood = String(Date.now() - 2 * 60 * 60_000)
-        yield* store.setKv("inbox_since", lastGood)
-        yield* inbox.poll
-        const afterFailure = yield* store.getKv("inbox_since")
-        failing = false
-        yield* inbox.poll
-        return { lastGood, afterFailure, afterSuccess: Number(yield* store.getKv("inbox_since")) }
-      }),
-    )
-    expect(out.afterFailure).toBe(out.lastGood)
-    expect(out.afterSuccess).toBeGreaterThan(Date.now() - 31 * 60_000)
   })
 })

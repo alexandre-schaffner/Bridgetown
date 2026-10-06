@@ -1,11 +1,17 @@
 import { describe, expect, test } from "bun:test"
 import { Deferred, Effect, Fiber } from "effect"
-import { makeInFlight } from "../../src/actions/in-flight.ts"
-import { type Action, cardStands, dismissCloses, openableUrl } from "../../src/domain/action.ts"
+import { Actions } from "../../src/actions/actions.ts"
+import { snapshot } from "../../src/api/views.ts"
+import type { Action } from "../../src/domain/action.ts"
 import { AdapterError } from "../../src/domain/errors.ts"
-import { acceptsMessages, closedResolution, NO_MILESTONES, type Session, type SessionStatus } from "../../src/domain/session.ts"
+import { NO_MILESTONES, type Session, type SessionStatus } from "../../src/domain/session.ts"
 import { mergeOnce, releaseOnce } from "../../src/ship/gates.ts"
-import { makeSession } from "../support/records.ts"
+import { Shipper } from "../../src/ship/shipper.ts"
+import { Store } from "../../src/store/store.ts"
+import { fakeGitHub } from "../support/fakes.ts"
+import { makeAlert, makeSession } from "../support/records.ts"
+import { eventually } from "../support/wait.ts"
+import { makeWorld } from "../support/world.ts"
 
 const session = (status: SessionStatus, overrides: Partial<Session> = {}): Session =>
   makeSession(status, { prUrl: "https://ghe/pull/1", claudeSessionId: "c", ...overrides })
@@ -134,112 +140,246 @@ describe("release gate", () => {
   })
 })
 
-describe("in-flight resolves", () => {
-  test("a second resolve of the same action is a Conflict; the key frees when the first ends", async () => {
-    const program = Effect.gen(function* () {
-      const inFlight = yield* makeInFlight(Effect.void)
-      const gate = yield* Deferred.make<void>()
-      const first = yield* inFlight.exclusively(["a_1", "merge:s"], Deferred.await(gate)).pipe(Effect.forkChild)
-      yield* Effect.yieldNow
-      const held = yield* inFlight.held
-      const same = yield* inFlight.exclusively(["a_1"], Effect.succeed("again")).pipe(Effect.flip)
-      // Another card for the same session's merge is the same gate.
-      const sameGate = yield* inFlight.exclusively(["a_2", "merge:s"], Effect.succeed("other")).pipe(Effect.flip)
-      const unrelated = yield* inFlight.exclusively(["a_3"], Effect.succeed("ok"))
-      yield* Deferred.succeed(gate, undefined)
-      yield* Fiber.join(first)
-      const after = yield* inFlight.exclusively(["a_1"], Effect.succeed("free"))
-      return { held: [...held], same: same._tag, sameGate: sameGate._tag, unrelated, after, end: [...(yield* inFlight.held)] }
-    })
-    expect(await Effect.runPromise(program)).toEqual({
-      held: ["a_1", "merge:s"],
-      same: "Conflict",
-      sameGate: "Conflict",
-      unrelated: "ok",
-      after: "free",
-      end: [],
-    })
+/** GitHub whose `gh pr merge` / `gh release create` wait for `release` to be completed, counting the calls that act. */
+const slowGitHub = (release: Deferred.Deferred<void>, options: { readonly createFails?: boolean } = {}) => {
+  const calls = { merge: 0, create: 0 }
+  const state = { merged: false, tags: ["dispute-v0.4.2"] }
+  const github = fakeGitHub({
+    viewPr: (url) =>
+      Effect.succeed({
+        number: 3338, title: "fix", state: state.merged ? "MERGED" : "OPEN", mergedAt: state.merged ? "now" : null, headRefOid: "aaaa111", url,
+        reviewDecision: "APPROVED", latestReviews: [], statusCheckRollup: [],
+      }),
+    mergePr: () => Effect.sync(() => void calls.merge++).pipe(Effect.andThen(Deferred.await(release)), Effect.andThen(Effect.sync(() => void (state.merged = true)))),
+    nextPatchTag: (_repo, prefix) => Effect.succeed(`${prefix}-v0.4.3`),
+    tagExists: (_repo, tag) => Effect.sync(() => state.tags.includes(tag)),
+    createRelease: (tag) =>
+      Effect.sync(() => void calls.create++).pipe(
+        Effect.andThen(Deferred.await(release)),
+        Effect.andThen(
+          options.createFails === true
+            ? Effect.fail(new AdapterError({ adapter: "gh", operation: "release create", message: "HTTP 502", cause: null }))
+            : Effect.sync(() => void state.tags.push(tag)),
+        ),
+      ),
+    branchHead: () => Effect.succeed("0000000000000000000000000000000000000001"),
+    prHead: () => Effect.succeed({ sha: "0000000000000000000000000000000000000001", branch: releasable.branch ?? "" }),
   })
-  test("a failed resolve frees its key too", async () => {
-    const program = Effect.gen(function* () {
-      const inFlight = yield* makeInFlight(Effect.void)
-      yield* inFlight.exclusively(["a_1"], fail("boom")).pipe(Effect.ignore)
-      return [...(yield* inFlight.held)]
+  return { github, calls }
+}
+
+const releasable: Session = makeSession("awaiting_release", {
+  id: "s_rel", alertId: "C1:rel", prUrl: "https://ghe/pull/3338", activity: "Merged, ready to cut dispute-v0.4.3",
+  releasePrefix: "dispute",
+  milestones: { diagnosed: true, fixed: true, prOpened: true, critiqued: true, ciGreen: true, merged: true, released: false, deployed: false },
+})
+const releaseCard: Action = {
+  id: "a_rel", kind: "release", title: "Ship", detail: "", primaryLabel: "Cut dispute-v0.4.3", options: [], sessionId: "s_rel", alertId: "C1:rel",
+  fingerprint: null, retry: false, url: null, createdAt: "2026-10-01T00:00:00.000Z",
+}
+
+const seed = (session: Session, card: Action) =>
+  Effect.gen(function* () {
+    const store = yield* Store
+    yield* store.putAlert(makeAlert({ id: session.alertId, sessionId: session.id }))
+    yield* store.putSession(session)
+    yield* store.putAction(card)
+  })
+
+describe("the release gate through the real shipper", () => {
+  test("in flight: the card says so, the session says what is happening, a second click is a 409; then it deploys, once", async () => {
+    const release = Deferred.makeUnsafe<void>()
+    const { github, calls } = slowGitHub(release)
+    const world = makeWorld({ github })
+    try {
+      const out = await world.runPromise(
+        Effect.gen(function* () {
+          yield* seed(releasable, releaseCard)
+          const actions = yield* Actions
+          const store = yield* Store
+          const first = yield* actions.resolve("a_rel", null).pipe(Effect.forkChild)
+          yield* eventually(store.getSession("s_rel"), (s) => (s?.releaseTag === "dispute-v0.4.3" ? s : undefined))
+          const during = yield* snapshot
+          const second = yield* actions.resolve("a_rel", null).pipe(Effect.flip)
+          yield* Deferred.succeed(release, undefined)
+          yield* Fiber.join(first)
+          return { during, second, after: yield* store.getSession("s_rel"), cards: yield* store.listActions() }
+        }),
+      )
+      expect(out.during.actions.find((a) => a.id === "a_rel")?.inFlight).toBe(true)
+      expect(out.during.sessions.find((s) => s.id === "s_rel")?.activity).toBe("Cutting dispute-v0.4.3…")
+      expect(out.second._tag).toBe("Conflict")
+      expect(out.after).toMatchObject({ status: "deploying", releaseTag: "dispute-v0.4.3", activity: "Released dispute-v0.4.3, waiting for approval" })
+      expect(out.cards).toEqual([])
+      expect(calls.create).toBe(1)
+    } finally {
+      await world.dispose()
+    }
+  })
+
+  test("a new release follows its own tracker, not the one of the deploy before its follow-up PR", async () => {
+    const release = Deferred.makeUnsafe<void>()
+    await Effect.runPromise(Deferred.succeed(release, undefined))
+    const { github } = slowGitHub(release)
+    const world = makeWorld({ github })
+    try {
+      const after = await world.runPromise(
+        Effect.gen(function* () {
+          yield* seed({ ...releasable, tracker: { id: "C0AUKD42N3U:1790930000.000100", applied: "h" } }, releaseCard)
+          yield* (yield* Actions).resolve("a_rel", null)
+          return yield* (yield* Store).getSession("s_rel")
+        }),
+      )
+      expect(after).toMatchObject({ status: "deploying", releaseTag: "dispute-v0.4.3", deployStage: null, tracker: null })
+    } finally {
+      await world.dispose()
+    }
+  })
+
+  test("a release GitHub refused leaves the card, clears the tag and puts the status line back", async () => {
+    const release = Deferred.makeUnsafe<void>()
+    await Effect.runPromise(Deferred.succeed(release, undefined))
+    const { github } = slowGitHub(release, { createFails: true })
+    const world = makeWorld({ github })
+    try {
+      const out = await world.runPromise(
+        Effect.gen(function* () {
+          yield* seed(releasable, releaseCard)
+          const failure = yield* (yield* Actions).resolve("a_rel", null).pipe(Effect.flip)
+          const store = yield* Store
+          return { failure, session: yield* store.getSession("s_rel"), cards: (yield* store.listActions()).map((a) => a.id) }
+        }),
+      )
+      expect(out.failure._tag).toBe("AdapterError")
+      expect(out.session).toMatchObject({ status: "awaiting_release", releaseTag: null, activity: "Merged, ready to cut dispute-v0.4.3" })
+      expect(out.cards).toEqual(["a_rel"])
+    } finally {
+      await world.dispose()
+    }
+  })
+
+  test("merging says so while GitHub works, then offers the release", async () => {
+    const release = Deferred.makeUnsafe<void>()
+    const { github, calls } = slowGitHub(release)
+    const world = makeWorld({ github })
+    const mergeable = makeSession("awaiting_merge", {
+      id: "s_rel", alertId: "C1:rel", prUrl: "https://ghe/pull/3338", activity: "#3338 approved and green, ready to merge",
+      releasePrefix: "dispute",
+      milestones: { diagnosed: true, fixed: true, prOpened: true, critiqued: true, ciGreen: true, merged: false, released: false, deployed: false },
     })
-    expect(await Effect.runPromise(program)).toEqual([])
+    try {
+      const out = await world.runPromise(
+        Effect.gen(function* () {
+          yield* seed(mergeable, { ...releaseCard, id: "a_merge", kind: "merge", primaryLabel: "Merge" })
+          const store = yield* Store
+          const first = yield* (yield* Actions).resolve("a_merge", null).pipe(Effect.forkChild)
+          const during = yield* eventually(store.getSession("s_rel"), (s) => (s?.activity !== mergeable.activity ? s : undefined))
+          yield* Deferred.succeed(release, undefined)
+          yield* Fiber.join(first)
+          return { during, after: yield* store.getSession("s_rel"), cards: (yield* store.listActions()).map((a) => a.primaryLabel) }
+        }),
+      )
+      expect(out.during?.activity).toBe("Merging #3338…")
+      expect(out.after).toMatchObject({ status: "awaiting_release", activity: "Merged, ready to cut dispute-v0.4.3" })
+      expect(out.cards).toEqual(["Cut dispute-v0.4.3"])
+      expect(calls.merge).toBe(1)
+    } finally {
+      await world.dispose()
+    }
   })
 })
 
-describe("contract rules", () => {
-  const action = (kind: Action["kind"], retry = false): Action => ({
-    id: "a", kind, title: "", detail: "", primaryLabel: "", options: [], sessionId: "s", alertId: null, fingerprint: null, retry, url: null, createdAt: "",
+describe("a card whose session moved on acts on nothing and goes", () => {
+  const released = Deferred.makeUnsafe<void>()
+  Effect.runSync(Deferred.succeed(released, undefined))
+
+  test("a merge card of a session back at work: no merge, the card goes, the session is left alone", async () => {
+    const { github, calls } = slowGitHub(released)
+    const world = makeWorld({ github })
+    // You messaged the session while it waited to merge: it is running again, on a head the review never passed.
+    const running = makeSession("running", { id: "s_rel", alertId: "C1:rel", prUrl: "https://ghe/pull/3338", activity: "Read your message" })
+    try {
+      const out = await world.runPromise(
+        Effect.gen(function* () {
+          yield* seed(running, { ...releaseCard, id: "a_merge", kind: "merge", primaryLabel: "Merge" })
+          const failure = yield* (yield* Actions).resolve("a_merge", null).pipe(Effect.flip)
+          const store = yield* Store
+          return { failure, session: yield* store.getSession("s_rel"), cards: yield* store.listActions() }
+        }),
+      )
+      expect(out.failure._tag).toBe("Conflict")
+      expect(out.cards).toEqual([])
+      expect(out.session).toMatchObject({ status: "running", activity: "Read your message" })
+      expect(calls.merge).toBe(0)
+    } finally {
+      await world.dispose()
+    }
   })
-  test("acceptsMessages: live or handed back with a worktree and an agent session", () => {
-    expect(acceptsMessages(session("running", { claudeSessionId: null }))).toBe(true)
-    expect(acceptsMessages(session("waiting"))).toBe(true)
-    expect(acceptsMessages(session("ci"))).toBe(true)
-    expect(acceptsMessages(session("failed"))).toBe(true)
-    expect(acceptsMessages(session("closed"))).toBe(true)
-    expect(acceptsMessages(session("queued"))).toBe(false)
-    expect(acceptsMessages(session("preparing"))).toBe(false)
-    expect(acceptsMessages(session("resolved"))).toBe(false)
-    expect(acceptsMessages(session("waiting", { worktree: null }))).toBe(false)
-    expect(acceptsMessages(session("failed", { claudeSessionId: null }))).toBe(false)
+
+  test("a release card of a session that failed meanwhile: no tag is cut", async () => {
+    const { github, calls } = slowGitHub(released)
+    const world = makeWorld({ github })
+    try {
+      const out = await world.runPromise(
+        Effect.gen(function* () {
+          yield* seed({ ...releasable, status: "failed" }, releaseCard)
+          const failure = yield* (yield* Actions).resolve("a_rel", null).pipe(Effect.flip)
+          const store = yield* Store
+          return { failure, session: yield* store.getSession("s_rel"), cards: yield* store.listActions() }
+        }),
+      )
+      expect(out.failure._tag).toBe("Conflict")
+      expect(out.cards).toEqual([])
+      expect(out.session).toMatchObject({ status: "failed", releaseTag: null })
+      expect(calls.create).toBe(0)
+    } finally {
+      await world.dispose()
+    }
   })
-  test("dismissCloses: a stranded session's last card", () => {
-    expect(dismissCloses(action("review"), session("waiting"))).toBe(true)
-    expect(dismissCloses(action("release"), session("awaiting_release"))).toBe(true)
-    expect(dismissCloses(action("review", true), session("failed"))).toBe(true)
-    expect(dismissCloses(action("answer"), session("waiting"))).toBe(false)
-    expect(dismissCloses(action("review"), session("running"))).toBe(false)
-    expect(dismissCloses(action("investigate"), undefined)).toBe(false)
+
+  test("the release gate itself refuses a session that is not waiting for its release", async () => {
+    const { github, calls } = slowGitHub(released)
+    const world = makeWorld({ github })
+    try {
+      const failure = await world.runPromise(
+        Effect.gen(function* () {
+          yield* seed({ ...releasable, status: "resolved" }, releaseCard)
+          return yield* (yield* Shipper).release("s_rel").pipe(Effect.flip)
+        }),
+      )
+      expect(failure._tag).toBe("Conflict")
+      expect(calls.create).toBe(0)
+    } finally {
+      await world.dispose()
+    }
   })
-  test("dismissCloses: a dead card closes nothing", () => {
-    // A merge card left over from before the session was handed back, and an old hand-off on a session that then failed.
-    expect(dismissCloses(action("merge"), session("waiting"))).toBe(false)
-    expect(dismissCloses(action("review"), session("failed"))).toBe(false)
-  })
-  test("cardStands: a card stands only at the stage it was offered for", () => {
-    const rows: ReadonlyArray<readonly [Action, SessionStatus, boolean]> = [
-      [action("merge"), "awaiting_merge", true],
-      [action("merge"), "running", false],
-      [action("merge"), "closed", false],
-      [action("release"), "awaiting_release", true],
-      [action("release"), "failed", false],
-      [action("rerun"), "waiting", true],
-      [action("rerun"), "deploying", false],
-      [action("review"), "waiting", true],
-      [action("review"), "running", false],
-      [action("review"), "resolved", false],
-      [action("review", true), "failed", true],
-      [action("review", true), "queued", false],
-      [action("reply"), "resolved", true],
-      [action("answer"), "running", true],
-    ]
-    for (const [card, status, stands] of rows) expect([card.kind, status, cardStands(card, session(status))]).toEqual([card.kind, status, stands])
-    expect(cardStands(action("merge"), undefined)).toBe(false)
-    expect(cardStands({ ...action("investigate"), sessionId: null }, undefined)).toBe(true)
-  })
-  test("L3: dismissing the merge card of a session waiting to merge closes it", () => {
-    expect(dismissCloses(action("merge"), session("awaiting_merge"))).toBe(true)
-    expect(dismissCloses(action("merge"), session("ci"))).toBe(false)
-  })
-  test("closing without a fix says how far it got, never 'resolved'", () => {
-    expect(closedResolution(session("failed"))).toBe("agent failed")
-    expect(closedResolution(session("waiting", { rootCauseFound: false }))).toBe("root cause not found")
-    expect(closedResolution(session("waiting", { outcome: "recommendation" }))).toBe("recommendation handed to you")
-    expect(closedResolution(session("awaiting_release", { milestones: { ...NO_MILESTONES, merged: true } }))).toBe("merged, not released")
-    expect(closedResolution(session("awaiting_merge", { milestones: { ...NO_MILESTONES, prOpened: true } }))).toBe("PR open, not merged")
-    expect(closedResolution(session("waiting"))).toBe("not fixed")
-  })
-  test("only https, slack and revv links get through", () => {
-    expect(openableUrl("https://nocturlab.ghe.com/Merkl/monorepo/pull/1")).toBe("https://nocturlab.ghe.com/Merkl/monorepo/pull/1")
-    expect(openableUrl("revv://pr?host=x&repo=y&number=1")).toBe("revv://pr?host=x&repo=y&number=1")
-    expect(openableUrl("slack://channel?id=C1")).toBe("slack://channel?id=C1")
-    expect(openableUrl("file:///etc/passwd")).toBeNull()
-    expect(openableUrl("javascript:alert(1)")).toBeNull()
-    expect(openableUrl("http://example.com")).toBeNull()
-    expect(openableUrl("not a url")).toBeNull()
-    expect(openableUrl(null)).toBeNull()
+
+  test("a deploy that lands withdraws the hand-off it had stalled into", async () => {
+    const { github } = slowGitHub(released)
+    const world = makeWorld({ github })
+    const stalled = makeSession("waiting", {
+      id: "s_rel", alertId: "C1:rel", prUrl: "https://ghe/pull/3338", activity: "No deploy progress for 3h",
+      releasePrefix: "dispute",
+      releaseTag: "dispute-v0.4.3",
+      milestones: { diagnosed: true, fixed: true, prOpened: true, critiqued: true, ciGreen: true, merged: true, released: true, deployed: false },
+    })
+    const tracker = makeAlert({
+      id: "C0AUKD42N3U:9.2",
+      fields: { _tag: "release", image: "merkl-dispute", version: "v0.4.3", actor: null, runId: null, runUrl: null, tag: "dispute-v0.4.3", stages: [{ name: "Production", status: "success", detail: "" }] },
+    })
+    try {
+      const out = await world.runPromise(
+        Effect.gen(function* () {
+          yield* seed(stalled, { ...releaseCard, id: "a_stalled", kind: "review", primaryLabel: "Close session" })
+          yield* (yield* Shipper).trackDeploy(tracker)
+          const store = yield* Store
+          return { session: yield* store.getSession("s_rel"), cards: yield* store.listActions() }
+        }),
+      )
+      expect(out.session).toMatchObject({ status: "resolved", resolution: "deployed dispute-v0.4.3" })
+      expect(out.cards).toEqual([])
+    } finally {
+      await world.dispose()
+    }
   })
 })

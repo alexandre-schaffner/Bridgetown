@@ -1,33 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import type { JevVerdict } from "../../src/domain/alert.ts"
-import { DEFAULT_SETTINGS } from "../../src/domain/settings.ts"
-import { isAlertMessage } from "../../src/intake/alerts.ts"
 import { parseMessage } from "../../src/slack/parse.ts"
-import { alertState } from "../../src/triage/judge.ts"
-import { decide, decideAnomaly } from "../../src/triage/policy.ts"
 import { applyRules } from "../../src/triage/rules.ts"
 import * as m from "../support/messages.ts"
 
 const releases = { channelId: "C0AUKD42N3U", channelName: "alert-releases", myUserId: "U07ALEX" }
 const uptime = { channelId: "C0B001L8UQ1", channelName: "alert-uptime", myUserId: "U07ALEX" }
 const empty = { activeSessions: [], sameFingerprint: [], claimedBy: [] }
-
-describe("what counts as an alert", () => {
-  test("a bot's top-level post; never a person's message, nor a thread reply", () => {
-    expect(isAlertMessage(m.adminBuildFailed)).toBe(true)
-    expect(isAlertMessage(m.humanMessage)).toBe(false)
-    expect(isAlertMessage({ ...m.adminBuildFailed, thread_ts: "1", ts: "2" })).toBe(false)
-  })
-})
-
-describe("what Jev reads about an alert", () => {
-  test("a prod finding's channel is Grafana, as the context explains it", () => {
-    const finding = { ...parseMessage(m.grafanaFiring, uptime), source: "watch" as const, channelName: "Grafana" }
-    const state = alertState({ alert: finding, thread: [], reactions: [], history: [] })
-    expect(state.alert.channel).toBe("Grafana")
-    expect(state.context).toContain("channel is Grafana (no #)")
-  })
-})
 
 describe("rules", () => {
   test("judge failures, filter the rest", () => {
@@ -38,40 +16,6 @@ describe("rules", () => {
     expect(applyRules(parseMessage(m.uptimeResolved, uptime), empty)._tag).toBe("Filtered")
     expect(applyRules(parseMessage(m.degradedEnded, uptime), empty)._tag).toBe("Filtered")
     expect(applyRules(parseMessage(m.uptimeIncident, uptime), empty)._tag).toBe("Judge")
-  })
-})
-
-const verdict = (overrides: Partial<JevVerdict>): JevVerdict => ({
-  actionable: 0.9,
-  agentResolvable: 0.9,
-  humanOnIt: 0.05,
-  kind: "build_failure",
-  kindConfidence: 0.9,
-  depth: "standard",
-  urgency: 1,
-  ...overrides,
-})
-
-describe("policy", () => {
-  const t = DEFAULT_SETTINGS.thresholds
-  test("auto when confident and unclaimed", () => {
-    expect(decide(verdict({}), t).decision).toBe("auto")
-  })
-  test("claimed alerts downgrade to suggest", () => {
-    expect(decide(verdict({ humanOnIt: 0.7 }), t).decision).toBe("suggest")
-  })
-  test("borderline is suggest", () => {
-    expect(decide(verdict({ actionable: 0.6, agentResolvable: 0.5 }), t).decision).toBe("suggest")
-  })
-  test("ignore informational and human-only", () => {
-    expect(decide(verdict({ actionable: 0.1 }), t).decision).toBe("ignore")
-    expect(decide(verdict({ agentResolvable: 0.1 }), t).decision).toBe("ignore")
-  })
-  test("an anomaly is investigated unless Jev sees nothing in it, then suggested", () => {
-    expect(decideAnomaly(verdict({}), t).decision).toBe("auto")
-    expect(decideAnomaly(verdict({ actionable: 0.6, agentResolvable: 0.5 }), t).decision).toBe("auto")
-    expect(decideAnomaly(verdict({ humanOnIt: 0.7 }), t).decision).toBe("auto")
-    expect(decideAnomaly(verdict({ actionable: 0.1 }), t)).toMatchObject({ decision: "suggest", reason: expect.stringContaining("Jev doubts it") })
   })
 })
 

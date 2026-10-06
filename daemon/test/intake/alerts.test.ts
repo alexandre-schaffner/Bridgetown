@@ -2,11 +2,11 @@ import { afterAll, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { SlackApiError } from "../../src/domain/errors.ts"
 import { Hub } from "../../src/hub.ts"
-import { AlertChannels, commitHorizon, readHorizon } from "../../src/intake/alerts.ts"
+import { AlertChannels, commitHorizon, isAlertMessage, readHorizon } from "../../src/intake/alerts.ts"
 import type { SlackMessage } from "../../src/slack/client.ts"
 import { Store } from "../../src/store/store.ts"
 import { fakeJev, fakeSlack, postedIn, verdict } from "../support/fakes.ts"
-import { adminBuildFailed } from "../support/messages.ts"
+import { adminBuildFailed, humanMessage } from "../support/messages.ts"
 import { makeWorld } from "../support/world.ts"
 
 const CHANNEL = "C0AUKD42N3U"
@@ -163,5 +163,13 @@ describe("a known alert re-triaged to nothing to do", () => {
     expect(alert?.title).toBe("merkl-admin v0.6.0 · Deployed")
     expect(alert?.events.at(-1)?.text).toBe("Its card was withdrawn: Release deployed successfully")
     expect(alert?.disposition?.kind).toBe("withdrawn")
+  })
+})
+
+describe("what counts as an alert", () => {
+  test("a bot's top-level post; never a person's message, nor a thread reply", () => {
+    expect(isAlertMessage(adminBuildFailed)).toBe(true)
+    expect(isAlertMessage(humanMessage)).toBe(false)
+    expect(isAlertMessage({ ...adminBuildFailed, thread_ts: "1", ts: "2" })).toBe(false)
   })
 })

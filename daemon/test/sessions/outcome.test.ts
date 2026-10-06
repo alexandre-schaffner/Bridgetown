@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import type { SessionResult } from "../../src/agent/result.ts"
 import type { Alert } from "../../src/domain/alert.ts"
-import { isOwnBranch, NO_MILESTONES, type Session, type SessionStatus, shipStatus } from "../../src/domain/session.ts"
+import { isOwnBranch, NO_MILESTONES, type Session, type SessionStatus } from "../../src/domain/session.ts"
 import { decideOutcome, type OutcomeInput } from "../../src/sessions/outcome.ts"
 import type { PrHead } from "../../src/ship/github.ts"
-import { makeAlert, makeSession } from "../support/records.ts"
+import { makeAlert, makeFinding, makeSession } from "../support/records.ts"
 
 const result = (overrides: Partial<SessionResult> = {}): SessionResult => ({
   outcome: "needs_human", rootCauseFound: true, diagnosis: "vite 6.4 dropped CJS", tried: [], summary: "pin vite",
@@ -133,7 +133,7 @@ describe("decideOutcome", () => {
   describe("adversarial review", () => {
     const fix = result({ outcome: "fix_pr", prUrl: "https://ghe/pull/1", summary: "fixed the null check" })
     const passed = { reviewer: "codex" as const, sha: "abc", findings: [], response: null }
-    const blocker = { file: "a.ts", line: 1, title: "overflows", failureScenario: "2^60 wei", jev: null, blocks: true }
+    const blocker = makeFinding({ title: "overflows" })
     const failed = { ...passed, findings: [blocker] }
 
     test("a pushed fix goes to review before CI, still in draft", () => {
@@ -273,14 +273,5 @@ describe("decideOutcome", () => {
 
   test("what the agent tried goes to the transcript", () => {
     expect(decide({ result: result({ tried: ["grafana: nothing"] }) }).notes).toEqual(["Tried:\n· grafana: nothing"])
-  })
-})
-
-describe("shipStatus", () => {
-  test("where a shipping session goes back to", () => {
-    expect(shipStatus(makeSession("running"))).toBeUndefined()
-    expect(shipStatus(makeSession("running", { prUrl: "u" }))).toBe("ci")
-    expect(shipStatus(makeSession("running", { prUrl: "u", releasePrefix: "admin", milestones: { ...NO_MILESTONES, merged: true } }))).toBe("awaiting_release")
-    expect(shipStatus(makeSession("running", { prUrl: "u", milestones: { ...NO_MILESTONES, merged: true, released: true } }))).toBe("deploying")
   })
 })

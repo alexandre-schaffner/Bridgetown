@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import type { JevVerdict } from "../../src/domain/alert.ts"
+import { SlackApiError } from "../../src/domain/errors.ts"
 import { Hub } from "../../src/hub.ts"
 import { Inbox } from "../../src/intake/inbox.ts"
 import type { SearchMatch } from "../../src/slack/client.ts"
@@ -112,5 +113,34 @@ describe("a follow-up in a thread an agent is handling", () => {
     expect(out.alert).toMatchObject({ sessionId: "s_thread", triage: { decision: "filtered" } })
     expect(out.transcript).toEqual(["Pierre followed up in the thread", "The agent cannot take the follow-up right now"])
     expect(await world.runPromise(Hub.use((hub) => hub.status.pipe(Effect.map((s) => s.jev))))).toBe("ok")
+  })
+})
+
+describe("the inbox horizon", () => {
+  let failing = true
+  const world = makeWorld({
+    slack: fakeSlack({
+      search: () => (failing ? Effect.fail(new SlackApiError({ method: "search.messages", code: "ratelimited", message: "ratelimited" })) : Effect.succeed([])),
+    }),
+  })
+  afterAll(() => world.dispose())
+
+  test("a search that failed leaves it, so what it missed is still news; one that worked moves it", async () => {
+    const out = await world.runPromise(
+      Effect.gen(function* () {
+        yield* (yield* SlackMe).identity
+        const store = yield* Store
+        const inbox = yield* Inbox
+        const lastGood = String(Date.now() - 2 * 60 * 60_000)
+        yield* store.setKv("inbox_since", lastGood)
+        yield* inbox.poll
+        const afterFailure = yield* store.getKv("inbox_since")
+        failing = false
+        yield* inbox.poll
+        return { lastGood, afterFailure, afterSuccess: Number(yield* store.getKv("inbox_since")) }
+      }),
+    )
+    expect(out.afterFailure).toBe(out.lastGood)
+    expect(out.afterSuccess).toBeGreaterThan(Date.now() - 31 * 60_000)
   })
 })

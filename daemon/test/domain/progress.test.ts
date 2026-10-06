@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { progressOf } from "../../src/domain/progress.ts"
 import { NO_MILESTONES, type Session } from "../../src/domain/session.ts"
-import { makeSession } from "../support/records.ts"
+import { makeFinding, makeSession } from "../support/records.ts"
 
 const session = (overrides: Partial<Session>): Session => makeSession(overrides.status ?? "running", { worktree: "/w", ...overrides })
 const states = (s: Session) => progressOf(s).steps.map((step) => `${step.label}:${step.state}`)
@@ -60,7 +60,7 @@ describe("progress is evidence, not intent", () => {
       expect(states(session({ status: "critiquing", milestones: { ...pushed, ciGreen: true } }))[3]).toBe("Review:current")
     })
     test("the review row says where the review stands, from the step and the last review", () => {
-      const finding = (blocks: boolean) => ({ file: "a.ts", line: 1, title: "t", failureScenario: "f", jev: null, blocks })
+      const finding = (blocks: boolean) => makeFinding({ blocks })
       const line = (overrides: Partial<Session>) => progressOf(session(overrides)).critiqueLine
       expect(line({ status: "critiquing", critiqueRounds: 1, milestones: pushed })).toBe("Reviewing · round 2")
       const passed = { reviewer: "codex" as const, sha: "abc", findings: [finding(false), finding(false)], response: null }

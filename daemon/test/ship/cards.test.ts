@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { mergeDetail, releaseDetail } from "../../src/ship/cards.ts"
 import type { PullRequest } from "../../src/ship/github.ts"
 import { mergedResolution } from "../../src/ship/transitions.ts"
-import { makeSession } from "../support/records.ts"
+import { makeFinding, makeSession } from "../support/records.ts"
 
 const PR = "https://nocturlab.ghe.com/Merkl/monorepo/pull/3352"
 const pr = (overrides: Partial<PullRequest> = {}): PullRequest => ({
@@ -32,7 +32,7 @@ describe("merge card", () => {
   })
 
   test("a review that still blocks is not called passed", () => {
-    const blocking = { ...passed, findings: [{ file: "a.ts", line: 1, title: "t", failureScenario: "f", jev: null, blocks: true }] }
+    const blocking = { ...passed, findings: [makeFinding()] }
     const detail = mergeDetail(makeSession("awaiting_merge", { critique: blocking }), pr())
     expect(detail).not.toContain("Codex")
   })
