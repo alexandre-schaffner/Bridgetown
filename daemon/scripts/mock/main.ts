@@ -75,7 +75,7 @@ const holdSeconds = Number(process.env.MOCK_RELEASE_HOLD_SECONDS ?? 600)
 const [launchInput, controlInput] = process.env.BRIDGETOWN_SECRETS === "stdin" ? Bun.stdin.stream().tee() : []
 const launch: Launch =
   launchInput === undefined
-    ? { env: { ...readEnv(), apiToken: process.env.BRIDGETOWN_API_TOKEN || "dev" }, closed: undefined }
+    ? { env: { ...readEnv(), apiToken: process.env.BRIDGETOWN_API_TOKEN || "dev" }, closed: new Promise<void>(() => {}) }
     : await readLaunch(launchInput)
 const token = process.env.MOCK_API_TOKEN || launch.env.apiToken
 
