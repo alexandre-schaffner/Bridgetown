@@ -36,7 +36,7 @@ const alertView = (alert: Alert, session: Session | undefined, openCards: number
   outcome: alertOutcome(alert, session, openCards),
 })
 
-export const sessionView = (session: Session) => ({
+const sessionView = (session: Session) => ({
   id: session.id,
   alertId: session.alertId,
   title: session.title,

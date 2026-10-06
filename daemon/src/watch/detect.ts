@@ -4,7 +4,7 @@ import { type BoardSpec, HOUR, type OverviewView, overviewPanels, type PanelSpec
 import { clock } from "../lib/text.ts"
 
 /** How far back the prod watcher looks: the last 15 minutes against the 3 hours before. */
-export const WATCH_HOURS = 3
+const WATCH_HOURS = 3
 const WATCH_STEP_SECONDS = 300
 /** The overview views the prod watcher sweeps: the database board has no rules of its own yet. */
 const WATCHED_VIEWS: ReadonlyArray<OverviewView> = ["incidents", "infra"]

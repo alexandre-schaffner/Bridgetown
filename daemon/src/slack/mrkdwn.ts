@@ -133,7 +133,7 @@ export const isPerson = (message: { readonly user?: string | null | undefined; r
  * Who wrote a thread message, with one rule everywhere: anything no person wrote, and Bridgetown's own 🤖 posts
  * (they go out under your name but are not you), is `bot`; then your messages are `me`, everyone else's `teammate`.
  */
-export const authorOf = (message: SlackMessage, me: string | undefined): ThreadReply["author"] =>
+const authorOf = (message: SlackMessage, me: string | undefined): ThreadReply["author"] =>
   !isPerson(message) || (message.text ?? "").trimStart().startsWith(BOT_PREFIX) ? "bot" : me !== undefined && message.user === me ? "me" : "teammate"
 
 /** A thread as Jev and agents read it: each message readable, with who wrote it. */

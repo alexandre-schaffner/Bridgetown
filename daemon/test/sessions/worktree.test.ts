@@ -37,7 +37,7 @@ describe("worktree setup", () => {
   }, 60_000)
 
   test("a setup that skips a finished install still says the repo pins another bun", async () => {
-    // Not a cleared problem: the menu bar's setup problem follows `bunMismatch` on every setup (a Retry's too).
+    // Not a cleared problem: the app's setup problem follows `bunMismatch` on every setup (a Retry's too).
     const repo = scratchRepo({ name: "x", private: true, packageManager: "bun@0.0.1" })
     const first = await worktrees((w) => w.create(repo, "fix-bt-pinned"))
     expect(first.bunMismatch).toContain("pins bun 0.0.1")
