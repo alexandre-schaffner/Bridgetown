@@ -2,9 +2,8 @@ import { Effect } from "effect"
 import type { AgentShape } from "../../src/agent/agent.ts"
 import type { ReviewerShape } from "../../src/critique/reviewer.ts"
 import type { JevVerdict } from "../../src/domain/alert.ts"
-import { MissingCredential } from "../../src/domain/errors.ts"
 import type { GrafanaShape } from "../../src/grafana/client.ts"
-import type { JevShape } from "../../src/jev.ts"
+import { type JevShape, makeJev } from "../../src/jev.ts"
 import type { GitHubShape } from "../../src/ship/github.ts"
 import type { SlackClientShape, SlackMessage } from "../../src/slack/client.ts"
 
@@ -50,10 +49,8 @@ export const fakeJev = (overrides: Partial<JevShape> = {}): JevShape => ({
   ...overrides,
 })
 
-const noKey = () => Effect.fail(new MissingCredential({ service: "jev", message: "no TypeSafe API key" }))
-
-/** Jev before a TypeSafe key is added: every question fails as it does then. */
-export const noJev: JevShape = { judge: noKey, judgeInbox: noKey, judgeFinding: noKey, judgeLogPatterns: noKey }
+/** Jev before a TypeSafe key is added: the real adapter without one, so every question fails as it does then. */
+export const noJev: JevShape = makeJev(undefined, "jev")
 
 /** GitHub with no pull request to show, where writes succeed and change nothing, no tag exists yet and GHE is reachable. */
 export const fakeGitHub = (overrides: Partial<GitHubShape> = {}): GitHubShape => ({

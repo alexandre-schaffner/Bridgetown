@@ -17,6 +17,7 @@ import { playingAgent, RESULT } from "../support/agent.ts"
 import { fakeGitHub, fakeSlack } from "../support/fakes.ts"
 import { adminBuildFailed } from "../support/messages.ts"
 import { makeAlert, makeSession } from "../support/records.ts"
+import { eventually } from "../support/wait.ts"
 import { makeWorld } from "../support/world.ts"
 
 const PR = "https://ghe/pull/3345"
@@ -216,7 +217,7 @@ describe("the merge is recorded once", () => {
           const click = yield* (yield* Actions).resolve("a_merge", null).pipe(Effect.forkChild)
           const tick = yield* (yield* Shipper).tick.pipe(Effect.forkChild)
           // Both saw the merge and are looking up the tag: the moment the guard is for.
-          while (calls.nextTag < 2) yield* Effect.sleep("5 millis")
+          yield* eventually(Effect.sync(() => calls.nextTag), (n) => (n >= 2 ? n : undefined))
           yield* Deferred.succeed(lookup, undefined)
           yield* Fiber.join(click)
           yield* Fiber.join(tick)
@@ -376,12 +377,12 @@ describe("a tracker edit that comes while the agent is busy", () => {
         )
         // A teammate's question keeps the agent busy while the tracker is edited to deployed.
         yield* runner.continueWith("s_busy", "Pierre asks how it is going")
-        while (!(yield* store.listActions()).some((a) => a.kind === "answer")) yield* Effect.sleep("5 millis")
+        yield* eventually(store.listActions(), (actions) => actions.find((a) => a.kind === "answer"))
         yield* store.putAlert(deployed, "v2")
         yield* (yield* Shipper).trackDeploy(deployed)
         const whileBusy = (yield* store.getSession("s_busy"))?.milestones.deployed
         yield* runner.message("s_busy", "yes")
-        while (yield* runner.busy("s_busy")) yield* Effect.sleep("5 millis")
+        yield* eventually(runner.busy("s_busy"), (busy) => (busy ? undefined : true))
         yield* (yield* Shipper).tick
         return { whileBusy, after: yield* store.getSession("s_busy") }
       }),

@@ -9,6 +9,7 @@ import { Store } from "../../src/store/store.ts"
 import { recordingAgent } from "../support/agent.ts"
 import { makeAlert, makeSession } from "../support/records.ts"
 import { scratchDir } from "../support/tmp.ts"
+import { eventually } from "../support/wait.ts"
 import { makeWorld } from "../support/world.ts"
 
 /** Handed back with its worktree and agent conversation: it takes messages, and one starts a resumed turn. */
@@ -31,7 +32,7 @@ describe("your message", () => {
           const session = handedBack("s_ask")
           yield* seed(session)
           const asking = yield* (yield* Asks).ask(session, "Pin or revert?", ["pin", "revert"]).pipe(Effect.forkChild)
-          while ((yield* store.listActions()).length === 0) yield* Effect.sleep("5 millis")
+          yield* eventually(store.listActions(), (actions) => (actions.length > 0 ? actions : undefined))
           yield* (yield* SessionRunner).message("s_ask", "pin it")
           return {
             reply: yield* Fiber.join(asking),

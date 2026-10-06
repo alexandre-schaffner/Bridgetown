@@ -10,10 +10,12 @@ import { SessionRunner, type SessionRunnerShape } from "../../src/sessions/runne
 import type { GitHubShape } from "../../src/ship/github.ts"
 import { Shipper } from "../../src/ship/shipper.ts"
 import { Store } from "../../src/store/store.ts"
-import { init, type Play, playingAgent, RESULT } from "../support/agent.ts"
+import { type Play, playingAgent, RESULT } from "../support/agent.ts"
 import { fakeGitHub } from "../support/fakes.ts"
 import { makeAlert, makeSession } from "../support/records.ts"
+import { init } from "../support/sdk.ts"
 import { scratchDir } from "../support/tmp.ts"
+import { eventually } from "../support/wait.ts"
 import { makeWorld } from "../support/world.ts"
 
 const OWN_PR = "https://nocturlab.ghe.com/Merkl/monorepo/pull/3401"
@@ -38,7 +40,7 @@ const turnOf = async (
         yield* store.putAlert(makeAlert({ id: session.alertId, sessionId: session.id }))
         yield* store.putSession(session)
         yield* start(runner)
-        while (yield* runner.busy(session.id)) yield* Effect.sleep("10 millis")
+        yield* eventually(runner.busy(session.id), (busy) => (busy ? undefined : true))
         return {
           session: yield* store.getSession(session.id),
           cards: (yield* store.listActions()).map((a) => `${a.kind}: ${a.title}`),
@@ -110,7 +112,7 @@ describe("asks", () => {
         Effect.gen(function* () {
           const store = yield* Store
           yield* runner.message("s_stop", "go")
-          while ((yield* store.listActions()).length === 0) yield* Effect.sleep("5 millis")
+          yield* eventually(store.listActions(), (actions) => (actions.length > 0 ? actions : undefined))
           yield* runner.stop("s_stop")
         }),
     )
@@ -133,7 +135,7 @@ describe("asks", () => {
             sessionId: session.id, alertId: session.alertId, fingerprint: null, retry: false, url: null, createdAt: "2026-10-01T00:00:00.000Z",
           })
           yield* (yield* SessionRunner).message(session.id, "go")
-          while (!(yield* store.listActions()).some((a) => a.kind === "answer")) yield* Effect.sleep("5 millis")
+          yield* eventually(store.listActions(), (actions) => actions.find((a) => a.kind === "answer"))
           // Waiting on its question, the session's draft reply still offers to close it.
           yield* (yield* Actions).dismiss("a_draft")
           return { session: yield* store.getSession(session.id), cards: (yield* store.listActions()).length }
@@ -159,7 +161,7 @@ describe("asks", () => {
         yield* store.putAlert(makeAlert({ id: session.alertId, sessionId: session.id }))
         yield* store.putSession(session)
         yield* (yield* SessionRunner).message(session.id, "go")
-        while ((yield* store.listActions()).length === 0) yield* Effect.sleep("5 millis")
+        yield* eventually(store.listActions(), (actions) => (actions.length > 0 ? actions : undefined))
       }),
     )
     await world.dispose()
@@ -188,7 +190,7 @@ describe("asks", () => {
           const session = makeSession("running", { id: "s_moved", alertId: "C1:moved", worktree: "/w", claudeSessionId: "c" })
           yield* store.putSession(session)
           const asking = yield* (yield* Asks).ask(session, "Pin or revert?", []).pipe(Effect.forkChild)
-          while ((yield* store.listActions()).length === 0) yield* Effect.sleep("5 millis")
+          yield* eventually(store.listActions(), (actions) => (actions.length > 0 ? actions : undefined))
           yield* repo.patch(session.id, { status: "ci" })
           const card = (yield* store.listActions())[0]
           if (card !== undefined) yield* (yield* Asks).answer(card.id, "pin")

@@ -92,5 +92,3 @@ export const recordingAgent = () => {
     Effect.runPromise(eventually(Effect.sync(texts), (all) => ((wanted.length === 0 ? all.length > 0 : wanted.every((text) => all.includes(text))) ? all : undefined)))
   return { agent, seen, state, texts, received }
 }
-
-export const init = Sdk.init
