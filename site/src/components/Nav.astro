@@ -16,6 +16,7 @@ import { download } from "../lib/download";
       <li><a href="#light">The light</a></li>
       <li><a href="#safety">Safety</a></li>
     </ul>
+    <span class="mark" data-nav-mark aria-hidden="true"></span>
   </nav>
   <div class="end">
     <div class="theme" role="group" aria-label="Theme" data-theme-switch hidden>
@@ -58,6 +59,10 @@ import { download } from "../lib/download";
     text-decoration: none;
   }
 
+  nav {
+    position: relative;
+  }
+
   ul {
     display: flex;
     gap: 2rem;
@@ -73,7 +78,27 @@ import { download } from "../lib/download";
     transition: opacity 200ms var(--ease-out);
   }
 
-  ul a:hover {
+  ul a:hover,
+  ul a[aria-current] {
+    opacity: 1;
+  }
+
+  /* Under the chapter you're in; one pixel wide, stretched to the link (scripts/main.ts). */
+  .mark {
+    position: absolute;
+    left: 0;
+    bottom: -0.5rem;
+    width: 1px;
+    height: 1px;
+    background: currentColor;
+    transform-origin: 0 50%;
+    opacity: 0;
+    transition:
+      transform 700ms var(--ease-out),
+      opacity 400ms var(--ease-out);
+  }
+
+  .mark:global(.on) {
     opacity: 1;
   }
 

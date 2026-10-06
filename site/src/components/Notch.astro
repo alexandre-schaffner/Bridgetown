@@ -28,7 +28,7 @@ const steps = [
 ];
 ---
 
-<section class="notch day" id="notch" data-notch aria-labelledby="notch-title">
+<section class="notch day" id="notch" data-sheet data-notch aria-labelledby="notch-title">
   <div class="pin">
     <MacScreen />
 
@@ -44,7 +44,10 @@ const steps = [
           ))
         }
       </ol>
-      <p class="try" hidden data-try>Your turn: hover the notch, click it open, and settle what's there.</p>
+      <p class="try" hidden data-try>
+        <span class="pointer">Your turn: hover the notch, click it open, and settle what's there.</span>
+        <span class="touch">Your turn: tap the notch open, and settle what's there.</span>
+      </p>
     </div>
   </div>
 </section>
@@ -139,9 +142,11 @@ const steps = [
     opacity: 1;
   }
 
-  /* With script: one viewport, pinned, while the island plays. */
+  /* With script: one viewport, pinned, while the island plays. It slides in over the
+     recording, and the next chapter slides over its own last 100svh (scripts/main.ts). */
   :global(html.js) .notch {
-    height: 520svh;
+    height: 620svh;
+    margin-top: -100svh;
     padding: 0;
   }
 
@@ -154,6 +159,19 @@ const steps = [
     overflow: hidden;
   }
 
+  .touch {
+    display: none;
+  }
+
+  @media (hover: none) {
+    .pointer {
+      display: none;
+    }
+    .touch {
+      display: inline;
+    }
+  }
+
   @media (max-width: 900px) {
     .copy {
       grid-template-columns: 1fr;
@@ -163,6 +181,63 @@ const steps = [
     }
     .steps {
       grid-template-columns: 1fr 1fr;
+    }
+  }
+
+  /* A phone, pinned: the four steps in a row, and only the playing one's words beneath. */
+  @media (max-width: 600px) {
+    :global(html.js) .steps {
+      position: relative;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.5rem;
+      padding-bottom: 4.5rem;
+    }
+    :global(html.js) .steps li {
+      position: static;
+      padding-top: 0;
+      opacity: 1;
+    }
+    :global(html.js) .steps li::before,
+    :global(html.js) .steps li::after {
+      content: none;
+    }
+    :global(html.js) .s-title {
+      position: relative;
+      padding-top: 0.875rem;
+      line-height: 1.3;
+      color: var(--ink-faint);
+      transition: color 400ms var(--ease-out);
+    }
+    :global(html.js) .steps li.on .s-title {
+      color: var(--ink);
+    }
+    :global(html.js) .s-title::before,
+    :global(html.js) .s-title::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      border-radius: 1px;
+      background: var(--line);
+    }
+    :global(html.js) .s-title::after {
+      background: var(--ink);
+      transform-origin: 0 50%;
+      transform: scaleX(var(--fill, 0));
+    }
+    :global(html.js) .s-text {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 4rem;
+      opacity: 0;
+      transition: opacity 400ms var(--ease-out);
+    }
+    :global(html.js) .steps li.on .s-text {
+      opacity: 1;
     }
   }
 </style>

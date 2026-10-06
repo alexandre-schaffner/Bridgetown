@@ -8,9 +8,10 @@ import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import type { Color } from "three";
 import type { ArchScene, LightName, View } from "./scene";
-import { heroView as heroPath, restView } from "./view";
-import { createHeroFrames } from "./hero-frames";
+import { restView } from "./view";
+import { createDawn, type Dawn } from "./dawn";
 import { createIsland } from "./island";
+import { createBoard } from "./board";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -123,7 +124,9 @@ async function loadScene() {
       reducedMotion: reduced,
       onFirstFrame: () => document.documentElement.classList.add("scene-ready"),
     });
-    Object.assign(s.view, lightView(lightP));
+    const first = lightView(lightP);
+    aside(first);
+    Object.assign(s.view, first);
     s.snap();
     s.setActive(false);
     scene = s;
@@ -154,22 +157,27 @@ watchFor(["#light", "#download"], "150% 0px", () => {
   void loadScene();
 });
 
-// The pre-rendered hero.
+// The hero's dawn, one shader. Without WebGL the still glow behind it stays.
 const heroMedia = $("[data-hero-media]");
-const heroFrames =
-  heroMedia &&
-  createHeroFrames($<HTMLCanvasElement>("[data-hero-frames]", heroMedia)!, $<HTMLVideoElement>("[data-hero-loop]", heroMedia)!, {
-    reducedMotion: reduced,
-  });
-
+let dawn: Dawn | null = null;
+try {
+  const c = $<HTMLCanvasElement>("[data-dawn]");
+  dawn = c ? createDawn(c) : null;
+} catch {
+  dawn = null;
+}
+dawn?.setDay(cssRGB("--day"));
+/** The pointer, -1 to 1, as the dawn follows it: eased toward `x`, `y`. */
+const sunPointer = { x: 0, y: 0, ex: 0, ey: 0 };
 
 if (finePointer && !reduced) {
   addEventListener("pointermove", (e) => {
     const x = (e.clientX / innerWidth) * 2 - 1;
     const y = (e.clientY / innerHeight) * 2 - 1;
     scene?.setPointer(x, y);
-    heroMedia?.style.setProperty("--px", x.toFixed(3));
-    heroMedia?.style.setProperty("--py", y.toFixed(3));
+    board?.setPointer(x, y);
+    sunPointer.x = x;
+    sunPointer.y = y;
   });
 }
 
@@ -214,6 +222,7 @@ if (themeSwitch) {
     const choice = root.dataset.theme ?? "light";
     buttons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.themeOption === choice)));
     if (scene) scene.setDay(dayColor(cssRGB("--day")));
+    dawn?.setDay(cssRGB("--day"));
   };
   const apply = (choice: string, from?: HTMLElement) => {
     const flip = () => {
@@ -251,9 +260,8 @@ if (themeSwitch) {
 // MARK: Hero
 
 const hero = $("[data-hero]")!;
-const beats = $$("[data-beat]", hero);
-const cue = $("[data-cue]", hero);
-const heroStage = $(".stage", hero)!;
+const heroIntro = $("[data-hero-intro]", hero);
+const caption = $("[data-hero-caption]", hero);
 let heroP = 0;
 ScrollTrigger.create({
   trigger: hero,
@@ -262,55 +270,76 @@ ScrollTrigger.create({
   onUpdate: (s) => (heroP = s.progress),
 });
 
-// The headline arrives letter by letter out of a blur, as the light comes up behind it.
+// The board, live while you can see it. Measured once per layout, never while scrolling.
+const boardWrap = $("[data-board-wrap]", hero);
+const boardEl = $("[data-board]", hero);
+const board = boardEl ? createBoard(boardEl, { reducedMotion: reduced }) : null;
+let boardW = 0;
+let boardH = 0;
+const measureBoard = () => {
+  if (!boardWrap) return;
+  boardW = boardWrap.offsetWidth;
+  boardH = boardWrap.offsetHeight;
+  hero.style.setProperty("--board-h", `${boardH}px`);
+};
+measureBoard();
+ScrollTrigger.addEventListener("refreshInit", measureBoard);
+
+// On arrival the dawn comes up, the headline rises word by word out of its own line, the
+// rest follows, and the board's top edge rises into view at the foot of the screen.
 const title = $("[data-split]", hero);
-if (title && !reduced) {
-  const words = title.innerHTML.split(/(\s+|&nbsp;)/);
-  title.innerHTML = words
-    .map((w) =>
-      /^\s+$|^&nbsp;$/.test(w)
-        ? w
-        : `<span class="w" style="display:inline-block;white-space:nowrap">${[...w]
-            .map((ch) => `<span class="ch" style="display:inline-block">${ch}</span>`)
-            .join("")}</span>`,
-    )
-    .join("");
-  gsap.from($$(".ch", title), {
-    yPercent: 40,
-    opacity: 0,
-    filter: "blur(12px)",
-    duration: 1.4,
-    ease: "expo.out",
-    stagger: 0.022,
-    delay: 0.45,
-    clearProps: "filter",
-  });
-  gsap.from($$(".kicker, .intro-side > *", hero), {
-    y: 18,
-    opacity: 0,
-    filter: "blur(6px)",
-    duration: 1.2,
-    ease: "expo.out",
-    stagger: 0.12,
-    delay: 1.1,
-    clearProps: "filter",
-  });
+const intro = { t: reduced ? 1 : 0, dawn: reduced ? 1 : 0 };
+if (!reduced) {
+  if (title) {
+    title.innerHTML = title.innerHTML
+      .split(/(\s+)/)
+      .map((w) => (/^\s+$/.test(w) ? w : `<span class="w"><span class="wi">${w}</span></span>`))
+      .join("");
+  }
+  const tl = gsap.timeline({ delay: 0.2 });
+  tl.to(intro, { dawn: 1, duration: 3.2, ease: "power2.out" }, 0);
+  if (title) {
+    tl.from($$(".wi", title), { yPercent: 112, rotate: 5, duration: 1.4, ease: "expo.out", stagger: 0.07 }, 0.35);
+  }
+  tl.from(
+    $$("[data-rise]", hero),
+    { y: 18, opacity: 0, duration: 1.2, ease: "expo.out", stagger: 0.11, clearProps: "transform,opacity" },
+    0.85,
+  );
+  tl.to(intro, { t: 1, duration: 1.8, ease: "expo.out" }, 1.3);
 }
 
-const intro = { t: 1 };
+/** How present the board is, for the light behind it, and where it is. */
+let boardOn = 0;
+let boardY = 0;
+let boardS = 1;
 
-function playBeats(p: number) {
-  const shows = [1 - smooth(0.06, 0.15, p), band(p, 0.2, 0.26, 0.38, 0.45), band(p, 0.49, 0.55, 0.66, 0.73)];
-  beats.forEach((el, i) => {
-    const v = shows[i] ?? 0;
-    const leaving = i === 0 || p > [0, 0.32, 0.6][i]!;
-    el.style.opacity = v.toFixed(3);
-    el.style.visibility = v < 0.01 ? "hidden" : "visible";
-    el.style.transform = `translateY(${((1 - v) * (leaving ? -28 : 28)).toFixed(1)}px)`;
-    el.style.filter = v > 0.99 ? "" : `blur(${((1 - v) * 10).toFixed(1)}px)`;
-  });
-  if (cue) cue.style.opacity = String(1 - smooth(0, 0.04, p));
-  heroStage.style.setProperty("--scrim", (1 - smooth(0.72, 0.84, p)).toFixed(3));
+function playHero(p: number) {
+  // The words lift away first.
+  const out = smooth(0.02, 0.2, p);
+  if (heroIntro) {
+    heroIntro.style.opacity = (1 - out).toFixed(3);
+    heroIntro.style.visibility = out > 0.99 ? "hidden" : "visible";
+    heroIntro.style.transform = `translate3d(0,${(-out * 70).toFixed(1)}px,0) scale(${(1 - out * 0.05).toFixed(4)})`;
+  }
+  // The board waits at the foot of the screen, rises to the middle, holds, and goes.
+  const rise = inOut(clamp(p / 0.3));
+  const leave = smooth(0.6, 0.76, p);
+  const peek = innerHeight * 0.36 + boardH / 2;
+  boardY = lerp(peek, 0, rise) + (1 - intro.t) * innerHeight * 0.12 - leave * 50;
+  boardS = lerp(0.9, 1, rise) * (1 - leave * 0.06);
+  boardOn = intro.t * (1 - leave);
+  if (boardWrap) {
+    boardWrap.style.opacity = boardOn.toFixed(3);
+    boardWrap.style.visibility = boardOn < 0.01 ? "hidden" : "visible";
+    boardWrap.style.transform = `translate3d(0,${boardY.toFixed(1)}px,0) scale(${boardS.toFixed(4)})`;
+  }
+  if (caption) {
+    const v = band(p, 0.26, 0.34, 0.54, 0.62);
+    caption.style.opacity = v.toFixed(3);
+    caption.style.visibility = v < 0.01 ? "hidden" : "visible";
+    caption.style.transform = `translate3d(0,${((1 - v) * (p > 0.44 ? -16 : 16)).toFixed(1)}px,0)`;
+  }
 }
 
 // MARK: Recording
@@ -342,25 +371,38 @@ if (recording) {
   ).observe(video);
 
   if (!reduced) {
-    const halves = $$("[data-half]", recording);
+    // In screens of scroll since the pin took hold: the first stretch lies over the hero's
+    // walk into the light, and the screen develops out of it; then the clip grows.
+    const play = (d: number) => {
+      recording.style.setProperty("--enter", smooth(0.05, 0.65, d).toFixed(3));
+      recording.style.setProperty("--grow", lerp(0.34, 1, inOut(clamp((d - 0.75) / 1.15))).toFixed(4));
+      recording.style.setProperty("--out", smooth(0.95, 1.45, d).toFixed(3));
+      recording.style.setProperty("--caption", smooth(1.65, 2.05, d).toFixed(3));
+    };
+    play(0);
     ScrollTrigger.create({
       trigger: recording,
-      start: "top bottom",
+      start: "top top",
       end: "bottom bottom",
-      onUpdate: (s) => {
-        // The first stretch is the approach; the pin starts once the section reaches the top.
-        const total = recording.offsetHeight;
-        const y = s.progress * total;
-        const p = clamp((y - innerHeight * 0.75) / (total - innerHeight * 1.2));
-        const grow = inOut(clamp(p / 0.8));
-        recording.style.setProperty("--grow", lerp(0.34, 1, grow).toFixed(4));
-        recording.style.setProperty("--caption", smooth(0.75, 0.95, p).toFixed(3));
-        halves.forEach((h) => (h.style.opacity = (1 - smooth(0.25, 0.65, p)).toFixed(3)));
-      },
+      onUpdate: (s) => play((s.progress * (recording.offsetHeight - innerHeight)) / innerHeight),
     });
   } else {
+    // The clip at full size; the line's halves would only stand cut off at its sides. It still
+    // fades in out of the light, or it would stand over the hero's board.
     recording.style.setProperty("--grow", "1");
+    recording.style.setProperty("--out", "1");
     recording.style.setProperty("--caption", "1");
+    recording.style.setProperty("--enter", "0");
+    ScrollTrigger.create({
+      trigger: recording,
+      start: "top top",
+      end: "bottom bottom",
+      onUpdate: (s) =>
+        recording.style.setProperty(
+          "--enter",
+          smooth(0.05, 0.65, (s.progress * (recording.offsetHeight - innerHeight)) / innerHeight).toFixed(3),
+        ),
+    });
   }
 }
 
@@ -404,12 +446,13 @@ if (notch) {
   ScrollTrigger.create({
     trigger: notch,
     start: "top 60%",
-    end: "bottom bottom",
+    // The last screen of the pin is the next chapter sliding over it.
+    end: () => `bottom-=${innerHeight} bottom`,
     onToggle: (s) => island.setVisible(s.isActive),
     onUpdate: (s) => {
       // Pinning starts at "top top"; the first stretch before it is the approach.
       const pinStart = innerHeight * 0.6;
-      const total = notch.offsetHeight - innerHeight + pinStart;
+      const total = notch.offsetHeight - 2 * innerHeight + pinStart;
       const p = clamp((s.progress * total - pinStart) / (total - pinStart));
       const step = cuts.findIndex((c, i) => p >= c && p < (cuts[i + 1] ?? 2));
       island.setStep(Math.max(0, step));
@@ -645,13 +688,34 @@ if (lightSection) {
 
 function lightView(p: number): View {
   const v = restView();
+  // A phone stands back and looks up a little, so the arch sits under the words, not on them.
+  const tall = 1 - smooth(0.6, 0.9, innerWidth / innerHeight);
   const a = lerp(-0.42, 0.42, inOut(p));
-  const r = lerp(15.5, 12.5, inOut(p));
+  const r = lerp(15.5, 12.5, inOut(p)) * (1 + 0.14 * tall);
   v.x = Math.sin(a) * r;
   v.z = Math.cos(a) * r;
   v.y = -1.2;
-  v.lookY = 0.45;
+  v.lookY = 0.45 + 1.3 * tall;
   return v;
+}
+
+/**
+ * Wide screens keep the arch to the right of the words, wherever the camera has walked: the
+ * camera and its target slide left of the shot by a share of the distance between them.
+ */
+function aside(v: View) {
+  const fx = v.lookX - v.x;
+  const fz = v.lookZ - v.z;
+  const n = Math.hypot(fx, fz) || 1;
+  const d = n * 0.17 * smooth(1.1, 1.45, innerWidth / innerHeight);
+  if (d <= 0) return;
+  // The camera's right, on the ground.
+  const rx = -fz / n;
+  const rz = fx / n;
+  v.x -= rx * d;
+  v.z -= rz * d;
+  v.lookX -= rx * d;
+  v.lookZ -= rz * d;
 }
 
 // MARK: Finale
@@ -690,17 +754,96 @@ function finaleView(p: number): View {
 const outcomes = $$("[data-outcome]");
 const watch = $("[data-watch]");
 const line = watch ? $<SVGPathElement>("[data-line]", watch) : null;
-if (watch) {
+if (watch && line) {
+  const plot = $("[data-chart] .plot", watch)!;
+  const width = line.ownerSVGElement!.viewBox.baseVal.width;
   ScrollTrigger.create({
     trigger: $("[data-chart]", watch),
     start: "top 85%",
     end: "center 45%",
     onUpdate: (s) => {
-      line?.style.setProperty("--draw", (1 - s.progress).toFixed(4));
+      plot.style.setProperty("--draw", (1 - s.progress).toFixed(4));
+      // How far across the pen is, for the shade beneath it.
+      const at = line.getPointAtLength(s.progress * line.getTotalLength());
+      plot.style.setProperty("--reach", (at.x / width).toFixed(4));
       if (s.progress > 0.985) watch.classList.add("risen");
       else if (s.progress < 0.9) watch.classList.remove("risen");
     },
   });
+}
+
+// MARK: Chapters
+
+// The day's tone: every day chapter takes the same one at once, the share of the sunk tone
+// within a screen around the middle of the view, so a change of tone is a slow turn of the
+// light rather than an edge. Sections are measured on refresh, never while scrolling.
+const toned = $$("main > .day").filter((s) => !s.hasAttribute("data-recording"));
+let sunk: [number, number][] = [];
+let lastTone = -1;
+
+// Chapters that slide in over the one before; what they cover sinks back as they come.
+const sheets = $$("[data-sheet]").map((sheet) => ({
+  sheet,
+  under: sheet.previousElementSibling?.querySelector<HTMLElement>(".pin") ?? null,
+  r: 0,
+  last: -1,
+}));
+
+// The nav marks the chapter you're in with a line that glides from one link to the next.
+const navMark = $("[data-nav-mark]");
+const navLinks = $$<HTMLAnchorElement>("[data-nav] nav a");
+/** Every chapter's span, and its link if it has one. Chapters overlap where one slides over another. */
+let chapters: { link: HTMLAnchorElement | null; top: number; bottom: number }[] = [];
+let lastChapter: HTMLAnchorElement | null | undefined;
+
+const measureChapters = () => {
+  const y = scrollY;
+  const range = (el: Element) => {
+    const r = el.getBoundingClientRect();
+    return [r.top + y, r.bottom + y] as [number, number];
+  };
+  sunk = $$('main > [data-tone="sunk"]').map(range);
+  chapters = $$("main > section").map((section) => {
+    const [top, bottom] = range(section);
+    return { link: navLinks.find((a) => a.getAttribute("href") === `#${section.id}`) ?? null, top, bottom };
+  });
+  lastTone = -1;
+  lastChapter = undefined;
+};
+measureChapters();
+ScrollTrigger.addEventListener("refresh", measureChapters);
+
+function playChapters() {
+  const c = scrollY + innerHeight / 2;
+  const w = innerHeight * 0.45;
+  let share = 0;
+  for (const [a, b] of sunk) share += Math.max(0, Math.min(b, c + w) - Math.max(a, c - w));
+  const tone = Math.round(smooth(0, 1, share / (2 * w)) * 1000) / 10;
+  if (tone !== lastTone) {
+    lastTone = tone;
+    const bg = tone <= 0 ? "" : `color-mix(in oklch, var(--day), var(--day-sunk) ${tone}%)`;
+    for (const s of toned) s.style.backgroundColor = bg;
+  }
+
+  for (const s of sheets) {
+    if (!s.under || s.r === s.last) continue;
+    s.last = s.r;
+    const r = s.r;
+    // It drifts up at a sixth of the sheet's pace, shrinks a little, and is gone by halfway.
+    s.under.style.transform = r > 0 ? `translate3d(0,${(-r * 16).toFixed(2)}svh,0) scale(${(1 - r * 0.06).toFixed(4)})` : "";
+    s.under.style.opacity = r > 0 ? (1 - smooth(0.05, 0.6, r)).toFixed(3) : "";
+  }
+
+  if (navMark) {
+    // The one on top: the last that spans the middle of the view.
+    const now = chapters.findLast((ch) => c >= ch.top && c < ch.bottom)?.link ?? null;
+    if (now !== lastChapter) {
+      lastChapter = now;
+      navLinks.forEach((a) => (a === now ? a.setAttribute("aria-current", "location") : a.removeAttribute("aria-current")));
+      if (now) navMark.style.transform = `translateX(${now.offsetLeft}px) scaleX(${now.offsetWidth})`;
+      navMark.classList.toggle("on", !!now);
+    }
+  }
 }
 
 // MARK: Ticker
@@ -722,11 +865,14 @@ if (outcomes[0]) {
 let lastLight: LightName | null = null;
 let lastHeroP = -1;
 let lastIntro = -1;
+let dawnTime = 9;
+let dawnShown = false;
 gsap.ticker.add(() => {
   // Reads first, all of them, so no write below forces a layout in between.
   const h = onScreen(hero);
   const l = onScreen(lightSection);
   const f = onScreen(finale);
+  if (!reduced) for (const s of sheets) s.r = clamp(1 - s.sheet.getBoundingClientRect().top / innerHeight);
   const lit = outcomesNear
     ? outcomes.map((o) => {
         const r = o.getBoundingClientRect();
@@ -738,22 +884,47 @@ gsap.ticker.add(() => {
 
   // Then writes.
   if (h > 0 && (heroP !== lastHeroP || intro.t !== lastIntro)) {
-    playBeats(heroP);
+    playHero(heroP);
     lastHeroP = heroP;
     lastIntro = intro.t;
   }
   lit.forEach((v, i) => v && outcomes[i]!.style.setProperty("--lit", v));
+  playChapters();
 
-  // The hero: frames, its loop at the very top, the flood to day at the end of the walk in.
+  // The hero: the dawn, and at the end of it the flood to day.
   const heroLeads = h > 0 && h >= l && h >= f;
   document.documentElement.classList.toggle("hero-away", !heroLeads);
-  if (heroLeads && heroFrames) {
-    heroFrames.render(heroP);
-    heroFrames.setResting(heroP < 0.004);
-    const white = heroPath(heroP, innerWidth / innerHeight).white;
-    heroMedia!.style.setProperty("--flood", Math.min(1, white * 1.4).toFixed(3));
-    heroMedia!.style.setProperty("--reach", (white * 160).toFixed(1));
-  } else heroFrames?.setResting(false);
+  if (heroLeads) {
+    const dt = Math.min(0.05, gsap.ticker.deltaRatio(60) / 60);
+    const flood = smooth(0.66, 0.9, heroP);
+    if (dawn) {
+      if (!reduced) dawnTime += dt;
+      // Without a mouse, the sun wanders along the edge on its own.
+      if (!finePointer && !reduced) sunPointer.x = Math.sin(dawnTime * 0.11) * 0.45;
+      const k = 1 - Math.exp(-dt * 2.4);
+      sunPointer.ex += (sunPointer.x - sunPointer.ex) * k;
+      sunPointer.ey += (sunPointer.y - sunPointer.ey) * k;
+      const w = boardW * boardS;
+      const bh = boardH * boardS;
+      dawn.render({
+        time: dawnTime,
+        scroll: heroP,
+        intro: intro.dawn,
+        flood,
+        pointer: [sunPointer.ex, sunPointer.ey],
+        board: boardOn > 0.01 ? new DOMRect((innerWidth - w) / 2, (innerHeight - bh) / 2 + boardY, w, bh) : null,
+        boardOn,
+      });
+      if (!dawnShown) {
+        dawnShown = true;
+        document.documentElement.classList.add("dawn-ready");
+      }
+    } else {
+      heroMedia?.style.setProperty("--flood", flood.toFixed(3));
+      heroMedia?.style.setProperty("--reach", (flood * 160).toFixed(1));
+    }
+    if (board && boardOn > 0.05) board.tick(dt);
+  }
 
   if (!scene) return;
   scene.setActive(!heroLeads && l + f > 0);
@@ -778,6 +949,7 @@ gsap.ticker.add(() => {
     view.x = view.lookX + dx * c - z * sn;
     view.z = dx * sn + z * c;
   }
+  if (l >= f) aside(view);
   Object.assign(scene.view, view);
   if (light !== lastLight) {
     scene.setLight(light, 1.1);
@@ -798,7 +970,7 @@ if (finePointer && !reduced) {
       const y = (e.clientY - r.top - r.height / 2) / r.height;
       gsap.to(b, { x: x * 8, y: y * 6, duration: 0.4, ease: "power3.out" });
     });
-    b.addEventListener("pointerleave", () => gsap.to(b, { x: 0, y: 0, duration: 0.7, ease: "elastic.out(1, 0.5)" }));
+    b.addEventListener("pointerleave", () => gsap.to(b, { x: 0, y: 0, duration: 0.9, ease: "expo.out" }));
   }
 }
 

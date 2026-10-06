@@ -223,6 +223,22 @@ input {
   color: var(--ink);
 }
 
+/* The day has two tones. With script, every day chapter takes the same one at once, eased by
+   where you are (scripts/main.ts), so a change of tone is never a hard edge. */
+.day[data-tone="sunk"] {
+  background: var(--day-sunk);
+}
+
+/* A chapter that slides in over the one before: a breath of shadow on its leading edge. */
+html.js [data-sheet]::before {
+  content: "";
+  position: absolute;
+  inset: -3rem 0 auto;
+  height: 3rem;
+  background: linear-gradient(180deg, transparent, oklch(0.19 0.008 255 / 0.07));
+  pointer-events: none;
+}
+
 .wrap {
   width: min(100% - 2 * var(--gutter), var(--max));
   margin-inline: auto;

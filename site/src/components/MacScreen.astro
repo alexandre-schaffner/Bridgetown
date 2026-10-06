@@ -70,7 +70,8 @@ Switched to a new branch 'search-cache'
 
   .bezel {
     position: relative;
-    height: calc(548px * var(--k) + 14px);
+    /* Zoomed in on a phone, the screen is cut short so the words below still fit. */
+    height: calc(min(548px * var(--k), 44svh) + 14px);
     padding: 14px 14px 0;
     border-radius: 26px 26px 0 0;
     background: #0d0e10;

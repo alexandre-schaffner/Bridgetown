@@ -156,4 +156,4 @@ cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
 gh attestation verify Bridgetown.dmg -R alexandre-schaffner/Bridgetown
 ```
 
-If a build or publish fails, the draft and tag stay put: re-run the failed jobs, or run `release.yml` by hand with the draft's tag. The landing page also deploys on its own when `site/` changes on `main`, using Cloudflare credentials from the `production` environment.
+If a build or publish fails, the draft and tag stay put: re-run the failed jobs, or run `release.yml` by hand with the draft's tag. The landing page also deploys on its own when `site/` changes on `main`, using Cloudflare credentials from the `production` environment. That is the only way it ships: `bun run deploy` refuses to run outside GitHub Actions, so a working tree that was never committed can't go live and then vanish at the next deploy. To redeploy without a change, run `gh workflow run deploy-site.yml`.
