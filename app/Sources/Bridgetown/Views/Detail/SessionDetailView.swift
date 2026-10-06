@@ -185,7 +185,7 @@ struct SessionDetailView: View {
             Spacer(minLength: 0)
         }
         .frame(minHeight: 20)
-        .font(.geist(12.5))
+        .font(Typo.fact)
         .monospacedDigit()
         .accessibilityElement(children: .combine)
     }
@@ -286,10 +286,10 @@ private struct RootCauseNotice: View {
                 .font(.geist(13, .medium))
             VStack(alignment: .leading, spacing: 3) {
                 Text("Root cause not found")
-                    .font(.geist(13, .semibold))
+                    .font(Typo.title)
                     .foregroundStyle(.primary)
                 Text("What follows are the agent's leads, not a confirmed cause.")
-                    .font(.geist(12.5))
+                    .font(Typo.fact)
             }
         }
         .foregroundStyle(.secondary)

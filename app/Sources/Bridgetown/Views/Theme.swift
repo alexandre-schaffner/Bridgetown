@@ -80,6 +80,9 @@ enum Typo {
     static let lead = Font.geist(13)
     /// The default: prose, a row's line of detail.
     static let body = Font.geist(12)
+    /// A detail pane's facts, a half step over body: a section's subtitle, the pull
+    /// request's keys and values, Jev's scores.
+    static let fact = Font.geist(12.5)
     /// A body line that leads its block: Jev's decision, a chart's title.
     static let strong = Font.geist(12, .medium)
     /// Footers, links in text, secondary lines.

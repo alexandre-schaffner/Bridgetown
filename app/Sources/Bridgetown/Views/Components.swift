@@ -66,7 +66,7 @@ struct DetailSection<Content: View>: View {
                 Text(title).sectionTitle()
                 if let detail {
                     Text(detail)
-                        .font(.geist(12.5))
+                        .font(Typo.fact)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
