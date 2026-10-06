@@ -121,6 +121,8 @@
     {"shot": "alert-tx-executor"},
     {"scroll": {"in": "pane.detail", "to": "bottom"}},
     {"shot": "alert-tx-executor-bottom"},
+    {"show": {"alert": {"sessionOf": "s_mock_resolved"}}},
+    {"shot": "alert-resolved-session"},
     {"show": "overview"},
 
     {"surface": "open", "preset": "narrow"},

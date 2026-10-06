@@ -29,7 +29,7 @@ struct JobRow: View {
         VStack(alignment: .leading, spacing: 13) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 SelectMark(pick: pick, hovering: hovering) {
-                    HolderDot(session: session)
+                    SessionDot(session: session)
                 }
                 .centeredOnRowTitle()
 
@@ -66,25 +66,5 @@ struct JobRow: View {
             text = text + Text(" · \(detail)")
         }
         return text.foregroundStyle(session.tone.isQuiet ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
-    }
-}
-
-/// Filled and pulsing while something moves (agent, CI, deploy); filled orange when it's
-/// on you; a ring while it waits on someone else (reviewers, the queue).
-private struct HolderDot: View {
-    let session: Session
-
-    var body: some View {
-        let holder = session.holder
-        Group {
-            if holder?.isMoving == true || holder == .you {
-                LiveDot(color: session.tone.color, live: holder?.isMoving == true, size: 7)
-            } else {
-                Circle()
-                    .strokeBorder(Color.secondary, lineWidth: 1.5)
-            }
-        }
-        .frame(width: 7, height: 7)
-        .help(holder.map { "\($0.label.prefix(1).uppercased())\($0.label.dropFirst())" } ?? "")
     }
 }

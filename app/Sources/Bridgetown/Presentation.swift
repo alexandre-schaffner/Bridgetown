@@ -149,6 +149,26 @@ extension Session {
         case .resolved, .closed, .failed, .stopped, .unknown: nil
         }
     }
+
+    /// How the session's dot is drawn, in its tone's colour, the same on its row and in its
+    /// detail. Only motion pulses: the daemon's tone calls "In review" live, yet nobody
+    /// is working on it.
+    enum Dot: Equatable {
+        /// Something moves it (the agent, the adversarial review, CI, a deploy): it pulses.
+        case moving
+        /// A ring: it waits on someone else (reviewers, the queue).
+        case waiting
+        /// Filled and still: it is on you, or it has ended.
+        case still
+    }
+
+    var dot: Dot {
+        switch holder {
+        case let holder? where holder.isMoving: .moving
+        case .you?, nil: .still
+        case _?: .waiting
+        }
+    }
 }
 
 // MARK: - Steps

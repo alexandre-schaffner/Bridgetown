@@ -319,4 +319,17 @@ import Testing
         #expect(try session(.ci, tone: .waiting).holder == .you)
         #expect(try session(.ci).holder == .ci)
     }
+
+    /// Only motion pulses, on the row and in the detail alike; an ended session is still,
+    /// not a ring that says it waits on someone.
+    @Test func theDotPulsesOnlyWhileSomethingMovesIt() throws {
+        #expect(try session(.running).dot == .moving)
+        #expect(try session(.ci).dot == .moving)
+        #expect(try session(.ci, reviewChannel: "product-approvals").dot == .waiting)
+        #expect(try session(.critiquing, tone: .neutral).dot == .waiting)
+        #expect(try session(.queued, tone: .neutral).dot == .waiting)
+        #expect(try session(.waiting, tone: .waiting).dot == .still)
+        #expect(try session(.resolved, tone: .success).dot == .still)
+        #expect(try session(.closed, tone: .neutral).dot == .still)
+    }
 }
