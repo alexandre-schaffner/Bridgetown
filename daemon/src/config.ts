@@ -10,7 +10,7 @@ export const GHE_REPO = "Merkl/monorepo"
 
 /**
  * Git over HTTPS with the `gh` token, for the daemon and every session it starts.
- * Launched from the menu bar, nobody is there to approve an SSH agent prompt
+ * Launched by the app, nobody is there to approve an SSH agent prompt
  * (1Password asks per process), so `nocturlab@nocturlab.ghe.com:` remotes are
  * rewritten for our processes only; the user's git config is untouched.
  */

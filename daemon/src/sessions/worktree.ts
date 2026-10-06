@@ -35,7 +35,7 @@ export interface Worktree {
   readonly path: string
   /** Setup problems that did not stop the session; the agent and the user both see them. */
   readonly warnings: ReadonlyArray<string>
-  /** The repo pins another bun than this machine has: one of the warnings, and the menu bar's too, since every session hits it. */
+  /** The repo pins another bun than this machine has: one of the warnings, and the app's problem line too, since every session hits it. */
   readonly bunMismatch: string | null
 }
 
@@ -105,7 +105,7 @@ const addCommand = Effect.fn("addCommand")(function* (repoPath: string, branch: 
 
 /**
  * The repo pins another bun than this machine runs, or `null`. Checked on every setup, an install skipped or not:
- * the menu bar's problem follows it, so a setup that did not look must not clear it.
+ * the app's problem line follows it, so a setup that did not look must not clear it.
  */
 const bunMismatchOf = Effect.fn("bunMismatchOf")(function* (repoPath: string) {
   const pinned = pinnedBunVersion(repoPath)

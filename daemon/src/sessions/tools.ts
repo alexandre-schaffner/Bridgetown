@@ -24,7 +24,7 @@ export const makeToolServer = (callbacks: ToolCallbacks): McpSdkServerConfigWith
       tool(
         "report",
         [
-          "Tell the user's Bridgetown menu bar where you are. Call it when you move to a new phase:",
+          "Tell the user's Bridgetown app where you are. Call it when you move to a new phase:",
           "diagnose (reading logs and code), fix (editing and verifying), pr (pull request opened — pass prUrl), ci (waiting on or fixing checks).",
           "`note` is one short line the user reads at a glance, e.g. 'vite 6.4 dropped the legacy CJS build; pinning to 6.3'.",
           "It returns immediately; keep working.",

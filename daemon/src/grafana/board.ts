@@ -43,13 +43,13 @@ export interface BoardsShape {
   /**
    * The board. Fresh from the cache when under a minute old; an older one comes back at
    * once while a new one is fetched; with none, waits for the fetch. One fetch per board
-   * at a time, and it outlives the request that started it, so closing the popover
+   * at a time, and it outlives the request that started it, so closing the app
    * mid-fetch still leaves the board cached for the next open.
    */
   readonly build: (spec: BoardSpec) => Effect.Effect<Board>
   /** The board fetched now (or by the fetch already running), never from the cache; it is cached for `build`. */
   readonly latest: (spec: BoardSpec) => Effect.Effect<Board>
-  /** Rebuilds the overview boards, so opening the popover never waits on a day of logs. */
+  /** Rebuilds the overview boards, so opening the app never waits on a day of logs. */
   readonly warm: Effect.Effect<void>
 }
 
