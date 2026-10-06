@@ -44,7 +44,7 @@ final class IslandController {
     static var settle: Animation { motion(.spring(response: 0.45, dampingFraction: 0.8)) }
 
     private static func motion(_ animation: Animation) -> Animation {
-        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? .easeInOut(duration: 0.2) : animation
+        Easing.reduceMotion ? .easeInOut(duration: 0.2) : animation
     }
 
     init(store: Store, daemon: DaemonProcess) {
@@ -119,10 +119,6 @@ final class IslandController {
         }
         trackPointer()
         resignKey()
-    }
-
-    func toggle() {
-        model.presentation == .open ? close() : open()
     }
 
     /// A new "Needs you" drops a banner, unless the island is open already.

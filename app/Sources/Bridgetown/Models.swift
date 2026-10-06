@@ -195,11 +195,6 @@ struct AlertView: Codable, Sendable, Equatable, Identifiable {
     var outcome: AlertOutcome
 }
 
-extension AlertView {
-    /// What opening `permalink` shows: a prod finding's is its Grafana dashboard.
-    var permalinkLabel: String { source == .watch ? "Open in Grafana" : "Open in Slack" }
-}
-
 struct AlertOutcome: Codable, Sendable, Equatable {
     /// waiting = an open card is in "Needs you" · dismissed = the user dismissed its card
     /// and no agent ran · opened = the user opened it from an escalation · withdrawn = a
@@ -334,7 +329,7 @@ struct Action: Codable, Sendable, Equatable, Identifiable {
     /// `reply`: `detail` is an agent-drafted reply to a teammate; resolve with the edited text.
     /// `escalate`: needs the user personally; the primary button opens `url`, then resolves.
     enum Kind: String, LenientStringEnum {
-        case investigate, merge, release, rerun, answer, grafana, review, reply, escalate, unknown
+        case investigate, merge, release, rerun, answer, review, reply, escalate, unknown
     }
 
     var id: String
@@ -513,7 +508,9 @@ enum JSON {
         d.dateDecodingStrategy = .custom { decoder in
             let c = try decoder.singleValueContainer()
             let s = try c.decode(String.self)
-            if let date = ISO8601.parse(s) { return date }
+            // With milliseconds (the daemon's `toISOString`) or without.
+            let fractional = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+            if let date = (try? Date(s, strategy: fractional)) ?? (try? Date(s, strategy: .iso8601)) { return date }
             throw DecodingError.dataCorruptedError(in: c, debugDescription: "Bad ISO-8601 date: \(s)")
         }
         return d
@@ -523,12 +520,5 @@ enum JSON {
         let e = JSONEncoder()
         e.dateEncodingStrategy = .iso8601
         return e
-    }
-}
-
-enum ISO8601 {
-    static func parse(_ s: String) -> Date? {
-        if let d = try? Date(s, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)) { return d }
-        return try? Date(s, strategy: Date.ISO8601FormatStyle())
     }
 }

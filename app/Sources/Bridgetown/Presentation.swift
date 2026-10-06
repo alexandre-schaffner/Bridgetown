@@ -327,6 +327,11 @@ extension Jev {
     var urgencyLabel: String { Format.decimal(urgency, digits: 1) }
 }
 
+extension AlertView {
+    /// What opening `permalink` shows: a prod finding's is its Grafana dashboard.
+    var permalinkLabel: String { source == .watch ? "Open in Grafana" : "Open in Slack" }
+}
+
 // MARK: - Alert outcome
 
 extension AlertOutcome {
@@ -400,7 +405,6 @@ extension Action.Kind {
         case .release: "shippingbox"
         case .rerun: "arrow.clockwise"
         case .answer: "bubble.left"
-        case .grafana: "chart.xyaxis.line"
         case .review: "doc.text.magnifyingglass"
         case .reply: "arrowshape.turn.up.left"
         case .escalate: "person.fill.questionmark"
@@ -468,7 +472,7 @@ extension Action.Kind {
         switch self {
         case .escalate, .reply, .answer, .unknown: .answer
         case .merge, .release: .ship
-        case .investigate, .grafana: .investigate
+        case .investigate: .investigate
         case .review, .rerun: .retry
         }
     }
