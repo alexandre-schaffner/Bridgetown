@@ -234,13 +234,13 @@ private struct Connector: View {
 
     let kind: Kind
     let tint: Color
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.marksHoldStill) private var still
 
     var body: some View {
         line
             .frame(height: 1)
             .overlay {
-                if kind == .feeding && !reduceMotion {
+                if kind == .feeding && !still {
                     TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { context in
                         GeometryReader { geo in
                             let t = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6

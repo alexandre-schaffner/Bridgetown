@@ -51,12 +51,12 @@
     {"surface": "open", "preset": "tall"},
     {"action": {"on": "needsYou.row.a_mock_review_s_mock_failed_setup", "name": "Select"}},
     {"action": {"on": "needsYou.row.a_mock_review_s_mock_failed_ci", "name": "Select"}},
-    {"press": "Close…", "in": "pane.needsYou"},
+    {"press": "Close…"},
     {"shot": "needsyou-bulk-close-confirm"},
     {"surface": "open", "preset": "tall"},
     {"action": {"on": "agents.row.s_mock_running", "name": "Select"}},
     {"action": {"on": "agents.row.s_mock_critique", "name": "Select"}},
-    {"press": "Stop…", "in": "pane.agents"},
+    {"press": "Stop…"},
     {"shot": "agents-bulk-stop-confirm"},
 
     {"surface": "open", "preset": "wide"},
@@ -68,6 +68,9 @@
     {"press": "recent.quietFold"},
     {"scroll": {"in": "pane.agents", "to": "bottom"}},
     {"shot": "recent-quiet-open"},
+    {"show": {"session": "s_mock_running"}},
+    {"back": true},
+    {"shot": "recent-after-detail"},
 
     {"surface": "open", "preset": "wide"},
     {"each": "sessions", "do": [

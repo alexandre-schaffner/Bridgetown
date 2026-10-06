@@ -1,4 +1,5 @@
 import CoreGraphics
+import SwiftUI
 import Testing
 @testable import Bridgetown
 
@@ -42,5 +43,14 @@ import Testing
 
     @Test func noChipsNoRows() {
         #expect(FlowLayout.rows(sizes: [], width: 100, spacing: 6).isEmpty)
+    }
+}
+
+@Suite struct LiveMarksTests {
+    @Test func marksHoldStillOutOfSight() {
+        var environment = EnvironmentValues()
+        #expect(!environment.marksHoldStill)
+        environment.outOfSight = true
+        #expect(environment.marksHoldStill)
     }
 }

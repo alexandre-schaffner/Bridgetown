@@ -162,13 +162,13 @@ struct GlanceWings: View {
 private struct ArchGlyph: View {
     let working: Bool
     let dim: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.marksHoldStill) private var still
 
     var body: some View {
         let mark = ArchShape(joint: 1.1)
             .fill(dim ? Ink.faint : Ink.text)
             .frame(width: 14 * ArchMark.aspect, height: 14)
-        if working && !reduceMotion {
+        if working && !still {
             TimelineView(.animation(minimumInterval: 1 / 30)) { context in
                 let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.4) / 2.4
                 let swell = 0.5 - 0.5 * cos(phase * 2 * .pi)
