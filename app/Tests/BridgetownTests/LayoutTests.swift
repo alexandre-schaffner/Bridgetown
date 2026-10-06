@@ -118,3 +118,37 @@ import Testing
         #expect(narrow.height > wide.height)
     }
 }
+
+@Suite struct ClampCutTests {
+    /// Lines 16pt tall with 2pt between them: an 18pt pitch, so a 4-line clamp is 72pt.
+    private let pitch: CGFloat = 18
+    private let spacing: CGFloat = 2
+
+    private func run(_ y: CGFloat, lines: CGFloat, breaks: Bool = true) -> TextRun {
+        TextRun(frame: CGRect(x: 0, y: y, width: 300, height: lines * pitch - spacing), breaksLines: breaks)
+    }
+
+    /// A review card: two lines of prose, "Ruled out:", then a list. The clamp used to end
+    /// 72pt down whatever was there, through the middle of the list's first item.
+    @Test func endsAfterTheLastWholeLineAboveTheLimit() {
+        let runs = [run(0, lines: 2), run(41, lines: 1), run(64, lines: 1), run(84, lines: 1)]
+        #expect(TextRun.cut(runs, limit: 72, pitch: pitch, spacing: spacing) == 57)
+    }
+
+    @Test func cutsAParagraphBetweenItsLines() {
+        let runs = [run(0, lines: 6)]
+        #expect(TextRun.cut(runs, limit: 72, pitch: pitch, spacing: spacing) == 70)
+    }
+
+    /// A code block or a heading can't end partway: the clamp ends above it.
+    @Test func endsAboveABlockThatCannotBreak() {
+        let runs = [run(0, lines: 2), run(44, lines: 4, breaks: false)]
+        #expect(TextRun.cut(runs, limit: 72, pitch: pitch, spacing: spacing) == 34)
+    }
+
+    /// Before the first layout reports, or with one unbreakable block, the limit stands.
+    @Test func fallsBackToTheLimit() {
+        #expect(TextRun.cut([], limit: 72, pitch: pitch, spacing: spacing) == 72)
+        #expect(TextRun.cut([run(0, lines: 6, breaks: false)], limit: 72, pitch: pitch, spacing: spacing) == 72)
+    }
+}
