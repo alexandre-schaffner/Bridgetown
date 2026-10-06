@@ -2,15 +2,14 @@
 // Day, sunk. Bridgetown watching prod on its own: three hours of a signal in five-minute
 // steps, its usual level, and a rise no alert covers. The line draws as you scroll; when it
 // reaches the rise, the finding and its investigation appear.
-import { linePath, areaPath, series } from "../lib/spark";
+import { linePath, areaPath } from "../lib/spark";
+import { SIGNAL } from "../lib/story";
 
 const W = 1200;
 const H = 300;
 const PAD = 24;
-const steady = series(33, 11, 2.6, 3);
-const values = [...steady, 38, 64, 71];
+const { values, usual } = SIGNAL;
 const max = 80;
-const usual = [...steady].sort((a, b) => a - b)[Math.floor(steady.length * 0.9)]!;
 const y = (v: number) => PAD + (1 - v / max) * (H - 2 * PAD);
 const x = (i: number) => (i / (values.length - 1)) * W;
 const riseFrom = x(values.length - 3) - 14;
@@ -20,7 +19,7 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
 
 <section class="watch day" id="watch" data-tone="sunk" data-watch aria-labelledby="watch-title">
   <div class="wrap">
-    <div class="intro">
+    <div class="chapter-head">
       <h2 id="watch-title" class="display">It watches production, too.</h2>
       <p class="lead">
         Every five minutes Bridgetown reads your dashboards. When a signal rises well above its usual level and no
@@ -37,12 +36,12 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
         <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={`API 5xx per five minutes over three hours: steady around ${Math.round(usual)}, then a rise to ${values.at(-1)!.toFixed(0)} in the last fifteen minutes.`}>
           <rect x={riseFrom} y="0" width={W - riseFrom} height={H} class="rise" data-rise></rect>
           <line x1="0" x2={W} y1={y(usual)} y2={y(usual)} class="usual"></line>
-          <path d={areaPath(values, W, H, PAD, max, 0)} class="area" data-area></path>
+          <path d={areaPath(values, W, H, PAD, max, 0)} class="area"></path>
           <path d={linePath(values, W, H, PAD, max, 0)} class="line" pathLength="1" data-line></path>
           <circle cx={x(values.length - 1)} cy={y(values.at(-1)!)} r="5" class="head" data-head></circle>
         </svg>
         <span class="usual-label" style={`--y:${(y(usual) / H).toFixed(4)}`}>usual · {Math.round(usual)}</span>
-        <div class="finding" data-finding>
+        <div class="finding">
           <p class="f-kind"><i class="dot dot-amber" aria-hidden="true"></i> Rise</p>
           <p class="f-text">Median of the last 3 steps is {(median / usual).toFixed(1)}× usual. No Slack alert covers it.</p>
           <p class="f-session"><i class="dot dot-blue live" aria-hidden="true"></i> Investigation started</p>
@@ -65,20 +64,37 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
   </div>
 </section>
 
+<script>
+  import { $ } from "../lib/dom";
+  import { ScrollTrigger } from "../scripts/scroll";
+
+  const watch = $("[data-watch]");
+  const line = watch ? $<SVGPathElement>("[data-line]", watch) : null;
+  if (watch && line) {
+    const plot = $("[data-chart] .plot", watch)!;
+    const width = line.ownerSVGElement!.viewBox.baseVal.width;
+    ScrollTrigger.create({
+      trigger: $("[data-chart]", watch),
+      start: "top 85%",
+      end: "center 45%",
+      onUpdate: (s) => {
+        plot.style.setProperty("--draw", (1 - s.progress).toFixed(4));
+        // How far across the pen is, for the shade beneath it.
+        const at = line.getPointAtLength(s.progress * line.getTotalLength());
+        plot.style.setProperty("--reach", (at.x / width).toFixed(4));
+        if (s.progress > 0.985) watch.classList.add("risen");
+        else if (s.progress < 0.9) watch.classList.remove("risen");
+      },
+    });
+  }
+</script>
+
 <style>
   .watch {
     padding-block: clamp(7rem, 16vh, 11rem);
   }
 
-  .intro {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 2rem 4rem;
-    align-items: end;
-    margin-bottom: clamp(3rem, 7vh, 5rem);
-  }
-
-  .intro .display {
+  .chapter-head .display {
     max-width: 11ch;
   }
 
@@ -188,16 +204,6 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
     border-top: 0.5px solid var(--ui-hairline);
   }
 
-  .live {
-    animation: breathe 2.4s var(--ease-in-out) infinite;
-  }
-
-  @keyframes breathe {
-    50% {
-      opacity: 0.35;
-    }
-  }
-
   .axis {
     display: flex;
     justify-content: space-between;
@@ -268,7 +274,6 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
   }
 
   @media (max-width: 900px) {
-    .intro,
     .notes {
       grid-template-columns: 1fr;
     }
@@ -276,12 +281,6 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
       position: static;
       width: auto;
       margin-top: 1rem;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .live {
-      animation: none;
     }
   }
 </style>

@@ -1,0 +1,74 @@
+---
+// Green means it happened: the four ways a session ends, with their evidence and the app's glyph.
+import Icon from "../../components/Icon.astro";
+import { OUTCOMES } from "../../lib/story";
+---
+
+<section class="shot" data-shot="outcomes">
+  <div class="cam outcomes">
+    <h2 class="hl-m">Green means it happened.</h2>
+    <ul class="o-list">
+      {OUTCOMES.map((o) => (
+        <li data-outcome><span class="o-word"><Icon name={o.glyph} size={44} stroke={2} class={`glyph ${o.tint}`} /> {o.word}</span><span class="o-ev">{o.evidence}</span></li>
+      ))}
+    </ul>
+  </div>
+</section>
+
+<style>
+  .outcomes {
+    padding: 130px 200px;
+  }
+
+  .o-list {
+    margin: 70px 0 0;
+    padding: 0;
+    list-style: none;
+    border-top: 1px solid var(--hair-strong);
+  }
+
+  .o-list li {
+    display: grid;
+    grid-template-columns: 1fr 640px;
+    align-items: center;
+    padding: 22px 0;
+    border-bottom: 1px solid var(--hair);
+    opacity: 0.14;
+  }
+
+  .o-word {
+    display: flex;
+    align-items: center;
+    gap: 26px;
+    font-size: 88px;
+    font-weight: 600;
+    letter-spacing: -0.045em;
+    color: var(--hi);
+  }
+
+  .o-word :global(.glyph) {
+    flex: none;
+  }
+
+  .o-word :global(.green) {
+    color: var(--green);
+  }
+
+  .o-word :global(.red) {
+    color: var(--red);
+  }
+
+  .o-word :global(.grey) {
+    color: var(--mid);
+  }
+
+  .o-word :global(.faint) {
+    color: var(--lo);
+  }
+
+  .o-ev {
+    font-size: 24px;
+    line-height: 1.4;
+    color: var(--mid);
+  }
+</style>

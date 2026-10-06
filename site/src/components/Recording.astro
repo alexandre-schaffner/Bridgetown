@@ -12,8 +12,8 @@ import Icon from "./Icon.astro";
       <span class="half right">working.</span>
     </h2>
 
-    <figure class="clip" data-clip>
-      <div class="frame" data-clip-frame>
+    <figure class="clip">
+      <div class="frame">
         <video
           data-clip-video
           muted
@@ -30,7 +30,7 @@ import Icon from "./Icon.astro";
           <span class="play"><Icon name="play" size={14} stroke={2.2} /></span>
         </button>
       </div>
-      <figcaption class="caption" data-clip-caption>
+      <figcaption class="caption">
         <p>
           Twenty seconds of a morning, recorded: tests run, a merge becomes yours, you settle it from the notch, and the
           terminal never loses focus.
@@ -39,6 +39,74 @@ import Icon from "./Icon.astro";
     </figure>
   </div>
 </section>
+
+<script>
+  import { $ } from "../lib/dom";
+  import { clamp, inOut, lerp, smooth } from "../lib/math";
+  import { reduced, ScrollTrigger } from "../scripts/scroll";
+
+  // The clip grows from between the two halves of its line to fill the screen, and plays
+  // only while you can see it.
+  const recording = $("[data-recording]");
+  if (recording) {
+    const video = $<HTMLVideoElement>("[data-clip-video]", recording)!;
+    const toggle = $<HTMLButtonElement>("[data-clip-toggle]", recording)!;
+    let userPaused = reduced;
+    const setPaused = (paused: boolean) => {
+      toggle.classList.toggle("paused", paused);
+      toggle.setAttribute("aria-label", paused ? "Play the recording" : "Pause the recording");
+    };
+    setPaused(userPaused);
+    toggle.addEventListener("click", () => {
+      userPaused = !video.paused;
+      if (userPaused) video.pause();
+      else void video.play();
+      setPaused(userPaused);
+    });
+    new IntersectionObserver(
+      ([e]) => {
+        if (e!.isIntersecting && !userPaused) void video.play().catch(() => setPaused(true));
+        else video.pause();
+      },
+      { threshold: 0.25 },
+    ).observe(video);
+
+    if (!reduced) {
+      // In screens of scroll since the pin took hold: the first stretch lies over the hero's
+      // walk into the light, and the screen develops out of it; then the clip grows.
+      const play = (d: number) => {
+        recording.style.setProperty("--enter", smooth(0.05, 0.65, d).toFixed(3));
+        recording.style.setProperty("--grow", lerp(0.34, 1, inOut(clamp((d - 0.75) / 1.15))).toFixed(4));
+        recording.style.setProperty("--out", smooth(0.95, 1.45, d).toFixed(3));
+        recording.style.setProperty("--caption", smooth(1.65, 2.05, d).toFixed(3));
+      };
+      play(0);
+      ScrollTrigger.create({
+        trigger: recording,
+        start: "top top",
+        end: "bottom bottom",
+        onUpdate: (s) => play((s.progress * (recording.offsetHeight - innerHeight)) / innerHeight),
+      });
+    } else {
+      // The clip at full size; the line's halves would only stand cut off at its sides. It still
+      // fades in out of the light, or it would stand over the hero's board.
+      recording.style.setProperty("--grow", "1");
+      recording.style.setProperty("--out", "1");
+      recording.style.setProperty("--caption", "1");
+      recording.style.setProperty("--enter", "0");
+      ScrollTrigger.create({
+        trigger: recording,
+        start: "top top",
+        end: "bottom bottom",
+        onUpdate: (s) =>
+          recording.style.setProperty(
+            "--enter",
+            smooth(0.05, 0.65, (s.progress * (recording.offsetHeight - innerHeight)) / innerHeight).toFixed(3),
+          ),
+      });
+    }
+  }
+</script>
 
 <style>
   .recording {
@@ -151,7 +219,7 @@ import Icon from "./Icon.astro";
 
   /* With script, pinned while the clip grows; the line parts around it. Its first 160svh lie
      over the end of the hero and are see-through, so the light you walk into is what the line
-     and the screen come out of (scripts/main.ts). The next chapter slides over its last 100svh. */
+     and the screen come out of (the script above). The next chapter slides over its last 100svh. */
   :global(html.js) .recording {
     --enter: 1;
     height: 450svh;

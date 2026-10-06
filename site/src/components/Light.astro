@@ -23,7 +23,7 @@ const states = [
       <p class="hint">Pick a light<span class="drag">, or drag the arch to walk around it</span>.</p>
     </div>
 
-    <ol class="states" data-light-states>
+    <ol class="states">
       {
         states.map((s, i) => (
           <li data-light-state={s.id} class:list={[i === 0 && "on"]}>

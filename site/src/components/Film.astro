@@ -1,6 +1,6 @@
 ---
 // The film, in a dialog over the page. [data-open-film="launch"] plays the 32-second launch
-// film.
+// film, /media/launch.mp4 with its launch-poster.jpg.
 import Icon from "./Icon.astro";
 ---
 
@@ -12,6 +12,37 @@ import Icon from "./Icon.astro";
     <button class="close" aria-label="Close the film"><Icon name="x" size={18} stroke={2} /></button>
   </form>
 </dialog>
+
+<script>
+  import { $, $$ } from "../lib/dom";
+  import { lenis } from "../scripts/scroll";
+
+  const film = $<HTMLDialogElement>("[data-film]");
+  if (film) {
+    const video = $<HTMLVideoElement>("[data-film-video]", film)!;
+    for (const b of $$("[data-open-film]")) {
+      b.addEventListener("click", () => {
+        const name = b.dataset.openFilm || "launch";
+        if (video.dataset.film !== name) {
+          video.dataset.film = name;
+          video.poster = `/media/${name}-poster.jpg`;
+          video.src = `/media/${name}.mp4`;
+        }
+        film.showModal();
+        lenis?.stop();
+        void video.play().catch(() => {});
+      });
+    }
+    film.addEventListener("close", () => {
+      video.pause();
+      lenis?.start();
+    });
+    // A click on the backdrop closes it.
+    film.addEventListener("click", (e) => {
+      if (e.target === film) film.close();
+    });
+  }
+</script>
 
 <style>
   .film {
@@ -31,14 +62,14 @@ import Icon from "./Icon.astro";
   }
 
   .film[open] {
-    animation: arrive 700ms var(--ease-out);
+    animation: film-arrive 700ms var(--ease-out);
   }
 
   .film[open]::backdrop {
-    animation: fade 500ms var(--ease-out);
+    animation: film-fade 500ms var(--ease-out);
   }
 
-  @keyframes arrive {
+  @keyframes film-arrive {
     from {
       opacity: 0;
       transform: scale(0.92);
@@ -46,7 +77,7 @@ import Icon from "./Icon.astro";
     }
   }
 
-  @keyframes fade {
+  @keyframes film-fade {
     from {
       opacity: 0;
     }

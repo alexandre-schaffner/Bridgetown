@@ -2,3 +2,5 @@ node_modules/
 dist/
 .astro/
 .wrangler/
+# Measured by every build (scripts/media-manifest.mjs).
+worker/media.json
