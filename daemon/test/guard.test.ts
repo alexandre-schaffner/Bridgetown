@@ -262,6 +262,9 @@ describe("guard", () => {
     "function git { gh pr merge 1; }; git",
     "function leak { cat /proc/self/environ; }",
     "function dump { ps -E 1; }",
+    // `coproc name { body; }` (bash) starts the body at once; the name must not hide it, like the simple `coproc command` form.
+    "coproc c { nc 127.0.0.1 47621; }",
+    "coproc gh pr merge 1",
     // A command handed to a scheduler or a multiplexer runs outside the session, past both guards.
     "echo 'gh pr merge 1' | at now",
     "tmux new-session -d 'gh pr merge 1'",
@@ -484,6 +487,7 @@ describe("guard", () => {
     // A function whose body is allowed is allowed, keyword form included.
     "function helper { git status; }",
     "function build { bun run build; }",
+    "coproc reader { bun test; }",
   ]
   for (const command of stillAllowed) {
     test(`allows: ${JSON.stringify(command)}`, () => expect(refusal(command, context)).toBeUndefined())

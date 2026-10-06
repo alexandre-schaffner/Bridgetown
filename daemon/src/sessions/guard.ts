@@ -44,7 +44,7 @@ export const readScript = (path: string): string | undefined => {
   }
 }
 
-const KEYWORDS = new Set(["!", "{", "}", "if", "then", "else", "elif", "fi", "do", "done", "while", "until", "esac", "coproc"])
+const KEYWORDS = new Set(["!", "{", "}", "if", "then", "else", "elif", "fi", "do", "done", "while", "until", "esac"])
 const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)\+?=/
 /** Variables whose value is a command a later program runs (an ssh, pager, editor or askpass): only one that runs nothing may be set (`GIT_EDITOR=true`, `PAGER=cat`). */
 const COMMAND_ENV = /^(GIT_SSH_COMMAND|GIT_SSH|GIT_EXTERNAL_DIFF|GIT_PAGER|GIT_EDITOR|GIT_SEQUENCE_EDITOR|GIT_PROXY_COMMAND|GIT_ASKPASS|SSH_ASKPASS|PAGER|GH_PAGER|EDITOR|VISUAL|GH_EDITOR)$/
@@ -203,6 +203,12 @@ const checkCommand = (command: Command, scope: Scope): string | undefined => {
     // `function name { body; }`: drop the keyword and the name so the body is checked as commands. The `name()` form already splits at `(` into its own command, and so does `function name()`.
     if (!first.quoted && first.text === "function") {
       argv = argv.slice(2)
+      continue
+    }
+    // `coproc command` runs it; `coproc name { body; }` labels a body that starts right away. Drop the keyword, and the name when a brace group follows, so the body is checked either way.
+    if (!first.quoted && first.text === "coproc") {
+      argv = argv.slice(1)
+      if (argv[0] !== undefined && !argv[0].quoted && argv[1]?.text === "{") argv = argv.slice(1)
       continue
     }
     // A leading `NAME=value` is an environment assignment, not the command. Quoting of the value does not change that (`GIT_SSH_COMMAND='…' git fetch`), so it is stripped even when the word is marked quoted.
