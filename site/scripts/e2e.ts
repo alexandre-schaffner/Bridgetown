@@ -1,7 +1,7 @@
 // The landing page, end to end, for whoever changes it next (person or agent). Builds the site
 // if dist/ is older than its sources, serves dist/ on a free port with the headers Cloudflare
-// adds (public/_headers, its Content-Security-Policy included), and walks each page at five
-// viewports, with and without Reduce Motion. At every scroll stop it takes a screenshot and
+// adds (public/_headers, its Content-Security-Policy included), and walks each page at six
+// viewports (e2e/screens.ts), with and without Reduce Motion. At every scroll stop it takes a screenshot and
 // lints the frame it shows: sideways scroll, text or media spilling past the screen, text cut
 // off, ellipsised or grown out of its box, text drawn over other text, broken images and
 // videos, console errors (a blocked script or style among them), page errors and failed

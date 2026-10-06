@@ -121,7 +121,7 @@ Run these from the repository root:
 | `bun install --cwd site` | Install landing-page dependencies |
 | `bun run --cwd site dev` | Start the Astro landing page |
 | `bun run --cwd site test` | Run the landing page's tests |
-| `make e2e-site` | Build the landing page if stale, then screenshot, lint and check it at five screen sizes, into `.context/e2e/` |
+| `make e2e-site` | Build the landing page if stale, then screenshot, lint and check it at six screen sizes, into `.context/e2e/` |
 
 To update the README visuals, see the [screenshot capture guide](docs/images/README.md).
 
