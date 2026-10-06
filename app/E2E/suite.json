@@ -3,7 +3,8 @@
   "world": "full",
   "appearances": ["dark"],
   "allow": [
-    {"rule": "blank", "shots": "notch-flat-empty.*", "why": "Without a notch the island stays hidden while it has nothing to show"}
+    {"rule": "blank", "shots": "notch-flat-empty.*", "why": "Without a notch the island stays hidden while it has nothing to show"},
+    {"rule": "tiny-target", "text": "^(Grafana dashboard|Runbook)$", "shots": "*alert-tx-executor*", "why": "Links inside a quoted Slack message run with its 10.5pt lines; padded to 20pt they would break the quote apart. The bottom bar's Open in Slack is the full-size way to the message"}
   ],
   "beforeConnect": [
     {"surface": "open", "preset": "wide"},

@@ -112,11 +112,11 @@ struct AlertDetailView: View {
             if session == nil {
                 StatusLine(headline: alert.outcome.headline, tone: alert.outcome.tone, size: 13)
             }
+            // Whole, however narrow the pane: it scrolls, and the summary is what the alert says.
             if !alert.summary.isEmpty {
                 Text(alert.summary)
                     .font(Typo.body)
                     .foregroundStyle(.secondary)
-                    .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
