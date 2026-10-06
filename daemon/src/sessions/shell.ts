@@ -340,7 +340,14 @@ class Parser {
       this.parseList(")")
     } else if (next === "{") {
       this.i++
-      this.readExpanding("}")
+      // bash 5.3 `${ cmd; }` / `${| cmd; }` run a command list (a space or `|` after the brace), not a parameter expansion.
+      if (this.peek() === "|" || this.peek() === " " || this.peek() === "\t" || this.peek() === "\n") {
+        if (this.peek() === "|") this.i++
+        const { text } = this.readExpanding("}")
+        new Parser(text, this.commands).parseAll()
+      } else {
+        this.readExpanding("}")
+      }
     } else if (NAME_START.test(next)) {
       while (NAME_CHAR.test(this.peek())) this.i++
     } else if (SPECIAL_PARAMETER.test(next) && next !== "") {

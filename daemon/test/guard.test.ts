@@ -269,6 +269,11 @@ describe("guard", () => {
     "mapfile -C 'gh pr merge 1' -c 1 arr",
     "mapfile -t -C 'kubectl delete pod' arr",
     "readarray -C'nc 127.0.0.1 47621' x",
+    // bash 5.3 `${ cmd; }` / `${| cmd; }` run a command list, not a parameter expansion.
+    "echo ${ gh pr merge 1; }",
+    "echo ${|nc 127.0.0.1 47621;}",
+    '"${ kubectl delete pod; }"',
+    "v=${ cat /proc/self/environ; }",
     // A command handed to a scheduler or a multiplexer runs outside the session, past both guards.
     "echo 'gh pr merge 1' | at now",
     "tmux new-session -d 'gh pr merge 1'",
@@ -495,6 +500,9 @@ describe("guard", () => {
     // mapfile without a callback, and a callback that runs nothing refused.
     "mapfile -t lines",
     "mapfile -C 'echo $1' -c 1 arr",
+    // Parameter expansions are not funsubs, and a funsub body that runs nothing is fine.
+    "echo ${var:-default} ${#arr[@]} ${var/old/new}",
+    "echo ${ git status; }",
   ]
   for (const command of stillAllowed) {
     test(`allows: ${JSON.stringify(command)}`, () => expect(refusal(command, context)).toBeUndefined())
