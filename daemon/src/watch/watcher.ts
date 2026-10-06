@@ -3,22 +3,22 @@ import { ActionQueue } from "../actions/queue.ts"
 import type { Alert, AlertKind, ParsedAlert, Triage } from "../domain/alert.ts"
 import type { AdapterError } from "../domain/errors.ts"
 import { daysAgo, now as nowIso } from "../domain/ids.ts"
-import { type Board, Boards } from "../grafana/board.ts"
+import { type Board, Boards, GRAFANA_DOWN } from "../grafana/board.ts"
 import { alertBoard, type PanelSpec } from "../grafana/boards.ts"
 import { Grafana } from "../grafana/client.ts"
-import { Hub } from "../hub.ts"
+import { Hub, type HubShape } from "../hub.ts"
 import { Intake, routeOf } from "../intake/intake.ts"
-import { Store } from "../store/store.ts"
 import { Jev } from "../jev.ts"
+import { clock } from "../lib/text.ts"
+import { Store } from "../store/store.ts"
 import { alertKind } from "../triage/kind.ts"
 import { decideAnomaly } from "../triage/policy.ts"
 import { applyRules } from "../triage/rules.ts"
 import { reportJev, triageWith } from "../triage/verdict.ts"
-import type { LogPatternVerdict } from "./judge.ts"
-import { clock } from "../lib/text.ts"
 import { type Anomaly, anomalyOf, backToUsual, findingOf, formatValue, measure, type Measure, watchBoard, watchFingerprint, WORSE_FACTOR } from "./detect.ts"
+import type { LogPatternVerdict } from "./judge.ts"
 import { candidates, judgeInput, type LogPattern, logFinding, logTriage, mergeRows, type PatternRow, patternLink, rowOf, SWEEPS, type Sweep, sweepQuery } from "./logs.ts"
-import { type Judged, loadJudged, saveJudged, saveSweep, watchBlocked } from "./sweep-store.ts"
+import { type Judged, loadJudged, saveJudged, saveSweep } from "./sweep-store.ts"
 
 /**
  * Bridgetown's own eyes on prod: every few minutes it reads the overview
@@ -37,6 +37,14 @@ export interface WatcherShape {
    */
   readonly sweepLogs: Effect.Effect<void, AdapterError>
 }
+
+/** Why the prod watcher is not running, or null when it is: watching off in Settings, or the Grafana MCP down. */
+export const watchBlocked = (hub: HubShape) =>
+  Effect.gen(function* () {
+    if (!(yield* hub.settings).watchProd) return "Prod watching is off in Settings → Behaviour."
+    if ((yield* hub.status).grafanaMcp === "down") return GRAFANA_DOWN
+    return null
+  })
 
 export class Watcher extends Context.Service<Watcher, WatcherShape>()("Watcher") {}
 

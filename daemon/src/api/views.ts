@@ -7,11 +7,12 @@ import { critiquePassed, findingCounts } from "../domain/critique.ts"
 import { progressOf } from "../domain/progress.ts"
 import { acceptsMessages, type Session } from "../domain/session.ts"
 import { Hub } from "../hub.ts"
-import { metricsOf, windowStart } from "./metrics.ts"
 import { revvLink } from "../ship/pr.ts"
 import { Store } from "../store/store.ts"
 import { byConcern, errorsLink, levelOf, type LogPattern, patternLink, shownUsual, suspicious } from "../watch/logs.ts"
-import { type Judged, loadJudged, loadSweep, type SweepRecord, watchBlocked } from "../watch/sweep-store.ts"
+import { type Judged, loadJudged, loadSweep, type SweepRecord } from "../watch/sweep-store.ts"
+import { watchBlocked } from "../watch/watcher.ts"
+import { metricsOf, windowStart } from "./metrics.ts"
 
 /** The wire shapes of docs/API.md, built from the store. */
 
