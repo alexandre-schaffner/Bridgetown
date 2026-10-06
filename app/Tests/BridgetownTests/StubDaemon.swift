@@ -3,7 +3,8 @@ import Network
 @testable import Bridgetown
 
 /// A daemon on loopback for driving the Store end to end: `/events` sends one snapshot and
-/// stays open; every other request is recorded and answered by `answer`, on the main actor.
+/// stays open for `push`; every other request is recorded and answered by `answer`, on the
+/// main actor.
 @MainActor
 final class StubDaemon {
     struct Request {
@@ -25,6 +26,8 @@ final class StubDaemon {
     var answer: (Request) -> Answer
     private let snapshot: Data
     private let listener: NWListener
+    /// The open `/events` connections.
+    private var streams: [NWConnection] = []
 
     init(snapshot: Data, answer: @escaping (Request) -> Answer) throws {
         self.snapshot = snapshot
@@ -61,6 +64,13 @@ final class StubDaemon {
         listener.cancel()
     }
 
+    /// Sends `snapshot` down every open `/events` stream, as the daemon does after a change.
+    func push(_ snapshot: Data) {
+        for stream in streams {
+            stream.send(content: Self.event(snapshot), completion: .contentProcessed { _ in })
+        }
+    }
+
     /// Waits until `done` holds, up to `seconds`.
     func until(seconds: Double = 5, _ done: () -> Bool) async throws {
         let deadline = ContinuousClock.now + .seconds(seconds)
@@ -91,8 +101,8 @@ final class StubDaemon {
     private func respond(to request: Request, on connection: NWConnection) {
         if request.path == "/events" {
             let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\n\r\n"
-            let event = "event: snapshot\ndata: " + String(decoding: snapshot, as: UTF8.self).replacingOccurrences(of: "\n", with: "") + "\n\n"
-            connection.send(content: Data((head + event).utf8), completion: .contentProcessed { _ in })
+            connection.send(content: Data(head.utf8) + Self.event(snapshot), completion: .contentProcessed { _ in })
+            streams.append(connection)
             return
         }
         requests.append(request)
@@ -104,6 +114,10 @@ final class StubDaemon {
             let head = "HTTP/1.1 \(answer.status) Stub\r\nContent-Type: application/json\r\nContent-Length: \(answer.body.count)\r\nConnection: close\r\n\r\n"
             connection.send(content: Data(head.utf8) + answer.body, completion: .contentProcessed { _ in connection.cancel() })
         }
+    }
+
+    private static func event(_ snapshot: Data) -> Data {
+        Data(("event: snapshot\ndata: " + String(decoding: snapshot, as: UTF8.self).replacingOccurrences(of: "\n", with: "") + "\n\n").utf8)
     }
 
     /// A whole request (head and `Content-Length` body), or nil while more is to come.

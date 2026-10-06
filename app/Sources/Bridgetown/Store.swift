@@ -39,10 +39,13 @@ final class Store {
     @ObservationIgnored private var streamTask: Task<Void, Never>?
     @ObservationIgnored private var flashTask: Task<Void, Never>?
 
+    /// The last snapshot as the daemon sent it. `snapshot` is this with the edits the
+    /// daemon hasn't answered yet shown over it (`withLocalEdits`).
+    @ObservationIgnored private var server: Snapshot?
     @ObservationIgnored private var settingsDebounce: Task<Void, Never>?
     @ObservationIgnored private var pendingSettings = PendingSettings()
-    /// The settings as the daemon last sent them.
-    @ObservationIgnored private var serverSettings: Settings?
+    /// A pause or resume sent and not answered yet.
+    @ObservationIgnored private var pausing: Bool?
 
     // MARK: Connection
 
@@ -97,12 +100,31 @@ final class Store {
     }
 
     private func apply(_ next: Snapshot) {
-        serverSettings = next.settings
-        let shown = withLocalSettings(next)
+        server = next
+        let shown = withLocalEdits(next)
         guard shown != snapshot else { return }
         snapshot = shown
         onSnapshot?(shown)
         if case let .session(id) = route, shown.session(id: id) == nil { back() }
+    }
+
+    /// `snap` with every edit the daemon hasn't answered: settings fields, and a pause. An
+    /// SSE echo of an older state never undoes one, and once answered either way the
+    /// daemon's word stands.
+    private func withLocalEdits(_ snap: Snapshot) -> Snapshot {
+        var shown = snap
+        if pendingSettings.isPending {
+            shown.settings = pendingSettings.shown(over: snap.settings)
+            // The status line's "Dry run" is the setting.
+            shown.status.dryRun = shown.settings.dryRun
+        }
+        if let pausing { shown.status.paused = pausing }
+        return shown
+    }
+
+    /// After an edit is made or answered: the daemon's last snapshot with what is still pending.
+    private func showLocalEdits() {
+        if let server { snapshot = withLocalEdits(server) }
     }
 
     // MARK: Navigation
@@ -168,13 +190,16 @@ final class Store {
         perform(Self.messageKey(session), onSuccess: onSuccess) { try await $0.message(sessionId: session.id, text: text) }
     }
 
-    /// Shown at once, before the daemon answers. If it refuses, no snapshot may come to
-    /// correct the toggle, so it is put back, unless one already has.
+    /// Shown at once and held until the daemon answers; then the toggle says what the daemon
+    /// last said, so a refused one goes back even if no snapshot comes to correct it.
     func setPaused(_ paused: Bool) {
-        let sent = perform("pause", onFailure: { [weak self] in
-            if self?.snapshot?.status.paused == paused { self?.snapshot?.status.paused = !paused }
-        }) { try await $0.setPaused(paused) }
-        if sent { snapshot?.status.paused = paused }
+        let answered = { [weak self] in
+            self?.pausing = nil
+            self?.showLocalEdits()
+        }
+        guard perform("pause", onSuccess: answered, onFailure: answered, { try await $0.setPaused(paused) }) else { return }
+        pausing = paused
+        showLocalEdits()
     }
 
     // MARK: Settings
@@ -186,7 +211,7 @@ final class Store {
         var next = snap.settings
         edit(&next)
         guard pendingSettings.record(from: snap.settings, to: next) else { return }
-        snapshot = withLocalSettings(snap)
+        showLocalEdits()
 
         // A later edit calls off the wait, never a request under way: that one would fail
         // as "cancelled" and take back the fields it carried.
@@ -216,18 +241,10 @@ final class Store {
             case let .failure(error):
                 report(error.userMessage)
                 // Back to what the daemon last sent for these fields.
-                if let snap = snapshot, let server = serverSettings {
-                    snapshot = withLocalSettings(snap.with(settings: server))
-                }
+                showLocalEdits()
             }
             sendSettings()
         }
-    }
-
-    /// `snap` with every settings edit the daemon hasn't confirmed shown as edited.
-    private func withLocalSettings(_ snap: Snapshot) -> Snapshot {
-        guard pendingSettings.isPending else { return snap }
-        return snap.with(settings: pendingSettings.shown(over: snap.settings))
     }
 
     // MARK: Fetches
@@ -280,15 +297,6 @@ final class Store {
             guard !Task.isCancelled else { return }
             self?.flash = nil
         }
-    }
-}
-
-private extension Snapshot {
-    func with(settings: Settings) -> Snapshot {
-        var s = self
-        s.settings = settings
-        s.status.dryRun = settings.dryRun
-        return s
     }
 }
 

@@ -17,6 +17,15 @@ import Testing
         return (store, stub)
     }
 
+    /// The fixture with its status changed, as the daemon sends it after a change.
+    private func withStatus(_ edit: (inout [String: Any]) -> Void) throws -> Data {
+        var json = try #require(JSONSerialization.jsonObject(with: snapshot) as? [String: Any])
+        var status = try #require(json["status"] as? [String: Any])
+        edit(&status)
+        json["status"] = status
+        return try JSONSerialization.data(withJSONObject: json)
+    }
+
     /// No snapshot may come to correct it, so a pause the daemon refused is taken back.
     @Test func aRefusedPauseIsTakenBack() async throws {
         let (store, stub) = try await connected { _ in .init(status: 500, body: Data(#"{"error":"nope"}"#.utf8)) }
@@ -27,6 +36,35 @@ import Testing
         try await stub.until { store.flash != nil }
         #expect(store.flash == "nope")
         #expect(store.snapshot?.status.paused == before)
+    }
+
+    /// A snapshot from before the daemon took the pause in (any change sends one) doesn't
+    /// flip the toggle back while the request is out.
+    @Test func aPauseHoldsOverAnOlderSnapshotUntilAnswered() async throws {
+        let paused = try withStatus { $0["paused"] = true }
+        let (store, stub) = try await connected { _ in .init(body: paused, after: .milliseconds(300)) }
+        defer { stub.stop() }
+        store.setPaused(true)
+        try await stub.until { stub.requests.count == 1 }
+        stub.push(try withStatus { $0["error"] = "an unrelated change" })
+        try await stub.until { store.snapshot?.status.error == "an unrelated change" }
+        #expect(store.snapshot?.status.paused == true)
+        try await stub.until { !store.isBusy("pause") }
+        #expect(store.snapshot?.status.paused == true)
+    }
+
+    /// The daemon took the pause in and said so on the stream, but the request's own answer
+    /// was lost: the toggle shows what the daemon said, not the click taken back.
+    @Test func aPauseWhoseAnswerIsLostShowsWhatTheDaemonSaid() async throws {
+        let (store, stub) = try await connected { _ in .init(status: 500, body: Data(#"{"error":"lost"}"#.utf8), after: .milliseconds(300)) }
+        defer { stub.stop() }
+        store.setPaused(true)
+        try await stub.until { stub.requests.count == 1 }
+        stub.push(try withStatus { $0["paused"] = true; $0["error"] = "paused by the daemon" })
+        try await stub.until { store.snapshot?.status.error == "paused by the daemon" }
+        try await stub.until { store.flash != nil }
+        #expect(store.flash == "lost")
+        #expect(store.snapshot?.status.paused == true)
     }
 
     /// The second click sends nothing, so it mustn't flip the toggle either: the toggle would
@@ -52,6 +90,16 @@ import Testing
         let path = try #require(stub.requests.first?.path)
         #expect(path.hasSuffix("/investigate"))
         #expect(stub.events == ["→ POST \(path)", "← POST \(path)"])
+    }
+
+    @Test func aRefusedSettingGoesBackToWhatTheDaemonSaid() async throws {
+        let (store, stub) = try await connected { _ in .init(status: 500, body: Data(#"{"error":"nope"}"#.utf8)) }
+        defer { stub.stop() }
+        let before = try #require(store.snapshot?.settings.autoStart as Bool?)
+        store.editSettings { $0.autoStart.toggle() }
+        #expect(store.snapshot?.settings.autoStart == !before)
+        try await stub.until { store.flash != nil }
+        #expect(store.snapshot?.settings.autoStart == before)
     }
 
     /// A second edit while the first is out waits for its answer, rather than calling it off
