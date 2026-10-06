@@ -169,17 +169,29 @@ private struct ScrollThumb: View {
     }
 }
 
-/// Hands over the AppKit scroll view a SwiftUI `ScrollView` is built on.
+/// Hands over the AppKit scroll view a SwiftUI `ScrollView` is built on, once the probe
+/// is in a window: before that it has no scroll view around it to find.
 private struct EnclosingScrollView: NSViewRepresentable {
     let found: (NSScrollView) -> Void
 
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async { [weak view] in
-            if let scrollView = view?.enclosingScrollView { found(scrollView) }
-        }
-        return view
-    }
+    func makeNSView(context: Context) -> Probe { Probe(found: found) }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func updateNSView(_ probe: Probe, context: Context) {}
+
+    final class Probe: NSView {
+        let found: (NSScrollView) -> Void
+
+        init(found: @escaping (NSScrollView) -> Void) {
+            self.found = found
+            super.init(frame: .zero)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("not from a nib") }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let scrollView = enclosingScrollView { found(scrollView) }
+        }
+    }
 }
