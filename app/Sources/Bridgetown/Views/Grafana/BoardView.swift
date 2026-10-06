@@ -41,6 +41,9 @@ struct BoardView: View {
                                 // An open lead stays open as another takes its place.
                                 if expanded != nil { expanded = panel.id }
                                 pinned = panel.id
+                                // The row leaves from under the pointer, so its chart never
+                                // hears the pointer go: the crosshair would stay where it was.
+                                hover = nil
                             }
                         }
                     }
@@ -69,6 +72,9 @@ struct BoardView: View {
     private func toggle(_ id: String) {
         Haptics.perform(.alignment, "board.expand")
         expanded = expanded == id ? nil : id
+        // The chart under the pointer is replaced by one of another size; the next move over
+        // it sets the crosshair again.
+        hover = nil
     }
 
     private var footer: some View {
