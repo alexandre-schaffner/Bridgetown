@@ -7,9 +7,9 @@ import { commandOf } from "../guard/bash.ts"
 import { WRITE_TOOLS } from "../guard/confine.ts"
 import type { HubShape } from "../hub.ts"
 import { truncate } from "../lib/text.ts"
+import type { SessionRepoShape } from "../sessions/repo.ts"
 import { ownPrUrl } from "../ship/pr.ts"
-import { SessionResult } from "./output.ts"
-import type { SessionRepoShape } from "./repo.ts"
+import { SessionResult } from "./result.ts"
 import { TOOL_SERVER } from "./tools.ts"
 
 /** The schema lists phases in flow order. */

@@ -7,7 +7,7 @@ import type { Session } from "../domain/session.ts"
 import { readScript } from "../guard/bash.ts"
 import { type ToolGuard, toolGuard, toolRefusal } from "../guard/hook.ts"
 import { childEnv } from "../secrets.ts"
-import { SESSION_RESULT_JSON_SCHEMA } from "./output.ts"
+import { SESSION_RESULT_JSON_SCHEMA } from "./result.ts"
 import { makeToolServer, TOOL_SERVER, type ToolCallbacks } from "./tools.ts"
 
 const MAX_TURNS = 400

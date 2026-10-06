@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { mcpProblem } from "../src/sessions/sdk-events.ts"
+import { mcpProblem } from "../src/agent/events.ts"
 
 describe("MCP problems shown in the menu bar", () => {
   test("a login problem says where the login works", () => {

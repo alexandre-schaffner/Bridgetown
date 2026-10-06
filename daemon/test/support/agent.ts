@@ -1,7 +1,7 @@
 import type { SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import { Effect } from "effect"
-import type { AgentShape } from "../../src/sessions/agent.ts"
-import type { SessionResult } from "../../src/sessions/output.ts"
+import type { AgentShape } from "../../src/agent/agent.ts"
+import type { SessionResult } from "../../src/agent/result.ts"
 import * as Sdk from "./sdk.ts"
 import { eventually } from "./wait.ts"
 

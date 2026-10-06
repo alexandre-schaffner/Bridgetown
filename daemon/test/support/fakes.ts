@@ -1,12 +1,12 @@
 import { Effect } from "effect"
+import type { AgentShape } from "../../src/agent/agent.ts"
 import type { ReviewerShape } from "../../src/critique/reviewer.ts"
 import type { JevVerdict } from "../../src/domain/alert.ts"
 import { MissingCredential } from "../../src/domain/errors.ts"
 import type { GrafanaShape } from "../../src/grafana/client.ts"
-import type { AgentShape } from "../../src/sessions/agent.ts"
+import type { JevShape } from "../../src/jev.ts"
 import type { GitHubShape } from "../../src/ship/github.ts"
 import type { SlackClientShape, SlackMessage } from "../../src/slack/client.ts"
-import type { JevShape } from "../../src/jev.ts"
 
 /**
  * The outside world, faked for the tests and the mock daemon. Each fake takes the methods a caller is about and

@@ -2,12 +2,12 @@ import { randomUUID } from "node:crypto"
 import type { NonNullableUsage, Options, SDKAssistantMessage, SDKResultSuccess, SDKSystemMessage } from "@anthropic-ai/claude-agent-sdk"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
-import type { SessionResult } from "../../src/sessions/output.ts"
-import { TOOL_SERVER } from "../../src/sessions/tools.ts"
+import type { SessionResult } from "../../src/agent/result.ts"
+import { TOOL_SERVER } from "../../src/agent/tools.ts"
 
 /**
  * What the Claude CLI does for the daemon, by hand, for the tests' agents and the mock's scripted one: the Agent SDK
- * messages it streams (only `system/init`, `assistant` and `result` matter to `sessions/sdk-events.ts`; the
+ * messages it streams (only `system/init`, `assistant` and `result` matter to `agent/events.ts`; the
  * bookkeeping fields are zeros), and its calls to Bridgetown's tools.
  */
 

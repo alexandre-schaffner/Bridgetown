@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto"
 import { basename } from "node:path"
 import type { Options, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
-import type { AgentShape } from "../../src/sessions/agent.ts"
-import type { SessionResult } from "../../src/sessions/output.ts"
-import { TOOL_SERVER } from "../../src/sessions/tools.ts"
+import type { AgentShape } from "../../src/agent/agent.ts"
+import type { SessionResult } from "../../src/agent/result.ts"
+import { TOOL_SERVER } from "../../src/agent/tools.ts"
 import * as Sdk from "../../test/support/sdk.ts"
 
 /**

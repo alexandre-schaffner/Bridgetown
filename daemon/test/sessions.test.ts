@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { impliedPhase } from "../src/agent/events.ts"
+import { repoMcpServers } from "../src/agent/options.ts"
+import { SESSION_RESULT_JSON_SCHEMA, SessionResult } from "../src/agent/result.ts"
 import { ownPrUrl } from "../src/ship/pr.ts"
-import { SESSION_RESULT_JSON_SCHEMA, SessionResult } from "../src/sessions/output.ts"
-import { impliedPhase } from "../src/sessions/sdk-events.ts"
-import { repoMcpServers } from "../src/sessions/sdk-options.ts"
 import { scratchDir } from "./support/tmp.ts"
 
 describe("implied phase", () => {

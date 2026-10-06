@@ -1,18 +1,18 @@
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import { type Cause, Effect, Exit, FiberSet, Queue, Stream } from "effect"
+import { abortOnReturn, type AgentShape } from "../agent/agent.ts"
+import { type EventSink, handleMessage, type TurnEnd } from "../agent/events.ts"
+import { sdkOptions } from "../agent/options.ts"
+import type { ToolCallbacks } from "../agent/tools.ts"
 import { AdapterError, errorMessage } from "../domain/errors.ts"
 import type { Session } from "../domain/session.ts"
 import type { HubShape } from "../hub.ts"
-import type { SlackThreadShape } from "../slack/thread.ts"
 import { truncate } from "../lib/text.ts"
+import type { SlackThreadShape } from "../slack/thread.ts"
 import type { StoreShape } from "../store/store.ts"
-import { abortOnReturn, type AgentShape } from "./agent.ts"
 import type { AsksShape } from "./asks.ts"
 import { slackContextText } from "./prompts.ts"
 import type { SessionRepoShape } from "./repo.ts"
-import { type EventSink, handleMessage, type TurnEnd } from "./sdk-events.ts"
-import { sdkOptions } from "./sdk-options.ts"
-import type { ToolCallbacks } from "./tools.ts"
 
 /**
  * A turn's streaming input. The first prompt goes in when the turn is claimed;

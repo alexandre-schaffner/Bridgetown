@@ -1,12 +1,12 @@
 import type { NewAction } from "../actions/queue.ts"
+import type { SessionResult } from "../agent/result.ts"
 import type { Alert } from "../domain/alert.ts"
 import { passedAt } from "../domain/critique.ts"
 import { type HandOff, isOwnBranch, type SentBack, type Session, type SessionStatus, shipStatus } from "../domain/session.ts"
 import type { PrHead } from "../ship/github.ts"
-import * as Messages from "../slack/messages.ts"
 import { prLabel } from "../ship/pr.ts"
 import { releasePrefixOf } from "../ship/tags.ts"
-import type { SessionResult } from "./output.ts"
+import * as Messages from "../slack/messages.ts"
 import { pushBackPrompt } from "./prompts.ts"
 
 /** Times an agent that hands off without a root cause is sent back before the user sees it. */

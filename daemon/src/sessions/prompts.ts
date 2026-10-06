@@ -1,7 +1,7 @@
+import type { SessionResult } from "../agent/result.ts"
 import { GH_HOST } from "../config.ts"
 import { type Alert, type AlertKind, channelLabel, type ThreadReply } from "../domain/alert.ts"
 import type { Session } from "../domain/session.ts"
-import type { SessionResult } from "./output.ts"
 
 const playbooks = (deploymentRepo: string): Readonly<Record<AlertKind, string>> => ({
   build_failure: [

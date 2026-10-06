@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
+import type { SessionResult } from "../src/agent/result.ts"
 import type { Alert } from "../src/domain/alert.ts"
 import { isOwnBranch, NO_MILESTONES, type Session, type SessionStatus, shipStatus } from "../src/domain/session.ts"
 import { decideOutcome, type FinalizeInput } from "../src/sessions/finalize.ts"
-import type { SessionResult } from "../src/sessions/output.ts"
 import type { PrHead } from "../src/ship/github.ts"
 import { makeAlert, makeSession } from "./support/records.ts"
 

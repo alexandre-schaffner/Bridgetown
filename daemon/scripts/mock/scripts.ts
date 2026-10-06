@@ -1,4 +1,4 @@
-import type { SessionResult } from "../../src/sessions/output.ts"
+import type { SessionResult } from "../../src/agent/result.ts"
 import type { Script, Step, Turn } from "./agent.ts"
 import { ASK, pr, RUNNING_NOTE, SESSION } from "./fixtures.ts"
 
