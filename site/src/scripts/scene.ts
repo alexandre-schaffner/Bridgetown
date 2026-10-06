@@ -263,8 +263,6 @@ export interface ArchScene {
   snap(): void;
   /** The colour the hero floods to: the page's day, which the theme can change. */
   setDay(day: THREE.Color): void;
-  /** One exact frame, for pre-rendering: this camera, this moment, this light, no easing. */
-  still(view: View, time: number, light: LightName): void;
   /**
    * Compiles every shader and draws one frame unseen, so the first visible frame doesn't stall
    * the page. `beat` resolves when the page is free to take a short hitch.
@@ -278,24 +276,17 @@ export function createArchScene(
     day,
     reducedMotion,
     onFirstFrame,
-    ultra = false,
   }: {
     day: THREE.Color;
     reducedMotion: boolean;
     onFirstFrame?: () => void;
-    /**
-     * Offline quality for pre-rendered frames (dev/render.ts): drawn at twice the size,
-     * more fog and motes, twice the shaft samples, full-size mirror and light pass, no
-     * baked grain (the page lays its own over the frames), and no frame loop.
-     */
-    ultra?: boolean;
   },
 ): ArchScene {
-  const small = !ultra && Math.min(window.innerWidth, window.innerHeight) < 700;
+  const small = Math.min(window.innerWidth, window.innerHeight) < 700;
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
   // Resolution is budgeted, not taken from the screen: a 5K display would otherwise ask for
   // fifteen million pixels a frame. Grain and bloom hide the upscale. See resize() and fit().
-  const budget = ultra ? Infinity : small ? 1.6e6 : 4.2e6;
+  const budget = small ? 1.6e6 : 4.2e6;
   let quality = 1;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
@@ -338,8 +329,8 @@ export function createArchScene(
 
   // Polished black stone underfoot: a mirror, darkened.
   const mirror = new Reflector(new THREE.PlaneGeometry(60, 60), {
-    textureWidth: ultra ? window.innerWidth * 2 : Math.round(Math.min(window.innerWidth, 1600) * (small ? 0.4 : 0.6)),
-    textureHeight: ultra ? window.innerHeight * 2 : Math.round(Math.min(window.innerHeight, 1000) * (small ? 0.4 : 0.6)),
+    textureWidth: Math.round(Math.min(window.innerWidth, 1600) * (small ? 0.4 : 0.6)),
+    textureHeight: Math.round(Math.min(window.innerHeight, 1000) * (small ? 0.4 : 0.6)),
     color: new THREE.Color("#7a808a"),
     clipBias: 0.003,
   });
@@ -452,7 +443,7 @@ export function createArchScene(
   };
 
   // The air: mist, a far haze, motes in the beam.
-  const air = createAtmosphere({ floor: FLOOR, small, ultra });
+  const air = createAtmosphere({ floor: FLOOR, small });
   scene.add(air.group);
 
   // The mirror shows the stone and the light, not the air: reflecting the mist and motes
@@ -468,8 +459,8 @@ export function createArchScene(
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
   const shafts = new ShaderPass(ShaftsShader);
-  shafts.uniforms.uSamples!.value = ultra ? 80 : small ? 28 : 40;
-  // The light alone, the arch black in front of it, at half size: what the shafts scatter.
+  shafts.uniforms.uSamples!.value = small ? 28 : 40;
+  // The light alone, the arch black in front of it, at 0.4 of the size: what the shafts scatter.
   const lightTarget = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
   shafts.uniforms.tLight!.value = lightTarget.texture;
   const silhouette = new THREE.MeshBasicMaterial({ color: 0x000000 });
@@ -522,7 +513,6 @@ export function createArchScene(
   const grade = new ShaderPass(GradeShader);
   const { r: dr, g: dg, b: db } = day.getRGB({ r: 1, g: 1, b: 1 }, THREE.SRGBColorSpace);
   grade.uniforms.uDay!.value = new THREE.Vector3(dr, dg, db);
-  if (ultra) grade.uniforms.uGrain!.value = 0;
   composer.addPass(grade);
 
   // State.
@@ -546,13 +536,12 @@ export function createArchScene(
     const w = canvas.clientWidth || window.innerWidth;
     const h = canvas.clientHeight || window.innerHeight;
     // The screen's density, held under the pixel budget, then scaled by how the frames are going.
-    const ratio = ultra ? 2 : Math.min(window.devicePixelRatio, 2, Math.sqrt(budget / (w * h))) * quality;
+    const ratio = Math.min(window.devicePixelRatio, 2, Math.sqrt(budget / (w * h))) * quality;
     renderer.setPixelRatio(ratio);
     composer.setPixelRatio(ratio);
     renderer.setSize(w, h, false);
     composer.setSize(w, h);
-    const lightScale = ultra ? 0.75 : 0.4;
-    lightTarget.setSize(Math.round(w * ratio * lightScale), Math.round(h * ratio * lightScale));
+    lightTarget.setSize(Math.round(w * ratio * 0.4), Math.round(h * ratio * 0.4));
     bloom.resolution.set(w * ratio, h * ratio);
     camera.aspect = w / h;
     // Narrow screens: widen the lens so the arch keeps its margins.
@@ -684,7 +673,7 @@ export function createArchScene(
     resize();
     drawn = "";
   });
-  if (!ultra) raf = requestAnimationFrame(frame);
+  raf = requestAnimationFrame(frame);
 
   return {
     view,
@@ -693,7 +682,7 @@ export function createArchScene(
       lightSpeed = 1 / Math.max(0.05, seconds);
     },
     setActive(next) {
-      if (next === active || ultra) return;
+      if (next === active) return;
       active = next;
       cancelAnimationFrame(raf);
       if (!next) return;
@@ -706,15 +695,6 @@ export function createArchScene(
     },
     snap() {
       Object.assign(eased, view);
-    },
-    still(v, time, name) {
-      Object.assign(view, v);
-      Object.assign(eased, v);
-      target = LIGHTS[name];
-      light.color.copy(target.color);
-      light.level = target.level;
-      light.lamps.forEach((lamp, i) => Object.assign(lamp, target.lamps[i]));
-      draw(time, 1 / 60, 0);
     },
     async prepare(beat) {
       // The stones and the floor compile off the main thread where the browser can; the

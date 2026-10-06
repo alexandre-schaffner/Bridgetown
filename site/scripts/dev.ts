@@ -1,6 +1,6 @@
-// What the scripts that drive the rigs (record.ts, render-hero.ts) share. The rigs exist only in
-// `astro dev`, so each script starts a dev server of its own on a free port (not the
-// lock-holding one you may have open) and opens it in the cached Chromium.
+// What the script that drives the film rigs (record.ts) needs. The rigs exist only in
+// `astro dev`, so it starts a dev server of its own on a free port (not the lock-holding one
+// you may have open) and opens it in the cached Chromium.
 
 import { chromium } from "playwright-core";
 import { spawn } from "node:child_process";

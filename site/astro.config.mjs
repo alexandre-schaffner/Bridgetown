@@ -1,15 +1,15 @@
 import { defineConfig } from "astro/config";
 
 /**
- * The rigs the films and the hero frames are made with (src/dev/): pages in `astro dev`, and
- * nowhere in the build, so none of their code or styles ship.
+ * The rigs the films are made with (src/dev/): pages in `astro dev`, and nowhere in the
+ * build, so none of their code or styles ship.
  */
 const devRigs = {
   name: "dev-rigs",
   hooks: {
     "astro:config:setup": ({ command, injectRoute }) => {
       if (command !== "dev") return;
-      for (const rig of ["film", "launch", "render"]) {
+      for (const rig of ["film", "launch"]) {
         injectRoute({ pattern: `/${rig}`, entrypoint: `./src/dev/${rig}.astro` });
       }
     },

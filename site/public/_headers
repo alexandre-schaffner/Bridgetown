@@ -21,7 +21,3 @@
 # Films and posters: long-lived, but they can be replaced in place.
 /media/*
   Cache-Control: public, max-age=604800
-
-# The hero's pre-rendered frames and loops: fixed for a given render.
-/hero/*
-  Cache-Control: public, max-age=604800

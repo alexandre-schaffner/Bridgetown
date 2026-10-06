@@ -126,7 +126,7 @@ describe("the Worker", () => {
   test("no range, or a file it has no length for, goes straight to the assets", async () => {
     const { env: e, calls } = env();
     expect((await worker.fetch(get(path), e)).status).toBe(200);
-    expect((await worker.fetch(get("/hero/m/loop.mp4", "bytes=0-1"), e)).status).toBe(200);
-    expect(calls.map((c) => new URL(c.url).pathname)).toEqual([path, "/hero/m/loop.mp4"]);
+    expect((await worker.fetch(get("/media/teaser.mp4", "bytes=0-1"), e)).status).toBe(200);
+    expect(calls.map((c) => new URL(c.url).pathname)).toEqual([path, "/media/teaser.mp4"]);
   });
 });

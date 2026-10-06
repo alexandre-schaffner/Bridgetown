@@ -11,6 +11,6 @@
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "404-page",
-    "run_worker_first": ["/media/*", "/hero/*/loop.mp4"],
+    "run_worker_first": ["/media/*"],
   },
 }

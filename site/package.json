@@ -9,7 +9,6 @@
     "test": "node scripts/media-manifest.mjs && bun test",
     "e2e": "bun scripts/e2e.ts",
     "record": "bun scripts/record.ts",
-    "render:hero": "bun scripts/render-hero.ts",
     "deploy": "node scripts/ci-only.mjs && wrangler deploy"
   },
   "dependencies": {

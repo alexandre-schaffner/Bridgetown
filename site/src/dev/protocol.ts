@@ -1,5 +1,4 @@
-// What the rigs put on window for the scripts that drive them: the film rigs (rig.ts) for the
-// recorder (scripts/record.ts), the frame renderer (render.ts) for scripts/render-hero.ts.
+// What the film rigs (rig.ts) put on window for the recorder that drives them (scripts/record.ts).
 
 export interface FilmRig {
   /** The scene has drawn, the fonts are in: recording can start. */
@@ -16,17 +15,10 @@ export interface FilmRig {
   start(): void;
 }
 
-export interface FrameRenderer {
-  ready: boolean;
-  /** The hero at scroll progress `p` and scene time `t` (seconds), as a PNG data URL. */
-  hero(p: number, t: number): string;
-}
-
 declare global {
   interface Window {
     __film: FilmRig;
     /** On the virtual clock (`?vt`, RigLayout.astro): moves time on by `ms` and draws a frame. */
     __advance(ms: number): void;
-    __render: FrameRenderer;
   }
 }
