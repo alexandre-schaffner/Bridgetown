@@ -6,7 +6,7 @@ import type { Session } from "../domain/session.ts"
 import type { SessionRepoShape } from "../sessions/repo.ts"
 import type { SessionRunnerShape } from "../sessions/runner.ts"
 import type { ShipperShape } from "../ship/shipper.ts"
-import { toMrkdwn } from "../slack/text.ts"
+import { toMrkdwn } from "../slack/mrkdwn.ts"
 import type { SlackThreadShape } from "../slack/thread.ts"
 import type { StoreShape } from "../store/store.ts"
 

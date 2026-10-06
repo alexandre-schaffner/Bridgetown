@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { isPerson, toThreadReplies } from "../src/slack/text.ts"
+import { isPerson, toThreadReplies } from "../src/slack/mrkdwn.ts"
 
 describe("toThreadReplies: one author rule", () => {
   test("bot, then Bridgetown's own posts, then me, then teammates", () => {

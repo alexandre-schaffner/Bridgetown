@@ -1,8 +1,8 @@
 import type { InboxFields, ParsedAlert } from "../domain/alert.ts"
+import { firstLine, truncate } from "../lib/text.ts"
 import { findPrUrl } from "../ship/pr.ts"
 import type { SearchMatch, SlackMessage } from "./client.ts"
-import { firstLine, truncate } from "../lib/text.ts"
-import { BOT_PREFIX, clean, flattenMessage, isPerson } from "./text.ts"
+import { BOT_PREFIX, clean, flattenMessage, isPerson } from "./mrkdwn.ts"
 
 export type InboxVia = InboxFields["via"]
 

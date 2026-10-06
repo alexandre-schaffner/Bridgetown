@@ -1,8 +1,8 @@
 import type { AlertSource, EngineFields, ParsedAlert, ReleaseFields, Stage, StageStatus, UptimeFields, UptimeState } from "../domain/alert.ts"
 import { releaseHeadline, releaseState } from "../domain/release.ts"
-import type { SlackMessage } from "./client.ts"
 import { firstLine, truncate } from "../lib/text.ts"
-import { clean, flattenMessage, plain, stripEmoji } from "./text.ts"
+import type { SlackMessage } from "./client.ts"
+import { clean, flattenMessage, plain, stripEmoji } from "./mrkdwn.ts"
 
 /** Raw text handed to Jev and to agents. Engine alerts embed whole XDR envelopes. */
 const RAW_LIMIT = 4_000

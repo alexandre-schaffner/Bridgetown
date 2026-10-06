@@ -1,10 +1,10 @@
 import { Context, Effect, Layer } from "effect"
 import type { Alert, Claimant } from "../domain/alert.ts"
-import * as Messages from "./messages.ts"
+import { firstLine, truncate } from "../lib/text.ts"
 import { SlackClient, type SlackMessage, type SlackReaction } from "./client.ts"
 import { SlackMe } from "./me.ts"
-import { firstLine, truncate } from "../lib/text.ts"
-import { BOT_PREFIX, isPerson, plain } from "./text.ts"
+import * as Messages from "./messages.ts"
+import { BOT_PREFIX, isPerson, plain } from "./mrkdwn.ts"
 import { SlackThread } from "./thread.ts"
 
 /**

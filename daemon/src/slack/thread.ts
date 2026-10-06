@@ -4,7 +4,7 @@ import { Hub } from "../hub.ts"
 import { clock } from "../lib/text.ts"
 import { SlackClient, type SlackMessage } from "./client.ts"
 import { SlackMe } from "./me.ts"
-import { BOT_PREFIX, flattenMessage, plain, toThreadReplies } from "./text.ts"
+import { BOT_PREFIX, flattenMessage, plain, toThreadReplies } from "./mrkdwn.ts"
 
 export interface SlackThreadShape {
   /** Posts `🤖 <text>` in the alert's thread as the user. Never fails; a no-op in dry-run. Says whether it went out. */

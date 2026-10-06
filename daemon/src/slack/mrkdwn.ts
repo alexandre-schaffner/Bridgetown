@@ -1,6 +1,8 @@
 import type { ThreadReply } from "../domain/alert.ts"
 import type { SlackMessage } from "./client.ts"
 
+/** Slack messages as text: flattened to one mrkdwn string, read as plain text or written from an agent's Markdown, and who wrote them. */
+
 /** Marks everything Bridgetown posts as the user, so it is never mistaken for them (or re-ingested). */
 export const BOT_PREFIX = "🤖"
 

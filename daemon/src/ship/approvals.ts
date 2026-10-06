@@ -1,4 +1,4 @@
-import { toMrkdwn } from "../slack/text.ts"
+import { toMrkdwn } from "../slack/mrkdwn.ts"
 import { prNumber, revvLink } from "./pr.ts"
 
 /** Who approves a fix before it merges: the approvals channel and owning team for what it ships, and the message that asks them. */
