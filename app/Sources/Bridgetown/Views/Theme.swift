@@ -122,11 +122,12 @@ extension Text {
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    /// The line of detail under a row's title, a step quieter: up to two lines.
-    func rowDetail() -> some View {
+    /// The line of detail under a row's title, a step quieter (two steps when `quiet`): up
+    /// to two lines.
+    func rowDetail(quiet: Bool = false) -> some View {
         font(Typo.body)
             .lineSpacing(Typo.rowLineSpacing)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(quiet ? .tertiary : .secondary)
             .lineLimit(2)
             .truncationMode(.tail)
             .fixedSize(horizontal: false, vertical: true)

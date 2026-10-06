@@ -41,12 +41,7 @@ struct JobRow: View {
                             .font(Typo.time)
                             .foregroundStyle(.tertiary)
                     }
-                    subtitle
-                        .font(Typo.body)
-                        .lineSpacing(Typo.rowLineSpacing)
-                        .lineLimit(2)
-                        .truncationMode(.tail)
-                        .fixedSize(horizontal: false, vertical: true)
+                    subtitle.rowDetail(quiet: session.tone.isQuiet)
                 }
             }
             StepTrack(session: session)
@@ -58,13 +53,12 @@ struct JobRow: View {
 
     /// "#alert-dev · Waiting on you · Asked: …": where it came from, the daemon's headline
     /// in its tone, then what the agent is doing if that adds anything.
-    private var subtitle: some View {
-        var text = Text("\(Format.channel(session.channelName)) · ")
-            + session.tone.headline(session.headline)
+    private var subtitle: Text {
+        let text = Text("\(Format.channel(session.channelName)) · ") + session.tone.headline(session.headline)
         let detail = Markdown.plain(session.statusDetail)
         if !detail.isEmpty, !session.headline.localizedCaseInsensitiveContains(detail) {
-            text = text + Text(" · \(detail)")
+            return text + Text(" · \(detail)")
         }
-        return text.foregroundStyle(session.tone.isQuiet ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
+        return text
     }
 }

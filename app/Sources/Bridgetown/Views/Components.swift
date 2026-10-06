@@ -97,7 +97,7 @@ struct ChannelChip: View {
     }
 }
 
-// MARK: Icon button
+// MARK: Feedback
 
 /// 👍 / 👎 on Jev's call for an alert: labels the verdict for calibration. The chosen one
 /// is filled; choosing again changes the label.
@@ -133,7 +133,9 @@ struct FeedbackThumbs: View {
     }
 }
 
-/// Borderless SF Symbol button used in headers (pause, gear, dismiss).
+// MARK: Icon button
+
+/// A borderless SF Symbol button: a detail's back chevron, a card's dismiss cross.
 struct IconButton: View {
     let systemName: String
     let help: String
@@ -145,15 +147,12 @@ struct IconButton: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: size, weight: weight))
-                // Pause becomes play (and back) as one symbol morphing, not a swap.
-                .contentTransition(.symbolEffect(.replace))
                 .frame(width: 24, height: 24)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
         .hoverFill(radius: 6)
-        .animation(Easing.state, value: systemName)
         .help(help)
         .accessibilityLabel(help)
     }
