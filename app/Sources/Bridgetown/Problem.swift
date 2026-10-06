@@ -49,13 +49,14 @@ struct Problem: Identifiable, Equatable {
                     ? "The daemon on port \(port) rejected the API token. Check BRIDGETOWN_API_TOKEN."
                     : "Another Bridgetown daemon is running on port \(port)."
                 out.append(.init(id: "daemon", text: text, severity: .error))
+            // The reason names the daemon already ("Daemon not reachable").
             case let .disconnected(reason):
-                out.append(.init(id: "daemon", text: "Daemon disconnected · \(reason)", severity: .error))
+                out.append(.init(id: "daemon", text: "Disconnected · \(reason)", severity: .error))
             case .connecting where daemonState == .missing:
                 out.append(.init(id: "daemon", text: "No daemon bundled. Set BRIDGETOWN_DAEMON_CMD or BRIDGETOWN_ATTACH=1.", severity: .error))
             case .connecting:
                 if let reason = lastConnectError, daemonMode == .attach {
-                    out.append(.init(id: "daemon", text: "Waiting for daemon · \(reason)", severity: .warning))
+                    out.append(.init(id: "daemon", text: "Attaching · \(reason)", severity: .warning))
                 }
             case .connected:
                 break

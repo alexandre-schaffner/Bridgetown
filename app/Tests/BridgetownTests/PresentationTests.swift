@@ -92,6 +92,11 @@ import Testing
         #expect(lines.first?.text.contains("BRIDGETOWN_API_TOKEN") == true)
     }
 
+    /// The reason is the client's, and it names the daemon already.
+    @Test func aDisconnectSaysTheDaemonOnce() {
+        #expect(problems(connection: .disconnected("Daemon not reachable")).first?.text == "Disconnected · Daemon not reachable")
+    }
+
     @Test func statusProblemsOnlyWhileConnected() throws {
         let status = try Fixture.snapshot().status
         #expect(!problems(connection: .disconnected("gone"), status: status).contains { $0.id == "github" })
