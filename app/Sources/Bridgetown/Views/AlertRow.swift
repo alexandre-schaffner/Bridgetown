@@ -84,26 +84,32 @@ struct AlertRow: View {
         .padding(.vertical, 15)
     }
 
+    /// A request for the alert in flight closes what would send another: a second
+    /// "Investigate" could start a second agent before the first session exists.
     @ViewBuilder
     private var menu: some View {
+        let busy = store.isBusy(alert.id)
         Button("Show details") { store.show(.alert(alert.id)) }
         if let id = alert.sessionId, store.snapshot?.session(id: id) != nil {
             Button("Show session") { store.show(.session(id)) }
         }
         Divider()
         Button("Investigate anyway") { store.investigate(alert) }
-            .disabled(session?.isActive == true)
+            .disabled(session?.isActive == true || busy)
         Divider()
-        Button {
-            store.feedback(alert, .good)
-        } label: {
-            Label("Good call", systemImage: alert.feedback == .good ? "checkmark" : "hand.thumbsup")
+        Group {
+            Button {
+                store.feedback(alert, .good)
+            } label: {
+                Label("Good call", systemImage: alert.feedback == .good ? "checkmark" : "hand.thumbsup")
+            }
+            Button {
+                store.feedback(alert, .bad)
+            } label: {
+                Label("Bad call", systemImage: alert.feedback == .bad ? "checkmark" : "hand.thumbsdown")
+            }
         }
-        Button {
-            store.feedback(alert, .bad)
-        } label: {
-            Label("Bad call", systemImage: alert.feedback == .bad ? "checkmark" : "hand.thumbsdown")
-        }
+        .disabled(busy)
         Divider()
         Button(alert.permalinkLabel) { SystemActions.open(alert.permalink) }
             .disabled(alert.permalink == nil)
