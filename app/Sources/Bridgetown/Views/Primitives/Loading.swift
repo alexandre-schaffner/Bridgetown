@@ -24,8 +24,9 @@ struct Loadable<Value> {
 }
 
 /// Loads a value from the daemon and keeps it fresh: refetched every minute while on
-/// screen. Reopening the island keeps the value it had; only a different key starts
-/// over. A failed refetch keeps the last value.
+/// screen. A failed refetch keeps the last value; a different key starts over. The value
+/// lives as long as the view, so a tab shown again or the island reopened fetches anew,
+/// a local hop: the daemon keeps each board a minute and the last log sweep in its store.
 struct PollingLoader<Value, Content: View>: View {
     let key: String
     let fetch: () async throws -> Value
