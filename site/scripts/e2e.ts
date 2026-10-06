@@ -13,9 +13,10 @@
 // in red), sheets/ and checks/ (the screen when a check failed). Exits 0 when clean, 1 on lint
 // errors or a failed check, 2 when the harness itself failed.
 //
-// usage: bun scripts/e2e.ts [--quick] [--only <part of a shot name>] [--no-build]
+// usage: bun scripts/e2e.ts [--quick] [--only <part of a shot name>] [--no-build] [--dist <dir>]
 //   --quick     one stop per section instead of one per screen
 //   --only      e.g. `--only 375x812`, `--only home.1920x1080.reduce`, `--only checks`
+//   --dist      walk another build as it is (main's, say, to compare shots), without building
 
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -27,16 +28,17 @@ import { CHECKS, type Check } from "./e2e/checks";
 import { ALLOW, lintPage, type Issue, type Rule } from "./e2e/lint";
 import { MOTIONS, VIEWPORTS, type Motion, type Viewport } from "./e2e/screens";
 
-const SITE = resolve(import.meta.dir, "..");
-const ROOT = resolve(SITE, "..");
-const DIST = join(SITE, "dist");
-
 const args = process.argv.slice(2);
 const flag = (name: string) => args.includes(name);
 const option = (name: string) => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : undefined;
 };
+
+const SITE = resolve(import.meta.dir, "..");
+const ROOT = resolve(SITE, "..");
+const OTHER = option("--dist");
+const DIST = OTHER ? resolve(OTHER) : join(SITE, "dist");
 const QUICK = flag("--quick");
 const ONLY = option("--only");
 
@@ -405,6 +407,7 @@ function report(out: string, run: string, browser: string, walks: Walk[], checks
       {
         run,
         commit: `${git("rev-parse", "--short", "HEAD")}${git("status", "--porcelain") ? "+dirty" : ""}`,
+        dist: DIST,
         os: `${process.platform} ${release()}`,
         browser,
         durationMs: Date.now() - started,
@@ -420,7 +423,7 @@ function report(out: string, run: string, browser: string, walks: Walk[], checks
   const line =
     `${summary.shots} shots, ${summary.errors} errors, ${summary.warnings} warnings, ${summary.allowed} allowed; ` +
     `${checks.length - broken.length} of ${checks.length} checks pass${failed.length ? `; ${failed.length} walks failed` : ""}`;
-  const md: string[] = [`# Site e2e · ${run}`, "", line, ""];
+  const md: string[] = [`# Site e2e · ${run}`, "", ...(OTHER ? [`The build in ${DIST}, not this tree's.`, ""] : []), line, ""];
   if (checks.length) {
     md.push("## Checks", "");
     for (const c of checks) {
@@ -502,7 +505,7 @@ for (const d of ["shots", "issues", "sheets", "checks"]) mkdirSync(join(out, d),
 
 let code = 2;
 try {
-  if (!flag("--no-build")) buildIfStale();
+  if (!flag("--no-build") && !OTHER) buildIfStale();
   const server = serve(out);
   const browser = await chromium.launch({
     headless: true,
