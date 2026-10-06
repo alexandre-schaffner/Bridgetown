@@ -1,6 +1,6 @@
 import type { HookCallback } from "@anthropic-ai/claude-agent-sdk"
+import { commandOf, type GuardContext, hostRefusal, refusal } from "./bash.ts"
 import { pathOf, WRITE_TOOLS, writeRefusal } from "./confine.ts"
-import { commandOf, type GuardContext, hostRefusal, refusal } from "./guard.ts"
 
 /** Everything one tool call is checked against: the shell-command policy context plus the write boundary. */
 export interface ToolGuard extends GuardContext {

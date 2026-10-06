@@ -1,9 +1,9 @@
 import { closeSync, openSync, readSync, statSync } from "node:fs"
 import { homedir } from "node:os"
 import { basename, isAbsolute, resolve } from "node:path"
-import { firstPositional, flags, REASONS } from "./guard-reasons.ts"
-import { ghRefusal, githubApiWriteRefusal, gitRefusal } from "./guard-vcs.ts"
+import { firstPositional, flags, REASONS } from "./reasons.ts"
 import { type Command, parseShell, type Word } from "./shell.ts"
+import { ghRefusal, githubApiWriteRefusal, gitRefusal } from "./vcs.ts"
 
 export interface GuardContext {
   /** The session's own branch, the only one it may push. */

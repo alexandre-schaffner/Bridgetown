@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { readScript } from "../src/sessions/guard.ts"
-import { type ToolGuard, toolRefusal } from "../src/sessions/tool-guard.ts"
+import { readScript } from "../src/guard/bash.ts"
+import { type ToolGuard, toolRefusal } from "../src/guard/hook.ts"
 
 const guard: ToolGuard = { branch: "fix-bt-foo-abcd", cwd: "/w", daemonPort: 47621, readFile: readScript, worktree: "/w" }
 

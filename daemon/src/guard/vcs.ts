@@ -1,7 +1,7 @@
 import { GH_HOST } from "../config.ts"
 import { isOwnBranch } from "../domain/session.ts"
 import { escapeRegExp } from "../lib/text.ts"
-import { flags, REASONS } from "./guard-reasons.ts"
+import { flags, REASONS } from "./reasons.ts"
 import type { Word } from "./shell.ts"
 
 /**

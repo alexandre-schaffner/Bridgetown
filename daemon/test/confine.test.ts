@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { mkdirSync, symlinkSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { writeRefusal } from "../src/sessions/confine.ts"
+import { writeRefusal } from "../src/guard/confine.ts"
 import { scratchDir } from "./support/tmp.ts"
 
 const root = scratchDir("bt-confine-")

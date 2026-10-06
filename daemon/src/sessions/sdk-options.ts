@@ -4,10 +4,10 @@ import type { CanUseTool, McpServerConfig, Options } from "@anthropic-ai/claude-
 import { Schema } from "effect"
 import { GH_HOST } from "../config.ts"
 import type { Session } from "../domain/session.ts"
+import { readScript } from "../guard/bash.ts"
+import { type ToolGuard, toolGuard, toolRefusal } from "../guard/hook.ts"
 import { childEnv } from "../secrets.ts"
-import { readScript } from "./guard.ts"
 import { SESSION_RESULT_JSON_SCHEMA } from "./output.ts"
-import { type ToolGuard, toolGuard, toolRefusal } from "./tool-guard.ts"
 import { makeToolServer, TOOL_SERVER, type ToolCallbacks } from "./tools.ts"
 
 const MAX_TURNS = 400
