@@ -1,7 +1,7 @@
 import { Context, Effect, Layer, Schema } from "effect"
 import { GH_HOST, GHE_REPO } from "../config.ts"
 import { type AdapterError, decodeOr, GheBlocked, type GitHubError } from "../domain/errors.ts"
-import { run, runOk } from "../proc.ts"
+import { run, runOk } from "../lib/proc.ts"
 import { nextTagFrom } from "./tags.ts"
 
 /** What `gh` / git print when the Merkl org's IP allow list refuses this network. */

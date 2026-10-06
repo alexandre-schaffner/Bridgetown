@@ -1,6 +1,6 @@
 import { Effect } from "effect"
-import { AdapterError, attempt, errorMessage } from "./domain/errors.ts"
-import { childEnv } from "./secrets.ts"
+import { AdapterError, attempt, errorMessage } from "../domain/errors.ts"
+import { childEnv } from "../secrets.ts"
 
 export interface CommandResult {
   readonly exitCode: number

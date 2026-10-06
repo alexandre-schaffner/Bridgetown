@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Fiber } from "effect"
-import { makeKeyedLock } from "../src/store/keyed-lock.ts"
+import { makeKeyedLock } from "../src/lib/keyed-lock.ts"
 
 describe("keyed lock", () => {
   test("serializes one key and forgets it once every holder is done", async () => {

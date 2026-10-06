@@ -9,7 +9,7 @@ import { Alert, type Disposition } from "../domain/alert.ts"
 import { AdapterError, decodeOr, errorMessage } from "../domain/errors.ts"
 import { now } from "../domain/ids.ts"
 import { ACTIVE_STATUSES, Session, SessionStatus, TranscriptEntry } from "../domain/session.ts"
-import { makeKeyedLock } from "./keyed-lock.ts"
+import { makeKeyedLock } from "../lib/keyed-lock.ts"
 import { migrations } from "./migrations.ts"
 
 /** What retention reads of every alert and session, without decoding their JSON. */

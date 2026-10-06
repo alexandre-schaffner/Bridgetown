@@ -4,8 +4,8 @@ import { basename, join } from "node:path"
 import { Context, Effect, Layer } from "effect"
 import { Environment } from "../config.ts"
 import { AdapterError, attempt } from "../domain/errors.ts"
-import { run, runOk } from "../proc.ts"
-import { makeKeyedLock } from "../store/keyed-lock.ts"
+import { run, runOk } from "../lib/proc.ts"
+import { makeKeyedLock } from "../lib/keyed-lock.ts"
 
 const INSTALL_TIMEOUT_MS = 10 * 60_000
 /** A session worktree is a monorepo checkout plus its node_modules: hundreds of thousands of files to delete. */

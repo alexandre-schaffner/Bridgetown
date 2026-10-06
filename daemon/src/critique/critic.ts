@@ -5,7 +5,7 @@ import { type Critique, critiquePassed, type Finding, findingsUnanswered, passed
 import { type AdapterError, errorMessage } from "../domain/errors.ts"
 import type { HandOff, Session } from "../domain/session.ts"
 import { Hub } from "../hub.ts"
-import { run } from "../proc.ts"
+import { run } from "../lib/proc.ts"
 import { cannotResume, makeHandOff } from "../sessions/hand-off.ts"
 import { SessionRepo } from "../sessions/repo.ts"
 import { SessionRunner } from "../sessions/runner.ts"

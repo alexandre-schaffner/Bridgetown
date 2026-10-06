@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { Effect, Fiber } from "effect"
-import { run, runOk } from "../src/proc.ts"
+import { run, runOk } from "../src/lib/proc.ts"
 import { scratchDir } from "./support/tmp.ts"
 
 const alive = (pid: number): boolean => {

@@ -6,7 +6,7 @@ import type { Depth } from "../domain/alert.ts"
 import { ReviewFinding, type ReviewerVendor } from "../domain/critique.ts"
 import { AdapterError, attempt, decodeOr } from "../domain/errors.ts"
 import type { Effort } from "../domain/session.ts"
-import { run, runOk } from "../proc.ts"
+import { run, runOk } from "../lib/proc.ts"
 
 export interface ReviewerProfile {
   readonly vendor: ReviewerVendor
