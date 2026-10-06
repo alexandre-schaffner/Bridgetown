@@ -265,7 +265,9 @@ describe("Watcher.tick with a session already on the signal", () => {
       }),
     )
     const stored = await world.runPromise(Store.use((store) => store.alertsByFingerprint("watch:api_5xx", new Date(0).toISOString())))
-    expect(stored.find((a) => a.id !== earlier.id)).toMatchObject({ sessionId: "s_watch", triage: { decision: "filtered" } })
+    const finding = stored.find((a) => a.id !== earlier.id)
+    expect(finding).toMatchObject({ sessionId: "s_watch", triage: { decision: "filtered", reason: "Same signal as a running session" } })
+    expect(finding?.events.at(-1)?.text).toBe("Attached to a running session: Same signal as a running session")
     expect(judged).toBe(0)
     expect(await world.runPromise(ActionQueue.use((queue) => queue.list))).toEqual([])
     const transcript = await world.runPromise(Store.use((store) => store.transcript("s_watch", 10)))

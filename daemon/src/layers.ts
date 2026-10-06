@@ -11,6 +11,7 @@ import { HousekeepingLive } from "./housekeeping/housekeeping.ts"
 import { HubLive } from "./hub.ts"
 import { AlertPipelineLive } from "./pipeline/alerts.ts"
 import { InboxLive } from "./pipeline/inbox.ts"
+import { IntakeLive } from "./pipeline/intake.ts"
 import { SchedulerLive } from "./scheduler.ts"
 import { Agent, AgentLive } from "./sessions/agent.ts"
 import { AsksLive } from "./sessions/asks.ts"
@@ -29,8 +30,8 @@ import { WatcherLive } from "./watch/watcher.ts"
 
 /**
  * Store, Slack, Jev, agent SDK, reviewer, GitHub, Grafana → Hub → the record keepers (sessions, cards, Slack threads,
- * identity, health, Grafana boards, worktrees) → asks, claims → runner → shipper, critic, housekeeping → alert pipeline → inbox, actions,
- * prod watcher → scheduler.
+ * identity, health, Grafana boards, worktrees) → asks, claims → runner → shipper, critic, housekeeping, intake → what
+ * feeds intake (alert channels, inbox, prod watcher) and the cards' buttons → scheduler.
  */
 export const appLayer = (env: Env) =>
   appLayerWith(
@@ -44,8 +45,7 @@ export const appLayerWith = <E>(env: Env, base: Layer.Layer<Store | SlackClient 
   const records = Layer.mergeAll(SlackThreadLive, SessionRepoLive, ActionQueueLive, SlackMeLive, HealthLive, BoardsLive, WorktreesLive).pipe(Layer.provideMerge(withHub))
   const withAsks = Layer.mergeAll(AsksLive, ClaimsLive).pipe(Layer.provideMerge(records))
   const withRunner = SessionRunnerLive.pipe(Layer.provideMerge(withAsks))
-  const withShipper = Layer.mergeAll(ShipperLive, CriticLive, HousekeepingLive).pipe(Layer.provideMerge(withRunner))
-  const withPipeline = AlertPipelineLive.pipe(Layer.provideMerge(withShipper))
-  const withEdges = Layer.mergeAll(InboxLive, ActionsLive, WatcherLive).pipe(Layer.provideMerge(withPipeline))
+  const withIntake = Layer.mergeAll(ShipperLive, CriticLive, HousekeepingLive, IntakeLive).pipe(Layer.provideMerge(withRunner))
+  const withEdges = Layer.mergeAll(AlertPipelineLive, InboxLive, WatcherLive, ActionsLive).pipe(Layer.provideMerge(withIntake))
   return SchedulerLive.pipe(Layer.provideMerge(withEdges))
 }

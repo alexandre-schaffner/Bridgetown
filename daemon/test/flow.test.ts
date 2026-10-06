@@ -5,6 +5,7 @@ import { DRY_RUN_REPLY } from "../src/actions/handlers.ts"
 import { type Action, type Alert, holdsSlot, NO_MILESTONES, type Session } from "../src/domain/model.ts"
 import { Hub } from "../src/hub.ts"
 import { AlertPipeline } from "../src/pipeline/alerts.ts"
+import { Intake } from "../src/pipeline/intake.ts"
 import { SessionRunner } from "../src/sessions/runner.ts"
 import { Shipper } from "../src/ship/shipper.ts"
 import { MAX_CI_ROUNDS } from "../src/ship/transitions.ts"
@@ -160,7 +161,7 @@ describe("re-triage never overwrites a session you just started (M4)", () => {
         yield* store.putAlert(makeAlert({ id, channelId: "C0AUKD42N3U", ts, title: "an older headline", triage: { decision: "ignore", reason: "noise", jev: null } }), "stale")
         const poll = yield* pipeline.pollOnce.pipe(Effect.forkChild)
         yield* Deferred.await(judging)
-        yield* pipeline.investigate(id)
+        yield* (yield* Intake).investigate(id)
         const started = (yield* store.getAlert(id))?.sessionId
         yield* Deferred.succeed(answer, undefined)
         yield* Fiber.join(poll)

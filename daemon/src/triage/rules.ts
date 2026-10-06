@@ -30,7 +30,7 @@ export const applyRules = (alert: ParsedAlert, ctx: RuleContext): RuleOutcome =>
     ctx.sameFingerprint.some((earlier) => earlier.sessionId === session.id),
   )
   if (owner !== undefined) {
-    return { _tag: "Attach", sessionId: owner.id, reason: "Same alert as a running session" }
+    return { _tag: "Attach", sessionId: owner.id, reason: `Same ${alert.source === "watch" ? "signal" : "alert"} as a running session` }
   }
 
   const claimed = claimHeadline(ctx.claimedBy)

@@ -7,13 +7,14 @@ import { Boards } from "../grafana/board.ts"
 import { alertBoard, OVERVIEW_VIEWS, type OverviewView, overviewBoard } from "../grafana/boards.ts"
 import { Hub } from "../hub.ts"
 import { AlertPipeline } from "../pipeline/alerts.ts"
+import { Intake } from "../pipeline/intake.ts"
 import { SessionRunner } from "../sessions/runner.ts"
 import { Store } from "../store/store.ts"
 import { FeedbackBody, mergeSettings, MessageBody, pathId, PauseBody, readBody, ResolveBody, SettingsPatch } from "./requests.ts"
 import { snapshotEvents, SSE_TIMING, type SseTiming } from "./sse.ts"
 import { alertDetail, logSweep, snapshot } from "./views.ts"
 
-type Services = Store | Hub | Actions | AlertPipeline | SessionRunner | Boards
+type Services = Store | Hub | Actions | AlertPipeline | Intake | SessionRunner | Boards
 
 const isOverviewView = (value: string): value is OverviewView => OVERVIEW_VIEWS.some((view) => view === value)
 
@@ -133,11 +134,11 @@ const postRoute = (path: string, request: Request) =>
     }
     const alert = /^\/alerts\/([^/]+)\/(investigate|feedback)$/.exec(path)
     if (alert !== null) {
-      const alerts = yield* AlertPipeline
       const id = yield* pathId(alert[1])
-      if (alert[2] === "investigate") return yield* thenSnapshot(alerts.investigate(id))
+      const intake = yield* Intake
+      if (alert[2] === "investigate") return yield* thenSnapshot(intake.investigate(id))
       const body = yield* readBody(request, FeedbackBody)
-      return yield* thenSnapshot(alerts.feedback(id, body.label))
+      return yield* thenSnapshot(intake.feedback(id, body.label))
     }
     const session = /^\/sessions\/([^/]+)\/(stop|message)$/.exec(path)
     if (session !== null) {

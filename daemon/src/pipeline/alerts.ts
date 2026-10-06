@@ -1,12 +1,9 @@
 import { Context, Effect, Layer, Semaphore } from "effect"
 import { ActionQueue } from "../actions/queue.ts"
 import { alertFromParsed, type ParsedAlert } from "../domain/alert.ts"
-import { type AdapterError, NotFound } from "../domain/errors.ts"
 import { daysAgo, now, tsToIso } from "../domain/ids.ts"
-import { type Action, type Alert, type Channel, channelLabel, type Claimant, claimHeadline, isActive, type Triage, triageEvent } from "../domain/model.ts"
+import { type Alert, type Channel, claimHeadline } from "../domain/model.ts"
 import { Hub, problemOf } from "../hub.ts"
-import { SessionRepo } from "../sessions/repo.ts"
-import { SessionRunner } from "../sessions/runner.ts"
 import { Shipper } from "../ship/shipper.ts"
 import { followsDeploy } from "../ship/transitions.ts"
 import { Claims } from "../slack/claims.ts"
@@ -17,18 +14,14 @@ import { toThreadReplies } from "../slack/text.ts"
 import { Store, type StoreShape } from "../store/store.ts"
 import { Jev } from "../triage/jev.ts"
 import { decide } from "../triage/policy.ts"
-import { applyRules } from "../triage/rules.ts"
+import { applyRules, type RuleOutcome } from "../triage/rules.ts"
 import { triageWith } from "../triage/verdict.ts"
+import { Intake, routeOf } from "./intake.ts"
 
-/** Alert channels: poll, parse, rule out, triage with Jev, then start, suggest or record. */
+/** Alert channels: poll, parse, and file what is new (`Intake`); a known alert keeps its verdict unless its headline changed. */
 export interface AlertPipelineShape {
   /** One Slack poll of the alert channels, serialized with the poll loop. */
   readonly pollOnce: Effect.Effect<void, SlackError>
-  /** Starts (or suggests) what triage decided for a stored alert. */
-  readonly act: (alert: Alert) => Effect.Effect<void, AdapterError>
-  /** Starts a session even if Jev said ignore. */
-  readonly investigate: (alertId: string) => Effect.Effect<void, AdapterError | NotFound>
-  readonly feedback: (alertId: string, label: "good" | "bad") => Effect.Effect<void, AdapterError | NotFound>
 }
 
 export class AlertPipeline extends Context.Service<AlertPipeline, AlertPipelineShape>()("AlertPipeline") {}
@@ -72,8 +65,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
     const slack = yield* SlackClient
     const me = yield* SlackMe
     const jev = yield* Jev
-    const repo = yield* SessionRepo
-    const runner = yield* SessionRunner
+    const intake = yield* Intake
     const shipper = yield* Shipper
     const queue = yield* ActionQueue
     const claims = yield* Claims
@@ -99,56 +91,6 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
       return yield* triageWith(hub, judging, decide, "suggest")
     })
 
-    const suggest = (alert: Alert) =>
-      Effect.gen(function* () {
-        yield* queue.removeWhere((a) => a.kind === "investigate" && a.fingerprint === alert.fingerprint)
-        yield* queue.put({
-          kind: "investigate",
-          title: alert.title,
-          detail: `${channelLabel(alert)} · ${alert.triage.reason}`,
-          primaryLabel: "Investigate",
-          options: [],
-          sessionId: null,
-          alertId: alert.id,
-          fingerprint: alert.fingerprint,
-        })
-      })
-
-    /** A teammate got there first: their claim goes on the alert, and your card for it goes. */
-    const yieldTo = (alert: Alert, claimedBy: ReadonlyArray<Claimant>) =>
-      Effect.gen(function* () {
-        yield* queue.removeWhere((a) => a.kind === "investigate" && a.alertId === alert.id)
-        yield* store.appendAlertEvent(alert.id, `Left to a teammate: ${claimHeadline(claimedBy) ?? ""}`, { claimedBy })
-        yield* hub.notify
-      })
-
-    const act = (alert: Alert) =>
-      Effect.gen(function* () {
-        const status = yield* hub.status
-        const settings = yield* hub.settings
-        if (alert.triage.decision === "auto" && !status.paused && settings.autoStart) {
-          const take = yield* claims.take(alert, { yieldTo: true })
-          if (take._tag === "TakenBy") return yield* yieldTo(alert, take.claimedBy)
-          // An agent is on it now: a suggestion an earlier verdict put up is moot.
-          yield* queue.removeWhere((a) => a.kind === "investigate" && a.alertId === alert.id)
-          yield* runner.enqueue(alert)
-          return
-        }
-        if (alert.triage.decision === "auto" || alert.triage.decision === "suggest") yield* suggest(alert)
-      })
-
-    /**
-     * A known alert re-triaged to nothing to do (a failed build re-run green, a repeat a session now owns): the
-     * Investigate card its earlier verdict put up goes, and its history says why.
-     */
-    const withdraw = (id: string, reason: string) =>
-      Effect.gen(function* () {
-        const stale = (a: Action) => a.alertId === id && a.kind === "investigate"
-        if (!(yield* queue.list).some(stale)) return
-        yield* queue.removeWhere(stale)
-        yield* store.appendAlertEvent(id, `Its card was withdrawn: ${reason}`, { disposition: "withdrawn" })
-      })
-
     const ingest = Effect.fn("AlertPipeline.ingest")(function* (channel: Channel, message: SlackMessage, since: number) {
       if (!isAlertMessage(message)) return
       const hash = contentHash(message)
@@ -160,76 +102,51 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
       const parsed = parseMessage(message, { channelId: channel.id, channelName: channel.name, myUserId: identity?.user_id })
       const existing = yield* store.getAlert(id)
       const permalink = existing?.permalink ?? (yield* slack.permalink(channel.id, message.ts).pipe(Effect.orElseSucceed(() => null)))
-      /**
-       * Every write re-reads the row: a session you started while Jev was
-       * thinking keeps its `sessionId`, and history is appended to, never replaced.
-       */
       const thread =
         (message.reply_count ?? 0) === 0
           ? []
           : yield* slack.replies(channel.id, message.ts).pipe(Effect.orElseSucceed((): ReadonlyArray<SlackMessage> => []))
       const claimedBy = yield* claims.read(message.reactions, thread)
-      const write = (triage: (current: Alert | undefined) => Triage, event: string | null, attachTo: string | null = null) =>
-        store.modifyAlert(
+
+      // A known alert whose headline did not change (a reaction, a reply count) keeps its verdict.
+      if (existing !== undefined && (existing.title === parsed.title || existing.sessionId !== null)) {
+        const newcomers = claimedBy.filter((c) => !existing.claimedBy.some((e) => e.userId === c.userId))
+        // Re-read under the row's lock: a session you started meanwhile keeps its place, and history is appended to.
+        const alert = yield* store.modifyAlert(
           id,
           (current) =>
             alertFromParsed(parsed, {
               permalink,
               receivedAt: current?.receivedAt ?? tsToIso(message.ts),
-              triage: triage(current),
-              sessionId: current?.sessionId ?? attachTo,
-              events: [...(current?.events ?? []), ...(event === null ? [] : [{ at: now(), text: event }])],
+              triage: current?.triage ?? existing.triage,
+              sessionId: current?.sessionId ?? null,
+              events: [...(current?.events ?? []), ...(existing.title === parsed.title ? [] : [{ at: now(), text: `Updated in Slack: ${parsed.title}` }])],
               feedback: current?.feedback ?? null,
               disposition: current?.disposition ?? null,
               claimedBy,
             }),
           hash,
         )
-      const finish = (alert: Alert | undefined) =>
-        Effect.gen(function* () {
-          if (alert !== undefined) yield* shipper.trackDeploy(alert)
-          yield* hub.notify
-        })
-
-      // A known alert whose headline did not change (a reaction, a reply count) keeps its verdict.
-      if (existing !== undefined && (existing.title === parsed.title || existing.sessionId !== null)) {
-        const keep = (current: Alert | undefined) => current?.triage ?? existing.triage
-        const newcomers = claimedBy.filter((c) => !existing.claimedBy.some((e) => e.userId === c.userId))
-        const event = existing.title === parsed.title ? null : `Updated in Slack: ${parsed.title}`
-        const alert = yield* write(keep, event)
         if (alert !== undefined && newcomers.length > 0) {
           // A card asking you to start an agent is stale once someone else is on it.
           if (alert.sessionId === null) yield* queue.removeWhere((a) => a.kind === "investigate" && a.alertId === id)
           yield* store.appendAlertEvent(id, `In Slack: ${claimHeadline(newcomers)}`)
         }
-        return yield* finish(alert)
+        if (alert !== undefined) yield* shipper.trackDeploy(alert)
+        return yield* hub.notify
       }
 
       const history = (yield* store.alertsByFingerprint(parsed.fingerprint, daysAgo(7))).filter((a) => a.id !== id)
       const active = yield* store.activeSessions()
       const releaseTag = parsed.fields._tag === "release" ? parsed.fields.tag : null
       const shipping = releaseTag === null ? undefined : active.find((s) => followsDeploy(s, releaseTag))
-      const outcome =
+      const rule: RuleOutcome =
         shipping !== undefined
-          ? { _tag: "Attach" as const, sessionId: shipping.id, reason: `Release cut by session ${shipping.id}` }
+          ? { _tag: "Attach", sessionId: shipping.id, reason: `Release cut by session ${shipping.id}` }
           : applyRules(parsed, { activeSessions: active, sameFingerprint: history, claimedBy })
-      if (outcome._tag === "Filtered" || outcome._tag === "Attach") {
-        const attached = outcome._tag === "Attach"
-        const alert = yield* write(
-          () => ({ decision: "filtered", reason: outcome.reason, jev: null }),
-          attached ? `Attached to a running session: ${outcome.reason}` : `Filtered by a rule: ${outcome.reason}`,
-          attached ? outcome.sessionId : null,
-        )
-        if (attached) yield* repo.log(outcome.sessionId, "status", `Alert repeated: ${parsed.title}`)
-        if (existing !== undefined) yield* withdraw(id, outcome.reason)
-        return yield* finish(alert)
-      }
-
-      const verdict = yield* triage(parsed, message, thread, history)
-      const alert = yield* write(() => verdict, triageEvent(verdict))
-      if (existing !== undefined && verdict.decision === "ignore") yield* withdraw(id, verdict.reason)
-      yield* finish(alert)
-      if (alert !== undefined && alert.sessionId === null) yield* act(alert)
+      const route = routeOf(rule, `Alert repeated: ${parsed.title}`, triage(parsed, message, thread, history))
+      const alert = yield* intake.file(parsed, { permalink, receivedAt: tsToIso(message.ts), contentHash: hash, claimedBy }, route)
+      if (alert !== undefined) yield* shipper.trackDeploy(alert)
     })
 
     /**
@@ -292,31 +209,6 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
       yield* hub.problem("poll", problemOf(problems))
     }).pipe(polling.withPermits(1))
 
-    const findAlert = (alertId: string) =>
-      Effect.gen(function* () {
-        const alert = yield* store.getAlert(alertId)
-        if (alert === undefined) return yield* new NotFound({ message: "unknown alert" })
-        return alert
-      })
-
-    const investigate = Effect.fn("AlertPipeline.investigate")(function* (alertId: string) {
-      const alert = yield* findAlert(alertId)
-      if (alert.sessionId !== null) {
-        const session = yield* store.getSession(alert.sessionId)
-        if (session !== undefined && isActive(session)) return
-      }
-      yield* queue.removeWhere((a) => a.alertId === alertId && a.kind === "investigate")
-      // You asked for it: claimed even if a teammate is on it too.
-      yield* claims.take(alert, { yieldTo: false })
-      yield* runner.enqueue(alert)
-    })
-
-    const feedback = Effect.fn("AlertPipeline.feedback")(function* (alertId: string, label: "good" | "bad") {
-      yield* findAlert(alertId)
-      yield* store.appendAlertEvent(alertId, label === "good" ? "You marked Jev's call as right" : "You marked Jev's call as wrong", { feedback: label })
-      yield* hub.notify
-    })
-
-    return { pollOnce, act, investigate, feedback }
+    return { pollOnce }
   }),
 )

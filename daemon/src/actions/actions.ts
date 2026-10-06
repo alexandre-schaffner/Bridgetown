@@ -2,7 +2,7 @@ import { Context, Effect, Layer } from "effect"
 import { Conflict, type DaemonError } from "../domain/errors.ts"
 import { type Action, cardStands, dismissCloses, type Session } from "../domain/model.ts"
 import { Hub } from "../hub.ts"
-import { AlertPipeline } from "../pipeline/alerts.ts"
+import { Intake } from "../pipeline/intake.ts"
 import { SessionRepo } from "../sessions/repo.ts"
 import { SessionRunner } from "../sessions/runner.ts"
 import { Shipper } from "../ship/shipper.ts"
@@ -40,7 +40,6 @@ export const ActionsLive = Layer.effect(Actions)(
     const queue = yield* ActionQueue
     const repo = yield* SessionRepo
     const runner = yield* SessionRunner
-    const pipeline = yield* AlertPipeline
     const inFlight = yield* makeInFlight(hub.notify)
     const handlers = makeHandlers({
       store,
@@ -48,7 +47,7 @@ export const ActionsLive = Layer.effect(Actions)(
       runner,
       shipper: yield* Shipper,
       thread: yield* SlackThread,
-      investigate: pipeline.investigate,
+      investigate: (yield* Intake).investigate,
     })
 
     /**

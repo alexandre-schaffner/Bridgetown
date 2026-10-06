@@ -1,15 +1,14 @@
 import { Context, Effect, Layer } from "effect"
 import { ActionQueue } from "../actions/queue.ts"
-import { alertFromParsed, type ParsedAlert } from "../domain/alert.ts"
+import type { ParsedAlert } from "../domain/alert.ts"
 import type { AdapterError } from "../domain/errors.ts"
 import { daysAgo, now as nowIso } from "../domain/ids.ts"
-import { type Alert, type AlertKind, type Triage, triageEvent } from "../domain/model.ts"
+import type { Alert, AlertKind, Triage } from "../domain/model.ts"
 import { type Board, Boards } from "../grafana/board.ts"
 import { alertBoard, type PanelSpec, watchBoard } from "../grafana/boards.ts"
 import { Grafana } from "../grafana/client.ts"
 import { Hub } from "../hub.ts"
-import { AlertPipeline } from "../pipeline/alerts.ts"
-import { SessionRepo } from "../sessions/repo.ts"
+import { Intake, routeOf } from "../pipeline/intake.ts"
 import { Store } from "../store/store.ts"
 import { Jev } from "../triage/jev.ts"
 import { alertKind } from "../triage/kind.ts"
@@ -55,7 +54,6 @@ interface SweepResult {
 /** Investigations one log sweep may start; the rest of its findings are suggested. */
 const MAX_LOG_STARTS = 2
 
-
 /** Kinds whose board leads with a general signal (API 5xx for any runtime error), not one the alert is about. */
 const VAGUE_KINDS: ReadonlySet<AlertKind> = new Set(["runtime_error", "informational", "build_failure"])
 
@@ -83,10 +81,9 @@ export const WatcherLive = Layer.effect(Watcher)(
   Effect.gen(function* () {
     const hub = yield* Hub
     const store = yield* Store
-    const repo = yield* SessionRepo
     const boards = yield* Boards
     const jev = yield* Jev
-    const pipeline = yield* AlertPipeline
+    const intake = yield* Intake
     const grafana = yield* Grafana
     const queue = yield* ActionQueue
 
@@ -94,35 +91,12 @@ export const WatcherLive = Layer.effect(Watcher)(
      * A finding filed: to the session already on its signal if one is running (an earlier finding's), else triaged
      * by `judge` and acted on like a Slack alert. True when it was acted on.
      */
-    const file = (
-      finding: ParsedAlert,
-      permalink: string,
-      seen: ReadonlyArray<string>,
-      history: ReadonlyArray<Alert>,
-      judge: Effect.Effect<Triage, AdapterError>,
-    ) =>
+    const file = (finding: ParsedAlert, permalink: string, seen: ReadonlyArray<string>, history: ReadonlyArray<Alert>, judge: Effect.Effect<Triage, AdapterError>) =>
       Effect.gen(function* () {
         const rule = applyRules(finding, { activeSessions: yield* store.activeSessions(), sameFingerprint: history, claimedBy: [] })
-        const attachTo = rule._tag === "Attach" ? rule.sessionId : null
-        const verdict: Triage = attachTo === null ? yield* judge : { decision: "filtered", reason: "Same signal as a running session", jev: null }
-        const alert = alertFromParsed(finding, {
-          permalink,
-          receivedAt: nowIso(),
-          triage: verdict,
-          sessionId: attachTo,
-          events: [
-            ...seen.map((text) => ({ at: nowIso(), text })),
-            { at: nowIso(), text: attachTo === null ? triageEvent(verdict) : `Attached to a running session: ${verdict.reason}` },
-          ],
-        })
-        yield* store.putAlert(alert)
-        yield* hub.notify
-        if (attachTo !== null) {
-          yield* repo.log(attachTo, "status", `Signal rose again: ${finding.title}`)
-          return false
-        }
-        yield* pipeline.act(alert)
-        return true
+        const route = routeOf(rule, `Signal rose again: ${finding.title}`, judge)
+        yield* intake.file(finding, { permalink, receivedAt: nowIso(), seen }, route)
+        return route._tag === "Judge"
       })
 
     /** One risen signal: skipped while cooling down or covered, else filed. */
