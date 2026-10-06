@@ -29,3 +29,12 @@ import Testing
         #expect(AlertDetailView.RefreshKey(snapshot: snapshot, alertId: alertId).sessionUpdatedAt == nil)
     }
 }
+
+@Suite struct ProseLinkTests {
+    /// Prose links are drawn in the text's colour, so the underline is what marks them.
+    @Test func onlyLinksAreUnderlined() throws {
+        let text = Markdown.inline("See [the runbook](https://example.com/runbook) first", size: 12).underliningLinks()
+        let underlined = text.runs.filter { $0.underlineStyle != nil }.map { String(text[$0.range].characters) }
+        #expect(underlined == ["the runbook"])
+    }
+}

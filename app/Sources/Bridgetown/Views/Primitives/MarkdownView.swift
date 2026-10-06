@@ -77,11 +77,23 @@ struct MarkdownView: View {
     }
 
     private func text(_ s: String) -> some View {
-        Text(Markdown.inline(s, size: size, mono: mono))
+        Text(Markdown.inline(s, size: size, mono: mono).underliningLinks())
             .fixedSize(horizontal: false, vertical: true)
     }
 
     private func font(_ size: CGFloat? = nil, _ weight: Font.Weight = .regular) -> Font {
         mono ? .geistMono(size ?? self.size, weight) : .geist(size ?? self.size, weight)
+    }
+}
+
+extension AttributedString {
+    /// Its links underlined. They take the text's colour (the stage's tint), as colour is
+    /// for status, so the line is what marks them.
+    func underliningLinks() -> AttributedString {
+        var text = self
+        for run in text.runs where run.link != nil {
+            text[run.range].underlineStyle = .single
+        }
+        return text
     }
 }

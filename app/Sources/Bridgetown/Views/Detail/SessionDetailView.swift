@@ -350,7 +350,7 @@ private struct TranscriptView: View {
             Text(e.at, format: Format.clock)
                 .foregroundStyle(.tertiary)
                 .help(e.at.formatted(date: .abbreviated, time: .standard))
-            Text(e.kind == .text ? Markdown.lines(e.text, size: 12, mono: true) : AttributedString(e.kind.prefix + e.text))
+            Text(e.kind == .text ? Markdown.lines(e.text, size: 12, mono: true).underliningLinks() : AttributedString(e.kind.prefix + e.text))
                 .foregroundStyle(e.kind.style)
                 .lineLimit(e.kind.lineLimit)
                 .truncationMode(.tail)

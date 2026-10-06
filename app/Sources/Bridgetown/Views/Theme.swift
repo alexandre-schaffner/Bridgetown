@@ -145,11 +145,12 @@ extension View {
 
 extension View {
     /// The island's palette: always dark, Geist at body size, with the hierarchical text
-    /// styles (`.secondary`, `.tertiary`) remapped to readable greys.
+    /// styles (`.secondary`, `.tertiary`) remapped to readable greys. The tint is the text's
+    /// own: a link in prose is underlined, not blue, since blue means live work.
     func stagePalette() -> some View {
         font(Typo.body)
             .foregroundStyle(Ink.text, Ink.dim, Ink.faint)
-            .tint(Ink.blue)
+            .tint(Ink.text)
             .environment(\.colorScheme, .dark)
     }
 
