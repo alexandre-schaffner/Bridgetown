@@ -4,40 +4,34 @@ import { Actions } from "../src/actions/actions.ts"
 import type { Action } from "../src/domain/action.ts"
 import { progressOf } from "../src/domain/progress.ts"
 import type { Session } from "../src/domain/session.ts"
-import type { GitHubShape, PullRequest } from "../src/ship/github.ts"
+import type { PullRequest } from "../src/ship/github.ts"
 import { Shipper } from "../src/ship/shipper.ts"
 import { Store } from "../src/store/store.ts"
 import { makeAlert, makeSession } from "./support/records.ts"
 import { Hub } from "../src/hub.ts"
-import { fakeSlack, makeWorld } from "./support/world.ts"
+import { fakeGitHub, fakeSlack } from "./support/fakes.ts"
+import { makeWorld } from "./support/world.ts"
 
 const PR = "https://ghe/pull/3345"
 const green = [{ name: "lint", status: "COMPLETED", conclusion: "SUCCESS" }]
 const red = [{ name: "lint", status: "COMPLETED", conclusion: "FAILURE", detailsUrl: "https://x/1" }]
 
 /** GitHub as the test sets it: the PR's state, and a tag lookup that waits for `tagLookup` when given. Counts the merges and lookups. */
-const fakeGitHub = (pr: { current: Partial<PullRequest> }, tagLookup?: Deferred.Deferred<void>) => {
+const prGitHub = (pr: { current: Partial<PullRequest> }, tagLookup?: Deferred.Deferred<void>) => {
   const calls = { merge: 0, nextTag: 0 }
-  const github: GitHubShape = {
+  const github = fakeGitHub({
     viewPr: (url) =>
       Effect.sync(() => ({
         number: 3345, title: "fix(app): import d3-shape from its root", state: "OPEN", mergedAt: null, headRefOid: "aaaa111", url,
         reviewDecision: "APPROVED", latestReviews: [], statusCheckRollup: green, ...pr.current,
       })),
     mergePr: () => Effect.sync(() => void calls.merge++),
-    rerunFailedJobs: () => Effect.void,
     nextPatchTag: (_repo, prefix) =>
       Effect.sync(() => void calls.nextTag++).pipe(
         Effect.andThen(tagLookup === undefined ? Effect.void : Deferred.await(tagLookup)),
         Effect.as(`${prefix}-v2.15.1`),
       ),
-    tagExists: () => Effect.succeed(false),
-    createRelease: () => Effect.void,
-    branchHead: () => Effect.succeed(null),
-    prHead: () => Effect.succeed(null),
-    markReady: () => Effect.void,
-    reachability: Effect.succeed("ok"),
-  }
+  })
   return { github, calls }
 }
 
@@ -69,7 +63,7 @@ const afterTick = Effect.gen(function* () {
 
 describe("the merge gate is read again every tick", () => {
   test("a PR that went red while waiting to merge goes back to CI, and its Merge card goes", async () => {
-    const { github } = fakeGitHub({ current: { statusCheckRollup: red } })
+    const { github } = prGitHub({ current: { statusCheckRollup: red } })
     const world = makeWorld({ github })
     try {
       const out = await world.runPromise(seed(shipping("awaiting_merge"), [mergeCard()]).pipe(Effect.andThen(afterTick)))
@@ -81,7 +75,7 @@ describe("the merge gate is read again every tick", () => {
   })
 
   test("waiting to merge with no card (nothing GitHub took): the card is put back; one GitHub took is left to it", async () => {
-    const { github } = fakeGitHub({ current: {} })
+    const { github } = prGitHub({ current: {} })
     const world = makeWorld({ github })
     try {
       const out = await world.runPromise(
@@ -100,7 +94,7 @@ describe("the merge gate is read again every tick", () => {
   })
 
   test("back at the gate after another round: the old Merge card is replaced, not reused", async () => {
-    const { github } = fakeGitHub({ current: {} })
+    const { github } = prGitHub({ current: {} })
     const world = makeWorld({ github })
     try {
       const out = await world.runPromise(seed(shipping("ci"), [mergeCard({ id: "a_old", detail: "an earlier head" })]).pipe(Effect.andThen(afterTick)))
@@ -113,7 +107,7 @@ describe("the merge gate is read again every tick", () => {
   })
 
   test("green and waiting for a review: CI shows done", async () => {
-    const { github } = fakeGitHub({ current: { reviewDecision: "REVIEW_REQUIRED" } })
+    const { github } = prGitHub({ current: { reviewDecision: "REVIEW_REQUIRED" } })
     const world = makeWorld({ github })
     const reviewed = { channelName: "product-approvals", permalink: null, handledReviewId: null, posted: true }
     try {
@@ -127,7 +121,7 @@ describe("the merge gate is read again every tick", () => {
 
 describe("the review request goes to the team that owns the fix", () => {
   test("by the prefix it ships under, else by the image its release alert names", async () => {
-    const { github } = fakeGitHub({ current: { reviewDecision: "REVIEW_REQUIRED" } })
+    const { github } = prGitHub({ current: { reviewDecision: "REVIEW_REQUIRED" } })
     const world = makeWorld({ github })
     const engine = makeAlert({
       id: "C1:engine", sessionId: "s_engine",
@@ -153,7 +147,7 @@ describe("the review request goes to the team that owns the fix", () => {
 
 describe("the release gate is offered again after a turn", () => {
   test("back at the gate without its card (a turn took it): the card is put back, once", async () => {
-    const { github, calls } = fakeGitHub({ current: {} })
+    const { github, calls } = prGitHub({ current: {} })
     const world = makeWorld({ github })
     const merged = { ...shipping("awaiting_release").milestones, merged: true }
     try {
@@ -175,7 +169,7 @@ describe("the release gate is offered again after a turn", () => {
   })
 
   test("a release already being cut keeps its tag on the card", async () => {
-    const { github, calls } = fakeGitHub({ current: {} })
+    const { github, calls } = prGitHub({ current: {} })
     const world = makeWorld({ github })
     const merged = { ...shipping("awaiting_release").milestones, merged: true }
     try {
@@ -190,7 +184,7 @@ describe("the release gate is offered again after a turn", () => {
 
 describe("a PR closed on GitHub", () => {
   test("closes the session as such, never 'Stopped by you', and its Merge card goes", async () => {
-    const { github } = fakeGitHub({ current: { state: "CLOSED" } })
+    const { github } = prGitHub({ current: { state: "CLOSED" } })
     const world = makeWorld({ github })
     try {
       const out = await world.runPromise(seed(shipping("awaiting_merge"), [mergeCard()]).pipe(Effect.andThen(afterTick)))
@@ -206,7 +200,7 @@ describe("a PR closed on GitHub", () => {
 describe("the merge is recorded once", () => {
   test("a Merge click and the ship tick both seeing the merge offer the release once", async () => {
     const lookup = Deferred.makeUnsafe<void>()
-    const { github, calls } = fakeGitHub({ current: { state: "MERGED", mergedAt: "2026-10-05T11:00:00Z" } }, lookup)
+    const { github, calls } = prGitHub({ current: { state: "MERGED", mergedAt: "2026-10-05T11:00:00Z" } }, lookup)
     const world = makeWorld({ github })
     try {
       const out = await world.runPromise(
@@ -235,8 +229,8 @@ describe("the merge is recorded once", () => {
 describe("an inbox session's updates stay out of the teammate's thread", () => {
   test("its merge is not announced in their DM; an alert's is posted in the alert thread", async () => {
     const posts: Array<string> = []
-    const { github } = fakeGitHub({ current: { state: "MERGED", mergedAt: "2026-10-05T11:00:00Z" } })
-    const world = makeWorld({ github, dryRun: false, slack: { ...fakeSlack(() => []), post: (_channel, _thread, text) => Effect.sync(() => void posts.push(text)).pipe(Effect.as("1.1")) } })
+    const { github } = prGitHub({ current: { state: "MERGED", mergedAt: "2026-10-05T11:00:00Z" } })
+    const world = makeWorld({ github, env: { forceDryRun: false }, slack: fakeSlack({ post: (_channel, _thread, text) => Effect.sync(() => void posts.push(text)).pipe(Effect.as("1.1")) }) })
     const inbox = { _tag: "inbox" as const, from: "U2", fromName: "Pierre", channelKind: "dm" as const, via: "dm" as const, threadTs: null, prUrl: null }
     try {
       await world.runPromise(

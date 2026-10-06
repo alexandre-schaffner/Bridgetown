@@ -1,10 +1,9 @@
-import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk"
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
-import * as Sdk from "../../scripts/mock/sdk.ts"
+import type { SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
+import { Effect } from "effect"
 import type { AgentShape } from "../../src/sessions/agent.ts"
 import type { SessionResult } from "../../src/sessions/output.ts"
-import { TOOL_SERVER } from "../../src/sessions/tools.ts"
+import * as Sdk from "./sdk.ts"
+import { eventually } from "./wait.ts"
 
 /** One thing a turn of the playing agent does, in order. */
 export type Play =
@@ -16,17 +15,6 @@ export type Play =
   | { readonly kind: "result"; readonly output: SessionResult }
   /** The CLI fails. */
   | { readonly kind: "crash"; readonly reason: string }
-
-/** Bridgetown's in-process tool server, reached the way the CLI reaches it: an MCP client. */
-const toolsOf = async (options: Options) => {
-  const server = options.mcpServers?.[TOOL_SERVER]
-  if (server?.type !== "sdk" || !("instance" in server)) throw new Error("no Bridgetown tool server in the query options")
-  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair()
-  await server.instance.connect(serverSide)
-  const client = new Client({ name: "bridgetown-test-agent", version: "0" })
-  await client.connect(clientSide)
-  return (name: string, args: Record<string, unknown>) => client.callTool({ name, arguments: args }, undefined, { timeout: 60_000 })
-}
 
 export const RESULT: SessionResult = {
   outcome: "needs_human", rootCauseFound: true, diagnosis: "d", tried: [], summary: "s", prUrl: null,
@@ -49,7 +37,7 @@ export const playingAgent = (plays: ReadonlyArray<Play>) => {
         }),
       )
       async function* run(): AsyncGenerator<SDKMessage> {
-        const call = await toolsOf(options)
+        const call = await Sdk.connectTools(options, "bridgetown-test-agent")
         for (const play of plays) {
           switch (play.kind) {
             case "tool":
@@ -75,6 +63,34 @@ export const playingAgent = (plays: ReadonlyArray<Play>) => {
     },
   }
   return { agent, state }
+}
+
+/**
+ * An agent that reads its streaming input and never finishes on its own: it records every message it is sent, and
+ * ends only when its query is aborted. `received(...texts)` waits until those texts (any one, when none is named) arrived.
+ */
+export const recordingAgent = () => {
+  const seen: Array<SDKUserMessage> = []
+  const state = { queries: 0, aborted: 0 }
+  const agent: AgentShape = {
+    query: ({ prompt, options }) => {
+      state.queries += 1
+      const ended = new Promise<IteratorResult<SDKMessage>>((resolve) =>
+        options.abortController?.signal.addEventListener("abort", () => {
+          state.aborted += 1
+          resolve({ done: true, value: undefined })
+        }),
+      )
+      void (async () => {
+        for await (const message of prompt) seen.push(message)
+      })()
+      return { [Symbol.asyncIterator]: () => ({ next: () => ended }) }
+    },
+  }
+  const texts = () => seen.map((m) => (typeof m.message.content === "string" ? m.message.content : ""))
+  const received = (...wanted: ReadonlyArray<string>) =>
+    Effect.runPromise(eventually(Effect.sync(texts), (all) => ((wanted.length === 0 ? all.length > 0 : wanted.every((text) => all.includes(text))) ? all : undefined)))
+  return { agent, seen, state, texts, received }
 }
 
 export const init = Sdk.init

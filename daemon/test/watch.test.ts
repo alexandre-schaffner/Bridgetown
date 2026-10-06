@@ -6,11 +6,11 @@ import type { Panel } from "../src/grafana/board.ts"
 import type { GrafanaShape, Range } from "../src/grafana/client.ts"
 import { Hub } from "../src/hub.ts"
 import { Store } from "../src/store/store.ts"
-import type { JevShape } from "../src/triage/jev.ts"
 import { detect, findingOf, formatValue, RECENT_STEPS, watchBoard } from "../src/watch/detect.ts"
 import { coveredBySlack, Watcher } from "../src/watch/watcher.ts"
 import { makeAlert, makeSession } from "./support/records.ts"
-import { makeWorld, noGrafana, verdict } from "./support/world.ts"
+import { fakeJev, noGrafana, verdict } from "./support/fakes.ts"
+import { makeWorld } from "./support/world.ts"
 
 const STEP = 300
 const NOW = new Date("2026-10-04T12:00:00Z")
@@ -101,11 +101,11 @@ describe("the finding", () => {
 })
 
 describe("coveredBySlack", () => {
-  const slackAlert = (overrides: Partial<Alert>): Alert => ({
-    id: "C1:1", channelId: "C1", channelName: "alert-dev", ts: "1", permalink: null, title: "merkl-api 5xx on /v4/opportunities", summary: "",
-    raw: "", source: "generic", fingerprint: "f", fields: { _tag: "generic" }, mentionsMe: false, receivedAt: new Date(NOW.getTime() - 30 * 60_000).toISOString(),
-    triage: { decision: "suggest", reason: "", jev: null }, sessionId: null, feedback: null, events: [], disposition: null, claimedBy: [], ...overrides,
-  })
+  const slackAlert = (overrides: Partial<Alert>): Alert =>
+    makeAlert({
+      channelName: "alert-dev", title: "merkl-api 5xx on /v4/opportunities", source: "generic", receivedAt: new Date(NOW.getTime() - 30 * 60_000).toISOString(),
+      triage: { decision: "suggest", reason: "", jev: null }, ...overrides,
+    })
 
   test("a recent alert someone acts on, about the same signal", () => {
     expect(coveredBySlack("api_5xx", [slackAlert({})], NOW)?.id).toBe("C1:1")
@@ -129,29 +129,27 @@ describe("coveredBySlack", () => {
   })
 })
 
-/** API 5xx at 5 per step, then 400 for the last 20 minutes; every other query empty. */
-const risingApi5xx = (): GrafanaShape => ({
+/** API 5xx at `level(t, end)` per step (`end`: the queried range's end, in seconds); every other query empty. */
+const api5xx = (level: (t: number, end: number) => number): GrafanaShape => ({
   ...noGrafana,
   logStats: (query, range: Range) =>
     Effect.sync(() => {
       if (!query.includes("response_code:>=500")) return []
       const end = range.end.getTime() / 1000
       const points: Array<readonly [number, number]> = []
-      for (let t = Math.ceil(range.start.getTime() / 1000 / STEP) * STEP; t <= end; t += STEP) points.push([t, t > end - 20 * 60 ? 400 : 5])
+      for (let t = Math.ceil(range.start.getTime() / 1000 / STEP) * STEP; t <= end; t += STEP) points.push([t, level(t, end)])
       return [{ labels: {}, points }]
     }),
 })
+
+/** API 5xx at 5 per step, then 400 for the last 20 minutes. */
+const risingApi5xx = () => api5xx((t, end) => (t > end - 20 * 60 ? 400 : 5))
 
 describe("Watcher.tick", () => {
   let reads = 0
   const rising: GrafanaShape = { ...risingApi5xx(), logStats: (query, range) => Effect.sync(() => void reads++).pipe(Effect.andThen(risingApi5xx().logStats(query, range))) }
   let judged = 0
-  const jev: JevShape = {
-    judge: () => Effect.sync(() => void judged++).pipe(Effect.as(verdict({ kind: "runtime_error", actionable: 0.95, agentResolvable: 0.9 }))),
-    judgeInbox: () => Effect.die("unused"),
-    judgeFinding: () => Effect.die("unused"),
-    judgeLogPatterns: () => Effect.die("unused"),
-  }
+  const jev = fakeJev({ judge: () => Effect.sync(() => void judged++).pipe(Effect.as(verdict({ kind: "runtime_error", actionable: 0.95, agentResolvable: 0.9 }))) })
   const world = makeWorld({ jev, grafana: rising })
   afterAll(() => world.dispose())
   const tick = () => world.runPromise(Watcher.use((watcher) => watcher.tick))
@@ -195,12 +193,7 @@ describe("Watcher.tick", () => {
 
 describe("Watcher.tick with a Slack alert on the signal", () => {
   let judged = 0
-  const jev: JevShape = {
-    judge: () => Effect.sync(() => void judged++).pipe(Effect.as(verdict())),
-    judgeInbox: () => Effect.die("unused"),
-    judgeFinding: () => Effect.die("unused"),
-    judgeLogPatterns: () => Effect.die("unused"),
-  }
+  const jev = fakeJev({ judge: () => Effect.sync(() => void judged++).pipe(Effect.as(verdict())) })
   const world = makeWorld({ jev, grafana: risingApi5xx() })
   afterAll(() => world.dispose())
   const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString()
@@ -238,22 +231,16 @@ describe("Watcher.tick with a Slack alert on the signal", () => {
 
 describe("Watcher.tick with a session already on the signal", () => {
   let judged = 0
-  const jev: JevShape = {
-    judge: () => Effect.sync(() => void judged++).pipe(Effect.as(verdict())),
-    judgeInbox: () => Effect.die("unused"),
-    judgeFinding: () => Effect.die("unused"),
-    judgeLogPatterns: () => Effect.die("unused"),
-  }
+  const jev = fakeJev({ judge: () => Effect.sync(() => void judged++).pipe(Effect.as(verdict())) })
   const world = makeWorld({ jev, grafana: risingApi5xx() })
   afterAll(() => world.dispose())
 
   test("the rise goes to that session, not to a second agent", async () => {
-    const earlier: Alert = {
-      id: "watch:api_5xx:1", channelId: "grafana", channelName: "Grafana", ts: "1", permalink: null, title: "API 5xx at 640", summary: "", raw: "",
-      source: "watch", fingerprint: "watch:api_5xx", fields: { _tag: "watch", signal: "api_5xx", query: "q", datasource: "logs", level: 640, usual: 40, since: "2026-10-04T00:00:00.000Z", shape: "rise" },
-      mentionsMe: false, receivedAt: new Date(Date.now() - 7 * 3_600_000).toISOString(), triage: { decision: "suggest", reason: "", jev: null },
-      sessionId: "s_watch", feedback: null, events: [], disposition: null, claimedBy: [],
-    }
+    const earlier = makeAlert({
+      id: "watch:api_5xx:1", channelId: "grafana", channelName: "Grafana", title: "API 5xx at 640", source: "watch", fingerprint: "watch:api_5xx",
+      fields: { _tag: "watch", signal: "api_5xx", query: "q", datasource: "logs", level: 640, usual: 40, since: "2026-10-04T00:00:00.000Z", shape: "rise" },
+      receivedAt: new Date(Date.now() - 7 * 3_600_000).toISOString(), triage: { decision: "suggest", reason: "", jev: null }, sessionId: "s_watch",
+    })
     await world.runPromise(
       Effect.gen(function* () {
         const store = yield* Store
@@ -278,23 +265,8 @@ describe("Watcher.tick as a rise goes on, worsens and passes", () => {
   /** A world where API 5xx sit at 5 per step, then at `level.now` for the last 20 minutes. */
   const scenario = () => {
     const level = { now: 400 }
-    const grafana: GrafanaShape = {
-      ...noGrafana,
-      logStats: (query, range: Range) =>
-        Effect.sync(() => {
-          if (!query.includes("response_code:>=500")) return []
-          const end = range.end.getTime() / 1000
-          const points: Array<readonly [number, number]> = []
-          for (let t = Math.ceil(range.start.getTime() / 1000 / STEP) * STEP; t <= end; t += STEP) points.push([t, t > end - 20 * 60 ? level.now : 5])
-          return [{ labels: {}, points }]
-        }),
-    }
-    const jev: JevShape = {
-      judge: () => Effect.succeed(verdict()),
-      judgeInbox: () => Effect.die("unused"),
-      judgeFinding: () => Effect.die("unused"),
-      judgeLogPatterns: () => Effect.die("unused"),
-    }
+    const grafana = api5xx((t, end) => (t > end - 20 * 60 ? level.now : 5))
+    const jev = fakeJev({ judge: () => Effect.succeed(verdict()) })
     const world = makeWorld({ jev, grafana })
     // With Auto-start off, findings wait in Needs you as Investigate cards: those are what this follows.
     const tickAt = (now: number) => {
@@ -342,24 +314,8 @@ describe("Watcher.tick on a spike", () => {
   /** A world where API 5xx sit at 3 per step, with one step at 122 10 minutes ago while `burst.on`. */
   const scenario = () => {
     const burst = { on: true }
-    const grafana: GrafanaShape = {
-      ...noGrafana,
-      logStats: (query, range: Range) =>
-        Effect.sync(() => {
-          if (!query.includes("response_code:>=500")) return []
-          const end = range.end.getTime() / 1000
-          const spikeAt = Math.floor((end - 10 * 60) / STEP) * STEP
-          const points: Array<readonly [number, number]> = []
-          for (let t = Math.ceil(range.start.getTime() / 1000 / STEP) * STEP; t <= end; t += STEP) points.push([t, burst.on && t === spikeAt ? 122 : 3])
-          return [{ labels: {}, points }]
-        }),
-    }
-    const jev: JevShape = {
-      judge: () => Effect.succeed(verdict({ actionable: 0.3, agentResolvable: 0.2 })),
-      judgeInbox: () => Effect.die("unused"),
-      judgeFinding: () => Effect.die("unused"),
-      judgeLogPatterns: () => Effect.die("unused"),
-    }
+    const grafana = api5xx((t, end) => (burst.on && t === Math.floor((end - 10 * 60) / STEP) * STEP ? 122 : 3))
+    const jev = fakeJev({ judge: () => Effect.succeed(verdict({ actionable: 0.3, agentResolvable: 0.2 })) })
     const world = makeWorld({ jev, grafana })
     const tick = (autoStart: boolean) =>
       world.runPromise(Effect.gen(function* () {

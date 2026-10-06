@@ -6,8 +6,8 @@ import { AlertPipeline } from "../src/pipeline/alerts.ts"
 import { claimsIn, firstClaimant } from "../src/slack/claims.ts"
 import type { SlackMessage, SlackReaction } from "../src/slack/client.ts"
 import { Store } from "../src/store/store.ts"
-import type { JevShape } from "../src/triage/jev.ts"
-import { fakeSlack, makeWorld, verdict } from "./support/world.ts"
+import { fakeJev, fakeSlack, postedIn, verdict } from "./support/fakes.ts"
+import { makeWorld } from "./support/world.ts"
 
 const claim = (ts: string, user: string): SlackMessage => ({ ts, user, text: "🤖 Investigating with Bridgetown…" })
 
@@ -47,14 +47,12 @@ describe("teammates running Bridgetown", () => {
   const removed: Array<string> = []
   let judged = 0
   let answer = verdict()
-  const jev: JevShape = {
+  const jev = fakeJev({
     judge: () => Effect.sync(() => void judged++).pipe(Effect.as(answer)),
     judgeInbox: () => Effect.succeed(verdict()),
-    judgeFinding: () => Effect.die("unused"),
-    judgeLogPatterns: () => Effect.die("unused"),
-  }
+  })
   const slack = {
-    ...fakeSlack((channel) => (channel === CHANNEL ? [message] : [])),
+    ...fakeSlack({ latest: postedIn(CHANNEL, () => [message]) }),
     replies: () => Effect.sync(() => [...thread]),
     userName: (user: string) => Effect.succeed(user === "U2" ? "Alice" : user),
     post: (_channel: string, _thread: string | undefined, text: string) =>
@@ -70,7 +68,7 @@ describe("teammates running Bridgetown", () => {
         thread = thread.filter((m) => m.ts !== at)
       }),
   }
-  const world = makeWorld({ jev, slack, dryRun: false })
+  const world = makeWorld({ jev, slack, env: { forceDryRun: false } })
   afterAll(() => world.dispose())
 
   const run = <A, E>(effect: Effect.Effect<A, E, Store | Hub | AlertPipeline>) => world.runPromise(effect)

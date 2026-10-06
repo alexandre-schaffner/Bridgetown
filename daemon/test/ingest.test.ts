@@ -5,9 +5,9 @@ import { Hub } from "../src/hub.ts"
 import { AlertPipeline, commitHorizon, readHorizon } from "../src/pipeline/alerts.ts"
 import type { SlackMessage } from "../src/slack/client.ts"
 import { Store } from "../src/store/store.ts"
-import type { JevShape } from "../src/triage/jev.ts"
 import { adminBuildFailed } from "./support/messages.ts"
-import { fakeSlack, makeWorld, verdict } from "./support/world.ts"
+import { fakeJev, fakeSlack, postedIn, verdict } from "./support/fakes.ts"
+import { makeWorld } from "./support/world.ts"
 
 const CHANNEL = "C0AUKD42N3U"
 const recent = (minutesAgo: number) => (Date.now() / 1000 - minutesAgo * 60).toFixed(6)
@@ -17,13 +17,11 @@ describe("ingest: dedupe by content hash, and the horizon", () => {
   const id = `${CHANNEL}:${ts}`
   let messages: Array<SlackMessage> = []
   let judged = 0
-  const jev: JevShape = {
+  const jev = fakeJev({
     judge: () => Effect.sync(() => void judged++).pipe(Effect.as(verdict({ actionable: 0.1, agentResolvable: 0.1 }))),
     judgeInbox: () => Effect.succeed(verdict()),
-    judgeFinding: () => Effect.die("unused"),
-    judgeLogPatterns: () => Effect.die("unused"),
-  }
-  const world = makeWorld({ jev, slack: fakeSlack((channel) => (channel === CHANNEL ? messages : [])) })
+  })
+  const world = makeWorld({ jev, slack: fakeSlack({ latest: postedIn(CHANNEL, () => messages) }) })
   afterAll(() => world.dispose())
   const poll = () => world.runPromise(AlertPipeline.use((pipeline) => pipeline.pollOnce))
   const stored = () => world.runPromise(Store.use((store) => Effect.all([store.getAlert(id), store.alertHash(id)])))
@@ -102,8 +100,7 @@ describe("the horizon only moves past what was read", () => {
   let messages: Array<SlackMessage> = []
   const backlogAsks: Array<string | undefined> = []
   const world = makeWorld({
-    slack: {
-      ...fakeSlack(() => []),
+    slack: fakeSlack({
       latest: (channel, limit, oldest, latest) => {
         if (channel !== CHANNEL) return Effect.succeed([])
         if (down) return Effect.fail(new SlackApiError({ method: "conversations.history", code: "ratelimited", message: "ratelimited" }))
@@ -111,7 +108,7 @@ describe("the horizon only moves past what was read", () => {
         backlogAsks.push(oldest)
         return Effect.succeed(messages.filter((m) => Number(m.ts) <= Number(latest) && Number(m.ts) >= Number(oldest)).slice(0, limit))
       },
-    },
+    }),
   })
   afterAll(() => world.dispose())
   const poll = () => world.runPromise(AlertPipeline.use((pipeline) => pipeline.pollOnce))
@@ -148,7 +145,7 @@ describe("the horizon only moves past what was read", () => {
 describe("a known alert re-triaged to nothing to do", () => {
   const ts = recent(5)
   let tracker: SlackMessage = { ...adminBuildFailed, ts }
-  const world = makeWorld({ slack: fakeSlack((channel) => (channel === CHANNEL ? [tracker] : [])) })
+  const world = makeWorld({ slack: fakeSlack({ latest: postedIn(CHANNEL, () => [tracker]) }) })
   afterAll(() => world.dispose())
 
   test("a failed build re-run green withdraws the card it had put up", async () => {

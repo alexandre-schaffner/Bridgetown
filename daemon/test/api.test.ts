@@ -2,11 +2,11 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { Effect, ManagedRuntime, Schema } from "effect"
 import { authorized, bind, type BoundServer, serve } from "../src/api/server.ts"
 import { AdapterError, Conflict, GheBlocked, InvalidInput, MissingCredential, NotFound, SlackApiError, statusOf } from "../src/domain/errors.ts"
-import type { Alert } from "../src/domain/alert.ts"
-import { NO_MILESTONES, type Session } from "../src/domain/session.ts"
 import { Settings } from "../src/domain/settings.ts"
 import { appLayer } from "../src/layers.ts"
+import { newSession } from "../src/sessions/new-session.ts"
 import { Store } from "../src/store/store.ts"
+import { makeAlert } from "./support/records.ts"
 import { scratchDir } from "./support/tmp.ts"
 import { testEnv } from "./support/world.ts"
 
@@ -14,21 +14,12 @@ const TOKEN = "test-token"
 const home = scratchDir("bt-api-")
 const env = testEnv(home, { apiToken: TOKEN, slackToken: undefined, typesafeKey: undefined })
 
-const alert: Alert = {
-  id: "C1:1790933006.433649", channelId: "C1", channelName: "alert-releases", ts: "1790933006.433649", permalink: null,
-  title: "merkl-admin v0.6.0 · Build failed", summary: "", raw: "raw text", source: "releases", fingerprint: "f",
-  fields: { _tag: "generic" }, mentionsMe: false, receivedAt: "2026-10-01T00:00:00.000Z",
-  triage: { decision: "ignore", reason: "noise", jev: null }, sessionId: "s_queued", feedback: null,
-  events: [{ at: "2026-10-01T00:00:00.000Z", text: "Ignored by Jev: noise" }], disposition: null, claimedBy: [],
-}
+const alert = makeAlert({
+  id: "C1:1790933006.433649", ts: "1790933006.433649", title: "merkl-admin v0.6.0 · Build failed", raw: "raw text", receivedAt: "2026-10-01T00:00:00.000Z",
+  triage: { decision: "ignore", reason: "noise", jev: null }, sessionId: "s_queued", events: [{ at: "2026-10-01T00:00:00.000Z", text: "Ignored by Jev: noise" }],
+})
 
-const queued: Session = {
-  id: "s_queued", alertId: alert.id, title: alert.title, channelName: "alert-releases", status: "queued", phase: "diagnose",
-  activity: "Queued", diagnosis: null, outcome: null, recommendation: null, prUrl: null, branch: "fix-bt-x", worktree: null,
-  repoPath: "/r", claudeSessionId: null, model: "m", effort: "high", ciRounds: 0, costUsd: 0, slackThreadUrl: null,
-  milestones: NO_MILESTONES, rootCauseFound: null, resolution: null, pushbacks: 0, releasePrefix: null,
-  review: null, critiqueRounds: 0, critique: null, mergeRequestedAt: null, releaseTag: null, deployStage: null, tracker: null, sentBack: null, startedAt: "2026-10-01T00:00:00.000Z", updatedAt: "2026-10-01T00:00:00.000Z",
-}
+const queued = { ...newSession(alert, "s_queued", "/r"), startedAt: "2026-10-01T00:00:00.000Z", updatedAt: "2026-10-01T00:00:00.000Z" }
 
 let server: BoundServer
 let dispose = async () => {}

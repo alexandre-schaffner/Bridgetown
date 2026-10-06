@@ -1,62 +1,29 @@
 import { join } from "node:path"
-import { Effect, Layer, ManagedRuntime } from "effect"
+import { type Context, Layer, ManagedRuntime } from "effect"
 import type { Env } from "../../src/config.ts"
-import type { JevVerdict } from "../../src/domain/alert.ts"
-import { MissingCredential } from "../../src/domain/errors.ts"
+import { Reviewer, type ReviewerShape } from "../../src/critique/reviewer.ts"
 import { Grafana, type GrafanaShape } from "../../src/grafana/client.ts"
 import { appLayerWith } from "../../src/layers.ts"
-import { Reviewer, ReviewerLive, type ReviewerShape } from "../../src/critique/reviewer.ts"
-import { Agent, AgentLive, type AgentShape } from "../../src/sessions/agent.ts"
-import { GitHub, GitHubLive, type GitHubShape } from "../../src/ship/github.ts"
-import { SlackClient, type SlackClientShape, type SlackMessage } from "../../src/slack/client.ts"
+import { Agent, type AgentShape } from "../../src/sessions/agent.ts"
+import { GitHub, type GitHubShape } from "../../src/ship/github.ts"
+import { SlackClient, type SlackClientShape } from "../../src/slack/client.ts"
 import { StoreLive } from "../../src/store/store.ts"
 import { Jev, type JevShape } from "../../src/triage/jev.ts"
+import { fakeGitHub, fakeSlack, noAgent, noGrafana, noJev, noReviewer } from "./fakes.ts"
 import { scratchDir } from "./tmp.ts"
 
-export const verdict = (overrides: Partial<JevVerdict> = {}): JevVerdict => ({
-  actionable: 0.95, agentResolvable: 0.9, humanOnIt: 0.01, kind: "build_failure", kindConfidence: 0.9, depth: "quick", urgency: 1, ...overrides,
-})
-
-/** Slack as the tests want it: `latest` serves `messages(channel)`, posts succeed, everything else is empty. */
-export const fakeSlack = (messages: (channel: string) => ReadonlyArray<SlackMessage>): SlackClientShape => ({
-  identity: () => Effect.succeed({ user_id: "UME", user: "me", url: "https://merkl.slack.com/" }),
-  latest: (channel) => Effect.sync(() => messages(channel)),
-  replies: () => Effect.succeed([]),
-  permalink: (channel, ts) => Effect.succeed(`https://merkl.slack.com/archives/${channel}/p${ts.replace(".", "")}`),
-  search: () => Effect.succeed([]),
-  groupsOf: () => Effect.succeed([]),
-  userName: (id) => Effect.succeed(id),
-  post: () => Effect.succeed("1.000001"),
-  remove: () => Effect.void,
-})
-
-const noJev: JevShape = {
-  judge: () => Effect.fail(new MissingCredential({ service: "jev", message: "no TypeSafe API key" })),
-  judgeInbox: () => Effect.fail(new MissingCredential({ service: "jev", message: "no TypeSafe API key" })),
-  judgeFinding: () => Effect.fail(new MissingCredential({ service: "jev", message: "no TypeSafe API key" })),
-  judgeLogPatterns: () => Effect.fail(new MissingCredential({ service: "jev", message: "no TypeSafe API key" })),
-}
-
-/** Grafana with no data: it answers, and every query with no series and no rows. */
-export const noGrafana: GrafanaShape = {
-  reachable: Effect.succeed(true),
-  prom: () => Effect.succeed([]),
-  logStats: () => Effect.succeed([]),
-  logRows: () => Effect.succeed([]),
-}
+/** A fake, or the real adapter's layer for a world that needs it (the mock's live Grafana, the smoke test's agent). */
+type Adapter<I, S> = S | Layer.Layer<I>
 
 export interface WorldOptions {
-  /** Where the claude CLI keeps conversations; under `home` by default. */
-  readonly claudeConfigDir?: string
-  readonly slack?: SlackClientShape
-  readonly jev?: JevShape
-  readonly dryRun?: boolean
-  readonly agent?: AgentShape
-  readonly reviewer?: ReviewerShape
-  readonly github?: GitHubShape
-  readonly grafana?: GrafanaShape
-  /** An existing `BRIDGETOWN_HOME` (a store an older daemon wrote); a fresh scratch dir otherwise. */
-  readonly home?: string
+  readonly slack?: Adapter<SlackClient, SlackClientShape>
+  readonly jev?: Adapter<Jev, JevShape>
+  readonly agent?: Adapter<Agent, AgentShape>
+  readonly reviewer?: Adapter<Reviewer, ReviewerShape>
+  readonly github?: Adapter<GitHub, GitHubShape>
+  readonly grafana?: Adapter<Grafana, GrafanaShape>
+  /** Over `testEnv`'s. */
+  readonly env?: Partial<Env>
 }
 
 /** A launch environment for tests: everything under `home`, dry run, and the default CLIs. */
@@ -74,18 +41,29 @@ export const testEnv = (home: string, overrides: Partial<Env> = {}): Env => ({
   ...overrides,
 })
 
-/** The real services over a temp store, with Slack and Jev faked (and the SDK and GitHub when a test passes them). Nothing reaches the network or the SDK unless a test starts a turn. */
-export const makeWorld = (options: WorldOptions = {}) => {
-  const home = options.home ?? scratchDir("bt-world-")
-  const env = testEnv(home, { forceDryRun: options.dryRun ?? true, claudeConfigDir: options.claudeConfigDir ?? join(home, "claude") })
-  const base = Layer.mergeAll(
-    StoreLive(env.home),
-    Layer.succeed(SlackClient)(options.slack ?? fakeSlack(() => [])),
-    Layer.succeed(Jev)(options.jev ?? noJev),
-    options.agent === undefined ? AgentLive(undefined) : Layer.succeed(Agent)(options.agent),
-    options.reviewer === undefined ? ReviewerLive(undefined) : Layer.succeed(Reviewer)(options.reviewer),
-    options.github === undefined ? GitHubLive : Layer.succeed(GitHub)(options.github),
-    Layer.succeed(Grafana)(options.grafana ?? noGrafana),
-  )
-  return ManagedRuntime.make(appLayerWith(env, base))
+const adapter = <I, S>(tag: Context.Service<I, S>, given: Adapter<I, S> | undefined, fake: S): Layer.Layer<I> => {
+  if (given === undefined) return Layer.succeed(tag)(fake)
+  return Layer.isLayer(given) ? (given as Layer.Layer<I>) : Layer.succeed(tag)(given as S)
 }
+
+/**
+ * The real services over a store under `home`, with the outside world faked: Slack that has nothing, Jev without a
+ * key, GitHub with no PR, Grafana with no data, and no agent or reviewer to run. Options swap in what a caller is about.
+ */
+export const worldLayer = (home: string, options: WorldOptions = {}) =>
+  appLayerWith(
+    testEnv(home, options.env),
+    Layer.mergeAll(
+      StoreLive(home),
+      adapter(SlackClient, options.slack, fakeSlack()),
+      adapter(Jev, options.jev, noJev),
+      adapter(Agent, options.agent, noAgent),
+      adapter(Reviewer, options.reviewer, noReviewer),
+      adapter(GitHub, options.github, fakeGitHub()),
+      adapter(Grafana, options.grafana, noGrafana),
+    ),
+  )
+
+/** `worldLayer` as a runtime, over a scratch store unless `home` is an existing one (a store an older daemon wrote). */
+export const makeWorld = (options: WorldOptions & { readonly home?: string } = {}) =>
+  ManagedRuntime.make(worldLayer(options.home ?? scratchDir("bt-world-"), options))

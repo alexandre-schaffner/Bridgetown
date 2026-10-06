@@ -5,10 +5,11 @@ import { Inbox } from "../src/pipeline/inbox.ts"
 import { inboxQueries, parseInbox, threadTsFromPermalink } from "../src/slack/inbox.ts"
 import { SlackMe } from "../src/slack/me.ts"
 import { Store } from "../src/store/store.ts"
-import { fakeSlack, makeWorld } from "./support/world.ts"
 import { decideInbox } from "../src/triage/policy.ts"
 import type { JevVerdict } from "../src/domain/alert.ts"
 import { DEFAULT_SETTINGS } from "../src/domain/settings.ts"
+import { fakeSlack } from "./support/fakes.ts"
+import { makeWorld } from "./support/world.ts"
 
 const ctx = { me: "U0ATSF15M4L", fromName: "Pierre", alertChannels: new Set(["C0AUKD42N3U"]) }
 const match = (overrides: Record<string, unknown> = {}) => ({
@@ -83,10 +84,9 @@ describe("inbox policy", () => {
 describe("the inbox horizon", () => {
   let failing = true
   const world = makeWorld({
-    slack: {
-      ...fakeSlack(() => []),
+    slack: fakeSlack({
       search: () => (failing ? Effect.fail(new SlackApiError({ method: "search.messages", code: "ratelimited", message: "ratelimited" })) : Effect.succeed([])),
-    },
+    }),
   })
   afterAll(() => world.dispose())
 

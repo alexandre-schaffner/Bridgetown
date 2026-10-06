@@ -1,12 +1,33 @@
 import { randomUUID } from "node:crypto"
-import type { NonNullableUsage, SDKAssistantMessage, SDKResultSuccess, SDKSystemMessage } from "@anthropic-ai/claude-agent-sdk"
+import type { NonNullableUsage, Options, SDKAssistantMessage, SDKResultSuccess, SDKSystemMessage } from "@anthropic-ai/claude-agent-sdk"
+import { Client } from "@modelcontextprotocol/sdk/client/index.js"
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import type { SessionResult } from "../../src/sessions/output.ts"
+import { TOOL_SERVER } from "../../src/sessions/tools.ts"
 
 /**
- * The Agent SDK messages a real CLI streams, built by hand for the mock's
- * scripted agent. Only `system/init`, `assistant` and `result` matter to the
- * daemon (`sessions/sdk-events.ts`); the bookkeeping fields are zeros.
+ * What the Claude CLI does for the daemon, by hand, for the tests' agents and the mock's scripted one: the Agent SDK
+ * messages it streams (only `system/init`, `assistant` and `result` matter to `sessions/sdk-events.ts`; the
+ * bookkeeping fields are zeros), and its calls to Bridgetown's tools.
  */
+
+/**
+ * Bridgetown's in-process tool server, reached the way the CLI reaches it: an MCP client over an in-memory transport.
+ * The call answers the text of the tool's reply.
+ */
+export const connectTools = async (options: Options, clientName: string) => {
+  const server = options.mcpServers?.[TOOL_SERVER]
+  if (server?.type !== "sdk" || !("instance" in server)) throw new Error("no Bridgetown tool server in the query options")
+  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair()
+  await server.instance.connect(serverSide)
+  const client = new Client({ name: clientName, version: "0" })
+  await client.connect(clientSide)
+  return async (name: string, args: Record<string, unknown>, timeoutMs = 60_000): Promise<string> => {
+    const reply = await client.callTool({ name, arguments: args }, undefined, { timeout: timeoutMs })
+    const content = Array.isArray(reply.content) ? reply.content : []
+    return content.map((block: unknown) => (typeof block === "object" && block !== null && "text" in block ? String(block.text) : "")).join("")
+  }
+}
 
 const MODEL = "claude-opus-5-5"
 

@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { Health } from "../src/health.ts"
 import { Hub } from "../src/hub.ts"
-import { type GitHubShape, type Reachability, refusedByAllowList } from "../src/ship/github.ts"
+import { type Reachability, refusedByAllowList } from "../src/ship/github.ts"
+import { fakeGitHub } from "./support/fakes.ts"
 import { makeWorld } from "./support/world.ts"
 
 describe("GHE allow list", () => {
@@ -16,12 +17,7 @@ describe("GHE allow list", () => {
 describe("GHE probe", () => {
   test("blocked and back: Status.github says it, and Status.error never repeats it", async () => {
     let reachable: Reachability = "blocked"
-    const github: GitHubShape = {
-      viewPr: () => Effect.die("unused"), mergePr: () => Effect.die("unused"), rerunFailedJobs: () => Effect.die("unused"),
-      nextPatchTag: () => Effect.die("unused"), tagExists: () => Effect.die("unused"), createRelease: () => Effect.die("unused"),
-      branchHead: () => Effect.succeed(null), prHead: () => Effect.die("unused"), markReady: () => Effect.die("unused"), reachability: Effect.sync(() => reachable),
-    }
-    const world = makeWorld({ github })
+    const world = makeWorld({ github: fakeGitHub({ reachability: Effect.sync(() => reachable) }) })
     try {
       const probe = Effect.gen(function* () {
         yield* (yield* Health).probeGithub

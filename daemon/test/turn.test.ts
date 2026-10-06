@@ -13,6 +13,7 @@ import { Store } from "../src/store/store.ts"
 import { init, type Play, playingAgent, RESULT } from "./support/agent.ts"
 import { makeAlert, makeSession } from "./support/records.ts"
 import { scratchDir } from "./support/tmp.ts"
+import { fakeGitHub } from "./support/fakes.ts"
 import { makeWorld } from "./support/world.ts"
 
 const OWN_PR = "https://nocturlab.ghe.com/Merkl/monorepo/pull/3401"
@@ -20,26 +21,12 @@ const OWN_PR = "https://nocturlab.ghe.com/Merkl/monorepo/pull/3401"
 /** Handed back with its worktree and agent conversation: your message starts a resumed turn. */
 const handedBack = (id: string): Session => makeSession("waiting", { id, alertId: `C1:${id}`, worktree: "/w", claudeSessionId: "c", outcome: "needs_human" })
 
-/** GitHub that knows nothing and changes nothing. */
-const quietGitHub: GitHubShape = {
-  viewPr: () => Effect.die("no PR in these tests"),
-  mergePr: () => Effect.void,
-  rerunFailedJobs: () => Effect.void,
-  nextPatchTag: (_repo, prefix) => Effect.succeed(`${prefix}-v0.0.1`),
-  tagExists: () => Effect.succeed(false),
-  createRelease: () => Effect.void,
-  branchHead: () => Effect.succeed(null),
-  prHead: () => Effect.succeed(null),
-  markReady: () => Effect.void,
-  reachability: Effect.succeed("ok"),
-}
-
 /** Seeds a session (handed back unless `session` says otherwise), starts a turn on it, and waits until the turn is over. */
 const turnOf = async (
   plays: ReadonlyArray<Play>,
   session: Session = handedBack("s_turn"),
   start: (runner: SessionRunnerShape) => Effect.Effect<unknown, unknown, Shipper | Store> = (runner) => runner.message(session.id, "go"),
-  github: GitHubShape = quietGitHub,
+  github: GitHubShape = fakeGitHub(),
 ) => {
   const { agent } = playingAgent(plays)
   const world = makeWorld({ agent, github })
@@ -125,7 +112,7 @@ describe("asks", () => {
 
   test("closing a session from its card while its agent asks takes the agent down too", async () => {
     const { agent, state } = playingAgent([{ kind: "tool", name: "ask", args: { question: "Pin or revert?" } }])
-    const world = makeWorld({ agent, github: quietGitHub })
+    const world = makeWorld({ agent })
     try {
       const out = await world.runPromise(
         Effect.gen(function* () {
@@ -234,15 +221,14 @@ describe("send-backs", () => {
     // The first turn's result waits on `git ls-remote` until the send-back has been queued behind it.
     const reached = Promise.withResolvers<void>()
     const queuedUp = Promise.withResolvers<void>()
-    const github: GitHubShape = {
-      ...quietGitHub,
+    const github = fakeGitHub({
       branchHead: () =>
         Effect.promise(async () => {
           reached.resolve()
           await queuedUp.promise
           return null
         }),
-    }
+    })
     const inCi: Session = { ...handedBack("s_queued"), prUrl: OWN_PR, milestones: { ...NO_MILESTONES, prOpened: true, ciGreen: true } }
     const flaky = { ...RESULT, outcome: "recommendation" as const, recommendation: "rerun_failed_jobs" as const, recommendationDetail: "A flaky runner" }
     const delivered: Array<string> = []

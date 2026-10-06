@@ -5,7 +5,8 @@ import { Hub, problemOf, type StatusPatch } from "../src/hub.ts"
 import { SlackThread } from "../src/slack/thread.ts"
 import { Store } from "../src/store/store.ts"
 import { makeAlert } from "./support/records.ts"
-import { fakeSlack, makeWorld } from "./support/world.ts"
+import { fakeSlack } from "./support/fakes.ts"
+import { makeWorld } from "./support/world.ts"
 
 describe("status problems", () => {
   const world = makeWorld()
@@ -40,8 +41,8 @@ describe("status problems", () => {
 
 describe("Slack posts' problem", () => {
   const world = makeWorld({
-    dryRun: false,
-    slack: { ...fakeSlack(() => []), post: () => Effect.fail(new SlackApiError({ method: "chat.postMessage", code: "ratelimited", message: "ratelimited" })) },
+    env: { forceDryRun: false },
+    slack: fakeSlack({ post: () => Effect.fail(new SlackApiError({ method: "chat.postMessage", code: "ratelimited", message: "ratelimited" })) }),
   })
   afterAll(() => world.dispose())
 

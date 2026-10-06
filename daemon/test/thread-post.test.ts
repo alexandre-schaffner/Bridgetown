@@ -3,12 +3,13 @@ import { Effect } from "effect"
 import { Hub } from "../src/hub.ts"
 import { SlackThread } from "../src/slack/thread.ts"
 import { makeAlert } from "./support/records.ts"
-import { fakeSlack, makeWorld } from "./support/world.ts"
+import { fakeSlack } from "./support/fakes.ts"
+import { makeWorld } from "./support/world.ts"
 
 const posts: Array<{ readonly channel: string; readonly thread: string | undefined; readonly text: string }> = []
 const world = makeWorld({
-  dryRun: false,
-  slack: { ...fakeSlack(() => []), post: (channel, thread, text) => Effect.sync(() => void posts.push({ channel, thread, text })).pipe(Effect.as("2.000001")) },
+  env: { forceDryRun: false },
+  slack: fakeSlack({ post: (channel, thread, text) => Effect.sync(() => void posts.push({ channel, thread, text })).pipe(Effect.as("2.000001")) }),
 })
 afterAll(() => world.dispose())
 

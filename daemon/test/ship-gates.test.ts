@@ -5,24 +5,24 @@ import { snapshot } from "../src/api/views.ts"
 import type { Action } from "../src/domain/action.ts"
 import { AdapterError } from "../src/domain/errors.ts"
 import type { Session } from "../src/domain/session.ts"
-import type { GitHubShape } from "../src/ship/github.ts"
 import { Shipper } from "../src/ship/shipper.ts"
 import { Store } from "../src/store/store.ts"
 import { makeAlert, makeSession } from "./support/records.ts"
+import { fakeGitHub } from "./support/fakes.ts"
+import { eventually } from "./support/wait.ts"
 import { makeWorld } from "./support/world.ts"
 
 /** GitHub whose `gh pr merge` / `gh release create` wait for `release` to be completed, counting the calls that act. */
 const slowGitHub = (release: Deferred.Deferred<void>, options: { readonly createFails?: boolean } = {}) => {
   const calls = { merge: 0, create: 0 }
   const state = { merged: false, tags: ["dispute-v0.4.2"] }
-  const github: GitHubShape = {
+  const github = fakeGitHub({
     viewPr: (url) =>
       Effect.succeed({
         number: 3338, title: "fix", state: state.merged ? "MERGED" : "OPEN", mergedAt: state.merged ? "now" : null, headRefOid: "aaaa111", url,
         reviewDecision: "APPROVED", latestReviews: [], statusCheckRollup: [],
       }),
     mergePr: () => Effect.sync(() => void calls.merge++).pipe(Effect.andThen(Deferred.await(release)), Effect.andThen(Effect.sync(() => void (state.merged = true)))),
-    rerunFailedJobs: () => Effect.void,
     nextPatchTag: (_repo, prefix) => Effect.succeed(`${prefix}-v0.4.3`),
     tagExists: (_repo, tag) => Effect.sync(() => state.tags.includes(tag)),
     createRelease: (tag) =>
@@ -36,9 +36,7 @@ const slowGitHub = (release: Deferred.Deferred<void>, options: { readonly create
       ),
     branchHead: () => Effect.succeed("0000000000000000000000000000000000000001"),
     prHead: () => Effect.succeed("0000000000000000000000000000000000000001"),
-    markReady: () => Effect.void,
-    reachability: Effect.succeed("ok"),
-  }
+  })
   return { github, calls }
 }
 
@@ -60,15 +58,6 @@ const seed = (session: Session, card: Action) =>
     yield* store.putAction(card)
   })
 
-const waitFor = <A>(read: Effect.Effect<A, unknown, Store>, done: (value: A) => boolean) =>
-  Effect.gen(function* () {
-    for (;;) {
-      const value = yield* read
-      if (done(value)) return value
-      yield* Effect.sleep("5 millis")
-    }
-  })
-
 describe("the release gate through the real shipper", () => {
   test("in flight: the card says so, the session says what is happening, a second click is a 409; then it deploys, once", async () => {
     const release = Deferred.makeUnsafe<void>()
@@ -81,7 +70,7 @@ describe("the release gate through the real shipper", () => {
           const actions = yield* Actions
           const store = yield* Store
           const first = yield* actions.resolve("a_rel", null).pipe(Effect.forkChild)
-          yield* waitFor(store.getSession("s_rel"), (s) => s?.releaseTag === "dispute-v0.4.3")
+          yield* eventually(store.getSession("s_rel"), (s) => (s?.releaseTag === "dispute-v0.4.3" ? s : undefined))
           const during = yield* snapshot
           const second = yield* actions.resolve("a_rel", null).pipe(Effect.flip)
           yield* Deferred.succeed(release, undefined)
@@ -156,7 +145,7 @@ describe("the release gate through the real shipper", () => {
           yield* seed(mergeable, { ...releaseCard, id: "a_merge", kind: "merge", primaryLabel: "Merge" })
           const store = yield* Store
           const first = yield* (yield* Actions).resolve("a_merge", null).pipe(Effect.forkChild)
-          const during = yield* waitFor(store.getSession("s_rel"), (s) => s?.activity !== mergeable.activity)
+          const during = yield* eventually(store.getSession("s_rel"), (s) => (s?.activity !== mergeable.activity ? s : undefined))
           yield* Deferred.succeed(release, undefined)
           yield* Fiber.join(first)
           return { during, after: yield* store.getSession("s_rel"), cards: (yield* store.listActions()).map((a) => a.primaryLabel) }

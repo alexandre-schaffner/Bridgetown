@@ -1,18 +1,16 @@
 import { describe, expect, test } from "bun:test"
 import type { Alert, Decision, Disposition } from "../src/domain/alert.ts"
 import type { Session } from "../src/domain/session.ts"
-import { makeSession } from "./support/records.ts"
+import { makeAlert, makeSession } from "./support/records.ts"
 import { alertOutcome } from "../src/domain/alert-outcome.ts"
 
-const alert = (decision: Decision, disposition: Disposition["kind"] | null = null): Alert => ({
-  id: "C1:1", channelId: "C1", channelName: "alert-releases", ts: "1", permalink: null, title: "t", summary: "", raw: "",
-  source: "releases", fingerprint: "f", fields: { _tag: "generic" }, mentionsMe: false, receivedAt: "",
-  triage: { decision, reason: "because", jev: null }, sessionId: null, feedback: null,
-  // History text must not matter: only `disposition` does.
-  events: [{ at: "", text: "Dismissed by you, no agent started" }],
-  disposition: disposition === null ? null : { kind: disposition, at: "" },
-  claimedBy: [],
-})
+const alert = (decision: Decision, disposition: Disposition["kind"] | null = null): Alert =>
+  makeAlert({
+    triage: { decision, reason: "because", jev: null },
+    // History text must not matter: only `disposition` does.
+    events: [{ at: "", text: "Dismissed by you, no agent started" }],
+    disposition: disposition === null ? null : { kind: disposition, at: "" },
+  })
 
 const session = makeSession
 

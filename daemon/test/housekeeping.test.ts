@@ -17,7 +17,7 @@ import { makeWorld } from "./support/world.ts"
 
 const claudeConfigDir = scratchDir("bt-claude-")
 const repo = scratchRepo()
-const world = makeWorld({ claudeConfigDir })
+const world = makeWorld({ env: { claudeConfigDir } })
 afterAll(() => world.dispose())
 
 const HOUR = 60 * 60_000

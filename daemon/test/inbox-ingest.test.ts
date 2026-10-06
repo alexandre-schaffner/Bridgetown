@@ -6,9 +6,9 @@ import { Inbox } from "../src/pipeline/inbox.ts"
 import type { SearchMatch } from "../src/slack/client.ts"
 import { SlackMe } from "../src/slack/me.ts"
 import { Store } from "../src/store/store.ts"
-import type { JevShape } from "../src/triage/jev.ts"
 import { makeAlert, makeSession } from "./support/records.ts"
-import { fakeSlack, makeWorld, verdict } from "./support/world.ts"
+import { fakeJev, fakeSlack, verdict } from "./support/fakes.ts"
+import { makeWorld } from "./support/world.ts"
 
 const ME = "UME"
 const ago = (minutes: number) => (Date.now() / 1000 - minutes * 60).toFixed(6)
@@ -21,8 +21,7 @@ const mention = (ts: string, text: string): SearchMatch => ({
 })
 
 /** Jev reads the message's last words: "answered", "review", "delegate" or anything else (escalate). */
-const jevByText: JevShape = {
-  judge: () => Effect.die("unused"),
+const jevByText = fakeJev({
   judgeInbox: ({ item }): Effect.Effect<JevVerdict> =>
     Effect.succeed(
       item.raw.endsWith("answered")
@@ -31,15 +30,13 @@ const jevByText: JevShape = {
           ? verdict({ actionable: 0.95, agentResolvable: 0.9, kind: "investigation" })
           : verdict({ actionable: 0.9, agentResolvable: 0.1, kind: "decision_or_approval" }),
     ),
-  judgeFinding: () => Effect.die("unused"),
-  judgeLogPatterns: () => Effect.die("unused"),
-}
+})
 
 const setup = () => {
   let matches: ReadonlyArray<SearchMatch> = []
   const world = makeWorld({
     jev: jevByText,
-    slack: { ...fakeSlack(() => []), identity: () => Effect.succeed({ user_id: ME, user: "me", url: "https://merkl.slack.com/" }), search: (query) => Effect.succeed(query === `<@${ME}>` ? matches : []), userName: () => Effect.succeed("Pierre") },
+    slack: fakeSlack({ search: (query) => Effect.succeed(query === `<@${ME}>` ? matches : []), userName: () => Effect.succeed("Pierre") }),
   })
   const poll = (next: ReadonlyArray<SearchMatch>) =>
     world.runPromise(

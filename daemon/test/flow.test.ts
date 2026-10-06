@@ -12,9 +12,9 @@ import { SessionRunner } from "../src/sessions/runner.ts"
 import { Shipper } from "../src/ship/shipper.ts"
 import { MAX_CI_ROUNDS } from "../src/ship/transitions.ts"
 import { Store } from "../src/store/store.ts"
-import type { JevShape } from "../src/triage/jev.ts"
 import { makeAlert, makeSession } from "./support/records.ts"
-import { fakeSlack, makeWorld, verdict } from "./support/world.ts"
+import { fakeJev, fakeSlack, postedIn, verdict } from "./support/fakes.ts"
+import { makeWorld } from "./support/world.ts"
 
 const card = (overrides: Partial<Action>): Action => ({
   id: "a_x", kind: "review", title: "t", detail: "", primaryLabel: "Close session", options: [], sessionId: null, alertId: null,
@@ -63,8 +63,8 @@ describe("deliver respects status and maxConcurrent (M6, L2)", () => {
 })
 
 describe("cards (L3, L4)", () => {
-  const dry = makeWorld({ dryRun: true })
-  const live = makeWorld({ dryRun: false })
+  const dry = makeWorld()
+  const live = makeWorld({ env: { forceDryRun: false } })
   afterAll(async () => {
     await dry.dispose()
     await live.dispose()
@@ -146,13 +146,11 @@ describe("re-triage never overwrites a session you just started (M4)", () => {
   const id = `C0AUKD42N3U:${ts}`
   const judging = Effect.runSync(Deferred.make<void>())
   const answer = Effect.runSync(Deferred.make<void>())
-  const jev: JevShape = {
+  const jev = fakeJev({
     judge: () => Deferred.succeed(judging, undefined).pipe(Effect.andThen(Deferred.await(answer)), Effect.as(verdict())),
     judgeInbox: () => Effect.succeed(verdict()),
-    judgeFinding: () => Effect.die("unused"),
-    judgeLogPatterns: () => Effect.die("unused"),
-  }
-  const world = makeWorld({ jev, slack: fakeSlack((channel) => (channel === "C0AUKD42N3U" ? [{ ts, text: "API 5xx spike on /v4/opportunities", bot_id: "B1" }] : [])) })
+  })
+  const world = makeWorld({ jev, slack: fakeSlack({ latest: postedIn("C0AUKD42N3U", () => [{ ts, text: "API 5xx spike on /v4/opportunities", bot_id: "B1" }]) }) })
   afterAll(() => world.dispose())
 
   test("the session started during triage stays, and triage does not start a second one", async () => {

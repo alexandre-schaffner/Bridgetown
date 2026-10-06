@@ -5,14 +5,14 @@ import { overviewBoard } from "../src/grafana/boards.ts"
 import { watchBoard } from "../src/watch/detect.ts"
 import type { GrafanaShape } from "../src/grafana/client.ts"
 import { Hub } from "../src/hub.ts"
+import { noGrafana } from "./support/fakes.ts"
 import { makeWorld } from "./support/world.ts"
 
 let calls = 0
 const slowGrafana: GrafanaShape = {
-  reachable: Effect.succeed(true),
+  ...noGrafana,
   prom: () => Effect.sync(() => calls++).pipe(Effect.andThen(Effect.sleep("50 millis")), Effect.as([])),
   logStats: () => Effect.sync(() => calls++).pipe(Effect.andThen(Effect.sleep("50 millis")), Effect.as([])),
-  logRows: () => Effect.succeed([]),
 }
 const world = makeWorld({ grafana: slowGrafana })
 afterAll(() => world.dispose())

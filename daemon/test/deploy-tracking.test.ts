@@ -5,14 +5,14 @@ import { NO_MILESTONES } from "../src/domain/session.ts"
 import { AlertPipeline } from "../src/pipeline/alerts.ts"
 import { SessionRunner } from "../src/sessions/runner.ts"
 import { Shipper } from "../src/ship/shipper.ts"
-import type { GitHubShape } from "../src/ship/github.ts"
 import type { SlackMessage } from "../src/slack/client.ts"
 import { parseMessage } from "../src/slack/parse.ts"
 import { Store } from "../src/store/store.ts"
 import { playingAgent, RESULT } from "./support/agent.ts"
 import { adminBuildFailed } from "./support/messages.ts"
 import { makeAlert, makeSession } from "./support/records.ts"
-import { fakeSlack, makeWorld } from "./support/world.ts"
+import { fakeGitHub, fakeSlack } from "./support/fakes.ts"
+import { makeWorld } from "./support/world.ts"
 
 const RELEASES = "C0AUKD42N3U"
 const TRACKER_TS = adminBuildFailed.ts
@@ -39,11 +39,10 @@ describe("a deploy in flight follows its own tracker", () => {
     ts: (Date.now() / 1000 - i * 60).toFixed(6), text: `[RESOLVED] noise ${i}`, bot_id: "B1",
   }))
   const world = makeWorld({
-    slack: {
-      ...fakeSlack(() => []),
+    slack: fakeSlack({
       latest: (channel, _limit, oldest, latest) =>
         Effect.succeed(channel !== RELEASES ? [] : oldest === TRACKER_TS && latest === TRACKER_TS ? [adminDeployed] : newer),
-    },
+    }),
   })
   afterAll(() => world.dispose())
 
@@ -149,12 +148,7 @@ describe("a tracker edit that comes while the agent is busy", () => {
 
 describe("a re-run", () => {
   const reruns: Array<string> = []
-  const github: GitHubShape = {
-    viewPr: () => Effect.die("no PR"), mergePr: () => Effect.void, rerunFailedJobs: (runId) => Effect.sync(() => void reruns.push(runId)),
-    nextPatchTag: () => Effect.die("no release"), tagExists: () => Effect.succeed(false), createRelease: () => Effect.void,
-    branchHead: () => Effect.succeed(null), prHead: () => Effect.succeed(null), markReady: () => Effect.void, reachability: Effect.succeed("ok"),
-  }
-  const world = makeWorld({ github })
+  const world = makeWorld({ github: fakeGitHub({ rerunFailedJobs: (runId) => Effect.sync(() => void reruns.push(runId)) }) })
   afterAll(() => world.dispose())
 
   test("follows the tracker it re-ran, and waits for its next edit: the failure being re-run is not news", async () => {

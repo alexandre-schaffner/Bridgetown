@@ -4,16 +4,16 @@ import { ActionQueue } from "../src/actions/queue.ts"
 import { AdapterError } from "../src/domain/errors.ts"
 import type { GrafanaShape } from "../src/grafana/client.ts"
 import { Hub } from "../src/hub.ts"
-import type { Alert } from "../src/domain/alert.ts"
+import { alertFromParsed } from "../src/domain/alert.ts"
 import { Store } from "../src/store/store.ts"
-import type { JevShape } from "../src/triage/jev.ts"
 import { logPatternQuestions, type LogPatternInput } from "../src/watch/judge.ts"
 import { logSweep, sweepView } from "../src/api/views.ts"
 import { BATCH, behaviourOf, behaviourText, candidates, linesQuery, logFinding, mergeRows, type PatternRow, rowOf, sweepQuery } from "../src/watch/logs.ts"
 import { JUDGED_KEY, loadJudged } from "../src/watch/sweep-store.ts"
 import { Watcher } from "../src/watch/watcher.ts"
 import { makeSession } from "./support/records.ts"
-import { makeWorld, noGrafana } from "./support/world.ts"
+import { fakeJev, noGrafana } from "./support/fakes.ts"
+import { makeWorld } from "./support/world.ts"
 
 const DEADLOCK = "\nInvalid `prisma.nodesSources.upsert()` invocation:\n\nTransaction failed due to a write conflict or a deadlock. Please retry your transaction"
 const GOLDSKY = "Error fetching batch <N>/<N>: Rate limited: the preview community blocks subgraphs are being retired, and this shared endpoint is now throttled and will be removed"
@@ -182,10 +182,7 @@ describe("Watcher.sweepLogs", () => {
   }
   let batches: Array<ReadonlyArray<LogPatternInput>> = []
   let failJev = true
-  const jev: JevShape = {
-    judge: () => Effect.die("unused"),
-    judgeInbox: () => Effect.die("unused"),
-    judgeFinding: () => Effect.die("unused"),
+  const jev = fakeJev({
     judgeLogPatterns: (patterns) =>
       failJev
         ? Effect.fail(new AdapterError({ adapter: "jev", operation: "systemOne", message: "down", cause: null }))
@@ -194,7 +191,7 @@ describe("Watcher.sweepLogs", () => {
             // The deadlock is a problem; the retirement notice, here, is called noise.
             return patterns.map((p) => (p.message.includes("deadlock") ? { problem: 0.88, agent: 0.7, users: 0.2 } : { problem: 0.2, agent: 0.5, users: 0.1 }))
           }),
-  }
+  })
   const world = makeWorld({ jev, grafana })
   afterAll(() => world.dispose())
   const sweep = () => world.runPromise(Watcher.use((watcher) => watcher.sweepLogs))
@@ -277,12 +274,7 @@ describe("Watcher.sweepLogs after a bad deploy", () => {
   const rows = ERRORS.map((msg, i) => raw({ "merkl.job": `merkl-job-${i}`, _msg: msg }, 50 - i, 50 - i))
   const grafana: GrafanaShape = { ...noGrafana, logRows: (query) => Effect.succeed(query.includes(`severity_text:="ERROR"`) ? rows : []) }
   const problem = { problem: 0.9, agent: 0.7, users: 0.3 }
-  const jev: JevShape = {
-    judge: () => Effect.die("unused"),
-    judgeInbox: () => Effect.die("unused"),
-    judgeFinding: () => Effect.die("unused"),
-    judgeLogPatterns: (patterns) => Effect.succeed(patterns.map(() => problem)),
-  }
+  const jev = fakeJev({ judgeLogPatterns: (patterns) => Effect.succeed(patterns.map(() => problem)) })
   const world = makeWorld({ jev, grafana })
   afterAll(() => world.dispose())
 
@@ -290,11 +282,10 @@ describe("Watcher.sweepLogs after a bad deploy", () => {
     // The Redis pattern was found last week, and its agent is still on it.
     const [redis] = mergeRows([rowOf("errors", rows[2] ?? {})].filter((r) => r !== undefined))
     if (redis === undefined) throw new Error("no pattern")
-    const earlier: Alert = {
-      ...logFinding(redis, problem, new Date(Date.now() - 3 * 86_400_000)),
-      permalink: null, receivedAt: new Date(Date.now() - 3 * 86_400_000).toISOString(), triage: { decision: "auto", reason: "", jev: null },
-      sessionId: "s_redis", feedback: null, events: [], disposition: null, claimedBy: [],
-    }
+    const foundAt = new Date(Date.now() - 3 * 86_400_000)
+    const earlier = alertFromParsed(logFinding(redis, problem, foundAt), {
+      permalink: null, receivedAt: foundAt.toISOString(), triage: { decision: "auto", reason: "", jev: null }, sessionId: "s_redis", events: [],
+    })
     const found = await world.runPromise(
       Effect.gen(function* () {
         const store = yield* Store

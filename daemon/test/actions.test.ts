@@ -8,7 +8,8 @@ import type { Session } from "../src/domain/session.ts"
 import { Hub } from "../src/hub.ts"
 import { Store } from "../src/store/store.ts"
 import { makeAlert, makeSession } from "./support/records.ts"
-import { fakeSlack, makeWorld } from "./support/world.ts"
+import { fakeSlack } from "./support/fakes.ts"
+import { makeWorld } from "./support/world.ts"
 
 const card = (overrides: Partial<Action>): Action => ({
   id: "a_x", kind: "review", title: "t", detail: "", primaryLabel: "Close session", options: [], sessionId: null, alertId: null,
@@ -25,8 +26,8 @@ const seed = (alert: Partial<Alert>, action: Action, session?: Session) =>
 
 const world = makeWorld()
 const failingSlack = makeWorld({
-  dryRun: false,
-  slack: { ...fakeSlack(() => []), post: (method) => Effect.fail(new SlackApiError({ method, code: "channel_not_found", message: "channel_not_found" })) },
+  env: { forceDryRun: false },
+  slack: fakeSlack({ post: (method) => Effect.fail(new SlackApiError({ method, code: "channel_not_found", message: "channel_not_found" })) }),
 })
 afterAll(async () => {
   await world.dispose()
@@ -170,8 +171,8 @@ describe("one resolve or dismiss of a card at a time", () => {
   const release = Effect.runSync(Deferred.make<void>())
   const answered = Effect.runSync(Deferred.make<void>())
   const slow = makeWorld({
-    dryRun: false,
-    slack: { ...fakeSlack(() => []), post: () => Deferred.succeed(answered, undefined).pipe(Effect.andThen(Deferred.await(release)), Effect.as("1.2")) },
+    env: { forceDryRun: false },
+    slack: fakeSlack({ post: () => Deferred.succeed(answered, undefined).pipe(Effect.andThen(Deferred.await(release)), Effect.as("1.2")) }),
   })
   afterAll(() => slow.dispose())
 
