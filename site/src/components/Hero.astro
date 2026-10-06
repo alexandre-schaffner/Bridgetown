@@ -80,8 +80,9 @@ import { download } from "../lib/download";
   }
 
   h1 {
+    --size: clamp(3rem, 6.4vw + 0.5rem, 6rem);
     max-width: 13ch;
-    font-size: clamp(3rem, 6.4vw + 0.5rem, 6rem);
+    font-size: var(--size);
     line-height: 1;
     letter-spacing: -0.038em;
     font-weight: 600;
@@ -178,13 +179,13 @@ import { download } from "../lib/download";
     overflow: clip;
   }
 
-  /* Centred in the room between the nav and the board's peeking edge; on a short screen it
-     starts under the nav rather than spilling up behind it. */
+  /* Centred in the room between the nav and the board's peeking edge (86% down, from `peek`
+     in scripts/main.ts); on a short screen it starts under the nav rather than behind it. */
   :global(html.js) .intro {
     position: absolute;
     left: var(--gutter);
     right: var(--gutter);
-    top: 4rem;
+    top: var(--nav-h);
     bottom: 18svh;
     z-index: 2;
     align-content: safe center;
@@ -540,10 +541,17 @@ import { download } from "../lib/download";
     }
   }
 
+  /* The board's top edge rises to where this line sits. */
+  @media (max-height: 700px) {
+    .meta {
+      display: none;
+    }
+  }
+
   /* Short screens: a phone with its toolbars showing, or turned sideways. */
   @media (max-height: 640px) {
     h1 {
-      font-size: min(clamp(3rem, 6.4vw + 0.5rem, 6rem), 9svh);
+      font-size: min(var(--size), 9svh);
     }
     :global(html.js) .intro {
       gap: 0.75rem;
@@ -557,14 +565,8 @@ import { download } from "../lib/download";
     }
   }
 
-  /* The board's top edge rises to where this line sits. */
-  @media (max-height: 700px) {
-    .meta {
-      display: none;
-    }
-  }
-
-  @media (max-height: 500px) {
+  /* A phone sideways: a shorter board, and no caption to hide behind it. */
+  @media (max-height: 560px) and (orientation: landscape) {
     :global(html.js) .board-wrap {
       --rows: 3;
     }

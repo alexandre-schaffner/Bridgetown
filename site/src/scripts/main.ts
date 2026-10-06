@@ -591,8 +591,9 @@ if (journey) {
     if (!wide.matches) {
       journey.style.height = "";
       pin.style.position = "";
+      pin.style.top = "";
       track.style.transform = "";
-      panels.forEach((p) => p && (p.style.transform = ""));
+      for (const p of panels) if (p) p.style.transform = "";
       return;
     }
     distance = Math.max(0, track.scrollWidth - innerWidth);

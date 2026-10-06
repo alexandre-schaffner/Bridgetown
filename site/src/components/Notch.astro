@@ -186,7 +186,7 @@ const steps = [
 
   /* A phone sideways: the words beside each other again, and the pin's whole height for the
      screen. The nav steps aside while you read down, so it needs no room kept. */
-  @media (max-height: 560px) {
+  @media (max-height: 560px) and (orientation: landscape) {
     .copy {
       grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.6fr);
     }
@@ -199,7 +199,7 @@ const steps = [
   }
 
   /* A phone, pinned: the four steps in a row, and only the playing one's words beneath. */
-  @media (max-width: 600px), (max-height: 560px) {
+  @media (max-width: 600px), (max-height: 560px) and (orientation: landscape) {
     :global(html.js) .steps {
       position: relative;
       grid-template-columns: repeat(4, auto);
@@ -257,7 +257,8 @@ const steps = [
     }
   }
 
-  @media (max-width: 340px) {
+  /* The smallest phones: the four titles still fit on one line. */
+  @media (max-width: 350px) {
     :global(html.js) .s-title {
       font-size: 0.8125rem;
     }

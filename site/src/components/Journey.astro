@@ -398,6 +398,7 @@ const H = 120;
   }
 
   .code pre {
+    --ln-w: 2.25rem;
     margin: 0;
     padding: 0.75rem 0;
     border-block: 0.5px solid var(--ui-hairline);
@@ -415,7 +416,7 @@ const H = 120;
 
   .ln {
     display: inline-block;
-    width: 2.25rem;
+    width: var(--ln-w);
     color: rgb(255 255 255 / 0.3);
   }
 
@@ -662,8 +663,8 @@ const H = 120;
       white-space: pre-wrap;
     }
     .dl {
-      padding-left: 2.25rem;
-      text-indent: -2.25rem;
+      padding-left: var(--ln-w);
+      text-indent: calc(-1 * var(--ln-w));
     }
     .ln {
       text-indent: 0;

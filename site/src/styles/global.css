@@ -59,6 +59,7 @@
   /* Never under a landscape iPhone's sensor housing (viewport-fit=cover). */
   --gutter: max(clamp(1.25rem, 4vw, 3.5rem), env(safe-area-inset-left), env(safe-area-inset-right));
   --measure: 34rem;
+  --nav-h: 4rem;
   --max: 84rem;
 
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
