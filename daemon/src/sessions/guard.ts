@@ -63,6 +63,12 @@ const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "mksh", "ash", "fish
 const CLUSTER = new Set(["kubectl", "helm", "argocd", "kargo"])
 const GCP = new Set(["gcloud", "gsutil", "bq"])
 const NETWORK = new Set(["curl", "wget", "nc", "ncat", "netcat", "socat", "telnet", "http", "https", "xh", "websocat", "grpcurl", "aria2c"])
+/**
+ * Commands that hand another command to something outside the session to run later or
+ * elsewhere: an at, cron, launchd or systemd job, a terminal multiplexer's window. It runs
+ * without the session's guard, and often without its PATH, so the shims don't see it either.
+ */
+const DETACHED = new Set(["at", "batch", "crontab", "launchctl", "systemd-run", "tmux", "screen"])
 /** Tools that take the port as its own argument (`nc 127.0.0.1 47621`). */
 const PORT_ARGUMENT = new Set(["nc", "ncat", "netcat", "telnet"])
 const SLACK_HOST = /(^|[^A-Za-z0-9-])([A-Za-z0-9-]+\.)*slack\.com(?![A-Za-z0-9-])/i
@@ -317,6 +323,7 @@ const commandRefusal = (name: string, head: Word, args: ReadonlyArray<Word>, sco
   if (CLUSTER.has(name)) return REASONS.cluster
   if (GCP.has(name)) return REASONS.gcp
   if (name === "op") return REASONS.secrets
+  if (DETACHED.has(name)) return REASONS.detached
   if (name === "security" && args.some((arg) => /^(find-(generic|internet)-password|dump-keychain|export)$/.test(arg.text))) return REASONS.secrets
   // `ps eww`/`ps -E` dumps a process's initial environment: in development the daemon still carries its tokens there (the kernel's envp copy survives the delete). The env dump is never needed for the task. (`-e`/`-ef` is the all-processes flag, not the environment one.)
   if (name === "ps" && args.some((arg) => isPsEnvDump(arg.text))) return REASONS.secrets

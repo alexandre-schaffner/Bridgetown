@@ -37,6 +37,8 @@ export const REASONS = {
   computedFlag:
     'A computed word here could become one of the flags Bridgetown checks. Write flags out, and quote a computed value (`--body "$BODY"`) so it stays one word.',
   pipeToShell: "Piping commands into a shell is not allowed. Run the commands directly.",
+  detached:
+    "A scheduled or detached command (at, cron, launchd, tmux, screen) runs outside the session, where nothing checks it. Run it directly, in the background if it must keep running.",
   interactive: "An interactive shell runs startup files ($ENV, ~/.bashrc) the guard does not see. Run the command with `bash -c` instead.",
   dangerousEnv: "That environment variable would make a later command run something the guard cannot see. Run the command directly.",
   nesting: "Too many nested shells to check. Run the commands directly.",

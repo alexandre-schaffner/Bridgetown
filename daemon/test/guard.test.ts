@@ -253,6 +253,14 @@ describe("guard", () => {
     "BUN_OPTIONS='--preload ./x.ts' bun test",
     // zsh runs $ZDOTDIR/.zshenv first; an interactive shell runs $ENV (and its rc files).
     "ZDOTDIR=/tmp/z zsh -c 'git status'",
+    // A command handed to a scheduler or a multiplexer runs outside the session, past both guards.
+    "echo 'gh pr merge 1' | at now",
+    "tmux new-session -d 'gh pr merge 1'",
+    "tmux send-keys -t 0 'gh pr merge 1' Enter",
+    "screen -dm sh -c 'gh pr merge 1'",
+    "crontab /tmp/jobs",
+    "launchctl submit -l x -- /bin/sh -c 'gh pr merge 1'",
+    "systemd-run --user sh -c 'gh pr merge 1'",
     // Where `./run.sh` is depends on where `cd`/`pushd` went, and after `popd` or with a CDPATH the guard can't tell.
     "pushd sub && ./run.sh",
     "cd -P sub && ./run.sh",
