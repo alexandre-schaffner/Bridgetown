@@ -248,7 +248,7 @@ struct MiniPanel: View {
                         .font(Typo.figure(12))
                         .foregroundStyle(row.current ? .primary : .tertiary)
                         .contentTransition(.numericText(value: row.shown ?? 0))
-                        .animation(.snappy(duration: 0.22), value: row.shown)
+                        .animation(Easing.state, value: row.shown)
                 }
                 .padding(.vertical, 4)
                 .accessibilityElement(children: .combine)
@@ -288,7 +288,7 @@ struct MiniPanel: View {
             .tracking(-0.3)
             .foregroundStyle(valueStyle)
             .contentTransition(.numericText(value: shown ?? 0))
-            .animation(.snappy(duration: 0.22), value: shown)
+            .animation(Easing.state, value: shown)
             .lineLimit(1)
             .fixedSize()
     }

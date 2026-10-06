@@ -57,7 +57,7 @@ private struct SweepContent: View {
             if !steady.isEmpty {
                 if showSteady {
                     RowList(data: steady) { PatternRow(pattern: $0) }
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .transition(.opacity)
                 }
                 Button(showSteady ? "Hide steady errors" : "Show \(steady.count) steady error\(steady.count == 1 ? "" : "s")") {
                     withAnimation(Easing.state) { showSteady.toggle() }

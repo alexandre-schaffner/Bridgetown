@@ -1,11 +1,13 @@
 import SwiftUI
 
 /// What the route shows in the open island: a session or alert detail over the overview.
-/// A detail slides in from the right over a fade; going back, it fades away. The overview stays put under it, out of sight, so coming back
+/// A detail slides in from the right over a fade (a fade alone under Reduce Motion); going
+/// back, it fades away. The overview stays put under it, out of sight, so coming back
 /// finds it as it was: scrolled where it was, the same card open, the same rows picked.
 /// A session gone from the snapshot shows the overview (the Store routes back right after).
 struct RouteContent<Overview: View>: View {
     @Environment(Store.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ViewBuilder let overview: () -> Overview
 
     var body: some View {
@@ -45,7 +47,7 @@ struct RouteContent<Overview: View>: View {
     private func presented(_ detail: some View) -> some View {
         detail
             .onHorizontalSwipe(swipedBack)
-            .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
+            .transition(.asymmetric(insertion: reduceMotion ? .opacity : .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
     }
 
     /// Fingers moving right over a detail go back to the overview, like the chevron.

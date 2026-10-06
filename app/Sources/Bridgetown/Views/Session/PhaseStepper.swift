@@ -82,6 +82,7 @@ struct StepPill: View {
     /// The Agents board's smaller size.
     var small = false
     var style = Style.named
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// How every change between states eases: colour, glow, width and the mark at once.
     static var morph: Animation { Easing.reduceMotion ? Easing.state : .smooth(duration: 0.45) }
@@ -131,7 +132,7 @@ struct StepPill: View {
             if kind.isMarked {
                 head
                     .frame(width: mark, height: mark)
-                    .transition(.scale(scale: 0.2).combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.2).combined(with: .opacity))
             }
             Text(step.label)
                 .font(.geist(small ? 10.5 : 11.5, kind.isMarked ? .semibold : .medium))

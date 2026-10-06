@@ -52,13 +52,17 @@ enum Ink {
 // MARK: Motion
 
 /// The app's timings: quick for feedback under the pointer (a press, a hover), state for
-/// something that changed (a tab, a list, a card), both easing out without a bounce.
-/// Under Reduce Motion each becomes a short fade-length ease, and nothing scales or slides.
+/// something that changed (a tab, a list, a card), pane for one pane taking another's
+/// place, all easing out without a bounce. Under Reduce Motion each becomes a short
+/// fade-length ease; the transitions that would slide or scale (a detail coming in, the
+/// island's content unfolding) are plain fades there, chosen where each is declared from
+/// the environment's `accessibilityReduceMotion`, the same setting this reads.
 enum Easing {
     static var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     static var quick: Animation { reduceMotion ? .easeOut(duration: 0.08) : .easeOut(duration: 0.12) }
     static var state: Animation { reduceMotion ? .easeOut(duration: 0.12) : .smooth(duration: 0.24) }
+    static var pane: Animation { reduceMotion ? .easeOut(duration: 0.12) : .smooth(duration: 0.32) }
 }
 
 // MARK: Type

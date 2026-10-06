@@ -7,6 +7,7 @@ import SwiftUI
 struct IslandView: View {
     let model: IslandModel
     let open: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let layout = model.layout
@@ -58,15 +59,15 @@ struct IslandView: View {
         switch model.presentation {
         case .resting:
             GlanceWings(glance: model.glance, notch: notch, hovering: model.hovering)
-                .transition(.reveal)
+                .transition(.reveal(reduceMotion: reduceMotion))
         case .banner:
             if let action = model.banner {
                 BannerContent(action: action, notch: notch)
-                    .transition(.reveal)
+                    .transition(.reveal(reduceMotion: reduceMotion))
             }
         case .open:
             IslandOpenView(model: model)
-                .transition(.reveal)
+                .transition(.reveal(reduceMotion: reduceMotion))
         }
     }
 
@@ -96,9 +97,13 @@ private struct Reveal: ViewModifier {
 
 private extension AnyTransition {
     /// In: a blur-fade that trails the shape a beat, so the outline leads and the content
-    /// settles into it. Out: quick, before the shape closes over it.
-    static var reveal: AnyTransition {
-        .asymmetric(
+    /// settles into it. Out: quick, before the shape closes over it. Under Reduce Motion,
+    /// a short fade each way: nothing blurs or scales.
+    static func reveal(reduceMotion: Bool) -> AnyTransition {
+        if reduceMotion {
+            return .opacity.animation(Easing.quick)
+        }
+        return .asymmetric(
             insertion: .modifier(active: Reveal(active: true), identity: Reveal(active: false))
                 .animation(.smooth(duration: 0.36).delay(0.07)),
             removal: .modifier(active: Reveal(active: true), identity: Reveal(active: false))

@@ -69,7 +69,7 @@ struct IslandOpenView: View {
 
     private var main: some View {
         RouteContent { overview }
-            .animation(.smooth(duration: 0.32), value: store.route)
+            .animation(Easing.pane, value: store.route)
     }
 
     @ViewBuilder
