@@ -1,6 +1,6 @@
-// What the script that drives the film rigs (record.ts) needs. The rigs exist only in
-// `astro dev`, so it starts a dev server of its own on a free port (not the lock-holding one
-// you may have open) and opens it in the cached Chromium.
+// What the scripts that drive a browser need: the cached Chromium (e2e.ts, record.ts), and for
+// the film rigs (record.ts), which exist only in `astro dev`, a dev server of their own on a
+// free port (not the lock-holding one you may have open) and an encoder.
 
 import { chromium } from "playwright-core";
 import { spawn } from "node:child_process";
@@ -35,8 +35,19 @@ export async function devServer() {
   return { url, stop };
 }
 
-/** Chromium drawing WebGL in software, as on any machine. */
-export const launchBrowser = () => chromium.launch({ args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
+/** Chromium drawing WebGL in software, as on any machine; `args` are flags on top. */
+export async function launchBrowser(args: string[] = []) {
+  try {
+    return await chromium.launch({ args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", ...args] });
+  } catch (e) {
+    // playwright-core brings no browser, and the `npx playwright install` its error suggests
+    // fetches the newest Playwright's, which this pinned version may not run.
+    if (e instanceof Error && e.message.includes("Executable doesn't exist")) {
+      throw new Error("No Chromium for this playwright-core yet: run `bunx playwright-core install chromium` in site/");
+    }
+    throw e;
+  }
+}
 
 /**
  * Pipes PNG frames into ffmpeg, which writes an H.264 `out` (at `size`, if the frames are another);

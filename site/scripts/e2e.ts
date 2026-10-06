@@ -18,12 +18,13 @@
 //   --only      e.g. `--only 375x812`, `--only home.1920x1080.reduce`, `--only checks`
 //   --dist      walk another build as it is (main's, say, to compare shots), without building
 
-import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
+import type { Browser, BrowserContext, Page } from "playwright-core";
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { release } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { parseRange } from "../worker/range";
+import { launchBrowser } from "./dev";
 import { CHECKS, type Check } from "./e2e/checks";
 import { ALLOW, lintPage, type Issue, type Rule } from "./e2e/lint";
 import { MOTIONS, VIEWPORTS, type Motion, type Viewport } from "./e2e/screens";
@@ -169,11 +170,26 @@ interface Walk {
   error?: string;
 }
 
-/** In the page from its start: anything the Content-Security-Policy blocks is a console error. */
-const reportViolations = () =>
-  document.addEventListener("securitypolicyviolation", (e) =>
-    console.error(`CSP: ${e.effectiveDirective} blocked ${e.blockedURI || `an inline ${e.effectiveDirective}`}`),
+/**
+ * A browser context of its own for a walk or a check, on screen `vp` with motion `motion`, in
+ * which anything the Content-Security-Policy blocks is a console error from the page's start.
+ */
+async function open(browser: Browser, vp: Viewport, motion: Motion): Promise<BrowserContext> {
+  const context = await browser.newContext({
+    viewport: { width: vp.width, height: vp.height },
+    deviceScaleFactor: vp.scale,
+    isMobile: vp.touch,
+    hasTouch: vp.touch,
+    reducedMotion: motion,
+    colorScheme: "light",
+  });
+  await context.addInitScript(() =>
+    document.addEventListener("securitypolicyviolation", (e) =>
+      console.error(`CSP: ${e.effectiveDirective} blocked ${e.blockedURI || `an inline ${e.effectiveDirective}`}`),
+    ),
   );
+  return context;
+}
 
 const nextFrames = (page: Page) =>
   page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
@@ -225,15 +241,7 @@ async function walk(browser: Browser, base: string, out: string, spec: PageSpec,
   const size = `${vp.width}x${vp.height}`;
   const name = `${spec.name}.${size}.${motion}`;
   const result: Walk = { name, page: spec.path, size, motion, issues: [], shots: [] };
-  const context: BrowserContext = await browser.newContext({
-    viewport: { width: vp.width, height: vp.height },
-    deviceScaleFactor: vp.scale,
-    isMobile: vp.touch,
-    hasTouch: vp.touch,
-    reducedMotion: motion,
-    colorScheme: "light",
-  });
-  await context.addInitScript(reportViolations);
+  const context = await open(browser, vp, motion);
   const page = await context.newPage();
   let where = name;
   const pageIssue = (rule: Rule, text: string) =>
@@ -348,14 +356,7 @@ interface CheckResult {
 
 async function check(browser: Browser, base: string, out: string, c: Check, n: number): Promise<CheckResult> {
   const result: CheckResult = { name: c.name, size: `${c.viewport.width}x${c.viewport.height}`, motion: c.motion, ok: false };
-  const context = await browser.newContext({
-    viewport: { width: c.viewport.width, height: c.viewport.height },
-    deviceScaleFactor: c.viewport.scale,
-    isMobile: c.viewport.touch,
-    hasTouch: c.viewport.touch,
-    reducedMotion: c.motion,
-  });
-  await context.addInitScript(reportViolations);
+  const context = await open(browser, c.viewport, c.motion);
   const page = await context.newPage();
   const requested: string[] = [];
   page.on("request", (r) => requested.push(new URL(r.url()).pathname));
@@ -507,11 +508,7 @@ let code = 2;
 try {
   if (!flag("--no-build") && !OTHER) buildIfStale();
   const server = serve(out);
-  const browser = await chromium.launch({
-    headless: true,
-    // WebGL through SwiftShader, as any machine without a GPU would draw it.
-    args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--autoplay-policy=no-user-gesture-required"],
-  });
+  const browser = await launchBrowser(["--autoplay-policy=no-user-gesture-required"]);
   const version = `chromium ${browser.version()}`;
   const walks: Walk[] = [];
   const checks: CheckResult[] = [];
