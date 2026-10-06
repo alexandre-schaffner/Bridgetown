@@ -91,8 +91,8 @@ export const ALLOW: Allow[] = [
   },
   {
     rule: "ellipsis",
-    within: "[data-board-rows] .title",
-    why: "A board row's message is one line and truncates, as the app's rows do.",
+    within: "[data-board-rows] .what",
+    why: "A board row's message and its source are a line each and truncate, as the app's rows do.",
   },
 ];
 
