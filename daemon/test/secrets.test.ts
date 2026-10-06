@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { run } from "../src/proc.ts"
-import { childEnv, decodeSecretsLine, readFirstLine, scrubProcessEnv, secretsFromEnv } from "../src/secrets.ts"
+import { childEnv, decodeSecretsLine, readFirstLine, secretsFromEnv } from "../src/secrets.ts"
 import { sessionEnv } from "../src/sessions/sdk-options.ts"
 
 const streamOf = (...chunks: ReadonlyArray<string>) =>
@@ -96,13 +96,8 @@ describe("secrets never reach children", () => {
       BRIDGETOWN_BRANCH: "fix-bt-x-1",
     })
   })
-  test("startup scrub removes the credentials and the launch flag", () => {
-    const own = { ...env }
-    expect(secretsFromEnv(own)).toEqual({ apiToken: "t", slackToken: "xoxp-1", typesafeKey: "k" })
-    scrubProcessEnv(own)
-    expect(Object.keys(own).filter((key) => key.includes("TOKEN") || key.includes("TYPESAFE") || key === "BRIDGETOWN_SECRETS")).toEqual([
-      "SLACK_BOT_TOKEN",
-    ])
+  test("scripts run by hand read them from the environment", () => {
+    expect(secretsFromEnv(env)).toEqual({ apiToken: "t", slackToken: "xoxp-1", typesafeKey: "k" })
   })
   test("a subprocess does not inherit a secret left in process.env", async () => {
     process.env.SLACK_USER_TOKEN = "xoxp-leak"

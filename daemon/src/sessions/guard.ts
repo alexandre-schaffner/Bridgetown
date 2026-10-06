@@ -325,7 +325,7 @@ const commandRefusal = (name: string, head: Word, args: ReadonlyArray<Word>, sco
   if (name === "op") return REASONS.secrets
   if (DETACHED.has(name)) return REASONS.detached
   if (name === "security" && args.some((arg) => /^(find-(generic|internet)-password|dump-keychain|export)$/.test(arg.text))) return REASONS.secrets
-  // `ps eww`/`ps -E` dumps a process's initial environment: in development the daemon still carries its tokens there (the kernel's envp copy survives the delete). The env dump is never needed for the task. (`-e`/`-ef` is the all-processes flag, not the environment one.)
+  // `ps eww`/`ps -E` dumps a process's initial environment, where a token the user exported in a shell would show. The env dump is never needed for the task. (`-e`/`-ef` is the all-processes flag, not the environment one.)
   if (name === "ps" && args.some((arg) => isPsEnvDump(arg.text))) return REASONS.secrets
   if (name === "cat" && args.some((arg) => /\/proc\/[^/]+\/environ\b/.test(arg.text))) return REASONS.secrets
   if (name === "cast" && (args[0]?.text === "send" || args[0]?.text === "publish")) return REASONS.transaction

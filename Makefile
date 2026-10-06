@@ -8,7 +8,7 @@ SIGN_IDENTITY ?= Bridgetown Local Signing
 # CFBundleVersion stamped into the bundle; CI passes its run number. Unset keeps Info.plist's.
 BUILD_NUMBER ?=
 
-.PHONY: all app dmg daemon icon dev-app test-app e2e e2e-site mock clean
+.PHONY: all app dmg daemon icon dev dev-app test-app e2e e2e-site mock clean
 
 all: daemon app
 
@@ -63,6 +63,12 @@ dmg:
 	done; test -f $(DMG)
 	rm -rf build/dmg
 	@echo "built $(DMG)"
+
+# Debug app running the daemon from source the way the release app runs its own: the
+# Keychain's tokens on the daemon's stdin, never in an environment, and the daemon gone
+# when the app quits. Pass extra app flags with ARGS.
+dev:
+	BRIDGETOWN_DAEMON_CMD='bun "$(CURDIR)/daemon/src/main.ts"' swift run --package-path app Bridgetown $(ARGS)
 
 # Debug app attached to an already-running daemon (e.g. `make mock` in another shell).
 # Pass extra flags with ARGS, e.g. make dev-app ARGS=--island-demo

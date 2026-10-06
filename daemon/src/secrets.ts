@@ -1,12 +1,10 @@
 import { Schema } from "effect"
 
 /**
- * The daemon's credentials. With `BRIDGETOWN_SECRETS=stdin` the app writes them
- * as one JSON line on stdin; for development they still come from these env vars.
- * Either way they are deleted from `process.env` before anything is spawned.
+ * The daemon's credentials. The app writes them on the daemon's stdin as one JSON line
+ * (launch.ts); scripts run by hand (`scripts/replay.ts`) read them from the environment.
+ * Nothing the daemon spawns inherits them either way (`childEnv`).
  */
-export const SECRET_ENV_KEYS = ["BRIDGETOWN_API_TOKEN", "SLACK_USER_TOKEN", "TYPESAFE_API_KEY"] as const
-
 export interface Secrets {
   readonly apiToken: string | undefined
   readonly slackToken: string | undefined
@@ -29,7 +27,7 @@ const SecretsLine = Schema.Struct({
 })
 
 /** The stdin launch line, or `undefined` when it is not JSON or carries no API token. */
-export const decodeSecretsLine = (line: string): Secrets | undefined => {
+export const decodeSecretsLine = (line: string): (Secrets & { readonly apiToken: string }) | undefined => {
   const decoded = Schema.decodeUnknownExit(Schema.fromJsonString(SecretsLine))(line)
   if (decoded._tag === "Failure") return undefined
   const apiToken = nonEmpty(decoded.value.apiToken)
@@ -81,9 +79,4 @@ export const childEnv = (env: Record<string, string | undefined>): Record<string
     out[key] = value
   }
   return out
-}
-
-/** Removes the credentials and the launch-mode flag from this process, so nothing reads them later by accident. */
-export const scrubProcessEnv = (env: Record<string, string | undefined> = process.env): void => {
-  for (const key of [...SECRET_ENV_KEYS, "BRIDGETOWN_SECRETS"]) delete env[key]
 }
