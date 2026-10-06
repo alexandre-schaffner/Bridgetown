@@ -3,6 +3,7 @@ import type { JevVerdict } from "../src/domain/alert.ts"
 import { DEFAULT_SETTINGS } from "../src/domain/settings.ts"
 import { isAlertMessage } from "../src/pipeline/alerts.ts"
 import { parseMessage } from "../src/slack/parse.ts"
+import { alertState } from "../src/triage/judge.ts"
 import { decide, decideAnomaly } from "../src/triage/policy.ts"
 import { applyRules } from "../src/triage/rules.ts"
 import * as m from "./fixtures/messages.ts"
@@ -16,6 +17,15 @@ describe("what counts as an alert", () => {
     expect(isAlertMessage(m.adminBuildFailed)).toBe(true)
     expect(isAlertMessage(m.humanMessage)).toBe(false)
     expect(isAlertMessage({ ...m.adminBuildFailed, thread_ts: "1", ts: "2" })).toBe(false)
+  })
+})
+
+describe("what Jev reads about an alert", () => {
+  test("a prod finding's channel is Grafana, as the context explains it", () => {
+    const finding = { ...parseMessage(m.grafanaFiring, uptime), source: "watch" as const, channelName: "Grafana" }
+    const state = alertState({ alert: finding, thread: [], reactions: [], history: [] })
+    expect(state.alert.channel).toBe("Grafana")
+    expect(state.context).toContain("channel is Grafana (no #)")
   })
 })
 
