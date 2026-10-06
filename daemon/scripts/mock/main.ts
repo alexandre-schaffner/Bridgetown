@@ -1,9 +1,10 @@
 #!/usr/bin/env bun
 /**
  * Mock Bridgetown daemon for developing and screenshotting the app: the real
- * daemon (store, runner, shipper, gates, actions, HTTP/SSE, views) on a
- * throwaway store, with Slack, Jev, the Agent SDK and GitHub faked. Nothing
- * leaves the machine; worktrees come from a local git repo with a local origin.
+ * daemon (store, runner, shipper, gates, actions, HTTP/SSE, views, and its
+ * scheduler with sessions, CI and reviews sped up) on a throwaway store, with
+ * Slack, Jev, the Agent SDK, GitHub and Grafana faked. Nothing leaves the
+ * machine; worktrees come from a local git repo with a local origin.
  *
  *   bun scripts/mock/main.ts                      # 127.0.0.1:47621, token "dev"
  *   BRIDGETOWN_PORT=47650 bun scripts/mock/main.ts
@@ -11,7 +12,7 @@
  *   MOCK_GITHUB=blocked …   # start with GHE refusing this network; `kill -USR1 <pid>` toggles it
  *   MOCK_RELEASE_HOLD_SECONDS=600 …  # how long the release in flight at startup takes
  *   MOCK_GRAFANA=live …     # real prod charts through the local grafana MCP (read-only) instead of fake series
- *   MOCK_STATIC=1 …         # nothing moves: no loops, no agents, the release held in flight (make e2e)
+ *   MOCK_STATIC=1 …         # nothing moves: no scheduler, no agents, the release held in flight (make e2e)
  *   MOCK_WORLD=empty …      # a fresh install that has received nothing yet
  *   MOCK_NOW=2026-10-04T12:00:00Z …  # the wall clock stopped there (clock.ts)
  *   MOCK_ROOT=/tmp/bt-mock …  # the throwaway root at a fixed path rather than a temp dir
@@ -30,36 +31,30 @@ import { execSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Duration, Effect, Layer, Schedule, Schema } from "effect"
+import { Effect, Fiber, Schedule, Schema } from "effect"
 import { Actions } from "../../src/actions/actions.ts"
 import { bind, serve } from "../../src/api/server.ts"
-import type { Env } from "../../src/config.ts"
-import { Critic } from "../../src/critique/critic.ts"
-import { Reviewer } from "../../src/critique/reviewer.ts"
 import type { Alert, Stage } from "../../src/domain/alert.ts"
 import { now } from "../../src/domain/ids.ts"
-import { Grafana, GrafanaLive } from "../../src/grafana/client.ts"
+import { GrafanaLive } from "../../src/grafana/client.ts"
 import { Health } from "../../src/health.ts"
 import { Hub } from "../../src/hub.ts"
-import { appLayerWith } from "../../src/layers.ts"
 import { readLaunch, runDaemon } from "../../src/launch.ts"
-import { AlertPipeline } from "../../src/pipeline/alerts.ts"
-import { Agent, type AgentShape } from "../../src/sessions/agent.ts"
+import { loop, SCHEDULER_TIMING, Scheduler, type SchedulerTiming } from "../../src/scheduler.ts"
 import { SessionRepo } from "../../src/sessions/repo.ts"
-import { SessionRunner } from "../../src/sessions/runner.ts"
-import { GitHub } from "../../src/ship/github.ts"
 import { Shipper } from "../../src/ship/shipper.ts"
 import { tagPrefix } from "../../src/ship/tags.ts"
-import { SlackClient } from "../../src/slack/client.ts"
-import { Store, StoreLive } from "../../src/store/store.ts"
-import { Jev } from "../../src/triage/jev.ts"
+import { Store } from "../../src/store/store.ts"
 import { patternKey } from "../../src/watch/logs.ts"
 import { type Judged, saveJudged } from "../../src/watch/sweep-store.ts"
 import { Watcher } from "../../src/watch/watcher.ts"
+import { noAgent } from "../../test/support/fakes.ts"
+import { makeAlert } from "../../test/support/records.ts"
+import { worldLayer } from "../../test/support/world.ts"
 import { scriptedAgent } from "./agent.ts"
-import { fakeJev, fakeReviewer, fakeSlack, makeFakeGitHub } from "./fakes.ts"
+import { mockGitHub, mockJev, mockReviewer, mockSlack } from "./fakes.ts"
 import { buildFixtures, IN_FLIGHT_TAG, LOG_FINDING_FINGERPRINT, SESSION } from "./fixtures.ts"
-import { fakeGrafana, SWEEP_ROWS } from "./grafana.ts"
+import { mockGrafana, SWEEP_ROWS } from "./grafana.ts"
 import { scriptFor } from "./scripts.ts"
 
 const staticWorld = process.env.MOCK_STATIC === "1"
@@ -115,13 +110,6 @@ const makeRepo = (root: string) =>
     return repoPath
   })
 
-/** A static world runs no agent; one asked to start is a bug in the world, not something to fake. */
-const noAgent: AgentShape = {
-  query: () => {
-    throw new Error("MOCK_STATIC: a static world starts no agent")
-  },
-}
-
 /** The release tracker's message for `tag`, `elapsed` ms after the tag was cut. */
 const trackerStages = (elapsed: number): ReadonlyArray<Stage> => {
   const stage = (name: string, status: Stage["status"]): Stage => ({ name, status, detail: "" })
@@ -133,21 +121,21 @@ const trackerStages = (elapsed: number): ReadonlyArray<Stage> => {
 
 const trackerAlert = (tag: string, stages: ReadonlyArray<Stage>): Alert => {
   const ts = (Date.now() / 1000).toFixed(6)
-  return {
-    id: `C0AUKD42N3U:${ts}`, channelId: "C0AUKD42N3U", channelName: "alert-releases", ts, permalink: null, title: `Deployment ${tag}`, summary: "", raw: "",
-    source: "releases", fingerprint: `release:${tag}`, mentionsMe: false, receivedAt: now(), sessionId: null, feedback: null, events: [], disposition: null, claimedBy: [],
+  return makeAlert({
+    id: `C0AUKD42N3U:${ts}`, channelId: "C0AUKD42N3U", ts, title: `Deployment ${tag}`, fingerprint: `release:${tag}`, receivedAt: now(),
     fields: { _tag: "release", image: tagPrefix(tag), version: tag.slice(tagPrefix(tag).length + 1), actor: "alex", runId: null, runUrl: null, tag, stages },
     triage: { decision: "filtered", reason: "Release tracker", jev: null },
-  }
+  })
 }
 
-/** Runs `effect` every `every`, logging failures, on a fiber of the program's scope. */
-const every = <E, R>(name: string, interval: Duration.Input, effect: Effect.Effect<unknown, E, R>) =>
-  effect.pipe(
-    Effect.catchCause((cause) => Effect.logWarning(`mock ${name} failed`, cause)),
-    Effect.repeat(Schedule.spaced(interval)),
-    Effect.forkScoped,
-  )
+/** The daemon's schedule, with sessions, CI and reviews moving faster and the log sweep in from the start. */
+const MOCK_TIMING: SchedulerTiming = {
+  ...SCHEDULER_TIMING,
+  schedule: { every: "1 second" },
+  ship: { every: "10 seconds" },
+  critique: { every: "3 seconds" },
+  logs: { every: "600 seconds" },
+}
 
 /** A line on stdin after the launch: patch the status, or exit as a crash would. Anything else is ignored. */
 const Control = Schema.Union([
@@ -200,7 +188,7 @@ const program = Effect.gen(function* () {
 
   /** Releases cut during this run, and when: the tracker below walks each through approval, build and production. */
   const released: Array<{ readonly tag: string; readonly at: number }> = []
-  const fake = makeFakeGitHub({
+  const fake = mockGitHub({
     prs: fixtures.prs,
     tags: fixtures.tags,
     latencyMs: 3_000,
@@ -222,32 +210,26 @@ const program = Effect.gen(function* () {
     )
   }
 
+  // A static world runs no agent: one asked to start is a bug in the world, not something to fake.
   const agent = staticWorld ? noAgent : scriptedAgent(scriptFor({ extra: process.env.MOCK_EXTRA === "1", prs: new Map(fixtures.sessions.map((s) => [s.id, s.prUrl])) }))
-  const env: Env = { ...launch.env, home, apiToken: token, slackToken: "xoxp-mock", typesafeKey: "mock", jevModel: "mock" }
-  const layer = appLayerWith(
-    env,
-    Layer.mergeAll(
-      StoreLive(home),
-      Layer.succeed(SlackClient)(fakeSlack),
-      Layer.succeed(Jev)(fakeJev),
-      Layer.succeed(Agent)(agent),
-      Layer.succeed(Reviewer)(fakeReviewer()),
-      Layer.succeed(GitHub)(fake.github),
-      // MOCK_GRAFANA=live reads real prod charts through the local grafana MCP (read-only).
-      process.env.MOCK_GRAFANA === "live" ? GrafanaLive : Layer.succeed(Grafana)(fakeGrafana()),
-    ),
-  )
+  const layer = worldLayer(home, {
+    env: { port: launch.env.port, apiToken: token, forceDryRun: launch.env.forceDryRun },
+    slack: mockSlack,
+    jev: mockJev,
+    agent,
+    reviewer: mockReviewer(),
+    github: fake.github,
+    // MOCK_GRAFANA=live reads real prod charts through the local grafana MCP (read-only).
+    grafana: process.env.MOCK_GRAFANA === "live" ? GrafanaLive : mockGrafana(),
+  })
 
   const run = Effect.gen(function* () {
     const store = yield* Store
     const hub = yield* Hub
     const repo = yield* SessionRepo
-    const runner = yield* SessionRunner
     const shipper = yield* Shipper
-    const critic = yield* Critic
     const health = yield* Health
     const actions = yield* Actions
-    const pipeline = yield* AlertPipeline
     const watcher = yield* Watcher
 
     yield* hub.updateSettings(fixtures.settings)
@@ -268,40 +250,41 @@ const program = Effect.gen(function* () {
 
     // The release in flight: a real resolve through the gates, held up in the fake `gh release create`.
     const inFlight = fixtures.actions.find((a) => a.kind === "release" && a.sessionId === SESSION.inFlight)
-    if (inFlight !== undefined) {
-      yield* actions.resolve(inFlight.id, null).pipe(
-        Effect.catchCause((cause) => Effect.logWarning("in-flight release failed", cause)),
+    if (inFlight !== undefined && inFlight.sessionId !== null) {
+      const session = inFlight.sessionId
+      const resolving = yield* actions.resolve(inFlight.id, null).pipe(
+        Effect.tapCause((cause) => Effect.logWarning("in-flight release failed", cause)),
         Effect.forkScoped,
       )
-      // Static: served once the tag is being cut, so the first snapshot is the one that stays.
-      const session = inFlight.sessionId
-      while (staticWorld && session !== null && ((yield* repo.get(session))?.releaseTag ?? null) === null) yield* Effect.sleep("10 millis")
+      // Static: served once the tag is being cut, so the first snapshot is the one that stays. A resolve that ends
+      // first takes the mock down with it, so the app sees a daemon that died rather than one that never answers.
+      if (staticWorld) {
+        const tagCut = Effect.gen(function* () {
+          while (((yield* repo.get(session))?.releaseTag ?? null) === null) yield* Effect.sleep("10 millis")
+        })
+        yield* Effect.raceFirst(tagCut, Fiber.join(resolving).pipe(Effect.andThen(Effect.die(`the release in flight ended before ${IN_FLIGHT_TAG} was cut`))))
+      }
     }
     yield* serve(server, { token })
     if (controlInput !== undefined) yield* steer(controlInput).pipe(Effect.forkScoped)
 
     if (!staticWorld) {
-      // The daemon's loops, faster: sessions start (unless GHE is blocked), CI and merges move, Slack is "polled".
-      yield* every("schedule", "1 second", hub.status.pipe(Effect.flatMap((status) => (status.github === "blocked" ? Effect.void : runner.tick))))
-      yield* every("ship", "10 seconds", shipper.tick)
-      yield* every("critique", "3 seconds", critic.tick)
-      yield* every("poll", "30 seconds", pipeline.pollOnce)
-      yield* every("logs", "600 seconds", watcher.sweepLogs)
+      yield* (yield* Scheduler).run(MOCK_TIMING).pipe(Effect.forkScoped)
       // The SDK reports cost only when a turn ends; ticking it shows the app's cost label update live.
-      yield* every(
-        "cost",
-        "6 seconds",
+      yield* loop(
+        "mock cost",
         Effect.gen(function* () {
           for (const session of yield* store.activeSessions()) {
             if (session.status !== "running") continue
             yield* repo.modify(session.id, (current) => (current.status === "running" ? { ...current, costUsd: Math.round((current.costUsd + 0.03) * 100) / 100 } : undefined))
           }
         }),
+        Schedule.spaced("6 seconds"),
       )
-      yield* every(
-        "tracker",
-        "5 seconds",
+      yield* loop(
+        "mock tracker",
         Effect.forEach(released, ({ tag, at }) => shipper.trackDeploy(trackerAlert(tag, trackerStages(Date.now() - at))), { discard: true }),
+        Schedule.spaced("5 seconds"),
       )
     }
 

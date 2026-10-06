@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { Effect } from "effect"
-import { makeFakeGitHub } from "../scripts/mock/fakes.ts"
+import { mockGitHub } from "../scripts/mock/fakes.ts"
 import { ASK, buildFixtures, pr, SESSION, STILL_SESSION, type WorldOptions } from "../scripts/mock/fixtures.ts"
 import { mergeDetail } from "../src/ship/cards.ts"
 import { makeSession } from "./support/records.ts"
@@ -10,7 +10,7 @@ import { scratchDir } from "./support/tmp.ts"
 
 const NOW = "2026-10-04T12:00:00.000Z"
 const scratch = scratchDir("bt-mock-test-")
-/** This process's env without the store an earlier `makeWorld` pointed it at (and removed): the mock makes its own. */
+/** This process's env without a `BRIDGETOWN_HOME` the shell may have set: the mock makes its own store. */
 const inherited = () => Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== "BRIDGETOWN_HOME"))
 
 const world = (overrides: Partial<WorldOptions> = {}) =>
@@ -140,6 +140,13 @@ describe("the mock honours the daemon's launch contract", () => {
     await mock.child.exited
   }, 30_000)
 
+  test("a release in flight that fails before its tag is cut takes the mock down, rather than leave it never answering", async () => {
+    // GHE refuses `gh release create`, so the held release fails at once.
+    const mock = launch({ MOCK_GITHUB: "blocked" })
+    expect(await mock.child.exited).toBe(1)
+    expect(existsSync(join(scratch, "root"))).toBe(false)
+  }, 30_000)
+
   test("a taken port exits 98", async () => {
     const holder = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } })
     const mock = launch({ BRIDGETOWN_PORT: String(holder.port) })
@@ -157,7 +164,7 @@ describe("the mock honours the daemon's launch contract", () => {
 
 describe("the mock's GitHub", () => {
   test("a PR's head is one commit, so a review that passed it shows on the merge card the ship loop builds", async () => {
-    const { github } = makeFakeGitHub({ prs: {}, tags: [], latencyMs: 0, holds: {}, blocked: false, onRelease: () => undefined })
+    const { github } = mockGitHub({ prs: {}, tags: [], latencyMs: 0, holds: {}, blocked: false, onRelease: () => undefined })
     const [view, head] = await Effect.runPromise(Effect.all([github.viewPr(pr(3360)), github.prHead(pr(3360))]))
     const session = makeSession("awaiting_merge", { prUrl: pr(3360), critique: { reviewer: "codex", sha: head ?? "", findings: [], response: null } })
     expect(view.headRefOid).toBe(head ?? "")

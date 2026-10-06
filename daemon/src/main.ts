@@ -21,7 +21,7 @@ const program = Effect.gen(function* () {
   if (process.argv.includes("--paused")) yield* hub.patchStatus({ paused: true })
   if (env.forceDryRun) yield* Effect.logInfo("Dry run: nothing will be posted to Slack")
   yield* hub.notify
-  return yield* (yield* Scheduler).run
+  return yield* (yield* Scheduler).run()
 })
 
 runDaemon(program.pipe(Effect.provide(appLayer(env))), launch)

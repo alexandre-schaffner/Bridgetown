@@ -1,37 +1,30 @@
 import { Duration, Effect } from "effect"
 import type { ReviewerShape } from "../../src/critique/reviewer.ts"
-import type { JevVerdict } from "../../src/domain/alert.ts"
 import { GheBlocked, type GitHubError } from "../../src/domain/errors.ts"
 import type { GitHubShape, PullRequest } from "../../src/ship/github.ts"
 import { prLabel, prNumber } from "../../src/ship/pr.ts"
 import { nextTagFrom } from "../../src/ship/tags.ts"
-import type { SlackClientShape } from "../../src/slack/client.ts"
 import type { JevShape } from "../../src/triage/jev.ts"
+import { fakeSlack, verdict } from "../../test/support/fakes.ts"
 
-/** Slack that reads nothing new and swallows every post: the mock never reaches slack.com. */
-export const fakeSlack: SlackClientShape = {
+/** Slack, as alex, that reads nothing new and swallows every post: the mock never reaches slack.com. */
+export const mockSlack = fakeSlack({
   identity: () => Effect.succeed({ user_id: "U03ALEX", user: "alex", url: "https://merkl.slack.com/" }),
-  latest: () => Effect.succeed([]),
-  replies: () => Effect.succeed([]),
-  permalink: (channel, ts) => Effect.succeed(`https://merkl.slack.com/archives/${channel}/p${ts.replace(".", "")}`),
-  search: () => Effect.succeed([]),
-  groupsOf: () => Effect.succeed([]),
-  userName: (id) => Effect.succeed(id),
   post: () => Effect.sync(() => (Date.now() / 1000).toFixed(6)),
-  remove: () => Effect.void,
-}
+})
 
-const verdict: JevVerdict = {
-  actionable: 0.9, agentResolvable: 0.8, humanOnIt: 0.05, kind: "runtime_error", kindConfidence: 0.85, depth: "standard", urgency: 1.5,
-}
+const runtimeError = verdict({ kind: "runtime_error", depth: "standard" })
 
 /** Matches the mock reviewer's nitpick, so Jev drops it and the real finding goes back to the agent. */
 const NITPICK = /\b(rename|naming|comment|style)\b/i
 
-/** Jev without TypeSafe; only consulted if something new is ingested (`POST /poll` finds nothing) or a mock review reports findings. */
-export const fakeJev: JevShape = {
-  judge: () => Effect.succeed(verdict),
-  judgeInbox: () => Effect.succeed({ ...verdict, kind: "investigation" }),
+/**
+ * Jev without TypeSafe. The mock's Slack has nothing new, so it is asked about the prod watcher's findings and log
+ * patterns, and about a mock review's findings.
+ */
+export const mockJev: JevShape = {
+  judge: () => Effect.succeed(runtimeError),
+  judgeInbox: () => Effect.succeed({ ...runtimeError, kind: "investigation" }),
   judgeFinding: ({ finding, previousRound }) =>
     Effect.succeed(
       NITPICK.test(finding.title)
@@ -44,10 +37,10 @@ export const fakeJev: JevShape = {
 
 /**
  * Codex without Codex: the first review of a PR finds a real defect and a
- * nitpick, later rounds only the nitpick again. With `fakeJev` dropping the
+ * nitpick, later rounds only the nitpick again. With `mockJev` dropping the
  * nitpick, round 1 sends the agent back and round 2 passes.
  */
-export const fakeReviewer = (delayMs = 6_000): ReviewerShape => ({
+export const mockReviewer = (delayMs = 6_000): ReviewerShape => ({
   review: ({ prompt }) =>
     Effect.sleep(Duration.millis(delayMs)).pipe(
       Effect.as({
@@ -75,7 +68,7 @@ export const fakeReviewer = (delayMs = 6_000): ReviewerShape => ({
 })
 
 /** How a pull request looks to the fake. `script` PRs move on their own: checks go green, then a reviewer approves. */
-export interface FakePr {
+export interface MockPr {
   readonly title: string
   readonly checks: "pending" | "green" | "red"
   readonly review: "REVIEW_REQUIRED" | "APPROVED"
@@ -84,8 +77,8 @@ export interface FakePr {
   readonly moves: boolean
 }
 
-export interface FakeGitHubOptions {
-  readonly prs: Readonly<Record<string, FakePr>>
+export interface MockGitHubOptions {
+  readonly prs: Readonly<Record<string, MockPr>>
   readonly tags: ReadonlyArray<string>
   /** How long `gh pr merge` / `gh release create` take, so `inFlight` shows. */
   readonly latencyMs: number
@@ -99,7 +92,7 @@ export interface FakeGitHubOptions {
 /** A PR's head commit: one per PR, the same from `gh pr view` and the head lookup, so a review's pass shows on its merge card. */
 const headOf = (url: string): string => new Bun.CryptoHasher("sha1").update(url).digest("hex")
 
-const checks = (state: FakePr["checks"]): PullRequest["statusCheckRollup"] => [
+const checks = (state: MockPr["checks"]): PullRequest["statusCheckRollup"] => [
   { name: "lint", status: "COMPLETED", conclusion: "SUCCESS" },
   { name: "typecheck", status: "COMPLETED", conclusion: "SUCCESS" },
   { name: "test", status: "COMPLETED", conclusion: "SUCCESS" },
@@ -114,7 +107,7 @@ const checks = (state: FakePr["checks"]): PullRequest["statusCheckRollup"] => [
  * against it, so a merge or a release resolves once, shows `inFlight` while it
  * runs, and a second click gets a 409.
  */
-export const makeFakeGitHub = (options: FakeGitHubOptions) => {
+export const mockGitHub = (options: MockGitHubOptions) => {
   const prs = new Map(Object.entries(options.prs).map(([url, pr]) => [url, { ...pr, openedAt: Date.now(), mergedAt: pr.merged ? new Date().toISOString() : null }]))
   const tags = [...options.tags]
   let blocked = options.blocked

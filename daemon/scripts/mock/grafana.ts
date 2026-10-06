@@ -120,7 +120,7 @@ const sweepRows = (query: string) => {
   return sweep === undefined ? undefined : SWEEP_ROWS.filter((row) => row.sweep === sweep).map(victoriaRow)
 }
 
-export const fakeGrafana = (): GrafanaShape => {
+export const mockGrafana = (): GrafanaShape => {
   return {
     reachable: Effect.succeed(true),
     prom: (expr, range) => checkRange(range).pipe(Effect.as(series(expr, range))),

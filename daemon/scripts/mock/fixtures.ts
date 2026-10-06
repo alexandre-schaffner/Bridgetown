@@ -6,7 +6,7 @@ import { type Channel, DEFAULT_CHANNELS, DEFAULT_SETTINGS, type Settings } from 
 import { newSession } from "../../src/sessions/new-session.ts"
 import { releaseDetail } from "../../src/ship/cards.ts"
 import { truncate } from "../../src/lib/text.ts"
-import type { FakePr } from "./fakes.ts"
+import type { MockPr } from "./fakes.ts"
 
 /** The log finding's fingerprint: the Goldsky pattern in the mock's log sweep (grafana.ts) points at it. */
 export const LOG_FINDING_FINGERPRINT = "watch:log:1234567890"
@@ -478,8 +478,8 @@ export const buildFixtures = (options: WorldOptions) => {
     [SESSION.resolved]: [t(297, "status", "Session started"), t(281, "result", "Pinned vite to 6.3.5. PR #3329."), t(250, "status", "Deployed admin-v0.6.1")],
   }
 
-  const fakePr = (title: string, checks: FakePr["checks"], review: FakePr["review"], merged = false): FakePr => ({ title, checks, review, merged, moves: false })
-  const prs: Readonly<Record<string, FakePr>> = {
+  const fakePr = (title: string, checks: MockPr["checks"], review: MockPr["review"], merged = false): MockPr => ({ title, checks, review, merged, moves: false })
+  const prs: Readonly<Record<string, MockPr>> = {
     [pr(3340)]: fakePr("fix(app-studio): pin vite to 6.3", "pending", "REVIEW_REQUIRED"),
     [pr(3345)]: fakePr("fix(app): import d3-shape from the package root", "green", "APPROVED"),
     [pr(3338)]: fakePr("fix(dispute): copy bun.lock in the Dockerfile", "green", "APPROVED", true),
