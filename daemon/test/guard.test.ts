@@ -13,6 +13,10 @@ const files: Record<string, string> = {
   "/w/x.sh": "#!/bin/bash\nset -e\nkubectl delete pod api-0\n",
   "/w/ok.sh": "#!/bin/sh\nbun type && bun test\n",
   "/w/plain": "git push origin main\n",
+  // A benign script at the top and one of the same name a directory down that is not.
+  "/w/run.sh": "bun test\n",
+  "/w/sub/run.sh": "gh pr merge 1\n",
+  "/w/sub/ok.sh": "bun test\n",
   "/w/tool.ts": "#!/usr/bin/env bun\nconsole.log('kubectl')\n",
   "/w/envshebang.sh": "#!/usr/bin/env -S bash -euo pipefail\nkubectl delete pod api-0\n",
   "/w/py.py": "#!/usr/bin/env python3\nkubectl = 1\n",
@@ -249,6 +253,11 @@ describe("guard", () => {
     "BUN_OPTIONS='--preload ./x.ts' bun test",
     // zsh runs $ZDOTDIR/.zshenv first; an interactive shell runs $ENV (and its rc files).
     "ZDOTDIR=/tmp/z zsh -c 'git status'",
+    // Where `./run.sh` is depends on where `cd`/`pushd` went, and after `popd` or with a CDPATH the guard can't tell.
+    "pushd sub && ./run.sh",
+    "cd -P sub && ./run.sh",
+    "pushd sub && popd && ./run.sh",
+    "CDPATH=/tmp/elsewhere cd sub && ./run.sh",
     "export ZDOTDIR=/tmp/z",
     "ENV=./x.sh sh -i -c true",
     "bash -ic 'git status'",
@@ -414,6 +423,9 @@ describe("guard", () => {
     "ENV=test bun test tests/fingerprint.test.ts",
     "bun run fingerprints",
     "bash -lc 'bun test'",
+    "./run.sh",
+    "pushd sub && ./ok.sh",
+    "cd -P sub && ./ok.sh",
     "bun type",
     "bun test",
     "bun build ./src/index.ts --outdir dist",

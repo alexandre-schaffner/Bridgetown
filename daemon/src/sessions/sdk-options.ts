@@ -56,12 +56,15 @@ const withExecutable = (path: string | undefined): { pathToClaudeCodeExecutable?
 /**
  * The agent's environment: no daemon credential or config, the exec-time guard's
  * shims first on PATH, and the session's branch, which is all the guard needs to know
- * about it (the command-line guard refuses setting either).
+ * about it (the command-line guard refuses setting either). The CLI goes back to the
+ * worktree after every Bash call, so a `cd` in one never moves where the guard resolves
+ * the next one's `./x.sh`, nor where a relative Write lands.
  */
 export const sessionEnv = (env: Record<string, string | undefined>, session: Pick<Session, "id" | "branch">, shims: string): Record<string, string> => ({
   ...childEnv(env),
   PATH: env.PATH === undefined ? shims : `${shims}:${env.PATH}`,
   GH_HOST,
+  CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: "1",
   BRIDGETOWN_SESSION: session.id,
   BRIDGETOWN_BRANCH: session.branch ?? "",
 })

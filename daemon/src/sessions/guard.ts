@@ -51,11 +51,12 @@ const COMMAND_ENV = /^(GIT_SSH_COMMAND|GIT_SSH|GIT_EXTERNAL_DIFF|GIT_PAGER|GIT_E
 /**
  * Variables no value of which is safe: a startup file or option string a shell or runtime runs (`ZDOTDIR` holds zsh's
  * `.zshenv`), an injected library, git's config, exec path and hook templates, an exported bash function
- * (`env 'BASH_FUNC_git%%=() {…}'`), and Bridgetown's own (`BRIDGETOWN_BRANCH` is the exec-time guard's scope). Not
- * `ENV`, which only an interactive shell reads and shellRefusal refuses those: `ENV=test bun test` is common.
+ * (`env 'BASH_FUNC_git%%=() {…}'`), `CDPATH` (which sends `cd` elsewhere than the guard follows), and Bridgetown's own
+ * (`BRIDGETOWN_BRANCH` is the exec-time guard's scope). Not `ENV`, which only an interactive shell reads and
+ * shellRefusal refuses those: `ENV=test bun test` is common.
  */
 const LOADER_ENV =
-  /^(BASH_ENV|ZDOTDIR|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|BASH_FUNC_.*|GIT_CONFIG_PARAMETERS|GIT_CONFIG_(COUNT|KEY_[0-9]+|VALUE_[0-9]+)|GIT_EXEC_PATH|GIT_TEMPLATE_DIR|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|NODE_OPTIONS|BUN_OPTIONS|PERL5OPT|PERL5LIB|PYTHONSTARTUP|RUBYOPT|BRIDGETOWN_.*)$/
+  /^(BASH_ENV|ZDOTDIR|CDPATH|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|BASH_FUNC_.*|GIT_CONFIG_PARAMETERS|GIT_CONFIG_(COUNT|KEY_[0-9]+|VALUE_[0-9]+)|GIT_EXEC_PATH|GIT_TEMPLATE_DIR|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|NODE_OPTIONS|BUN_OPTIONS|PERL5OPT|PERL5LIB|PYTHONSTARTUP|RUBYOPT|BRIDGETOWN_.*)$/
 /** Builtins that set variables from their `NAME=value` arguments. */
 const DECLARATIONS = new Set(["export", "declare", "typeset", "local", "readonly"])
 const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "mksh", "ash", "fish", "csh", "tcsh", "yash", "oksh", "posh", "busybox", "pwsh", "nu", "xonsh", "elvish"])
@@ -108,13 +109,34 @@ const check = (source: string, scope: Scope): string | undefined => {
 
 const nested = (source: string, scope: Scope): string | undefined => check(source, { ...scope, depth: scope.depth + 1 })
 
-/** `cd dir` moves where later relative script paths resolve. */
+/**
+ * `cd dir` and `pushd dir` move where later relative script paths resolve. After `popd`,
+ * `cd -`, a computed directory or a `pushd` that rotates the stack, the guard no longer
+ * knows where it is. (A Bash call always starts in the worktree: sdk-options.ts has the
+ * CLI go back there after each one.)
+ */
 const afterCd = (command: Command, scope: Scope): Scope => {
-  const [head, target] = command
-  if (head?.text !== "cd") return scope
-  if (target === undefined) return { ...scope, cwd: homedir() }
+  const [head, ...args] = command
+  switch (head?.text) {
+    case "cd": {
+      const target = args[firstPositional(args, flags())]
+      return target === undefined ? { ...scope, cwd: homedir(), cwdKnown: true } : moveTo(target, scope)
+    }
+    case "pushd": {
+      const [target] = args
+      return args.length === 1 && target !== undefined && !/^[-+]/.test(target.text) ? moveTo(target, scope) : { ...scope, cwdKnown: false }
+    }
+    case "popd":
+      return { ...scope, cwdKnown: false }
+    default:
+      return scope
+  }
+}
+
+const moveTo = (target: Word, scope: Scope): Scope => {
   if (target.dynamic || target.text === "-") return { ...scope, cwdKnown: false }
-  return { ...scope, cwd: resolve(scope.cwd, expandHome(target.text)) }
+  const path = expandHome(target.text)
+  return { ...scope, cwd: resolve(scope.cwd, path), cwdKnown: scope.cwdKnown || isAbsolute(path) }
 }
 
 const expandHome = (path: string): string => (path === "~" || path.startsWith("~/") ? `${homedir()}${path.slice(1)}` : path)

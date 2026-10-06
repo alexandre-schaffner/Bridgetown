@@ -85,12 +85,13 @@ describe("secrets never reach children", () => {
   test("child env strips BRIDGETOWN_*, SLACK_*, TYPESAFE_*", () => {
     expect(childEnv(env)).toEqual({ PATH: "/usr/bin:/bin", HOME: "/Users/x", ANTHROPIC_API_KEY: "sk-ant" })
   })
-  test("session env adds only what sessions need, the exec-time guard's shims first on PATH", () => {
+  test("session env adds only what sessions need: the exec-time guard's shims first on PATH, the CLI back in the worktree after each Bash call", () => {
     expect(sessionEnv(env, { id: "s_1", branch: "fix-bt-x-1" }, "/bt/guard-bin")).toEqual({
       PATH: "/bt/guard-bin:/usr/bin:/bin",
       HOME: "/Users/x",
       ANTHROPIC_API_KEY: "sk-ant",
       GH_HOST: "nocturlab.ghe.com",
+      CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: "1",
       BRIDGETOWN_SESSION: "s_1",
       BRIDGETOWN_BRANCH: "fix-bt-x-1",
     })
