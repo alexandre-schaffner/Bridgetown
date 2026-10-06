@@ -300,35 +300,47 @@ private struct RootCauseNotice: View {
     }
 }
 
+/// What the agent did, oldest first, in the pane itself rather than a scroller of its
+/// own: the latest entries, with the earlier ones a click away. A new entry lands at the
+/// end without moving what you are reading.
 private struct TranscriptView: View {
     let entries: [TranscriptEntry]
     let error: String?
+    @ViewState private var showAll = false
+
+    /// Entries shown before "Show earlier".
+    static let recent = 12
+
+    /// How many entries fold away: those before the latest `recent`, unless they are so few
+    /// the link would take as much room as they do.
+    private var hidden: Int {
+        let earlier = entries.count - Self.recent
+        return showAll || earlier < 3 ? 0 : earlier
+    }
 
     var body: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 6) {
             if entries.isEmpty {
                 Text(error.map { "Couldn't load transcript · \($0)" } ?? "No transcript yet")
                     .font(.geist(12))
                     .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity, minHeight: 72)
+                    .frame(maxWidth: .infinity, minHeight: 48)
             } else {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 6) {
-                            ForEach(Array(entries.enumerated()), id: \.offset) { index, entry in
-                                row(entry).id(index)
-                            }
-                        }
-                        .padding(.horizontal, Metrics.inset)
-                        .padding(.vertical, 12)
+                let hidden = hidden
+                if hidden > 0 {
+                    TextLink("Show \(hidden) earlier entries") { showAll = true }
+                        .font(.geist(11.5, .medium))
+                }
+                LazyVStack(alignment: .leading, spacing: 6) {
+                    ForEach(entries.indices.dropFirst(hidden), id: \.self) { index in
+                        row(entries[index])
                     }
-                    .scrollIndicators(.never)
-                    .frame(height: 260)
-                    .onAppear { proxy.scrollTo(entries.count - 1, anchor: .bottom) }
-                    .onChange(of: entries.count) { _, n in proxy.scrollTo(n - 1, anchor: .bottom) }
                 }
             }
         }
+        .padding(.horizontal, Metrics.inset)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Ink.band)
         .tableFrame()
     }
@@ -343,6 +355,7 @@ private struct TranscriptView: View {
                 .lineLimit(e.kind.lineLimit)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .help(e.kind.lineLimit == 1 ? e.text : "")
         }
         .font(.geistMono(12))
         .lineSpacing(3)

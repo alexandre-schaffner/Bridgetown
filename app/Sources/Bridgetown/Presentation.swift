@@ -402,11 +402,13 @@ extension TranscriptEntry.Kind {
         }
     }
 
-    /// Prose gets room; tool calls and status lines stay on one line.
+    /// Prose gets room and the daemon's status lines two; a tool call stays on one line,
+    /// whole in its tooltip.
     var lineLimit: Int {
         switch self {
         case .text, .result, .error: 6
-        default: 1
+        case .status: 2
+        case .tool, .unknown: 1
         }
     }
 }
