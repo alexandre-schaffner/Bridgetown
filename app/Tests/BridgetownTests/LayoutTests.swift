@@ -54,3 +54,30 @@ import Testing
         #expect(environment.marksHoldStill)
     }
 }
+
+@MainActor
+@Suite struct PaneFollowTests {
+    /// A pane 400pt tall over 1000pt of content.
+    private func tracker(scrolledTo offset: CGFloat) -> ScrollTracker {
+        let tracker = ScrollTracker()
+        tracker.update(offset: offset, content: 1000, viewport: 400)
+        return tracker
+    }
+
+    @Test func atItsEndItFollowsWhatGrows() {
+        #expect(tracker(scrolledTo: 600).follows(growingTo: 1040))
+    }
+
+    /// Read higher up, a pane stays where it is read; and what shrinks needs no following.
+    @Test func elsewhereOrShrinkingItStaysPut() {
+        #expect(!tracker(scrolledTo: 300).follows(growingTo: 1040))
+        #expect(!tracker(scrolledTo: 600).follows(growingTo: 960))
+    }
+
+    /// Content that fits has no end to keep to: it opens at its top as it grows.
+    @Test func contentThatFitsHasNoEndToFollow() {
+        let tracker = ScrollTracker()
+        tracker.update(offset: 0, content: 300, viewport: 400)
+        #expect(!tracker.follows(growingTo: 500))
+    }
+}

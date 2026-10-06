@@ -8,6 +8,8 @@ struct DetailScaffold<Content: View, Bar: View>: View {
     let title: String
     /// Session titles stay on one line; alert titles may take two.
     var titleLineLimit = 1
+    /// Scrolled to its end, it stays there as the sections grow (`PaneScrollView`).
+    var followsEnd = false
     @ViewBuilder var sections: Content
     @ViewBuilder var bar: Bar
 
@@ -15,7 +17,7 @@ struct DetailScaffold<Content: View, Bar: View>: View {
         VStack(spacing: 0) {
             DetailTopBar(title: title, lineLimit: titleLineLimit)
             Hairline()
-            PaneScrollView {
+            PaneScrollView(followsEnd: followsEnd) {
                 VStack(alignment: .leading, spacing: 24) { sections }
                     .padding(.vertical, 18)
             }

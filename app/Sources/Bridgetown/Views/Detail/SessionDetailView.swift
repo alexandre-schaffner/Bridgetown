@@ -17,7 +17,9 @@ struct SessionDetailView: View {
     private static let keyWidth: CGFloat = 64
 
     var body: some View {
-        DetailScaffold(title: session.title) {
+        // The transcript and the message field end the pane: scrolled down to them, a new
+        // entry or a longer message keeps the field in view.
+        DetailScaffold(title: session.title, followsEnd: true) {
             VStack(alignment: .leading, spacing: 14) {
                 origin
                 summary

@@ -86,6 +86,8 @@
     {"type": {"into": "session.message", "text": "Roll back merkl-api to v1.35.8 first, then keep going on the fix."}},
     {"scroll": {"in": "pane.detail", "to": "bottom"}},
     {"shot": "session-running-typed"},
+    {"type": {"into": "session.message", "text": "Roll back merkl-api to v1.35.8 first, then keep going on the fix. Check the canary pods before you widen it, and post in the thread when the rollback is done so on-call knows."}},
+    {"shot": "session-running-typed-long"},
     {"show": {"session": "s_mock_ci"}},
     {"press": "Take over in Terminal"},
     {"press": "Slack thread"},

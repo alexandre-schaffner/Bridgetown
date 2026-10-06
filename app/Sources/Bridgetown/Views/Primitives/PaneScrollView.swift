@@ -13,7 +13,11 @@ import SwiftUI
 /// The scroller is the stage's own (`ScrollThumb`), not the system's: with "Show scroll
 /// bars: Always", AppKit draws a grey track down the black pane, over rows that run to
 /// its edge.
+///
+/// With `followsEnd`, a pane scrolled to its end stays there as its content grows, as a
+/// terminal follows its output: for a pane that grows where it ends, not where it is read.
 struct PaneScrollView<Content: View>: View {
+    var followsEnd = false
     @ViewBuilder var content: Content
 
     @ViewState private var edges = ScrollEdges()
@@ -36,7 +40,10 @@ struct PaneScrollView<Content: View>: View {
             .coordinateSpace(name: ScrollEdges.space)
             .scrollBounceBehavior(.basedOnSize)
             .onPreferenceChange(ContentFrameKey.self) { frame in
+                let follow = followsEnd && tracker.follows(growingTo: frame.height)
                 tracker.update(offset: -frame.minY, content: frame.height, viewport: viewport.size.height)
+                // Once AppKit has the scroll view's new height.
+                if follow { DispatchQueue.main.async { tracker.scroll(to: .infinity) } }
                 let next = ScrollEdges(
                     above: frame.minY < -1,
                     below: frame.maxY > viewport.size.height + 1
@@ -95,6 +102,11 @@ final class ScrollTracker {
     @ObservationIgnored weak var scrollView: NSScrollView?
 
     var scrollable: Bool { content > viewport + 1 && viewport > 0 }
+
+    /// Scrolled to the end, so that content growing to `height` should be followed.
+    func follows(growingTo height: CGFloat) -> Bool {
+        scrollable && offset >= content - viewport - 1 && height > content + 0.5
+    }
 
     func update(offset: CGFloat, content: CGFloat, viewport: CGFloat) {
         let moved = abs(offset - self.offset) > 0.5
