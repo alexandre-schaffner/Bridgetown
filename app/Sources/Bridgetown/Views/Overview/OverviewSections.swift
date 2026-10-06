@@ -65,13 +65,13 @@ struct NeedsYouSection: View {
         let rows = groups.flatMap { entry in
             [Row.group(entry.group, ids: entry.actions.map(\.id))] + entry.actions.map(Row.action)
         }
+        let closes = picked.filter(\.dismissCloses).count
         VStack(alignment: .leading, spacing: 8) {
             PickingHeader(selection: $selection, order: order, confirming: $confirmingClose) {
                 SectionHeader(title: "Needs you", count: snapshot.actions.count)
             } actions: {
                 bulkActions
             } prompt: {
-                let closes = picked.filter(\.dismissCloses).count
                 ConfirmPrompt(
                     question: closes == 1 ? "Close 1 session without a fix?" : "Close \(closes) sessions without a fix?",
                     label: "Close",
@@ -81,6 +81,9 @@ struct NeedsYouSection: View {
                 }
             }
             .padding(.horizontal, Metrics.inset)
+            // The cards that close their session left or went in flight while it asked: it
+            // gives way to the selection's own buttons rather than ask to close none.
+            .onChange(of: closes == 0) { _, none in if none { confirmingClose = false } }
             RowList(data: rows) { row in
                 switch row {
                 case let .group(group, ids):
