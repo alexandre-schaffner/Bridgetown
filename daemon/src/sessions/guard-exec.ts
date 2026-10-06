@@ -1,4 +1,4 @@
-import { accessSync, constants, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs"
+import { accessSync, constants, mkdirSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs"
 import { isAbsolute, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { appSupportDir } from "../config.ts"
@@ -49,14 +49,6 @@ const shim = (name: string, dir: string, daemonPort: number, runner: ReadonlyArr
     "",
   ].join("\n")
 
-const readOrUndefined = (path: string): string | undefined => {
-  try {
-    return readFileSync(path, "utf8")
-  } catch {
-    return undefined
-  }
-}
-
 /**
  * Writes `dir`'s shims, read-only, and removes anything else there. Run before every
  * turn, so a shim the session deleted or rewrote, or one naming a daemon that has
@@ -69,7 +61,7 @@ export const installShims = (dir: string, daemonPort: number, runner: ReadonlyAr
   for (const name of names) {
     const path = join(dir, name)
     const content = shim(name, dir, daemonPort, runner)
-    if (readOrUndefined(path) === content) continue
+    if (readScript(path) === content) continue
     const staging = `${path}.${process.pid}`
     writeFileSync(staging, content, { mode: 0o555 })
     renameSync(staging, path)
