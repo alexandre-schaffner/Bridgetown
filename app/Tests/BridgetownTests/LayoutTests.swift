@@ -101,3 +101,20 @@ import Testing
         #expect(width(proposed: 160) <= 160)
     }
 }
+
+@MainActor
+@Suite struct ConfirmPromptTests {
+    private func size(proposed width: CGFloat) -> CGSize {
+        let prompt = ConfirmPrompt(question: "Close the session without a fix?", label: "Close session", isPresented: .constant(true)) {}
+        return NSHostingController(rootView: prompt).sizeThatFits(in: CGSize(width: width, height: 200))
+    }
+
+    /// In a card in the narrowest column the question can't share a line with its buttons:
+    /// it goes above them, rather than both being cut ("Close the session wit…", "Close…").
+    @Test func aNarrowPromptStacksRatherThanCuts() {
+        let narrow = size(proposed: 190)
+        let wide = size(proposed: 600)
+        #expect(narrow.width <= 190)
+        #expect(narrow.height > wide.height)
+    }
+}

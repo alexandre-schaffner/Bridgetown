@@ -164,7 +164,9 @@ struct IconButton: View {
 /// what will happen, Cancel, and the action in red. A sheet or an alert would take the
 /// island's focus away, so it stays in the view. It withdraws itself after 5 seconds.
 ///
-/// It fills the width it is given, the question first; `.fixedSize()` keeps it to its own.
+/// On one line where it fits, the buttons at its end (`.fixedSize()` keeps it to its own
+/// width); where it doesn't, the question takes a line of its own above them. The
+/// buttons' labels are never cut: they say what a click does.
 struct ConfirmPrompt: View {
     let question: String
     let label: String
@@ -172,23 +174,39 @@ struct ConfirmPrompt: View {
     let action: () -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
-            Text(question)
-                .font(Typo.small)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Button("Cancel") { isPresented = false }
-                .buttonStyle(.stage(.secondary))
-            Button(label, role: .destructive) {
-                isPresented = false
-                action()
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                questionText.fixedSize()
+                Spacer(minLength: 0)
+                buttons
             }
-            .buttonStyle(.stage(.danger))
+            VStack(alignment: .leading, spacing: 8) {
+                questionText.fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) { buttons }
+            }
         }
         .task {
             try? await Task.sleep(for: .seconds(5))
             if !Task.isCancelled { isPresented = false }
         }
+    }
+
+    private var questionText: some View {
+        Text(question)
+            .font(Typo.small)
+            .foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder
+    private var buttons: some View {
+        Button("Cancel") { isPresented = false }
+            .buttonStyle(.stage(.secondary))
+            .fixedSize()
+        Button(label, role: .destructive) {
+            isPresented = false
+            action()
+        }
+        .buttonStyle(.stage(.danger))
+        .fixedSize()
     }
 }
