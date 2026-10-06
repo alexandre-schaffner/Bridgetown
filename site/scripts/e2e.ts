@@ -1,10 +1,12 @@
 // The landing page, end to end, for whoever changes it next (person or agent). Builds the site
-// if dist/ is older than its sources, serves dist/ on a free port, and walks each page at five
+// if dist/ is older than its sources, serves dist/ on a free port with the headers Cloudflare
+// adds (public/_headers, its Content-Security-Policy included), and walks each page at five
 // viewports, with and without Reduce Motion. At every scroll stop it takes a screenshot and
 // lints the frame it shows: sideways scroll, text or media spilling past the screen, text cut
 // off, ellipsised or grown out of its box, text drawn over other text, broken images and
-// videos, console errors, page errors and failed requests (e2e/lint.ts). Then it checks what
-// the page has to do: focus, landing, the nav, the film (e2e/checks.ts).
+// videos, console errors (a blocked script or style among them), page errors and failed
+// requests (e2e/lint.ts). Then it checks what the page has to do: focus, landing, the nav, the
+// film (e2e/checks.ts).
 //
 // Writes .context/e2e/<run>/site/: index.md first (checks, errors with crops, warnings by
 // rule, a contact sheet per walk), report.json, shots/, issues/ (each issue's crop, outlined
@@ -17,7 +19,7 @@
 
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { release } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { parseRange } from "../worker/range";
@@ -53,7 +55,33 @@ const PAGES: PageSpec[] = [
 
 // MARK: Serving
 
-/** dist/ on a free port, answering byte ranges like the Worker does, plus the run's own files under /__e2e/. */
+/**
+ * The rules of a Cloudflare _headers file: a path pattern (`*` matches anything), then the
+ * headers for it, indented. Every rule that matches a path adds its headers.
+ */
+function headerRules(file: string) {
+  const rules: { pattern: RegExp; headers: [string, string][] }[] = [];
+  for (const line of readFileSync(file, "utf8").split("\n")) {
+    if (!line.trim() || line.trim().startsWith("#")) continue;
+    if (!/^\s/.test(line)) {
+      const pattern = line.trim().replace(/[.+?^${}()|[\]\\]/g, "\\$&").replaceAll("*", ".*");
+      rules.push({ pattern: new RegExp(`^${pattern}$`), headers: [] });
+    } else {
+      const at = line.indexOf(":");
+      rules.at(-1)?.headers.push([line.slice(0, at).trim(), line.slice(at + 1).trim()]);
+    }
+  }
+  return (path: string) => {
+    const headers = new Headers();
+    for (const r of rules) if (r.pattern.test(path)) for (const [k, v] of r.headers) headers.append(k, v);
+    return headers;
+  };
+}
+
+/**
+ * dist/ on a free port, with its _headers and answering byte ranges like the Worker does, plus
+ * the run's own files under /__e2e/.
+ */
 function serve(out: string) {
   const file = (path: string) => {
     try {
@@ -62,28 +90,34 @@ function serve(out: string) {
       return null;
     }
   };
+  const headersFor = headerRules(join(DIST, "_headers"));
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     fetch(req) {
       const url = new URL(req.url);
       const name = decodeURIComponent(url.pathname);
-      const path = name.startsWith("/__e2e/")
+      const ours = name.startsWith("/__e2e/");
+      const headers = ours ? new Headers() : headersFor(url.pathname);
+      const path = ours
         ? file(join(out, name.slice(7)))
         : (file(join(DIST, name)) ?? file(join(DIST, name, "index.html")) ?? file(join(DIST, `${name}.html`)));
-      if (!path || !path.startsWith(name.startsWith("/__e2e/") ? out : DIST)) {
-        return new Response(Bun.file(join(DIST, "404.html")), { status: 404 });
+      if (!path || !path.startsWith(ours ? out : DIST)) {
+        return new Response(Bun.file(join(DIST, "404.html")), { status: 404, headers });
       }
       const body = Bun.file(path);
+      headers.set("Accept-Ranges", "bytes");
       const range = req.headers.get("Range");
       const bounds = range ? parseRange(range, body.size) : null;
-      if (bounds === "unsatisfiable") return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${body.size}` } });
-      if (!bounds) return new Response(body, { headers: { "Accept-Ranges": "bytes" } });
+      if (bounds === "unsatisfiable") {
+        headers.set("Content-Range", `bytes */${body.size}`);
+        return new Response(null, { status: 416, headers });
+      }
+      if (!bounds) return new Response(body, { headers });
       const [start, end] = bounds;
-      return new Response(body.slice(start, end + 1), {
-        status: 206,
-        headers: { "Content-Range": `bytes ${start}-${end}/${body.size}`, "Accept-Ranges": "bytes", "Content-Type": body.type },
-      });
+      headers.set("Content-Range", `bytes ${start}-${end}/${body.size}`);
+      headers.set("Content-Type", body.type);
+      return new Response(body.slice(start, end + 1), { status: 206, headers });
     },
   });
   return { url: `http://127.0.0.1:${server.port}`, stop: () => server.stop(true) };
@@ -132,6 +166,12 @@ interface Walk {
   sheet?: string;
   error?: string;
 }
+
+/** In the page from its start: anything the Content-Security-Policy blocks is a console error. */
+const reportViolations = () =>
+  document.addEventListener("securitypolicyviolation", (e) =>
+    console.error(`CSP: ${e.effectiveDirective} blocked ${e.blockedURI || `an inline ${e.effectiveDirective}`}`),
+  );
 
 const nextFrames = (page: Page) =>
   page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
@@ -191,6 +231,7 @@ async function walk(browser: Browser, base: string, out: string, spec: PageSpec,
     reducedMotion: motion,
     colorScheme: "light",
   });
+  await context.addInitScript(reportViolations);
   const page = await context.newPage();
   let where = name;
   const pageIssue = (rule: Rule, text: string) =>
@@ -312,6 +353,7 @@ async function check(browser: Browser, base: string, out: string, c: Check, n: n
     hasTouch: c.viewport.touch,
     reducedMotion: c.motion,
   });
+  await context.addInitScript(reportViolations);
   const page = await context.newPage();
   const requested: string[] = [];
   page.on("request", (r) => requested.push(new URL(r.url()).pathname));

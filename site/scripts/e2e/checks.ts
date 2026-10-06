@@ -208,6 +208,26 @@ export const CHECKS: Check[] = [
     },
   },
   {
+    name: "The page runs whole under its Content-Security-Policy",
+    viewport: LAPTOP,
+    motion: "no-preference",
+    async run(page) {
+      // scripts/e2e.ts reports each violation as a console error starting "CSP:"; from the start.
+      const blocked: string[] = [];
+      page.on("console", (m) => m.text().startsWith("CSP:") && blocked.push(m.text()));
+      const policy = (await page.reload({ waitUntil: "load" }))?.headers()["content-security-policy"];
+      expect(policy?.includes("default-src 'self'"), `the page is served with ${policy ? `the policy ${policy}` : "no policy"}`);
+      // The inline theme script ran, the arch's scene loads, and the film plays.
+      expect(await page.evaluate(() => document.documentElement.classList.contains("js")), "the theme script was blocked");
+      await page.click('nav a[href="#light"]');
+      await page.waitForFunction(() => document.documentElement.classList.contains("scene-ready"), null, { timeout: 15_000 });
+      await page.evaluate(() => scrollTo(0, 0));
+      await page.click("[data-open-film]");
+      await page.waitForFunction(() => document.querySelector<HTMLVideoElement>("[data-film-video]")!.readyState >= 2, null, { timeout: 10_000 });
+      expect(blocked.length === 0, blocked.join("; "));
+    },
+  },
+  {
     name: "Every film the page opens is there, with its poster",
     viewport: LAPTOP,
     motion: "reduce",

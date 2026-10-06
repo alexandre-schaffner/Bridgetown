@@ -19,6 +19,8 @@ const devRigs = {
 export default defineConfig({
   devToolbar: { enabled: false },
   integrations: [devRigs],
+  // Styles stay in files, which the Content-Security-Policy (public/_headers) allows as the site's own.
+  build: { inlineStylesheets: "never" },
   vite: {
     // three.js is one ~740 kB chunk on its own, loaded after the page is interactive.
     build: { chunkSizeWarningLimit: 800 },

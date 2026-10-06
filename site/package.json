@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "astro dev",
-    "build": "node scripts/media-manifest.mjs && astro check && tsc -p tsconfig.tools.json && astro build",
+    "build": "node scripts/media-manifest.mjs && astro check && tsc -p tsconfig.tools.json && astro build && node scripts/csp.mjs",
     "preview": "astro preview",
     "test": "node scripts/media-manifest.mjs && bun test",
     "e2e": "bun scripts/e2e.ts",
