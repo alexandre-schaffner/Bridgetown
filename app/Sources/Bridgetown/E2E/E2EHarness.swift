@@ -15,7 +15,7 @@ import AppKit
 ///   for screen recordings of its motion.
 ///
 /// A run never touches the user's world: the clock stops at the suite's instant, the
-/// Keychain is a dictionary, defaults go to a domain of their own, clicks that would open
+/// Keychain is a dictionary, defaults go to a domain of the checkout's own, clicks that would open
 /// something are recorded instead, no notification is posted, and the island is drawn
 /// off screen rather than at the notch.
 @MainActor
@@ -34,8 +34,6 @@ final class E2EHarness {
         case islandDemo
     }
 
-    /// @AppStorage reads and writes here during a run, never the app's own defaults.
-    nonisolated static let defaultsDomain = "xyz.merkl.bridgetown.e2e"
     /// The suite must be done within this, and a served run that hears nothing for this long ends.
     static let watchdogSeconds = 600
 
@@ -44,6 +42,8 @@ final class E2EHarness {
     private var runner: E2ERunner?
     private var control: E2EControl?
     private let watchdog = E2EWatchdog()
+    /// @AppStorage reads and writes here during a run, never in the app's own defaults.
+    private var defaultsDomain = ""
 
     /// Nil on a normal launch. A malformed command line exits 2 here, before anything starts.
     init?(arguments: [String]) {
@@ -108,7 +108,9 @@ final class E2EHarness {
         Haptics.muted = true
         app.island.offscreen = true
         E2EAccessibility.enable()
-        let root = Self.mockRoot(for: options.out)
+        let checkout = Self.checkout(of: options.out)
+        let root = "/tmp/bt-e2e-\(checkout)"
+        defaultsDomain = "xyz.merkl.bridgetown.e2e.\(checkout)"
         app.daemon.extraEnvironment = [
             "MOCK_STATIC": "1",
             "MOCK_NOW": suite.now.formatted(.iso8601),
@@ -122,12 +124,12 @@ final class E2EHarness {
             "MOCK_API_TOKEN": "",
             "BRIDGETOWN_DRY_RUN": "",
         ]
-        UserDefaults.standard.removePersistentDomain(forName: Self.defaultsDomain)
-        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
-            UserDefaults.standard.removePersistentDomain(forName: Self.defaultsDomain)
+        UserDefaults.standard.removePersistentDomain(forName: defaultsDomain)
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [defaultsDomain] _ in
+            UserDefaults.standard.removePersistentDomain(forName: defaultsDomain)
         }
-        guard let defaults = UserDefaults(suiteName: Self.defaultsDomain) else {
-            Self.exit(2, "no defaults domain \(Self.defaultsDomain) of its own", out: options.out.path)
+        guard let defaults = UserDefaults(suiteName: defaultsDomain) else {
+            Self.exit(2, "no defaults domain \(defaultsDomain) of its own", out: options.out.path)
         }
         let runner = E2ERunner(
             app: app, suite: suite, suiteName: options.suite?.path ?? "none",
@@ -184,16 +186,17 @@ final class E2EHarness {
         control?.stop()
         runner?.save()
         let status = runner?.status ?? 2
-        UserDefaults.standard.removePersistentDomain(forName: Self.defaultsDomain)
+        UserDefaults.standard.removePersistentDomain(forName: defaultsDomain)
         if !app.daemon.stop(completion: { Darwin.exit(status) }) { Darwin.exit(status) }
     }
 
-    /// One root per checkout (`MOCK_ROOT`), so paths in shots stay put from run to run and
-    /// two worktrees' runs don't share one.
-    static func mockRoot(for out: URL) -> String {
+    /// One id per checkout, for the mock's root (`MOCK_ROOT`) and the run's defaults domain:
+    /// paths in shots stay put from run to run, and two worktrees' runs at the same time
+    /// share neither (one's telemetry tab once showed up in the other's shots).
+    static func checkout(of out: URL) -> String {
         let checkout = out.deletingLastPathComponent().path
         let hash = checkout.utf8.reduce(UInt32(2_166_136_261)) { ($0 ^ UInt32($1)) &* 16_777_619 }
-        return "/tmp/bt-e2e-\(String(hash, radix: 16))"
+        return String(hash, radix: 16)
     }
 
     /// Before any run state exists: say why, leave a report saying so, and stop.
