@@ -38,6 +38,19 @@ import Testing
         #expect(contents(url.appendingPathExtension("1")) == "left from before\n")
     }
 
+    /// Deleted to clear it while the daemon runs: Open logs finds a file, and the daemon's
+    /// next lines go into it, not into the one that is gone.
+    @Test func aDeletedLogIsThereAgainToOpen() throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = LogFile(url: dir.appending(path: "daemon.log"))
+        log.append("before\n")
+        try FileManager.default.removeItem(at: log.url)
+        log.create()
+        #expect(contents(log.url) == "")
+        log.append("after\n")
+        #expect(contents(log.url) == "after\n")
+    }
+
     @Test func createMakesAnEmptyLogToOpen() {
         defer { try? FileManager.default.removeItem(at: dir) }
         let log = LogFile(url: dir.appending(path: "nested/daemon.log"))

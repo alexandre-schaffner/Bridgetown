@@ -31,14 +31,17 @@ final class LogFile: @unchecked Sendable {
         }
     }
 
-    /// Creates the file and its directory if they aren't there, to open it in Console.
+    /// Makes sure the file is there to open in Console: created with its directory if it
+    /// never was, and again if it was deleted to clear it, so what comes next lands in it
+    /// rather than in the file that is gone.
     func create() {
         lock.withLock {
-            if handle == nil { open() }
+            if handle == nil || !FileManager.default.fileExists(atPath: url.path) { open() }
         }
     }
 
     private func open() {
+        try? handle?.close()
         let fm = FileManager.default
         try? fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         if !fm.fileExists(atPath: url.path) {
@@ -49,7 +52,6 @@ final class LogFile: @unchecked Sendable {
     }
 
     private func rotate() {
-        try? handle?.close()
         let previous = url.appendingPathExtension("1")
         try? FileManager.default.removeItem(at: previous)
         try? FileManager.default.moveItem(at: url, to: previous)
