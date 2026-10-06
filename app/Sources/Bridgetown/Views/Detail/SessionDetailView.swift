@@ -17,46 +17,35 @@ struct SessionDetailView: View {
     private static let keyWidth: CGFloat = 64
 
     var body: some View {
-        VStack(spacing: 0) {
-            DetailTopBar(title: session.title)
-            Hairline()
-            PaneScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        origin
-                        summary
-                    }
-                    .bleedInset()
-                    if let action {
-                        ActionCard(action: action, confirmingClose: $closingCard)
-                            .tableFrame()
-                    }
-                    GrafanaSection(alertId: session.alertId)
-                    let diagnosis = session.diagnosis.flatMap { $0.isEmpty ? nil : $0 }
-                    if diagnosis != nil || session.rootCauseFound == false {
-                        DetailSection(title: "Diagnosis") {
-                            if session.rootCauseFound == false {
-                                RootCauseNotice()
-                            }
-                            if let diagnosis {
-                                ClampedText(markdown: diagnosis, lineLimit: 6, size: 13.5, lineSpacing: 4)
-                                    .id(session.id)
-                                    .bleedInset()
-                            }
-                        }
-                    }
-                    if session.prUrl != nil || session.ciRounds > 0 {
-                        links
-                    }
-                    transcriptBlock
-                }
-                // Vertical only: charts and the transcript run to the pane's edges, like
-                // the overview's lists; text takes the inset (`bleedInset`).
-                .padding(.vertical, 18)
-                .environment(\.fullBleed, true)
+        DetailScaffold(title: session.title) {
+            VStack(alignment: .leading, spacing: 14) {
+                origin
+                summary
             }
-            .accessibilityIdentifier("pane.detail")
-            Hairline()
+            .padding(.horizontal, Metrics.inset)
+            if let action {
+                ActionCard(action: action, confirmingClose: $closingCard)
+                    .tableFrame()
+            }
+            GrafanaSection(alertId: session.alertId)
+            let diagnosis = session.diagnosis.flatMap { $0.isEmpty ? nil : $0 }
+            if diagnosis != nil || session.rootCauseFound == false {
+                DetailSection(title: "Diagnosis") {
+                    if session.rootCauseFound == false {
+                        RootCauseNotice()
+                    }
+                    if let diagnosis {
+                        ClampedText(markdown: diagnosis, lineLimit: 6, size: 13.5, lineSpacing: 4)
+                            .id(session.id)
+                            .padding(.horizontal, Metrics.inset)
+                    }
+                }
+            }
+            if session.prUrl != nil || session.ciRounds > 0 {
+                links
+            }
+            transcriptBlock
+        } bar: {
             bottomBar
         }
         .task(id: session.updatedAt) { await reloadTranscript() }
@@ -178,7 +167,7 @@ struct SessionDetailView: View {
                     }
                 }
             }
-            .bleedInset()
+            .padding(.horizontal, Metrics.inset)
         }
     }
 
@@ -209,7 +198,7 @@ struct SessionDetailView: View {
                 // intact ("Reply to agent" on a review card lands here).
                 if session.acceptsMessages {
                     messageField
-                        .bleedInset()
+                        .padding(.horizontal, Metrics.inset)
                 }
             }
         }
@@ -255,20 +244,21 @@ struct SessionDetailView: View {
 
     // MARK: Bottom bar
 
+    @ViewBuilder
     private var bottomBar: some View {
-        HStack(spacing: 8) {
-            Button {
-                if let err = SystemActions.takeOver(session) { store.show(err) }
-            } label: {
-                Label("Take over in Terminal", systemImage: "terminal")
-            }
-            .buttonStyle(.stage(.secondary))
-            .disabled(session.claudeSessionId == nil)
-            .help(session.claudeSessionId == nil ? "No Claude session yet" : "claude --resume in the worktree")
+        Button {
+            if let err = SystemActions.takeOver(session) { store.show(err) }
+        } label: {
+            Label("Take over in Terminal", systemImage: "terminal")
+        }
+        .buttonStyle(.stage(.secondary))
+        .disabled(session.claudeSessionId == nil)
+        .help(session.claudeSessionId == nil ? "No Claude session yet" : "claude --resume in the worktree")
 
-            Spacer(minLength: 0)
+        Spacer(minLength: 0)
 
-            if session.isActive {
+        if session.isActive {
+            Group {
                 if confirmingStop {
                     ConfirmPrompt(question: "Stop this session?", label: "Stop session", isPresented: $confirmingStop) {
                         store.stop(session)
@@ -281,10 +271,8 @@ struct SessionDetailView: View {
                         .accessibilityIdentifier("session.stop")
                 }
             }
+            .animation(Easing.quick, value: confirmingStop)
         }
-        .padding(.horizontal, Metrics.inset)
-        .padding(.vertical, 10)
-        .animation(Easing.quick, value: confirmingStop)
     }
 }
 
@@ -306,7 +294,7 @@ private struct RootCauseNotice: View {
         .padding(.horizontal, Metrics.inset)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.03))
+        .background(Ink.band)
         .tableFrame()
         .accessibilityElement(children: .combine)
     }
@@ -341,7 +329,7 @@ private struct TranscriptView: View {
                 }
             }
         }
-        .background(Color.white.opacity(0.02))
+        .background(Ink.band)
         .tableFrame()
     }
 

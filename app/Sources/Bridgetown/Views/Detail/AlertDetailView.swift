@@ -40,23 +40,24 @@ struct AlertDetailView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            DetailTopBar(title: alert?.title ?? "", lineLimit: 2)
-            Hairline()
+        Group {
             if let alert, detail.value != nil || detail.error != nil {
-                PaneScrollView {
-                    content(alert)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 14)
+                DetailScaffold(title: alert.title, titleLineLimit: 2) {
+                    sections(alert)
+                } bar: {
+                    bottomBar(alert)
                 }
-                .accessibilityIdentifier("pane.detail")
-                Hairline()
-                bottomBar(alert)
-            } else if let error = detail.error {
-                failure(error)
             } else {
-                // A local fetch; usually done before the first frame matters.
-                Color.clear.frame(maxHeight: .infinity)
+                VStack(spacing: 0) {
+                    DetailTopBar(title: alert?.title ?? "", lineLimit: 2)
+                    Hairline()
+                    if let error = detail.error {
+                        failure(error)
+                    } else {
+                        // A local fetch; usually done before the first frame matters.
+                        Color.clear.frame(maxHeight: .infinity)
+                    }
+                }
             }
         }
         .task(id: refreshKey) { await load() }
@@ -64,34 +65,38 @@ struct AlertDetailView: View {
 
     // MARK: Content
 
-    private func content(_ alert: AlertView) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
-            summary(alert)
-            DetailSection(title: "How it ended") { howItEnded(alert) }
-            GrafanaSection(alertId: alert.id)
-            DetailSection(title: "Jev's call") { jevsCall(alert) }
-            if !events.isEmpty {
-                DetailSection(title: "History") { AlertHistory(events: events) }
+    @ViewBuilder
+    private func sections(_ alert: AlertView) -> some View {
+        summary(alert)
+            .padding(.horizontal, Metrics.inset)
+        DetailSection(title: "How it ended") { howItEnded(alert) }
+        GrafanaSection(alertId: alert.id)
+        DetailSection(title: "Jev's call") {
+            jevsCall(alert)
+                .padding(.horizontal, Metrics.inset)
+        }
+        if !events.isEmpty {
+            DetailSection(title: "History") {
+                AlertHistory(events: events)
+                    .padding(.horizontal, Metrics.inset)
             }
-            if let raw = detail.value?.raw, !raw.isEmpty {
-                DetailSection(title: "Message") {
-                    ClampedText(
-                        markdown: Mrkdwn.markdown(raw),
-                        lineLimit: 8,
-                        size: 10.5,
-                        mono: true,
-                        lineSpacing: 1.5,
-                        moreLabel: "Show full message",
-                        boxed: true
-                    )
+        }
+        if let raw = detail.value?.raw, !raw.isEmpty {
+            DetailSection(title: "Message") {
+                // Set apart from the app's own words: a block of its own on a faint fill.
+                ClampedText(markdown: Mrkdwn.markdown(raw), lineLimit: 8, size: 10.5, mono: true, lineSpacing: 1.5, moreLabel: "Show full message")
                     .id(raw)
-                }
+                    .padding(.horizontal, Metrics.inset)
+                    .padding(.vertical, 10)
+                    .background(Ink.band)
+                    .tableFrame()
             }
-            if let error = detail.error {
-                Text("Couldn't load the full alert · \(error)")
-                    .font(.geist(11))
-                    .foregroundStyle(.tertiary)
-            }
+        }
+        if let error = detail.error {
+            Text("Couldn't load the full alert · \(error)")
+                .font(.geist(11))
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, Metrics.inset)
         }
     }
 
@@ -126,8 +131,9 @@ struct AlertDetailView: View {
     @ViewBuilder
     private func howItEnded(_ alert: AlertView) -> some View {
         if let session {
-            let canOpen = store.snapshot?.session(id: session.id) != nil
-            SessionRow(session: session, onOpen: canOpen ? { store.show(.session(session.id)) } : nil)
+            // A session aged out of the snapshot has no detail to open.
+            JobRow(session: session, opens: store.snapshot?.session(id: session.id) != nil)
+                .tableFrame()
         } else {
             // Every outcome but `session` means no agent ran. The daemon's sentence says
             // what happened instead; without one, say just that.
@@ -136,6 +142,7 @@ struct AlertDetailView: View {
                 .foregroundStyle(.primary)
                 .lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, Metrics.inset)
         }
     }
 
@@ -205,32 +212,29 @@ struct AlertDetailView: View {
 
     // MARK: Bottom bar
 
+    @ViewBuilder
     private func bottomBar(_ alert: AlertView) -> some View {
-        HStack(spacing: 8) {
-            Button {
-                SystemActions.open(alert.permalink)
-            } label: {
-                Label(alert.permalinkLabel, systemImage: "arrow.up.right.square")
-            }
-            .buttonStyle(.stage(.secondary))
-            .disabled(alert.permalink == nil)
-            .help(alert.permalink == nil ? "No permalink for this message" : alert.source == .watch ? "Open the dashboard in Grafana" : "Open the message in Slack")
-
-            Spacer(minLength: 0)
-
-            if session?.isActive != true {
-                let waiting = openActions.contains { $0.kind == .investigate }
-                let button = Button(session == nil ? "Investigate" : "Investigate again") {
-                    store.investigate(alert)
-                }
-                .disabled(store.isBusy(alert.id))
-                .help("Start an agent on this alert")
-                // Primary only when investigating is the expected next step.
-                button.buttonStyle(.stage(waiting ? .primary : .secondary))
-            }
+        Button {
+            SystemActions.open(alert.permalink)
+        } label: {
+            Label(alert.permalinkLabel, systemImage: "arrow.up.right.square")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .buttonStyle(.stage(.secondary))
+        .disabled(alert.permalink == nil)
+        .help(alert.permalink == nil ? "No permalink for this message" : alert.source == .watch ? "Open the dashboard in Grafana" : "Open the message in Slack")
+
+        Spacer(minLength: 0)
+
+        if session?.isActive != true {
+            let waiting = openActions.contains { $0.kind == .investigate }
+            let button = Button(session == nil ? "Investigate" : "Investigate again") {
+                store.investigate(alert)
+            }
+            .disabled(store.isBusy(alert.id))
+            .help("Start an agent on this alert")
+            // Primary only when investigating is the expected next step.
+            button.buttonStyle(.stage(waiting ? .primary : .secondary))
+        }
     }
 
     // MARK: Loading

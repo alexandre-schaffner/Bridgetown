@@ -17,6 +17,9 @@ enum Ink {
     static let picked = Color.white.opacity(0.075)
     /// `hover` over the stage, opaque: for something laid over a hovered row's text.
     static let hoverSolid = Color(white: 0.045)
+    /// A band set apart inside a table, fainter than hover: a group's header, an opened
+    /// card, a notice, machine text (the transcript, a raw message).
+    static let band = Color.white.opacity(0.025)
     /// Panel outlines and the dividers between rows.
     static let hairline = Color.white.opacity(0.17)
     /// Control outlines (secondary buttons, inputs, the tab switch): one step stronger.

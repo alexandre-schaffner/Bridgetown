@@ -26,19 +26,45 @@ extension Snapshot {
 
 // MARK: Sections
 
+/// What is picked in each of the overview's lists, held above them so one Escape clears
+/// every list at once rather than one a press.
+struct OverviewPicks: Equatable {
+    var needsYou = RowSelection()
+    var agents = RowSelection()
+    var recent = RowSelection()
+
+    var isEmpty: Bool { needsYou.isEmpty && agents.isEmpty && recent.isEmpty }
+}
+
 /// What's waiting on you, as one full-width table under the decision each row asks for (Answer,
 /// Ship, Investigate, Retry or close). A row is its subject and its age; its button shows
 /// on hover, since the group already names the verb. The one you open shows in full.
 struct NeedsYouSection: View {
     @Environment(Store.self) private var store
     let snapshot: Snapshot
+    @Binding var selection: RowSelection
     @ViewState private var expandedAction: String?
-    @ViewState private var selection = RowSelection()
     @ViewState private var confirmingClose = false
+
+    /// A line of the table: a group's header, or a card under it.
+    private enum Row: Identifiable {
+        case group(ActionGroup, ids: [String])
+        case action(Action)
+
+        var id: String {
+            switch self {
+            case let .group(group, _): "group.\(group)"
+            case let .action(action): action.id
+            }
+        }
+    }
 
     var body: some View {
         let groups = snapshot.actionGroups
         let order = groups.flatMap { $0.actions.map(\.id) }
+        let rows = groups.flatMap { entry in
+            [Row.group(entry.group, ids: entry.actions.map(\.id))] + entry.actions.map(Row.action)
+        }
         VStack(alignment: .leading, spacing: 8) {
             PickingHeader(selection: $selection, order: order, confirming: $confirmingClose) {
                 SectionHeader(title: "Needs you", count: snapshot.actions.count)
@@ -55,28 +81,19 @@ struct NeedsYouSection: View {
                 }
             }
             .padding(.horizontal, Metrics.inset)
-            VStack(spacing: 0) {
-                ForEach(groups, id: \.group) { entry in
-                    Hairline()
-                    GroupRow(group: entry.group, count: entry.actions.count, pick: groupPick(entry.actions.map(\.id)))
-                    ForEach(entry.actions) { action in
-                        Hairline()
-                        ActionRow(
-                            action: action,
-                            expanded: expandedAction == action.id,
-                            pick: $selection.pick(action.id, in: order)
-                        ) {
-                            Haptics.perform(.alignment, "needsYou.toggle")
-                            withAnimation(.snappy(duration: 0.2)) {
-                                expandedAction = expandedAction == action.id ? nil : action.id
-                            }
+            RowList(data: rows) { row in
+                switch row {
+                case let .group(group, ids):
+                    GroupRow(group: group, count: ids.count, pick: groupPick(ids))
+                case let .action(action):
+                    ActionRow(action: action, expanded: expandedAction == action.id, pick: $selection.pick(action.id, in: order)) {
+                        Haptics.perform(.alignment, "needsYou.toggle")
+                        withAnimation(Easing.state) {
+                            expandedAction = expandedAction == action.id ? nil : action.id
                         }
-                        .transition(.opacity)
                     }
                 }
-                Hairline()
             }
-            .animation(Easing.state, value: order)
         }
     }
 
@@ -110,7 +127,8 @@ struct NeedsYouSection: View {
         selection.clear()
     }
 
-    /// A group's header picks or unpicks the whole group.
+    /// A group's header picks or unpicks the whole group. It opens nothing, so it never
+    /// takes a click as a pick.
     private func groupPick(_ ids: [String]) -> RowPick {
         RowPick(
             selected: ids.allSatisfy(selection.contains),
@@ -125,34 +143,35 @@ struct NeedsYouSection: View {
 }
 
 /// A group's header row inside the Needs you table: its glyph (the selection mark on
-/// hover), its name and how many, on a faint fill. Colour stays on the glyph and count.
+/// hover), its name and how many, on a faint band. Colour stays on the glyph and count.
 private struct GroupRow: View {
     let group: ActionGroup
     let count: Int
     let pick: RowPick
-    @ViewState private var hovering = false
 
     var body: some View {
         let tint = group.tint.map(AnyShapeStyle.init) ?? AnyShapeStyle(.secondary)
-        HStack(spacing: 10) {
-            SelectMark(pick: pick, hovering: hovering) {
-                Image(systemName: group.symbol)
-                    .font(.system(size: 12, weight: .semibold))
+        TableRow(pick: pick, open: nil) { hovering in
+            HStack(spacing: 10) {
+                SelectMark(pick: pick, hovering: hovering) {
+                    Image(systemName: group.symbol)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(tint)
+                }
+                Text(group.title)
+                    .font(.geist(12.5, .semibold))
+                    .foregroundStyle(.primary)
+                Text("\(count)")
+                    .font(Typo.rowTime)
                     .foregroundStyle(tint)
+                Spacer(minLength: 0)
             }
-            Text(group.title)
-                .font(.geist(12.5, .semibold))
-                .foregroundStyle(.primary)
-            Text("\(count)")
-                .font(Typo.rowTime)
-                .foregroundStyle(tint)
-            Spacer(minLength: 0)
+            .padding(.horizontal, Metrics.inset)
+            .frame(height: 36)
+            .background(Ink.band)
+        } menu: {
+            EmptyView()
         }
-        .padding(.horizontal, Metrics.inset)
-        .frame(height: 36)
-        .background(pick.selected ? Ink.picked : Color.white.opacity(0.03))
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
         .accessibilityLabel("\(group.title), \(count)")
@@ -164,7 +183,7 @@ private struct GroupRow: View {
 struct AgentsSection: View {
     @Environment(Store.self) private var store
     let running: [Session]
-    @ViewState private var selection = RowSelection()
+    @Binding var selection: RowSelection
     @ViewState private var confirmingStop = false
 
     private var picked: [Session] { running.filter { selection.contains($0.id) && !store.isBusy($0.id) } }
@@ -191,41 +210,61 @@ struct AgentsSection: View {
                 }
             }
             .padding(.horizontal, Metrics.inset)
-            VStack(spacing: 0) {
-                ForEach(running) { session in
-                    Hairline()
-                    JobRow(session: session, pick: $selection.pick(session.id, in: order))
-                        .transition(.opacity)
-                }
-                Hairline()
+            RowList(data: running) { session in
+                JobRow(session: session, pick: $selection.pick(session.id, in: order))
             }
-            .animation(Easing.state, value: order)
         }
     }
 }
 
 /// Alerts that have settled (finished sessions, teammates' claims, dismissed cards), newest
-/// first, as a log: when on the left, what happened beside it. Alerts nothing was done
-/// about (filtered by a rule, ignored by Jev) fold into one row at the end, there to check
-/// Jev's calls. Nothing at all while none have settled.
+/// first, as a log: when on the left, what happened beside it. Past the first eight, a row
+/// shows the rest. Alerts nothing was done about (filtered by a rule, ignored by Jev) fold
+/// into one row at the end, there to check Jev's calls. Nothing at all while none have
+/// settled.
 struct RecentSection: View {
     @Environment(Store.self) private var store
     let snapshot: Snapshot
+    @Binding var selection: RowSelection
     @ViewState private var showAll = false
     @ViewState private var showQuiet = false
-    @ViewState private var selection = RowSelection()
 
     private static let limit = 8
 
-    var body: some View {
+    /// A line of the table: an alert, or a fold that shows more of them.
+    private enum Row: Identifiable {
+        case alert(AlertView)
+        /// The loud alerts past the limit.
+        case more(hidden: Int)
+        /// The filtered and ignored alerts.
+        case quiet(count: Int)
+
+        var id: String {
+            switch self {
+            case let .alert(alert): alert.id
+            case .more: "fold.more"
+            case .quiet: "fold.quiet"
+            }
+        }
+    }
+
+    private var rows: [Row] {
         let settled = snapshot.settledAlerts
         let loud = settled.filter { !$0.outcome.isQuiet }
         let quiet = settled.filter(\.outcome.isQuiet)
-        let shown = showAll ? loud : Array(loud.prefix(Self.limit))
-        let hidden = loud.count - shown.count
-        let rows = shown + (showQuiet ? quiet : [])
-        let order = rows.map(\.id)
-        if !settled.isEmpty {
+        var rows = (showAll ? loud : Array(loud.prefix(Self.limit))).map(Row.alert)
+        if loud.count > Self.limit { rows.append(.more(hidden: loud.count - Self.limit)) }
+        if !quiet.isEmpty { rows.append(.quiet(count: quiet.count)) }
+        if showQuiet { rows += quiet.map(Row.alert) }
+        return rows
+    }
+
+    var body: some View {
+        let rows = rows
+        let order = rows.compactMap { row -> String? in
+            if case let .alert(alert) = row { alert.id } else { nil }
+        }
+        if !rows.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 PickingHeader(selection: $selection, order: order) {
                     SectionHeader(title: "Recent")
@@ -233,41 +272,25 @@ struct RecentSection: View {
                     bulkActions
                 }
                 .padding(.horizontal, Metrics.inset)
-                VStack(spacing: 0) {
-                    ForEach(shown) { alert in
-                        Hairline()
-                        row(alert, order: order)
-                    }
-                    if !quiet.isEmpty {
-                        Hairline()
-                        QuietFold(count: quiet.count, open: showQuiet) {
-                            withAnimation(.snappy(duration: 0.2)) { showQuiet.toggle() }
+                RowList(data: rows) { row in
+                    switch row {
+                    case let .alert(alert):
+                        AlertRow(alert: alert, session: snapshot.session(id: alert.sessionId), pick: $selection.pick(alert.id, in: order))
+                    case let .more(hidden):
+                        FoldRow(title: showAll ? "Show fewer" : "Show \(hidden) more", open: showAll) {
+                            withAnimation(Easing.state) { showAll.toggle() }
                         }
-                        if showQuiet {
-                            ForEach(quiet) { alert in
-                                Hairline()
-                                row(alert, order: order)
-                            }
+                        .accessibilityIdentifier("recent.showMore")
+                    case let .quiet(count):
+                        FoldRow(title: count == 1 ? "1 filtered or ignored" : "\(count) filtered or ignored", open: showQuiet) {
+                            withAnimation(Easing.state) { showQuiet.toggle() }
                         }
+                        .accessibilityLabel(showQuiet ? "Hide \(count) filtered or ignored alerts" : "Show \(count) filtered or ignored alerts")
+                        .accessibilityIdentifier("recent.quietFold")
                     }
-                    Hairline()
-                }
-                .animation(Easing.state, value: order)
-                if hidden > 0 || showAll {
-                    Button(showAll ? "Show less" : "Show \(hidden) more") {
-                        withAnimation(.snappy(duration: 0.2)) { showAll.toggle() }
-                    }
-                    .buttonStyle(.stage(.secondary))
-                    .accessibilityIdentifier("recent.showMore")
-                    .frame(maxWidth: .infinity)
                 }
             }
         }
-    }
-
-    private func row(_ alert: AlertView, order: [String]) -> some View {
-        AlertRow(alert: alert, session: snapshot.session(id: alert.sessionId), pick: $selection.pick(alert.id, in: order))
-            .transition(.opacity)
     }
 
     /// Judge Jev's calls in one go, or start agents on alerts it let through.
@@ -309,16 +332,17 @@ struct RecentSection: View {
     }
 }
 
-/// The folded alerts' row: how many, and a chevron that turns as it opens.
-private struct QuietFold: View {
-    let count: Int
+/// A row that shows more of the table: what it holds, and a chevron that turns down as it
+/// opens. Its words line up with the alerts' glyphs.
+private struct FoldRow: View {
+    let title: String
     let open: Bool
     let toggle: () -> Void
 
     var body: some View {
         TableRow(open: toggle) { _ in
             HStack(spacing: 10) {
-                Text(count == 1 ? "1 filtered or ignored" : "\(count) filtered or ignored")
+                Text(title)
                     .font(Typo.rowDetail)
                     .foregroundStyle(.tertiary)
                 Spacer(minLength: 0)
@@ -331,7 +355,5 @@ private struct QuietFold: View {
             .padding(.trailing, Metrics.inset)
             .frame(height: 42)
         }
-        .accessibilityLabel(open ? "Hide \(count) filtered or ignored alerts" : "Show \(count) filtered or ignored alerts")
-        .accessibilityIdentifier("recent.quietFold")
     }
 }

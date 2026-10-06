@@ -21,7 +21,7 @@ struct LogSweepView: View {
                 }
                 .font(.geist(11))
                 .foregroundStyle(.tertiary)
-                .bleedInset()
+                .padding(.horizontal, Metrics.inset)
             }
         }
     }
@@ -67,7 +67,7 @@ private struct SweepContent: View {
                 .accessibilityIdentifier("logs.showSteady")
             }
             footer
-                .bleedInset()
+                .padding(.horizontal, Metrics.inset)
         }
     }
 

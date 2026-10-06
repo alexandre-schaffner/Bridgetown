@@ -20,7 +20,7 @@ struct TelemetryPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
-                .bleedInset()
+                .padding(.horizontal, Metrics.inset)
             // One board crossfades into the next, rather than swapping in a frame.
             Group {
                 switch mode {
@@ -35,8 +35,6 @@ struct TelemetryPanel: View {
         }
         .animation(Easing.state, value: mode)
         .onHorizontalSwipe(swipedTab)
-        // Its charts run to the column's edges, like the lists beside it.
-        .environment(\.fullBleed, true)
     }
 
     /// Fingers moving left show the next board, right the previous one; nothing past either end.

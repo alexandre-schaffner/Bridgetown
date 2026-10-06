@@ -147,7 +147,7 @@ struct SelectMark<Glyph: View>: View {
 // MARK: Selection header
 
 /// Stands in for a section's header while rows are picked: how many, the bulk actions,
-/// and Clear (also Escape). The same height as the header it replaces, so nothing jumps.
+/// and Clear. The same height as the header it replaces, so nothing jumps.
 struct SelectionHeader<Actions: View>: View {
     let count: Int
     /// All of the list's rows, to offer "Select all" until they are.
@@ -181,7 +181,7 @@ struct SelectionHeader<Actions: View>: View {
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
             .hoverFill(radius: Ink.tagRadius)
-            .keyboardShortcut(.cancelAction)
+            // Escape is the overview's: it clears every list at once (`OverviewPicks`).
             .help("Clear selection (Esc)")
             .accessibilityLabel("Clear selection")
         }

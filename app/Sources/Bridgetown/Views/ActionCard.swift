@@ -171,7 +171,7 @@ struct ActionCard: View {
         }
         .padding(.horizontal, Metrics.inset)
         .padding(.vertical, 16)
-        .background(pick?.selected == true ? Ink.picked : Color.white.opacity(0.03))
+        .background(pick?.selected == true ? Ink.picked : Ink.band)
         .overlay(alignment: .topTrailing) {
             if !action.inFlight {
                 IconButton(

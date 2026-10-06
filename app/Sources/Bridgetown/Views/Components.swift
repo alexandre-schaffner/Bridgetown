@@ -6,7 +6,6 @@ import SwiftUI
 
 enum Metrics {
     static let inset: CGFloat = 12
-    static let cardRadius: CGFloat = Ink.panelRadius
 }
 
 // MARK: Section header
@@ -41,9 +40,8 @@ struct SectionHeader: View {
 
 // MARK: Detail section
 
-/// A titled block in a detail pane: the title, content below. No outline of its own.
-/// Under `fullBleed` the title takes the pane's inset; content that isn't a table should
-/// take it too (`bleedInset()`).
+/// A titled block in a detail pane: the title, content below. No outline of its own. The
+/// title takes the pane's inset; content that isn't a table should take it too.
 struct DetailSection<Content: View>: View {
     let title: String
     /// Shown after the title as written, never uppercased: a route or a board name.
@@ -73,7 +71,7 @@ struct DetailSection<Content: View>: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isHeader)
-            .bleedInset()
+            .padding(.horizontal, Metrics.inset)
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)

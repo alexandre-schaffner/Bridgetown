@@ -65,7 +65,7 @@ struct BoardView: View {
                 }
                 footer
             }
-            .bleedInset()
+            .padding(.horizontal, Metrics.inset)
         }
     }
 
@@ -169,7 +169,7 @@ struct BoardSkeleton: View {
             }
             .font(.geist(11))
             .foregroundStyle(.tertiary)
-            .bleedInset()
+            .padding(.horizontal, Metrics.inset)
         }
         .accessibilityLabel("Loading Grafana charts")
     }

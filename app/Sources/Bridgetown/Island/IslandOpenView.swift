@@ -9,6 +9,7 @@ import SwiftUI
 struct IslandOpenView: View {
     @Environment(Store.self) private var store
     let model: IslandModel
+    @ViewState private var picks = OverviewPicks()
 
     /// The prod column: what's wrong, if anything, then the prod board.
     static let prodWidth: CGFloat = 380
@@ -85,7 +86,7 @@ struct IslandOpenView: View {
                             if snap.actions.isEmpty {
                                 ColumnNote(title: "Needs you", text: "Nothing is waiting on you.")
                             } else {
-                                NeedsYouSection(snapshot: snap)
+                                NeedsYouSection(snapshot: snap, selection: $picks.needsYou)
                             }
                         }
                         // Vertical only: the sections' rows run to the column's edges.
@@ -101,13 +102,23 @@ struct IslandOpenView: View {
                                     text: snap.activeSessions.isEmpty ? "No agent is running." : "Every open session is waiting on you."
                                 )
                             } else {
-                                AgentsSection(running: running)
+                                AgentsSection(running: running, selection: $picks.agents)
                             }
-                            RecentSection(snapshot: snap)
+                            RecentSection(snapshot: snap, selection: $picks.recent)
                         }
                         .padding(.vertical, Metrics.inset)
                     }
                     .accessibilityIdentifier("pane.agents")
+                }
+                .background {
+                    // Escape clears what is picked, in every list at once. Draws nothing.
+                    if !picks.isEmpty {
+                        Button("Clear selection") { picks = OverviewPicks() }
+                            .keyboardShortcut(.cancelAction)
+                            .opacity(0)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
                 }
             }
         } else {

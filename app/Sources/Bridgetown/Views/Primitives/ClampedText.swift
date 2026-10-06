@@ -11,8 +11,6 @@ struct ClampedText: View {
     var mono = false
     var lineSpacing: CGFloat = 2
     var moreLabel = "Show more"
-    /// Sets the text in a quiet rounded block (raw messages), with the toggle outside it.
-    var boxed = false
 
     /// Accessibility keeps every line at its whole frame, cut off or not: while the text is
     /// clamped its container says so with this, for the e2e lint (`E2ELint`).
@@ -31,7 +29,7 @@ struct ClampedText: View {
     private var clamped: Bool { truncated && !expanded }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: boxed ? 6 : 4) {
+        VStack(alignment: .leading, spacing: 4) {
             MarkdownView(blocks: Markdown.blocks(markdown), size: size, mono: mono, lineSpacing: lineSpacing)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullHeight = $0 }
                 .frame(maxHeight: expanded ? nil : clampHeight, alignment: .top)
@@ -45,13 +43,7 @@ struct ClampedText: View {
                 }
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier(clamped ? Self.clipIdentifier : "")
-                .padding(boxed ? 8 : 0)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background {
-                    if boxed {
-                        Color.clear.outlined()
-                    }
-                }
             if truncated {
                 TextLink(expanded ? "Show less" : moreLabel) { expanded.toggle() }
                     .font(.geist(11.5, .medium))

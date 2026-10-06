@@ -21,50 +21,17 @@ struct Hairline: View {
     }
 }
 
-// MARK: Full bleed
-
-private struct FullBleedKey: EnvironmentKey {
-    static let defaultValue = false
-}
-
-extension EnvironmentValues {
-    /// Tables run to the pane's edges between full-width hairlines, rather than sitting in
-    /// an outlined block. The pane then pads only vertically, and the text around a table
-    /// (titles, footers, buttons) takes the inset itself through `bleedInset()`.
-    var fullBleed: Bool {
-        get { self[FullBleedKey.self] }
-        set { self[FullBleedKey.self] = newValue }
-    }
-}
+// MARK: Table frame
 
 extension View {
-    /// Text beside a table: the pane's inset, when tables run to the edges.
-    func bleedInset() -> some View { modifier(BleedInset()) }
-
-    /// A table's frame: an outlined block, or hairlines above and below it at full width.
-    func tableFrame() -> some View { modifier(TableFrame()) }
-}
-
-private struct BleedInset: ViewModifier {
-    @Environment(\.fullBleed) private var fullBleed
-
-    func body(content: Content) -> some View {
-        content.padding(.horizontal, fullBleed ? Metrics.inset : 0)
-    }
-}
-
-private struct TableFrame: ViewModifier {
-    @Environment(\.fullBleed) private var fullBleed
-
-    func body(content: Content) -> some View {
-        if fullBleed {
-            VStack(spacing: 0) {
-                Hairline()
-                content
-                Hairline()
-            }
-        } else {
-            content.outlined()
+    /// A table's frame: a hairline above and one below, across the whole pane. Tables run
+    /// to the pane's edges; the text around them (titles, footers, buttons) takes the
+    /// pane's inset, `Metrics.inset`, itself.
+    func tableFrame() -> some View {
+        VStack(spacing: 0) {
+            Hairline()
+            self
+            Hairline()
         }
     }
 }
@@ -146,15 +113,6 @@ struct CellGrid<Item: Identifiable, Cell: View>: View {
             }
         }
         .tableFrame()
-    }
-}
-
-// MARK: Card
-
-extension View {
-    /// A standalone outlined block; `highlighted` on hover.
-    func card(highlighted: Bool = false) -> some View {
-        outlined(fill: highlighted ? Color(white: 0.06) : Ink.surface)
     }
 }
 
