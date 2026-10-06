@@ -19,7 +19,7 @@ struct LogSweepView: View {
                     ProgressView().controlSize(.mini)
                     Text("Reading the last sweep…")
                 }
-                .font(.geist(11))
+                .font(Typo.caption)
                 .foregroundStyle(.tertiary)
                 .padding(.horizontal, Metrics.inset)
             }
@@ -81,7 +81,7 @@ private struct SweepContent: View {
             TextLink("Open in Grafana", opening: sweep.link)
                 .help("Prod's error lines over the last 3 hours, in Grafana Explore")
         }
-        .font(.geist(11.5).monospacedDigit())
+        .font(Typo.time)
         .foregroundStyle(.tertiary)
         .lineLimit(1)
     }
@@ -112,13 +112,13 @@ private struct PatternRow: View {
                         .foregroundStyle(pattern.suspicious ? AnyShapeStyle(Ink.amber) : AnyShapeStyle(.secondary))
                         .fixedSize()
                     Text("· \(pattern.sourcesLabel)")
-                        .font(Typo.rowDetail)
+                        .font(Typo.body)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer(minLength: 4)
                     Text("\(Format.count(pattern.recent)) in 15m")
-                        .font(Typo.rowTime)
+                        .font(Typo.time)
                         .foregroundStyle(.tertiary)
                         .fixedSize()
                 }
@@ -132,12 +132,12 @@ private struct PatternRow: View {
                 if let verdict = pattern.verdictLine {
                     HStack(spacing: 6) {
                         Text(verdict)
-                            .font(.geist(11.5).monospacedDigit())
+                            .font(Typo.time)
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
                         if let alertId = pattern.alertId {
                             TextLink("Finding", direction: .inward) { store.show(.alert(alertId)) }
-                                .font(.geist(11.5, .medium))
+                                .font(Typo.label)
                                 .help("Show the finding Bridgetown raised for this pattern")
                         }
                     }

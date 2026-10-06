@@ -100,7 +100,7 @@ struct AlertDetailView: View {
         }
         if let error = detail.error {
             Text("Couldn't load the full alert · \(error)")
-                .font(.geist(11))
+                .font(Typo.caption)
                 .foregroundStyle(.tertiary)
                 .padding(.horizontal, Metrics.inset)
         }
@@ -114,7 +114,7 @@ struct AlertDetailView: View {
             }
             if !alert.summary.isEmpty {
                 Text(alert.summary)
-                    .font(.geist(12))
+                    .font(Typo.body)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -123,7 +123,7 @@ struct AlertDetailView: View {
             HStack(spacing: 8) {
                 ChannelChip(name: alert.channelName)
                 Text(Format.ago(alert.receivedAt, now: now))
-                    .font(.geist(11))
+                    .font(Typo.caption)
                     .monospacedDigit()
                     .foregroundStyle(.tertiary)
                     .help(alert.receivedAt.formatted(date: .abbreviated, time: .shortened))
@@ -144,7 +144,7 @@ struct AlertDetailView: View {
             // Every outcome but `session` means no agent ran. The daemon's sentence says
             // what happened instead; without one, say just that.
             Text(alert.outcome.sentence.flatMap { $0.isEmpty ? nil : $0 } ?? Self.noSessionLine(alert.outcome.kind))
-                .font(.geist(12, .medium))
+                .font(Typo.strong)
                 .foregroundStyle(.primary)
                 .lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
@@ -172,10 +172,10 @@ struct AlertDetailView: View {
         return VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(byRule ? "Decided by a rule, no model call" : triage.decision.callLabel)
-                    .font(.geist(12, .medium))
+                    .font(Typo.strong)
                 if showsReason {
                     Text(reason)
-                        .font(.geist(12))
+                        .font(Typo.body)
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
@@ -184,12 +184,12 @@ struct AlertDetailView: View {
             if let jev = triage.jev {
                 JevScores(jev: jev)
                 Text("Kind: \(jev.kindLabel) · Depth: \(jev.depth.rawValue)")
-                    .font(.geist(11))
+                    .font(Typo.caption)
                     .foregroundStyle(.tertiary)
                     .help("Kind confidence \(Format.percent(jev.kindConfidence)) · urgency \(jev.urgencyLabel) of 3")
             } else if !byRule {
                 Text("No scores from Jev for this one")
-                    .font(.geist(11))
+                    .font(Typo.caption)
                     .foregroundStyle(.tertiary)
             }
             FeedbackRow(alert: alert)
@@ -248,9 +248,9 @@ struct AlertDetailView: View {
     private func failure(_ message: String) -> some View {
         VStack(spacing: 8) {
             Text("Couldn't load this alert")
-                .font(.geist(12, .medium))
+                .font(Typo.strong)
             Text(message)
-                .font(.geist(11))
+                .font(Typo.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             Button("Try again") { Task { await load() } }
@@ -282,7 +282,7 @@ private struct FeedbackRow: View {
     var body: some View {
         HStack(spacing: 4) {
             Text(text)
-                .font(.geist(11))
+                .font(Typo.caption)
                 .foregroundStyle(alert.feedback == nil ? .tertiary : .secondary)
             Spacer(minLength: 0)
             FeedbackThumbs(alert: alert)
@@ -306,12 +306,12 @@ private struct AlertHistory: View {
                         .frame(width: 5, height: 5)
                         .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 3.5 }
                     Text(event.at, format: Format.clock)
-                        .font(.geist(11))
+                        .font(Typo.caption)
                         .monospacedDigit()
                         .foregroundStyle(.tertiary)
                         .help(event.at.formatted(date: .abbreviated, time: .standard))
                     Text(event.text)
-                        .font(.geist(11.5))
+                        .font(Typo.small)
                         .foregroundStyle(latest ? .primary : .secondary)
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)

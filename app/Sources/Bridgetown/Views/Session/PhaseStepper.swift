@@ -30,7 +30,7 @@ struct PhaseStepper: View {
             .overlay(alignment: .leading) {
                 if shown, let text = session.evidence(for: step) {
                     Text(text)
-                        .font(.geist(11).monospacedDigit())
+                        .font(Typo.caption.monospacedDigit())
                         .foregroundStyle(step.state == .failed ? AnyShapeStyle(session.tone.stopTint) : AnyShapeStyle(.tertiary))
                         .lineLimit(1)
                         .truncationMode(.tail)

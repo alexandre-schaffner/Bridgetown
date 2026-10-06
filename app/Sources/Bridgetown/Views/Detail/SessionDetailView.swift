@@ -64,7 +64,7 @@ struct SessionDetailView: View {
                 // A finished session shows its outcome, not the last thing the agent was doing.
                 if !session.isActive, let resolution = session.resolutionLine {
                     Text(resolution)
-                        .font(.geist(13))
+                        .font(Typo.lead)
                         .lineSpacing(Typo.rowLineSpacing)
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
@@ -77,13 +77,13 @@ struct SessionDetailView: View {
             VStack(alignment: .leading, spacing: 5) {
                 if session.isActive && !session.activity.isEmpty {
                     Text(Markdown.line(session.activity, size: 13))
-                        .font(.geist(13))
+                        .font(Typo.lead)
                         .lineSpacing(Typo.rowLineSpacing)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
                 Text(session.meta(now: now))
-                    .font(.geist(12))
+                    .font(Typo.body)
                     .monospacedDigit()
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
@@ -108,7 +108,7 @@ struct SessionDetailView: View {
             }
             Spacer(minLength: 0)
         }
-        .font(.geist(12))
+        .font(Typo.body)
     }
 
     // MARK: PR / CI / Slack
@@ -208,7 +208,7 @@ struct SessionDetailView: View {
         HStack(alignment: .bottom, spacing: 6) {
             TextField("Message the agent", text: $message, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.geist(13))
+                .font(Typo.lead)
                 .lineLimit(1...4)
                 .onSubmit(send)
                 .inputField()
@@ -322,14 +322,14 @@ private struct TranscriptView: View {
         VStack(alignment: .leading, spacing: 6) {
             if entries.isEmpty {
                 Text(error.map { "Couldn't load transcript · \($0)" } ?? "No transcript yet")
-                    .font(.geist(12))
+                    .font(Typo.body)
                     .foregroundStyle(.tertiary)
                     .frame(maxWidth: .infinity, minHeight: 48)
             } else {
                 let hidden = hidden
                 if hidden > 0 {
                     TextLink("Show \(hidden) earlier entries") { showAll = true }
-                        .font(.geist(11.5, .medium))
+                        .font(Typo.label)
                 }
                 LazyVStack(alignment: .leading, spacing: 6) {
                     ForEach(entries.indices.dropFirst(hidden), id: \.self) { index in

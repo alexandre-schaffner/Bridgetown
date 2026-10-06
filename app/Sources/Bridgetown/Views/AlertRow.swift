@@ -40,7 +40,7 @@ struct AlertRow: View {
         let glyph = OutcomeGlyph(alert.outcome, session: session)
         return HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text(Format.relative(alert.receivedAt, now: now))
-                .font(Typo.rowTime)
+                .font(Typo.time)
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -59,7 +59,7 @@ struct AlertRow: View {
                     .foregroundStyle(glyph.dimmed ? .secondary : .primary)
                 (Text("\(Format.channel(alert.channelName)) · ")
                     + (glyph.dimmed ? Text(alert.outcome.headline) : alert.outcome.tone.headline(alert.outcome.headline)))
-                    .font(Typo.rowDetail)
+                    .font(Typo.body)
                     .foregroundStyle(glyph.dimmed ? .tertiary : .secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)

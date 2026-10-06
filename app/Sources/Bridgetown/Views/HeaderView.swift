@@ -39,7 +39,7 @@ struct StatusSummary: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .font(.geist(11))
+        .font(Typo.caption)
         .monospacedDigit()
         .lineLimit(1)
         .contentTransition(.numericText())
@@ -203,10 +203,10 @@ private struct ProblemLine: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: problem.severity.symbol)
-                .font(.geist(11.5))
+                .font(Typo.small)
                 .foregroundStyle(problem.severity.color)
             Text(problem.text)
-                .font(.geist(12))
+                .font(Typo.body)
                 .lineSpacing(Typo.rowLineSpacing)
                 .foregroundStyle(.secondary)
                 .lineLimit(3)

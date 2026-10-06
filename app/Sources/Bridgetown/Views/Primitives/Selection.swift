@@ -159,15 +159,14 @@ struct SelectionHeader<Actions: View>: View {
     var body: some View {
         HStack(spacing: 8) {
             Text("\(count) selected")
-                .font(Typo.title)
-                .tracking(Typo.titleTracking)
+                .sectionTitle()
                 .monospacedDigit()
                 .contentTransition(.numericText())
                 .lineLimit(1)
                 .fixedSize()
             if count < total {
                 TextLink("Select all", action: selectAll)
-                    .font(.geist(11.5, .medium))
+                    .font(Typo.label)
                     .fixedSize()
             }
             Spacer(minLength: 0)
@@ -185,7 +184,7 @@ struct SelectionHeader<Actions: View>: View {
             .help("Clear selection (Esc)")
             .accessibilityLabel("Clear selection")
         }
-        .frame(height: SectionHeader.height)
+        .frame(height: Metrics.headerHeight)
         .animation(Easing.quick, value: count)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isHeader)
@@ -235,7 +234,7 @@ struct PickingHeader<Header: View, Actions: View, Prompt: View>: View {
                 .transition(.opacity)
             }
         }
-        .frame(height: SectionHeader.height)
+        .frame(height: Metrics.headerHeight)
         .animation(Easing.quick, value: selection.isEmpty)
         .animation(Easing.quick, value: confirming)
         .onChange(of: order) { _, ids in selection.keep(only: ids) }

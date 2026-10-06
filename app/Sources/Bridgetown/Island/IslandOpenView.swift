@@ -137,7 +137,7 @@ private struct ColumnNote: View {
         VStack(alignment: .leading, spacing: 8) {
             SectionHeader(title: title)
             Text(text)
-                .font(.geist(12))
+                .font(Typo.body)
                 .foregroundStyle(.tertiary)
                 .padding(.vertical, 4)
         }

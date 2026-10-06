@@ -18,7 +18,7 @@ struct EmptyState: View {
             Text(snapshot.status.paused
                 ? "Paused. Alerts are still triaged, but no agent starts on its own."
                 : "Watching \(channelCount) channel\(channelCount == 1 ? "" : "s"). Alerts land here as they're triaged; anything that needs you shows up on top.")
-                .font(.geist(11))
+                .font(Typo.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -47,14 +47,14 @@ struct ConnectingState: View {
                     .font(.geist(24, .light))
                     .foregroundStyle(.secondary)
                 Text("Nothing to show until the daemon is running.")
-                    .font(.geist(12))
+                    .font(Typo.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 ProgressView().controlSize(.small)
                 Text(daemon.mode == .attach ? "Attaching to daemon on port \(daemon.endpoint.port)…" : "Starting daemon…")
-                    .font(.geist(12))
+                    .font(Typo.body)
                     .foregroundStyle(.secondary)
             }
         }

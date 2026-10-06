@@ -6,35 +6,41 @@ import SwiftUI
 
 enum Metrics {
     static let inset: CGFloat = 12
+    /// A section's header: tall enough for a stage button, so a selection header or a
+    /// prompt can stand in for it without a jump.
+    static let headerHeight: CGFloat = 24
 }
 
 // MARK: Section header
 
-/// A title and, past one, how many rows follow. The count stays grey: the rows carry
-/// the colour where it means something.
-struct SectionHeader: View {
-    /// Tall enough for a compact button, so a selection header can stand in without a jump.
-    static let height: CGFloat = 24
-
+/// A title and, past one, how many rows follow; anything that belongs beside the title
+/// (the prod column's tabs) at its end. The count stays grey: the rows carry the colour
+/// where it means something.
+struct SectionHeader<Trailing: View>: View {
     let title: String
     var count: Int?
+    @ViewBuilder var trailing: Trailing
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(title)
-                .font(Typo.title)
-                .tracking(Typo.titleTracking)
-                .foregroundStyle(.primary)
+            Text(title).sectionTitle()
             if let count, count > 1 {
                 Text("\(count)")
-                    .font(.geist(12).monospacedDigit())
+                    .font(Typo.body.monospacedDigit())
                     .foregroundStyle(.tertiary)
                     .contentTransition(.numericText())
             }
             Spacer(minLength: 0)
+            trailing
         }
-        .frame(height: Self.height)
+        .frame(height: Metrics.headerHeight)
         .accessibilityAddTraits(.isHeader)
+    }
+}
+
+extension SectionHeader where Trailing == EmptyView {
+    init(title: String, count: Int? = nil) {
+        self.init(title: title, count: count) { EmptyView() }
     }
 }
 
@@ -57,10 +63,7 @@ struct DetailSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(title)
-                    .font(Typo.title)
-                    .tracking(Typo.titleTracking)
-                    .foregroundStyle(.primary)
+                Text(title).sectionTitle()
                 if let detail {
                     Text(detail)
                         .font(.geist(12.5))
@@ -116,7 +119,7 @@ struct FeedbackThumbs: View {
             store.feedback(alert, label)
         } label: {
             Image(systemName: selected ? symbol + ".fill" : symbol)
-                .font(.geist(12))
+                .font(Typo.body)
                 .contentTransition(.symbolEffect(.replace))
                 .frame(width: 24, height: 22)
                 .contentShape(Rectangle())
@@ -172,7 +175,7 @@ struct ConfirmPrompt: View {
     var body: some View {
         HStack(spacing: 8) {
             Text(question)
-                .font(.geist(11.5))
+                .font(Typo.small)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)

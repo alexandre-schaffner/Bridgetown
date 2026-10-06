@@ -42,7 +42,7 @@ struct DetailTopBar: View {
             }
             .keyboardShortcut(.cancelAction)
             Text(title)
-                .font(.geist(15, .semibold))
+                .font(Typo.paneTitle)
                 .tracking(-0.4)
                 .lineLimit(lineLimit)
                 .truncationMode(.tail)

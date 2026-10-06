@@ -162,7 +162,7 @@ private struct GroupRow: View {
                     .font(.geist(12.5, .semibold))
                     .foregroundStyle(.primary)
                 Text("\(count)")
-                    .font(Typo.rowTime)
+                    .font(Typo.time)
                     .foregroundStyle(tint)
                 Spacer(minLength: 0)
             }
@@ -343,7 +343,7 @@ private struct FoldRow: View {
         TableRow(open: toggle) { _ in
             HStack(spacing: 10) {
                 Text(title)
-                    .font(Typo.rowDetail)
+                    .font(Typo.body)
                     .foregroundStyle(.tertiary)
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")

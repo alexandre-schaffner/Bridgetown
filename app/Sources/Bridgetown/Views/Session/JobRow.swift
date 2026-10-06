@@ -38,11 +38,11 @@ struct JobRow: View {
                         Text(session.title).rowTitle()
                         Spacer(minLength: 4)
                         Text(Format.duration(from: session.startedAt, to: session.isActive ? now : session.updatedAt))
-                            .font(Typo.rowTime)
+                            .font(Typo.time)
                             .foregroundStyle(.tertiary)
                     }
                     subtitle
-                        .font(Typo.rowDetail)
+                        .font(Typo.body)
                         .lineSpacing(Typo.rowLineSpacing)
                         .lineLimit(2)
                         .truncationMode(.tail)

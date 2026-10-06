@@ -46,7 +46,7 @@ struct ClampedText: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             if truncated {
                 TextLink(expanded ? "Show less" : moreLabel) { expanded.toggle() }
-                    .font(.geist(11.5, .medium))
+                    .font(Typo.label)
             }
         }
     }

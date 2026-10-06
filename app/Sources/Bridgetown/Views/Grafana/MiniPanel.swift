@@ -134,7 +134,7 @@ struct MiniPanel: View {
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onSelect)
             TextLink("Open in Grafana", opening: panel.link)
-                .font(.geist(11.5, .medium))
+                .font(Typo.label)
                 .help("This panel's dashboard over the same window, in Grafana")
             Button(action: onSelect) {
                 Image(systemName: "chevron.up")
@@ -239,7 +239,7 @@ struct MiniPanel: View {
                         .fill(row.current ? Ink.text : Ink.faint.opacity(0.6))
                         .frame(width: 5, height: 5)
                     Text(row.label)
-                        .font(.geist(12))
+                        .font(Typo.body)
                         .foregroundStyle(row.current ? .primary : .tertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -255,7 +255,7 @@ struct MiniPanel: View {
             }
             if rows.count > Self.seriesLimit {
                 Text("\(rows.count - Self.seriesLimit) more series")
-                    .font(.geist(11.5))
+                    .font(Typo.small)
                     .foregroundStyle(.tertiary)
                     .padding(.top, 4)
                     .padding(.leading, 13)
@@ -265,7 +265,7 @@ struct MiniPanel: View {
 
     private var title: some View {
         Text(panel.title)
-            .font(.geist(12, .medium))
+            .font(Typo.strong)
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .truncationMode(.middle)
@@ -298,7 +298,7 @@ struct MiniPanel: View {
     private func plot(height: CGFloat, errorLines: Int? = 3) -> some View {
         if let error = panel.error {
             Text(error)
-                .font(.geist(11))
+                .font(Typo.caption)
                 .foregroundStyle(.tertiary)
                 .lineLimit(errorLines)
                 .textSelection(.enabled)
@@ -306,7 +306,7 @@ struct MiniPanel: View {
                 .help(error)
         } else if !hasSamples {
             Text("No data in this window")
-                .font(.geist(11))
+                .font(Typo.caption)
                 .foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, minHeight: height, alignment: .center)
         } else {
@@ -373,7 +373,7 @@ struct MiniPanel: View {
                 }
             }
         }
-        .font(.geist(11.5, .medium).monospacedDigit())
+        .font(Typo.label.monospacedDigit())
         .lineLimit(1)
         .contentTransition(.numericText())
     }

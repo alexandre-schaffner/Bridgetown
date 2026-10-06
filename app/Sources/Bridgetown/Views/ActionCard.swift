@@ -54,7 +54,7 @@ struct ActionRow: View {
                                 .accessibilityHidden(true)
                         } else {
                             Text(Format.relative(action.createdAt, now: now))
-                                .font(Typo.rowTime)
+                                .font(Typo.time)
                                 .foregroundStyle(.tertiary)
                         }
                     }
@@ -216,7 +216,7 @@ struct ActionCard: View {
         HStack(spacing: 6) {
             ProgressView().controlSize(.mini)
             Text(action.kind.progressLabel)
-                .font(.geist(11))
+                .font(Typo.caption)
                 .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
@@ -228,7 +228,7 @@ struct ActionCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 TextField("Reply", text: $draft, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.geist(12))
+                    .font(Typo.body)
                     .lineLimit(2...8)
                     .inputField()
                 HStack(spacing: 8) {
@@ -237,7 +237,7 @@ struct ActionCard: View {
                         .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     if draft != action.detail {
                         TextLink("Revert") { draft = action.detail }
-                            .font(.geist(11.5))
+                            .font(Typo.small)
                     }
                     if store.isBusy(action.id) { ProgressView().controlSize(.mini) }
                 }
@@ -246,7 +246,7 @@ struct ActionCard: View {
             HStack(spacing: 6) {
                 TextField("Reply to the agent", text: $reply)
                     .textFieldStyle(.plain)
-                    .font(.geist(12))
+                    .font(Typo.body)
                     .inputField()
                     .onSubmit(send)
                 Button(action: send) {
@@ -269,7 +269,7 @@ struct ActionCard: View {
                 if action.kind == .review, let session = action.sessionId,
                    store.snapshot?.session(id: session)?.acceptsMessages == true {
                     TextLink("Reply to agent", direction: .inward) { store.show(.session(session)) }
-                        .font(.geist(11.5))
+                        .font(Typo.small)
                         .help("Open the session to message the agent")
                 }
                 if store.isBusy(action.id) {

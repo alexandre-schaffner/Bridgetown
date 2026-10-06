@@ -48,9 +48,7 @@ struct IslandView: View {
         }
         .opacity(layout.visible ? 1 : 0)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .font(.geist(12))
-        .foregroundStyle(Ink.text, Ink.dim, Ink.faint)
-        .environment(\.colorScheme, .dark)
+        .stagePalette()
     }
 
     @ViewBuilder

@@ -89,7 +89,7 @@ struct BoardView: View {
             Spacer(minLength: 0)
             Text("Grafana · \(Format.ago(board.fetchedAt, now: now))")
         }
-        .font(.geist(11.5).monospacedDigit())
+        .font(Typo.time)
         .foregroundStyle(.tertiary)
         .lineLimit(1)
     }
@@ -116,7 +116,7 @@ private struct DeployList: View {
             ForEach(deploys.prefix(limit)) { deploy in
                 HStack(spacing: 6) {
                     Image(systemName: deploy.status == .failed ? "xmark.octagon.fill" : "arrow.up.circle")
-                        .font(.geist(11.5))
+                        .font(Typo.small)
                         .foregroundStyle(deploy.status == .failed ? AnyShapeStyle(Ink.red) : AnyShapeStyle(.secondary))
                         .frame(width: 14)
                     Text("\(deploy.image) \(deploy.version)")
@@ -124,20 +124,19 @@ private struct DeployList: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Text(deploy.status == .failed ? "failed at \(deploy.stage)" : "deployed · \(deploy.stage)")
-                        .font(.geist(12))
+                        .font(Typo.body)
                         .foregroundStyle(deploy.status == .failed ? AnyShapeStyle(Ink.red) : AnyShapeStyle(.secondary))
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     Text(Format.relative(deploy.at, now: now))
-                        .font(Typo.rowTime)
-                        .monospacedDigit()
+                        .font(Typo.time)
                         .foregroundStyle(.tertiary)
                 }
                 .accessibilityElement(children: .combine)
             }
             if deploys.count > limit {
                 Text("\(deploys.count - limit) more deploy\(deploys.count - limit == 1 ? "" : "s")")
-                    .font(.geist(11.5))
+                    .font(Typo.small)
                     .foregroundStyle(.tertiary)
                     .padding(.leading, 20)
             }
@@ -167,7 +166,7 @@ struct BoardSkeleton: View {
                 ProgressView().controlSize(.mini)
                 Text("Querying Grafana…")
             }
-            .font(.geist(11))
+            .font(Typo.caption)
             .foregroundStyle(.tertiary)
             .padding(.horizontal, Metrics.inset)
         }
@@ -186,10 +185,10 @@ struct BoardMessage: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: symbol)
-                .font(.geist(12))
+                .font(Typo.body)
                 .foregroundStyle(.secondary)
             Text(text)
-                .font(.geist(12))
+                .font(Typo.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)

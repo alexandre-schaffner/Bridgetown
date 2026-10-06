@@ -62,14 +62,8 @@ struct TelemetryPanel: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 8) {
-            Text("Prod")
-                .font(Typo.title)
-                .tracking(Typo.titleTracking)
-                .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: 0)
+        SectionHeader(title: "Prod") {
             TabSwitch(options: Mode.allCases, selection: $mode) { $0.rawValue }
         }
-        .frame(height: SectionHeader.height)
     }
 }

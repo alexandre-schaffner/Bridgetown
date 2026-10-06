@@ -67,24 +67,37 @@ enum Easing {
 
 // MARK: Type
 
+/// The type scale: the sizes the stage is set in, named for what they set, so a screen
+/// keeps to a few steps. A size not here is a glyph's (an icon, a mark) or a one-off
+/// headline.
 enum Typo {
+    /// A detail pane's title.
+    static let paneTitle = Font.geist(15, .semibold)
     /// Section titles.
     static let title = Font.geist(13, .semibold)
     static let titleTracking: CGFloat = -0.25
-    /// Field labels inside a section.
+    /// A detail pane's prose: what the agent is doing, how it ended, the message field.
+    static let lead = Font.geist(13)
+    /// The default: prose, a row's line of detail.
+    static let body = Font.geist(12)
+    /// A body line that leads its block: Jev's decision, a chart's title.
+    static let strong = Font.geist(12, .medium)
+    /// Footers, links in text, secondary lines.
+    static let small = Font.geist(11.5)
+    /// Controls and field labels: buttons, tabs, text links.
     static let label = Font.geist(11.5, .medium)
+    /// Notes and captions under something larger.
+    static let caption = Font.geist(11)
+    /// Times, durations and ages: tabular, so a column of them lines up.
+    static let time = Font.geist(11.5).monospacedDigit()
     /// A number that is the point of its tile: tabular, so it doesn't jitter as it updates.
     static func figure(_ size: CGFloat) -> Font { .geist(size, .medium).monospacedDigit() }
-    /// Times, durations and ages in rows.
-    static let time = Font.geist(11).monospacedDigit()
 
-    /// The overview's rows, sized to read at a glance: a title, a line of detail a step
-    /// below it, and its time. Long titles wrap to a second line rather than cut off.
+    /// The overview's rows, sized to read at a glance: a title over a line of detail
+    /// (`body`) and its time. Long titles wrap to a second line rather than cut off.
     static let rowTitle = Font.geist(13.5, .medium)
     /// A touch tight, so titles set firm rather than loose.
     static let rowTitleTracking: CGFloat = -0.15
-    static let rowDetail = Font.geist(12)
-    static let rowTime = Font.geist(11.5).monospacedDigit()
     static let rowLineSpacing: CGFloat = 2.5
     /// How far above a row title's baseline the middle of its first line sits: where a
     /// row's leading mark is centred.
@@ -92,6 +105,13 @@ enum Typo {
 }
 
 extension Text {
+    /// A section's title, the same wherever a section starts.
+    func sectionTitle() -> some View {
+        font(Typo.title)
+            .tracking(Typo.titleTracking)
+            .foregroundStyle(.primary)
+    }
+
     /// A row's title: up to two lines, then cut at the end.
     func rowTitle() -> some View {
         font(Typo.rowTitle)
@@ -104,7 +124,7 @@ extension Text {
 
     /// The line of detail under a row's title, a step quieter: up to two lines.
     func rowDetail() -> some View {
-        font(Typo.rowDetail)
+        font(Typo.body)
             .lineSpacing(Typo.rowLineSpacing)
             .foregroundStyle(.secondary)
             .lineLimit(2)
@@ -123,21 +143,20 @@ extension View {
 
 // MARK: Stage
 
-/// Paints the stage and pins the island to its palette: always dark, with the
-/// hierarchical text styles (`.secondary`, `.tertiary`) remapped to readable greys.
-struct StageBackground: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .font(.geist(12))
+extension View {
+    /// The island's palette: always dark, Geist at body size, with the hierarchical text
+    /// styles (`.secondary`, `.tertiary`) remapped to readable greys.
+    func stagePalette() -> some View {
+        font(Typo.body)
             .foregroundStyle(Ink.text, Ink.dim, Ink.faint)
             .tint(Ink.blue)
-            .background { Ink.stage.ignoresSafeArea() }
             .environment(\.colorScheme, .dark)
     }
-}
 
-extension View {
-    func stage() -> some View { modifier(StageBackground()) }
+    /// The palette on the black stage.
+    func stage() -> some View {
+        stagePalette().background { Ink.stage.ignoresSafeArea() }
+    }
 
     /// A text field's frame: outlined, on the surface.
     func inputField() -> some View {
@@ -216,7 +235,7 @@ struct StageButtonStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .font(.geist(11.5, .medium))
+                .font(Typo.label)
                 .labelStyle(.titleAndIcon)
                 .lineLimit(1)
                 .foregroundStyle(foreground)
@@ -280,7 +299,7 @@ struct TabSwitch<Option: Hashable & Identifiable>: View {
                     selection = option
                 } label: {
                     Text(title(option))
-                        .font(.geist(11.5, .medium))
+                        .font(Typo.label)
                         .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                         .padding(.horizontal, 9)
                         .frame(height: 20)
