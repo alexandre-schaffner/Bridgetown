@@ -460,7 +460,8 @@ function playChapters() {
   const tone = Math.round(smooth(0, 1, share / (2 * w)) * 1000) / 10;
   if (tone !== lastTone) {
     lastTone = tone;
-    const bg = tone <= 0 ? "" : `color-mix(in oklch, var(--day), var(--day-sunk) ${tone}%)`;
+    // At 0 too: a sunk chapter just off the middle, at the screen's edge, is day like the rest.
+    const bg = `color-mix(in oklch, var(--day), var(--day-sunk) ${tone}%)`;
     for (const s of toned) s.style.backgroundColor = bg;
   }
 
