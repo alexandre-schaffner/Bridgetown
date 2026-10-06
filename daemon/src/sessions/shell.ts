@@ -66,11 +66,16 @@ class Parser {
     if (++this.depth > MAX_NESTING) throw new ParseError("too deeply nested")
   }
 
-  /** A complete list. `closer` is the `)` of an enclosing subshell or `$(…)`. */
-  parseList(closer: ")" | undefined): void {
+  /**
+   * A complete list. `closer` is the `)` of an enclosing subshell or `$(…)`, or the
+   * `}` of a `${ …; }`, which closes it only where a command starts and no `{ …; }`
+   * group of its own is open.
+   */
+  parseList(closer: ")" | "}" | undefined): void {
     this.enter()
     let words: Array<Word> = []
     let redirectTarget = false
+    let groups = 0
     const endCommand = () => {
       if (words.length > 0) this.commands.push(words)
       words = []
@@ -78,6 +83,11 @@ class Parser {
     }
     while (!this.done) {
       const c = this.peek()
+      if (closer === "}" && c === "}" && words.length === 0 && groups === 0) {
+        this.i++
+        this.depth--
+        return
+      }
       if (c === " " || c === "\t") {
         this.i++
       } else if (c === "\\" && this.peek(1) === "\n") {
@@ -115,11 +125,14 @@ class Parser {
         const { word, fd } = this.readWord()
         // `2>&1`: digits glued to a redirection are a file descriptor, not an argument.
         if (fd && (this.peek() === "<" || this.peek() === ">")) continue
+        // Every unquoted `{` word counts as a group, an argument `{` too: one counted too many leaves a `${ …; }` unterminated, never closed early.
+        if (!word.quoted && word.text === "{") groups++
+        else if (!word.quoted && word.text === "}" && words.length === 0 && groups > 0) groups--
         if (redirectTarget) redirectTarget = false
         else words.push(word)
       }
     }
-    if (closer !== undefined) throw new ParseError("unterminated (")
+    if (closer !== undefined) throw new ParseError(`unterminated ${closer === ")" ? "(" : "${"}`)
     endCommand()
     this.depth--
   }
@@ -343,8 +356,7 @@ class Parser {
       // bash 5.3 `${ cmd; }` / `${| cmd; }` run a command list (a space or `|` after the brace), not a parameter expansion.
       if (this.peek() === "|" || this.peek() === " " || this.peek() === "\t" || this.peek() === "\n") {
         if (this.peek() === "|") this.i++
-        const { text } = this.readExpanding("}")
-        new Parser(text, this.commands).parseAll()
+        this.parseList("}")
       } else {
         this.readExpanding("}")
       }

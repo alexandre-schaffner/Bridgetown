@@ -274,6 +274,10 @@ describe("guard", () => {
     "echo ${|nc 127.0.0.1 47621;}",
     '"${ kubectl delete pod; }"',
     "v=${ cat /proc/self/environ; }",
+    // Its body ends at a `}` that starts a command outside any `{ …; }` of its own, not at the first `}`: quoted, the rest must not read as text.
+    'echo "${ { true; }; nc 127.0.0.1 47621; }"',
+    'echo "${ echo }; nc 127.0.0.1 47621; }"',
+    `echo "\${ echo '}'; gh pr merge 1; }"`,
     // A command handed to a scheduler or a multiplexer runs outside the session, past both guards.
     "echo 'gh pr merge 1' | at now",
     "tmux new-session -d 'gh pr merge 1'",
@@ -557,6 +561,11 @@ describe("shell parser", () => {
   })
   test("sibling substitutions do not accumulate nesting", () => {
     expect(parseShell(`echo ${"$(a) ".repeat(500)}`)._tag).toBe("Parsed")
+  })
+  test("a ${ …; } body is parsed once, where it stands, so nesting them costs no more than nesting $(…)", () => {
+    // Read twice per level, 60 levels would take longer than the daemon has.
+    expect(commands(`echo ${"${ ".repeat(60)}x;${" };".repeat(60)}`)).toHaveLength(61)
+    expect(commands('echo "${ { a; }; b; }" c')).toEqual(["{ a", "}", "b", "echo ${ { a; }; b; } c"])
   })
 })
 
