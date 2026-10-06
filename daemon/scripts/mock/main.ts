@@ -257,9 +257,9 @@ const program = Effect.gen(function* () {
     for (const [sessionId, entries] of Object.entries(fixtures.transcripts)) {
       for (const entry of entries) yield* store.appendTranscript(sessionId, entry)
     }
-    yield* hub.patchStatus({ grafanaMcp: "up", lastPollAt: now() })
-    // Live Grafana: the real probe decides, so a stopped container shows as down.
-    if (process.env.MOCK_GRAFANA === "live") yield* health.probeGrafana
+    yield* hub.patchStatus({ lastPollAt: now() })
+    // The fake Grafana answers; a live one is up only while its container is.
+    yield* health.probeGrafana
     yield* health.probeGithub
     // The log sweep, with Jev's verdicts on its patterns already stored: the Goldsky one is the fixtures' log finding.
     // A fresh install has not swept yet.

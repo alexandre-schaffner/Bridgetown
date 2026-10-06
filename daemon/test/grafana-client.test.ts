@@ -45,4 +45,13 @@ describe("the Grafana MCP client", () => {
     expect(failure.message).toBe("VictoriaLogs answered 503")
     expect(server.counts).toEqual({ initialize: 1, call: 1 })
   })
+
+  test("is reachable while its server answers, whatever it answers, and not once it is gone", async () => {
+    // An MCP server answers a plain GET with an error status; that still says it is up.
+    const server = Bun.serve({ port: 0, fetch: () => new Response(null, { status: 405 }) })
+    const grafana = await Effect.runPromise(makeGrafana(`http://127.0.0.1:${server.port}/mcp`))
+    expect(await Effect.runPromise(grafana.reachable)).toBe(true)
+    await server.stop(true)
+    expect(await Effect.runPromise(grafana.reachable)).toBe(false)
+  })
 })

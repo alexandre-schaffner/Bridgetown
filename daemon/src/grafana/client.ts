@@ -13,7 +13,7 @@ import { AdapterError, attempt, decodeOr, errorMessage } from "../domain/errors.
  * gives for logs, since mcp-grafana's log tools speak Loki).
  */
 
-export const GRAFANA_MCP_URL = "http://localhost:8000/mcp"
+const GRAFANA_MCP_URL = "http://localhost:8000/mcp"
 export const METRICS_DATASOURCE = "P4169E866C3094E38"
 export const LOGS_DATASOURCE = "PD775F2863313E6C7"
 
@@ -36,6 +36,8 @@ export interface Series {
 }
 
 export interface GrafanaShape {
+  /** Whether the MCP server answers at all (its container is up), within 2 seconds. */
+  readonly reachable: Effect.Effect<boolean>
   /** A PromQL range query against VictoriaMetrics. */
   readonly prom: (expr: string, range: Range) => Effect.Effect<ReadonlyArray<Series>, AdapterError>
   /** A LogsQL `stats` query over time against VictoriaLogs (`stats_query_range`). */
@@ -191,6 +193,9 @@ export const makeGrafana = (url: string) =>
     const seconds = (date: Date) => String(Math.floor(date.getTime() / 1000))
 
     return {
+      reachable: Effect.tryPromise(() => fetch(url, { method: "GET", signal: AbortSignal.timeout(2_000) })).pipe(
+        Effect.match({ onFailure: () => false, onSuccess: () => true }),
+      ),
       prom: (expr, range) =>
         checkRange(range).pipe(
           Effect.andThen(

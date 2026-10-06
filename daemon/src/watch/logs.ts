@@ -1,6 +1,7 @@
 import { Schema } from "effect"
 import { type Decision, type ParsedAlert, type Triage, WATCH_CHANNEL } from "../domain/alert.ts"
 import { exploreLogsLink } from "../grafana/boards.ts"
+import { ERROR_LEVELS, regexLiteral, WARNING_LEVELS } from "../grafana/logsql.ts"
 import { clock, watchFingerprint } from "./detect.ts"
 import type { LogPatternInput, LogPatternVerdict } from "./judge.ts"
 
@@ -38,10 +39,10 @@ interface SweepSpec {
 }
 
 export const SWEEPS: Readonly<Record<Sweep, SweepSpec>> = {
-  errors: { windowMinutes: 24 * 60, levels: `(severity_text:="ERROR" OR severity_text:="FATAL")`, words: null },
+  errors: { windowMinutes: 24 * 60, levels: ERROR_LEVELS, words: null },
   warnings: {
     windowMinutes: 2 * 60,
-    levels: `(severity_text:="WARN" OR severity_text:="WARNING")`,
+    levels: WARNING_LEVELS,
     words: [
       `(deadlock OR timeout OR "timed out" OR ECONNREFUSED OR ECONNRESET OR "rate limit" OR "rate limited" OR throttled OR deprecated`,
       `OR retired OR "will be removed" OR "out of memory" OR "insufficient funds" OR nonce OR reverted OR panic OR unhandled`,
@@ -112,7 +113,7 @@ const parseJson = (text: string | undefined): unknown => {
 
 /** "merkl-compute-<N>" → a regex filter for it; anything outside a job name's characters gets no filter. */
 const jobFilter = (job: string): string | null =>
-  /^[a-z0-9.-]+(<N>[a-z0-9.-]*)*$/i.test(job) ? `merkl.job:~"^${job.replaceAll(".", "[.]").replaceAll("<N>", "[0-9]+")}$"` : null
+  /^[a-z0-9.-]+(<N>[a-z0-9.-]*)*$/i.test(job) ? `merkl.job:~"^${regexLiteral(job).replaceAll("<N>", "[0-9]+")}$"` : null
 
 const nameFilter = (field: string, name: string): string | null => (/^[a-z0-9.-]{1,80}$/i.test(name) ? `${field}:="${name}"` : null)
 

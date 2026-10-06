@@ -122,6 +122,7 @@ const sweepRows = (query: string) => {
 
 export const fakeGrafana = (): GrafanaShape => {
   return {
+    reachable: Effect.succeed(true),
     prom: (expr, range) => checkRange(range).pipe(Effect.as(series(expr, range))),
     logStats: (query, range) => checkRange(range).pipe(Effect.as(series(query, range))),
     logRows: (query, range) =>

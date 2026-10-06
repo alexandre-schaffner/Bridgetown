@@ -1,6 +1,7 @@
 import type { Alert } from "../domain/alert.ts"
 import { alertKind } from "../triage/kind.ts"
 import { LOGS_DATASOURCE } from "./client.ts"
+import { ERROR_LEVELS, regexLiteral } from "./logsql.ts"
 
 /**
  * Panel titles leave out the route, image or chain: the board's title names it.
@@ -46,10 +47,8 @@ export interface BoardSpec {
 
 export type OverviewView = "incidents" | "infra" | "database"
 export const OVERVIEW_VIEWS: ReadonlyArray<OverviewView> = ["incidents", "infra", "database"]
-/** The views the prod watcher sweeps: the database board has no rules of its own yet. */
-const WATCHED_VIEWS: ReadonlyArray<OverviewView> = ["incidents", "infra"]
 
-const HOUR = 3_600_000
+export const HOUR = 3_600_000
 
 /** The overview shows what's happening now: the last hour, deploys included. */
 export const OVERVIEW_HOURS = 1
@@ -58,8 +57,6 @@ export const OVERVIEW_HOURS = 1
 export const stepFor = (from: Date, to: Date): number => Math.max(60, Math.ceil((to.getTime() - from.getTime()) / 1000 / 48 / 60) * 60)
 
 // MARK: Panels
-
-const ERRORS = `(severity_text:="ERROR" OR severity_text:="FATAL")`
 
 const api5xx: PanelSpec = {
   id: "api_5xx",
@@ -94,7 +91,7 @@ const jobErrors = (chain: string | null): PanelSpec => ({
   title: "Job errors",
   unit: "count",
   source: "logs",
-  query: () => `_stream:{merkl.job!=""}${chain === null ? "" : ` merkl.chain-id:="${chain}"`} ${ERRORS} | stats count() n`,
+  query: () => `_stream:{merkl.job!=""}${chain === null ? "" : ` merkl.chain-id:="${chain}"`} ${ERROR_LEVELS} | stats count() n`,
   dashboard: "lej5qzh",
 })
 
@@ -183,7 +180,7 @@ const dbReplicationLag: PanelSpec = {
   dashboard: "lexpwjz",
 }
 
-const routeFilter = (route: string) => `envoy.path:~"^${literal(route)}"`
+const routeFilter = (route: string) => `envoy.path:~"^${regexLiteral(route)}"`
 
 const route5xx = (route: string): PanelSpec => ({
   id: `route_5xx_${route}`,
@@ -204,7 +201,7 @@ const routeP99 = (route: string): PanelSpec => ({
 })
 
 /** The k8s deployment of a release image: `merkl-api` runs as `api`, `merkl-admin` as itself. */
-const deploymentMatcher = (image: string) => `k8s_deployment_name=~"(merkl-)?${literal(image.replace(/^merkl-/, ""))}"`
+const deploymentMatcher = (image: string) => `k8s_deployment_name=~"(merkl-)?${regexLiteral(image.replace(/^merkl-/, ""))}"`
 
 const podsByVersion = (image: string): PanelSpec => ({
   id: `pods_${image}`,
@@ -274,16 +271,9 @@ export const chainOf = (alert: Alert): string | null => {
   return CHAINS.find(([pattern]) => pattern.test(text))?.[1] ?? null
 }
 
-/**
- * Routes and images are already limited to `[A-Za-z0-9_./-]`, so `.` is the only
- * regex metacharacter left; a class matches it literally without backslashes,
- * which quoted LogsQL and PromQL strings would otherwise reinterpret.
- */
-const literal = (value: string) => value.replaceAll(".", "[.]")
-
 // MARK: Boards
 
-const overviewPanels = (view: OverviewView): ReadonlyArray<PanelSpec> => {
+export const overviewPanels = (view: OverviewView): ReadonlyArray<PanelSpec> => {
   switch (view) {
     case "incidents":
       return [api5xx, apiP99, engineErrors(null), jobErrors(null)]
@@ -312,26 +302,6 @@ export const overviewBoard = (view: OverviewView, now: Date): BoardSpec => {
   }
 }
 
-/** How far back the prod watcher looks: the last 15 minutes against the 3 hours before. */
-export const WATCH_HOURS = 3
-export const WATCH_STEP_SECONDS = 300
-
-/** The watched overview panels over the watch window, read by the prod watcher (src/watch/). */
-export const watchBoard = (now: Date): BoardSpec => {
-  const from = new Date(now.getTime() - WATCH_HOURS * HOUR)
-  return {
-    key: "watch",
-    title: "Prod watch",
-    from,
-    to: now,
-    stepSeconds: WATCH_STEP_SECONDS,
-    marker: null,
-    panels: WATCHED_VIEWS.flatMap(overviewPanels),
-    deployImage: null,
-    deploysFrom: new Date(from.getTime() - HOUR),
-  }
-}
-
 /**
  * The board for one alert, 6 hours either side of it (up to now), or null when
  * nothing in Grafana tracks what it's about (a DM, a question in a thread).
@@ -351,7 +321,7 @@ export const alertBoard = (alert: Alert, now: Date): BoardSpec | null => {
     if (alert.fields._tag === "watch") {
       // The overview board the signal is on, with the signal first.
       const signal = alert.fields.signal
-      const view = WATCHED_VIEWS.find((v) => overviewPanels(v).some((p) => p.id === signal)) ?? "incidents"
+      const view = OVERVIEW_VIEWS.find((v) => overviewPanels(v).some((p) => p.id === signal)) ?? "incidents"
       const panels = overviewPanels(view)
       return { title: VIEW_TITLES[view], panels: [...panels.filter((p) => p.id === signal), ...panels.filter((p) => p.id !== signal)] }
     }

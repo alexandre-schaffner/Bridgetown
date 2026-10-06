@@ -1,13 +1,15 @@
 import { afterAll, describe, expect, setSystemTime, test } from "bun:test"
 import { Effect } from "effect"
 import { Boards } from "../src/grafana/board.ts"
-import { overviewBoard, watchBoard } from "../src/grafana/boards.ts"
+import { overviewBoard } from "../src/grafana/boards.ts"
+import { watchBoard } from "../src/watch/detect.ts"
 import type { GrafanaShape } from "../src/grafana/client.ts"
 import { Hub } from "../src/hub.ts"
 import { makeWorld } from "./fixtures/world.ts"
 
 let calls = 0
 const slowGrafana: GrafanaShape = {
+  reachable: Effect.succeed(true),
   prom: () => Effect.sync(() => calls++).pipe(Effect.andThen(Effect.sleep("50 millis")), Effect.as([])),
   logStats: () => Effect.sync(() => calls++).pipe(Effect.andThen(Effect.sleep("50 millis")), Effect.as([])),
   logRows: () => Effect.succeed([]),

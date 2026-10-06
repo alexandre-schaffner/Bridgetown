@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { deploysQuery, toDeploy, zeroFilled } from "../src/grafana/board.ts"
-import { alertBoard, chainOf, imageOf, overviewBoard, routeOf, stepFor, watchBoard } from "../src/grafana/boards.ts"
+import { alertBoard, chainOf, imageOf, overviewBoard, routeOf, stepFor } from "../src/grafana/boards.ts"
+import { watchBoard } from "../src/watch/detect.ts"
 import { rowsOf } from "../src/grafana/client.ts"
 import type { Alert, JevVerdict } from "../src/domain/alert.ts"
 import { makeAlert } from "./fixtures/records.ts"

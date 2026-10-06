@@ -1,6 +1,28 @@
 import { type ParsedAlert, WATCH_CHANNEL } from "../domain/alert.ts"
 import type { Deploy, Panel } from "../grafana/board.ts"
-import { type PanelSpec, type Unit, WATCH_HOURS } from "../grafana/boards.ts"
+import { type BoardSpec, HOUR, type OverviewView, overviewPanels, type PanelSpec, type Unit } from "../grafana/boards.ts"
+
+/** How far back the prod watcher looks: the last 15 minutes against the 3 hours before. */
+export const WATCH_HOURS = 3
+export const WATCH_STEP_SECONDS = 300
+/** The overview views the prod watcher sweeps: the database board has no rules of its own yet. */
+const WATCHED_VIEWS: ReadonlyArray<OverviewView> = ["incidents", "infra"]
+
+/** The watched overview panels over the watch window. */
+export const watchBoard = (now: Date): BoardSpec => {
+  const from = new Date(now.getTime() - WATCH_HOURS * HOUR)
+  return {
+    key: "watch",
+    title: "Prod watch",
+    from,
+    to: now,
+    stepSeconds: WATCH_STEP_SECONDS,
+    marker: null,
+    panels: WATCHED_VIEWS.flatMap(overviewPanels),
+    deployImage: null,
+    deploysFrom: new Date(from.getTime() - HOUR),
+  }
+}
 
 /**
  * Two kinds of anomaly, each against the 90th percentile of the steps before the last three (15 minutes):

@@ -36,8 +36,9 @@ const noJev: JevShape = {
   judgeLogPatterns: () => Effect.fail(new MissingCredential({ service: "jev", message: "no TypeSafe API key" })),
 }
 
-/** Grafana with no data: every query answers with no series and no rows. */
+/** Grafana with no data: it answers, and every query with no series and no rows. */
 export const noGrafana: GrafanaShape = {
+  reachable: Effect.succeed(true),
   prom: () => Effect.succeed([]),
   logStats: () => Effect.succeed([]),
   logRows: () => Effect.succeed([]),
