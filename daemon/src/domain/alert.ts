@@ -85,7 +85,7 @@ export type AlertFields = typeof AlertFields.Type
 export const AlertSource = Schema.Literals(["releases", "uptime", "engine", "inbox", "generic", "watch"])
 export type AlertSource = typeof AlertSource.Type
 
-export const Decision = Schema.Literals(["pending", "filtered", "ignore", "suggest", "auto", "escalate"])
+export const Decision = Schema.Literals(["filtered", "ignore", "suggest", "auto", "escalate"])
 export type Decision = typeof Decision.Type
 
 export const Depth = Schema.Literals(["quick", "standard", "deep"])
@@ -156,8 +156,6 @@ export const triageEvent = (triage: Triage): string => {
       return `Handed to an agent: ${triage.reason}`
     case "escalate":
       return `Escalated to you: ${triage.reason}`
-    case "pending":
-      return "Waiting for triage"
   }
 }
 

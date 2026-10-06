@@ -5,7 +5,7 @@ import { Schema } from "effect"
  * as one JSON line on stdin; for development they still come from these env vars.
  * Either way they are deleted from `process.env` before anything is spawned.
  */
-export const SECRET_ENV_KEYS = ["BRIDGETOWN_API_TOKEN", "SLACK_USER_TOKEN", "TYPESAFE_API_KEY"] as const
+const SECRET_ENV_KEYS = ["BRIDGETOWN_API_TOKEN", "SLACK_USER_TOKEN", "TYPESAFE_API_KEY"] as const
 
 export interface Secrets {
   readonly apiToken: string | undefined

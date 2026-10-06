@@ -13,7 +13,7 @@ import { ERROR_LEVELS, regexLiteral } from "./logsql.ts"
  * each matched against a strict pattern before it goes anywhere near a query.
  */
 
-export const GRAFANA_BASE_URL = "https://grafana.internal.merkl.xyz"
+const GRAFANA_BASE_URL = "https://grafana.internal.merkl.xyz"
 
 export type Unit = "count" | "ms" | "per_s" | "bytes"
 
@@ -51,7 +51,7 @@ export const OVERVIEW_VIEWS: ReadonlyArray<OverviewView> = ["incidents", "infra"
 export const HOUR = 3_600_000
 
 /** The overview shows what's happening now: the last hour, deploys included. */
-export const OVERVIEW_HOURS = 1
+const OVERVIEW_HOURS = 1
 
 /** About 48 points across the window, in whole minutes. */
 export const stepFor = (from: Date, to: Date): number => Math.max(60, Math.ceil((to.getTime() - from.getTime()) / 1000 / 48 / 60) * 60)

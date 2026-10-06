@@ -308,7 +308,7 @@ const networkRefusal = (name: string, args: ReadonlyArray<Word>, scope: Scope): 
     if (reason !== undefined) return reason
   }
   if (PORT_ARGUMENT.has(name) && args.some((arg) => arg.text === String(scope.daemonPort))) return REASONS.daemon
-  return githubApiWriteRefusal(name, args)
+  return githubApiWriteRefusal(args)
 }
 
 const shellRefusal = (args: ReadonlyArray<Word>, scope: Scope): string | undefined => {

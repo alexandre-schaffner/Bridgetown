@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Alert, Decision, Disposition } from "../src/domain/alert.ts"
-import { NO_MILESTONES, type Session, type SessionStatus } from "../src/domain/session.ts"
+import type { Session } from "../src/domain/session.ts"
 import { makeSession } from "./fixtures/records.ts"
 import { alertOutcome } from "../src/domain/alert-outcome.ts"
 
@@ -21,7 +21,6 @@ type Row = readonly [string, Alert, Session | undefined, number, string, string,
 describe("alert outcome", () => {
   const rows: ReadonlyArray<Row> = [
     // label, alert, session, open cards → kind, headline, tone
-    ["pending", alert("pending"), undefined, 0, "pending", "Waiting for triage", "neutral"],
     ["filtered", alert("filtered"), undefined, 0, "filtered", "Filtered by a rule", "neutral"],
     ["ignored", alert("ignore"), undefined, 0, "ignored", "Ignored by Jev", "neutral"],
     ["suggested", alert("suggest"), undefined, 0, "suggested", "Suggested to you", "neutral"],
@@ -63,7 +62,7 @@ describe("alert outcome", () => {
   })
 
   test("never green without a verified session", () => {
-    for (const decision of ["pending", "filtered", "ignore", "suggest", "auto", "escalate"] as const) {
+    for (const decision of ["filtered", "ignore", "suggest", "auto", "escalate"] as const) {
       for (const disposition of [null, "dismissed", "opened"] as const) {
         for (const cards of [0, 1]) expect(alertOutcome(alert(decision, disposition), undefined, cards).tone).not.toBe("success")
       }

@@ -8,7 +8,7 @@ import type { SessionResult } from "./output.ts"
 import { pushBackPrompt } from "./prompts.ts"
 
 /** Times an agent that hands off without a root cause is sent back before the user sees it. */
-export const MAX_PUSHBACKS = 1
+const MAX_PUSHBACKS = 1
 
 /** The hand-off card's title when a send-back comes back without a fix. */
 const SENT_BACK_TITLES: Readonly<Record<SentBack, string>> = { ci: "CI still red", changes: "Changes requested", deploy: "Deploy failed" }

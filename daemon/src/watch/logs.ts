@@ -22,8 +22,8 @@ import type { LogPatternInput, LogPatternVerdict } from "./judge.ts"
  * Queries are constants; nothing from a log line goes into one Bridgetown runs.
  */
 
-export const RECENT_MINUTES = 15
-export const MIN_RECENT = 10
+const RECENT_MINUTES = 15
+const MIN_RECENT = 10
 const MIN_SURGE = 20
 const SURGE_FACTOR = 5
 /** Patterns per Jev call: three questions each. */
@@ -201,7 +201,7 @@ export const candidates = (patterns: ReadonlyArray<LogPattern>, judged: Readonly
     .slice(0, BATCH)
 
 /** "merkl-compute-*", or "merkl-compute-* and 2 more". */
-export const sourcesText = (p: LogPattern): string =>
+const sourcesText = (p: LogPattern): string =>
   p.sources.length <= 1 ? (p.sources[0] ?? "unknown") : `${p.sources[0]} and ${p.sources.length - 1} more`
 
 const window = (sweep: Sweep) => (sweep === "errors" ? "the day" : "the 2 hours")

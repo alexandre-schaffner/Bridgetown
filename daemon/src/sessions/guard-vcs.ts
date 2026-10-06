@@ -136,7 +136,7 @@ const ghApiRefusal = (args: ReadonlyArray<Word>): string | undefined => {
 }
 
 /** A `curl`/`wget` write to the GitHub API (any host carrying its path), e.g. with a token from `gh auth token`, is as much an API write as `gh api`. */
-export const githubApiWriteRefusal = (name: string, args: ReadonlyArray<Word>): string | undefined => {
+export const githubApiWriteRefusal = (args: ReadonlyArray<Word>): string | undefined => {
   const line = args.map((arg) => arg.text).join(" ")
   const ghApi = new RegExp(`(api\\.github\\.com|${escapeRegExp(GH_HOST)}/api)`, "i").test(line)
   if (!ghApi) return undefined

@@ -2,7 +2,7 @@ import { type Alert, claimHeadline } from "./alert.ts"
 import { progressOf, type Tone } from "./progress.ts"
 import type { Session } from "./session.ts"
 
-export type OutcomeKind = "pending" | "filtered" | "ignored" | "suggested" | "escalated" | "waiting" | "dismissed" | "opened" | "withdrawn" | "teammate" | "session"
+export type OutcomeKind = "filtered" | "ignored" | "suggested" | "escalated" | "waiting" | "dismissed" | "opened" | "withdrawn" | "teammate" | "session"
 
 export interface AlertOutcome {
   readonly kind: OutcomeKind
@@ -44,8 +44,6 @@ export const alertOutcome = (alert: Alert, session: Session | undefined, openCar
   if (claimed !== null) return outcome("teammate", claimed, teammateSentence(alert), "neutral")
   const decision = alert.triage.decision
   switch (decision) {
-    case "pending":
-      return outcome("pending", "Waiting for triage", "Jev hasn't triaged it yet.")
     case "filtered":
       return outcome("filtered", "Filtered by a rule", "No agent ran. A rule filtered it before triage.")
     case "ignore":

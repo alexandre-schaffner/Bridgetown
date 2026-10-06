@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { ActionQueue } from "../actions/queue.ts"
 import type { Alert } from "../domain/alert.ts"
-import { type AdapterError, Conflict, type GitHubError } from "../domain/errors.ts"
+import { Conflict, type GitHubError } from "../domain/errors.ts"
 import { now } from "../domain/ids.ts"
 import { releaseState } from "../domain/release.ts"
 import { type SentBack, type Session, withPatch } from "../domain/session.ts"

@@ -106,7 +106,7 @@ export const SWEEP_ROWS: ReadonlyArray<SweepRow> = [
 ]
 
 /** A sweep row in VictoriaLogs' shape: every value a string, `sample` and `versions` JSON-encoded. */
-export const victoriaRow = (row: SweepRow): Record<string, string> => ({
+const victoriaRow = (row: SweepRow): Record<string, string> => ({
   ...row.fields,
   recent: String(row.recent),
   total: String(row.total),

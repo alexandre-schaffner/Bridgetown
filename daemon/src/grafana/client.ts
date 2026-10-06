@@ -14,7 +14,7 @@ import { AdapterError, attempt, decodeOr, errorMessage } from "../domain/errors.
  */
 
 const GRAFANA_MCP_URL = "http://localhost:8000/mcp"
-export const METRICS_DATASOURCE = "P4169E866C3094E38"
+const METRICS_DATASOURCE = "P4169E866C3094E38"
 export const LOGS_DATASOURCE = "PD775F2863313E6C7"
 
 const LOGSQL_PREFIX = `/api/datasources/proxy/uid/${LOGS_DATASOURCE}/select/logsql/`

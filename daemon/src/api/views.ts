@@ -100,8 +100,6 @@ const sessionsById = (loaded: ReadonlyArray<Session>, ids: ReadonlyArray<string 
     return byId
   })
 
-export type Snapshot = Effect.Success<typeof snapshot>
-
 export const snapshot = Effect.gen(function* () {
   const store = yield* Store
   const hub = yield* Hub

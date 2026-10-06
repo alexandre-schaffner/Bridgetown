@@ -5,7 +5,7 @@ import { type BoardSpec, HOUR, type OverviewView, overviewPanels, type PanelSpec
 
 /** How far back the prod watcher looks: the last 15 minutes against the 3 hours before. */
 export const WATCH_HOURS = 3
-export const WATCH_STEP_SECONDS = 300
+const WATCH_STEP_SECONDS = 300
 /** The overview views the prod watcher sweeps: the database board has no rules of its own yet. */
 const WATCHED_VIEWS: ReadonlyArray<OverviewView> = ["incidents", "infra"]
 
@@ -43,7 +43,7 @@ export interface Rule {
   readonly perStep: boolean
 }
 
-export const RULES: Readonly<Record<string, Rule>> = {
+const RULES: Readonly<Record<string, Rule>> = {
   api_5xx: { floor: 50, factor: 3, spike: { floor: 100, factor: 4 }, perStep: true },
   api_p99: { floor: 1_500, factor: 2, spike: { floor: 3_000, factor: 3 }, perStep: false },
   engine_errors: { floor: 1_500, factor: 3, spike: { floor: 1_500, factor: 3 }, perStep: true },
@@ -56,7 +56,7 @@ export const RULES: Readonly<Record<string, Rule>> = {
 
 export const RECENT_STEPS = 3
 /** Two hours before the recent steps; with less there is no baseline to compare to. */
-export const MIN_BASELINE_STEPS = 24
+const MIN_BASELINE_STEPS = 24
 
 /** Where a ruled signal stands: its recent level against its usual one. */
 export interface Measure {

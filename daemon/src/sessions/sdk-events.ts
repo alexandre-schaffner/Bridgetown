@@ -26,10 +26,10 @@ export const impliedPhase = (name: string, input: unknown): Phase | undefined =>
   return undefined
 }
 
-export const laterPhase = (current: Phase, next: Phase): boolean => PHASE_ORDER.indexOf(next) > PHASE_ORDER.indexOf(current)
+const laterPhase = (current: Phase, next: Phase): boolean => PHASE_ORDER.indexOf(next) > PHASE_ORDER.indexOf(current)
 
 /** One transcript line for a tool call: its name and the argument that says what it does. */
-export const describeTool = (name: string, input: unknown): string => {
+const describeTool = (name: string, input: unknown): string => {
   const record = typeof input === "object" && input !== null ? Object.fromEntries(Object.entries(input)) : {}
   const pick = (key: string): string | undefined => {
     const value = record[key]

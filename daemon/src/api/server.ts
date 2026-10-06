@@ -22,7 +22,7 @@ const isOverviewView = (value: string): value is OverviewView => OVERVIEW_VIEWS.
 const TRANSCRIPT_LIMIT = 200
 
 /** Exit status when the port is taken; the app shows it instead of restarting. */
-export const PORT_IN_USE_EXIT = 98
+const PORT_IN_USE_EXIT = 98
 
 /** Refused before any service runs: a foreign Host or any Origin (403), a bad token (401), a method no route takes (405). */
 class Refused extends Data.TaggedError("Refused")<{ readonly status: 401 | 403 | 405; readonly message: string }> {}
