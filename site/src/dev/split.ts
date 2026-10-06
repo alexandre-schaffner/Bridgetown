@@ -1,6 +1,6 @@
-// Headings split into spans that move on their own: words, or the letters of each word. A
-// screen reader still reads the heading whole: it is labelled with its own text, and the spans
-// are hidden from it.
+// The launch film's headings (launch.ts) split into spans that move on their own: words, or the
+// letters of each word. A screen reader still reads the heading whole: it is labelled with its
+// own text, and the spans are hidden from it.
 
 /**
  * The spaces a line may break at. The no-break ones stay inside the word they join: between two

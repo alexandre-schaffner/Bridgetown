@@ -2,7 +2,7 @@
 // second, a bar two). Plays once in real time and reports when it is done, plus the cues the
 // score is built from.
 
-import { splitText } from "../lib/split";
+import { splitText } from "./split";
 import type { LightName } from "../scripts/scene";
 import { $, $$, createRig } from "./rig";
 
