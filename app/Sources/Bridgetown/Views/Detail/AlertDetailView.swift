@@ -28,16 +28,22 @@ struct AlertDetailView: View {
     private var events: [AlertDetail.Event] { detail.value?.events ?? [] }
 
     /// Refetch when anything the detail depends on changes (feedback, a new session, a
-    /// dismissed card), so the history stays current.
-    private struct RefreshKey: Equatable {
+    /// dismissed card), so the history stays current. Only live data counts: what the
+    /// fetch itself fills in (an aged-out session, the actions while disconnected) would
+    /// change the key and fetch it all again.
+    struct RefreshKey: Equatable {
         var alert: AlertView?
         var sessionUpdatedAt: Date?
         var actionIds: [String]
+
+        init(snapshot: Snapshot?, alertId: String) {
+            alert = snapshot?.alert(id: alertId)
+            sessionUpdatedAt = snapshot?.session(id: alert?.sessionId)?.updatedAt
+            actionIds = snapshot?.actions.filter { $0.alertId == alertId }.map(\.id) ?? []
+        }
     }
 
-    private var refreshKey: RefreshKey {
-        RefreshKey(alert: store.snapshot?.alert(id: alertId), sessionUpdatedAt: session?.updatedAt, actionIds: openActions.map(\.id))
-    }
+    private var refreshKey: RefreshKey { RefreshKey(snapshot: store.snapshot, alertId: alertId) }
 
     var body: some View {
         Group {
