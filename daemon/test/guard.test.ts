@@ -376,6 +376,12 @@ describe("guard", () => {
     "git -c include.path=/tmp/x fetch",
     "git -c filter.x.smudge='gh pr merge 1' checkout .",
     "git -c diff.x.textconv='gh pr merge 1' diff",
+    // A hook path is a directory, not a program: a relative one is the worktree's, where the session writes `true/pre-commit`.
+    "git -c core.hooksPath=true commit -m x",
+    "git config core.hooksPath cat",
+    // Renaming a section sets its keys anew: `foo.x` becomes the alias `x`, `foo.fsmonitor` core's.
+    "git config --rename-section foo alias",
+    "git config rename-section foo core",
     // ./envshebang.sh runs by path with an `env -S bash` shebang: still shell, still checked.
     "./envshebang.sh",
     // Deep nesting is reported, not crashed through (fail closed).
@@ -497,6 +503,8 @@ describe("guard", () => {
     "git config core.pager",
     "git config --unset alias.p",
     "git config unset core.pager",
+    "git config --remove-section alias",
+    "git -c core.hooksPath= commit -m x",
     // A function whose body is allowed is allowed, keyword form included.
     "function helper { git status; }",
     "function build { bun run build; }",

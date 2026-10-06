@@ -237,17 +237,24 @@ const explicitPush = (branch: string) => `Push only your own branch, explicitly:
 
 /** Keys that push tags or every ref on a later push, or name one git command after another. */
 const PUSH_CONFIG = /^(alias\.|push\.(followtags|default)|remote\..+\.(push|mirror|pushurl))/i
-/** Keys whose value is a command a later git call runs (a pager, editor, ssh, askpass, hook path, diff, merge or filter driver, credential helper, signing program), or a file of more config. */
+/** Keys whose value is a command a later git call runs (a pager, editor, ssh, askpass, diff, merge or filter driver, credential helper, signing program). */
 const COMMAND_CONFIG =
-  /^(core\.(sshcommand|pager|fsmonitor|editor|hookspath|askpass|gitproxy)|pager\.|sequence\.editor|diff\.(external|.+\.(command|textconv))|difftool\.|mergetool\.|merge\..+\.driver|filter\.|credential\.(helper|.+\.helper)|gpg\.(program|.+\.program)|sendemail\.|uploadpack\.packobjectshook|include\.|includeif\.)/i
+  /^(core\.(sshcommand|pager|fsmonitor|editor|askpass|gitproxy)|pager\.|sequence\.editor|diff\.(external|.+\.(command|textconv))|difftool\.|mergetool\.|merge\..+\.driver|filter\.|credential\.(helper|.+\.helper)|gpg\.(program|.+\.program)|sendemail\.|uploadpack\.packobjectshook)/i
+/** Keys whose value is a path git runs hooks from or reads more config from. A relative one is in the worktree, where the session writes: `core.hooksPath=true` runs `true/pre-commit`. */
+const PATH_CONFIG = /^(core\.hookspath|include\.|includeif\.)/i
 
 /**
  * Whether setting `key` to `value` (`undefined` when only known at runtime) could run
  * a command or push a tag on a later git call. A command key may be set to one that
- * runs nothing, as the Claude CLI's own git calls do (`-c core.pager= -c core.hooksPath=/dev/null`).
+ * runs nothing and a path key to none, as the Claude CLI's own git calls do
+ * (`-c core.pager= -c core.hooksPath=/dev/null`).
  */
-const forbiddenConfig = (key: string, value: string | undefined): boolean =>
-  PUSH_CONFIG.test(key.trim()) || (COMMAND_CONFIG.test(key.trim()) && (value === undefined || !runsNothing(value)))
+const forbiddenConfig = (key: string, value: string | undefined): boolean => {
+  const name = key.trim()
+  if (PUSH_CONFIG.test(name)) return true
+  if (COMMAND_CONFIG.test(name)) return value === undefined || !runsNothing(value)
+  return PATH_CONFIG.test(name) && value !== "" && value !== "/dev/null"
+}
 
 /** A `-c key=value` (a bare key sets it to true) or `--config-env=key=VAR`, whose value is the environment's. A computed one could set anything. */
 const configOptionRefusal = (word: Word | undefined, fromEnv: boolean): string | undefined => {
@@ -316,14 +323,19 @@ export const gitRefusal = (args: ReadonlyArray<Word>, branch: string): string | 
 /** `git config` options that read or remove, never set. */
 const CONFIG_READS = flags(
   ...["--get", "--get-all", "--get-regexp", "--get-urlmatch", "--get-color", "--get-colorbool", "-l", "--list"],
-  ...["--unset", "--unset-all", "--remove-section", "--rename-section"],
+  ...["--unset", "--unset-all", "--remove-section"],
 )
-/** The same as git 2.46's sub-commands (`git config get core.pager`); `set` is the one that writes. */
-const CONFIG_READ_COMMANDS = flags("get", "list", "unset", "remove-section", "rename-section")
+/** The same as git 2.46's sub-commands (`git config get core.pager`); `set` and `rename-section` are the ones that write. */
+const CONFIG_READ_COMMANDS = flags("get", "list", "unset", "remove-section")
 const CONFIG_VALUE_OPTIONS = flags("-f", "--file", "--blob", "-t", "--type", "--default", "--comment", "--value", "--url")
 
-/** `git config` may read and remove freely; it may not set a key that could run a command or push a tag later. */
+/**
+ * `git config` may read and remove freely; it may not set a key that could run a
+ * command or push a tag later. Nor may it rename a section, which sets every key in
+ * it anew: `foo.x` set to `!cmd` becomes the alias `x` once `foo` is renamed `alias`.
+ */
 const configRefusal = (args: ReadonlyArray<Word>): string | undefined => {
+  if (args.some((arg) => arg.text === "--rename-section")) return REASONS.gitConfig
   if (args.some((arg) => CONFIG_READS.has(arg.text))) return undefined
   const positional: Array<Word> = []
   for (let i = 0; i < args.length; i++) {
@@ -333,6 +345,7 @@ const configRefusal = (args: ReadonlyArray<Word>): string | undefined => {
     else if (!word.text.startsWith("-")) positional.push(word)
   }
   const [first, ...rest] = positional
+  if (first?.text === "rename-section") return REASONS.gitConfig
   if (first !== undefined && CONFIG_READ_COMMANDS.has(first.text)) return undefined
   const [key, value] = first?.text === "set" ? rest : positional
   // A key alone reads it.
