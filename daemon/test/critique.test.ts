@@ -1,13 +1,16 @@
 import { describe, expect, test } from "bun:test"
-import { Schema } from "effect"
+import { existsSync, mkdirSync, utimesSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
+import { Effect, Schema } from "effect"
 import { critiqueFailedPrompt, critiquePrompt } from "../src/critique/prompts.ts"
-import { codexArgs, execFailure, REVIEWERS, Verdict, VERDICT_JSON_SCHEMA } from "../src/critique/reviewer.ts"
+import { codexArgs, execFailure, REVIEWERS, sweepReviewSandboxes, Verdict, VERDICT_JSON_SCHEMA } from "../src/critique/reviewer.ts"
 import { critiqueStep, MAX_CRITIQUE_ROUNDS, MAX_REVIEW_ERRORS, reviewErrorStep } from "../src/critique/transitions.ts"
 import { type Finding, type FindingVerdict, ReviewFinding } from "../src/domain/critique.ts"
 import { DEFAULT_SETTINGS } from "../src/domain/settings.ts"
 import { findingState } from "../src/critique/judge.ts"
 import { decideFinding } from "../src/triage/policy.ts"
 import { makeAlert, makeSession } from "./support/records.ts"
+import { scratchDir } from "./support/tmp.ts"
 
 const finding = (overrides: Partial<Finding> = {}): Finding => ({
   file: "packages/api/src/services/reward.ts", line: 88, title: "pending rewards still go through Number()",
@@ -89,6 +92,22 @@ describe("codex exec", () => {
     expect(decode(JSON.stringify({ summary: "ok", findings: [{ file: "a.ts", line: null, title: "x", failureScenario: "y" }] })).findings).toHaveLength(1)
     expect(() => decode("Sorry, I could not review this.")).toThrow()
     expect(() => decode(JSON.stringify({ summary: "ok" }))).toThrow()
+  })
+  test("scratch a killed daemon left is swept once stale; a review running now, and anything else, stays", async () => {
+    const tmp = scratchDir("bt-sweep-")
+    const made = (name: string, hoursAgo: number) => {
+      const path = join(tmp, name)
+      mkdirSync(path)
+      writeFileSync(join(path, "verdict.json"), "{}")
+      const at = new Date(Date.now() - hoursAgo * 3_600_000)
+      utimesSync(path, at, at)
+      return path
+    }
+    const killed = made("bt-review-killed", 30)
+    const running = made("bt-review-running", 0.2)
+    const other = made("bt-wt-other", 30)
+    await Effect.runPromise(sweepReviewSandboxes(tmp, Date.now()))
+    expect([existsSync(killed), existsSync(running), existsSync(other)]).toEqual([false, true, true])
   })
 })
 

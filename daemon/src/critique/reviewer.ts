@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Context, Effect, Layer, Schema } from "effect"
@@ -74,6 +74,26 @@ export class Reviewer extends Context.Service<Reviewer, ReviewerShape>()("Review
 /** A cold, deep review of a large diff takes a while; past this it is stuck. */
 const REVIEW_TIMEOUT_MS = 20 * 60_000
 
+/** A review's scratch directory under `$TMPDIR`, for Codex's output schema and verdict; removed when the review ends. */
+const SANDBOX_PREFIX = "bt-review-"
+
+/** Older than any review runs, so no daemon is still using it. */
+const STALE_SANDBOX_MS = 24 * 60 * 60_000
+
+/**
+ * Removes the review scratch directories in `dir` (`$TMPDIR`) that a daemon killed mid-review (SIGKILL, a crash)
+ * never got to remove. Only stale ones, so a review another daemon is running keeps its own.
+ */
+export const sweepReviewSandboxes = (dir: string, nowMs: number): Effect.Effect<void, AdapterError> =>
+  attempt("fs", "sweep review sandboxes", async () => {
+    for (const name of await readdir(dir)) {
+      if (!name.startsWith(SANDBOX_PREFIX)) continue
+      const path = join(dir, name)
+      const modified = await stat(path).then((s) => s.mtimeMs, () => nowMs)
+      if (nowMs - modified > STALE_SANDBOX_MS) await rm(path, { recursive: true, force: true })
+    }
+  })
+
 
 /**
  * Read-only sandbox, nothing persisted, and the user's config (notify hooks,
@@ -123,7 +143,7 @@ const codexReview = (request: ReviewRequest, codexPath: string | undefined): Eff
       return yield* new AdapterError({ adapter: "codex", operation: "exec", message, cause: null })
     }
     const dir = yield* Effect.acquireRelease(
-      attempt("codex", "tmpdir", () => mkdtemp(join(tmpdir(), "bt-review-"))),
+      attempt("codex", "tmpdir", () => mkdtemp(join(tmpdir(), SANDBOX_PREFIX))),
       (path) => Effect.promise(() => rm(path, { recursive: true, force: true })),
     )
     const schemaPath = join(dir, "schema.json")

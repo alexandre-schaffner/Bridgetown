@@ -1,7 +1,9 @@
 import { existsSync } from "node:fs"
 import { rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import { Context, Effect, Layer } from "effect"
 import { Environment } from "../config.ts"
+import { sweepReviewSandboxes } from "../critique/reviewer.ts"
 import { type AdapterError, attempt } from "../domain/errors.ts"
 import { isFinished } from "../domain/session.ts"
 import { Hub } from "../hub.ts"
@@ -16,12 +18,13 @@ export interface HousekeepingShape {
   /**
    * One round: the worktrees of sessions past their grace (`worktreeDue`), then the rows past
    * retention (`planPrune`) with what their sessions left outside the database, then the
-   * database file. A step that fails is logged and the next one still runs.
+   * database file, then reviews' scratch directories a killed daemon left. A step that fails
+   * is logged and the next one still runs.
    */
   readonly run: Effect.Effect<void>
 }
 
-/** The one place stored things are deleted for age: worktrees, branches, rows, conversations. */
+/** The one place stored things are deleted for age: worktrees, branches, rows, conversations, review scratch. */
 export class Housekeeping extends Context.Service<Housekeeping, HousekeepingShape>()("Housekeeping") {}
 
 export const HousekeepingLive = Layer.effect(Housekeeping)(
@@ -84,6 +87,7 @@ export const HousekeepingLive = Layer.effect(Housekeeping)(
         yield* Effect.forEach(refs.sessions, (ref) => reclaimWorktree(ref, nowMs), { discard: true })
         yield* prune(refs, nowMs).pipe(Effect.catch(warn("rows")))
         yield* store.maintain().pipe(Effect.catch(warn("database")))
+        yield* sweepReviewSandboxes(tmpdir(), nowMs).pipe(Effect.catch(warn("review scratch")))
       }).pipe(Effect.catch(warn("refs"))),
     }
   }),
