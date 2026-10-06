@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { alertFromParsed } from "../src/domain/alert.ts"
 import { NO_MILESTONES } from "../src/domain/session.ts"
-import { AlertPipeline } from "../src/intake/alerts.ts"
+import { AlertChannels } from "../src/intake/alerts.ts"
 import { SessionRunner } from "../src/sessions/runner.ts"
 import { Shipper } from "../src/ship/shipper.ts"
 import type { SlackMessage } from "../src/slack/client.ts"
@@ -58,7 +58,7 @@ describe("a deploy in flight follows its own tracker", () => {
             deployStage: { _tag: "AwaitingApproval" }, tracker: { id: TRACKER_ID, applied: "before the edit" },
           }),
         )
-        yield* (yield* AlertPipeline).pollOnce
+        yield* (yield* AlertChannels).poll
         return yield* store.getSession("s_dep")
       }),
     )

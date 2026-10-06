@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { SlackApiError } from "../src/domain/errors.ts"
 import { Hub } from "../src/hub.ts"
-import { AlertPipeline, commitHorizon, readHorizon } from "../src/intake/alerts.ts"
+import { AlertChannels, commitHorizon, readHorizon } from "../src/intake/alerts.ts"
 import type { SlackMessage } from "../src/slack/client.ts"
 import { Store } from "../src/store/store.ts"
 import { adminBuildFailed } from "./support/messages.ts"
@@ -23,7 +23,7 @@ describe("ingest: dedupe by content hash, and the horizon", () => {
   })
   const world = makeWorld({ jev, slack: fakeSlack({ latest: postedIn(CHANNEL, () => messages) }) })
   afterAll(() => world.dispose())
-  const poll = () => world.runPromise(AlertPipeline.use((pipeline) => pipeline.pollOnce))
+  const poll = () => world.runPromise(AlertChannels.use((alerts) => alerts.poll))
   const stored = () => world.runPromise(Store.use((store) => Effect.all([store.getAlert(id), store.alertHash(id)])))
 
   test("the same message polled twice is judged once", async () => {
@@ -111,7 +111,7 @@ describe("the horizon only moves past what was read", () => {
     }),
   })
   afterAll(() => world.dispose())
-  const poll = () => world.runPromise(AlertPipeline.use((pipeline) => pipeline.pollOnce))
+  const poll = () => world.runPromise(AlertChannels.use((alerts) => alerts.poll))
   const stored = (ts: string) => world.runPromise(Store.use((store) => store.getAlert(`${CHANNEL}:${ts}`)))
   const error = () => world.runPromise(Hub.use((hub) => hub.status.pipe(Effect.map((s) => s.error))))
   const key = `since:${CHANNEL}`
@@ -150,14 +150,14 @@ describe("a known alert re-triaged to nothing to do", () => {
 
   test("a failed build re-run green withdraws the card it had put up", async () => {
     const cards = () => world.runPromise(Store.use((store) => store.listActions().pipe(Effect.map((all) => all.map((a) => a.kind)))))
-    await world.runPromise(AlertPipeline.use((pipeline) => pipeline.pollOnce))
+    await world.runPromise(AlertChannels.use((alerts) => alerts.poll))
     // Without Jev the call is yours: a suggestion.
     expect(await cards()).toEqual(["investigate"])
     tracker = {
       ...tracker,
       blocks: JSON.parse(JSON.stringify(adminBuildFailed.blocks).replace(":red_circle:  *Build*\\nBuild failed  ·  _1 attempt failed_", ":large_green_circle:  *Build*\\nImage built")),
     }
-    await world.runPromise(AlertPipeline.use((pipeline) => pipeline.pollOnce))
+    await world.runPromise(AlertChannels.use((alerts) => alerts.poll))
     const alert = await world.runPromise(Store.use((store) => store.getAlert(`${CHANNEL}:${ts}`)))
     expect(await cards()).toEqual([])
     expect(alert?.title).toBe("merkl-admin v0.6.0 · Deployed")

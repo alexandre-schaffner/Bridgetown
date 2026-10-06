@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { alertOutcome } from "../src/domain/alert-outcome.ts"
 import { Hub } from "../src/hub.ts"
-import { AlertPipeline } from "../src/intake/alerts.ts"
+import { AlertChannels } from "../src/intake/alerts.ts"
 import { claimsIn, firstClaimant } from "../src/slack/claims.ts"
 import type { SlackMessage, SlackReaction } from "../src/slack/client.ts"
 import { Store } from "../src/store/store.ts"
@@ -71,7 +71,7 @@ describe("teammates running Bridgetown", () => {
   const world = makeWorld({ jev, slack, env: { forceDryRun: false } })
   afterAll(() => world.dispose())
 
-  const run = <A, E>(effect: Effect.Effect<A, E, Store | Hub | AlertPipeline>) => world.runPromise(effect)
+  const run = <A, E>(effect: Effect.Effect<A, E, Store | Hub | AlertChannels>) => world.runPromise(effect)
   const reset = (next: SlackMessage) =>
     run(
       Effect.gen(function* () {
@@ -83,7 +83,7 @@ describe("teammates running Bridgetown", () => {
         removed.length = 0
       }),
     )
-  const poll = () => run(AlertPipeline.use((pipeline) => pipeline.pollOnce))
+  const poll = () => run(AlertChannels.use((alerts) => alerts.poll))
   const state = (alertId = id) =>
     run(
       Effect.gen(function* () {

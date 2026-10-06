@@ -20,12 +20,12 @@ import { triageWith } from "../triage/verdict.ts"
 import { Intake, routeOf } from "./intake.ts"
 
 /** Alert channels: poll, parse, and file what is new (`Intake`); a known alert keeps its verdict unless its headline changed. */
-export interface AlertPipelineShape {
+export interface AlertChannelsShape {
   /** One Slack poll of the alert channels, serialized with the poll loop. */
-  readonly pollOnce: Effect.Effect<void, SlackError>
+  readonly poll: Effect.Effect<void, SlackError>
 }
 
-export class AlertPipeline extends Context.Service<AlertPipeline, AlertPipelineShape>()("AlertPipeline") {}
+export class AlertChannels extends Context.Service<AlertChannels, AlertChannelsShape>()("AlertChannels") {}
 
 /** On first run, older history is not news. */
 const LOOKBACK_MS = 3 * 60 * 60_000
@@ -59,7 +59,7 @@ export const readHorizon = (store: StoreShape, key: string) =>
 export const commitHorizon = (store: StoreShape, key: string, floor: number, readAt: number) =>
   store.setKv(key, String(Math.max(floor, readAt - HORIZON_MARGIN_MS)))
 
-export const AlertPipelineLive = Layer.effect(AlertPipeline)(
+export const AlertChannelsLive = Layer.effect(AlertChannels)(
   Effect.gen(function* () {
     const store = yield* Store
     const hub = yield* Hub
@@ -80,7 +80,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
         return `:${r.name}: ×${r.count}${mine ? " (incl. me)" : ""}`
       })
 
-    const triage = Effect.fn("AlertPipeline.triage")(function* (
+    const triage = Effect.fn("AlertChannels.triage")(function* (
       parsed: ParsedAlert,
       message: SlackMessage,
       thread: ReadonlyArray<SlackMessage>,
@@ -93,7 +93,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
       return yield* triageWith(hub, judging, decide, "suggest")
     })
 
-    const ingest = Effect.fn("AlertPipeline.ingest")(function* (channel: Channel, message: SlackMessage, since: number) {
+    const ingest = Effect.fn("AlertChannels.ingest")(function* (channel: Channel, message: SlackMessage, since: number) {
       if (!isAlertMessage(message)) return
       const hash = contentHash(message)
       const id = `${channel.id}:${message.ts}`
@@ -179,7 +179,7 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
         return [...newest, ...backlog.filter((m) => m.ts !== last.ts)]
       })
 
-    const pollOnce = Effect.gen(function* () {
+    const poll = Effect.gen(function* () {
       if ((yield* hub.status).slack === "missing_token") return
       yield* me.identity
       const enabled = (yield* hub.settings).channels.filter((c) => c.enabled)
@@ -208,6 +208,6 @@ export const AlertPipelineLive = Layer.effect(AlertPipeline)(
       yield* hub.problem("poll", problemOf(problems))
     }).pipe(polling.withPermits(1))
 
-    return { pollOnce }
+    return { poll }
   }),
 )

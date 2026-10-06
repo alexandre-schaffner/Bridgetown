@@ -6,7 +6,7 @@ import { type DaemonError, errorMessage, NotFound, statusOf } from "../domain/er
 import { Boards } from "../grafana/board.ts"
 import { alertBoard, OVERVIEW_VIEWS, type OverviewView, overviewBoard } from "../grafana/boards.ts"
 import { Hub } from "../hub.ts"
-import { AlertPipeline } from "../intake/alerts.ts"
+import { AlertChannels } from "../intake/alerts.ts"
 import { Intake } from "../intake/intake.ts"
 import { SessionRunner } from "../sessions/runner.ts"
 import { mergeSettings, SettingsPatch } from "../domain/settings.ts"
@@ -15,7 +15,7 @@ import { FeedbackBody, MessageBody, pathId, PauseBody, readBody, ResolveBody } f
 import { snapshotEvents, SSE_TIMING, type SseTiming } from "./sse.ts"
 import { alertDetail, logSweep, snapshot } from "./views.ts"
 
-type Services = Store | Hub | Actions | AlertPipeline | Intake | SessionRunner | Boards
+type Services = Store | Hub | Actions | AlertChannels | Intake | SessionRunner | Boards
 
 const isOverviewView = (value: string): value is OverviewView => OVERVIEW_VIEWS.some((view) => view === value)
 
@@ -158,7 +158,7 @@ const postRoute = (path: string, request: Request) =>
       const body = yield* readBody(request, PauseBody)
       return yield* thenSnapshot(hub.patchStatus({ paused: body.paused }))
     }
-    if (path === "/poll") return yield* thenSnapshot((yield* AlertPipeline).pollOnce)
+    if (path === "/poll") return yield* thenSnapshot((yield* AlertChannels).poll)
     return yield* new NotFound({ message: "not found" })
   })
 

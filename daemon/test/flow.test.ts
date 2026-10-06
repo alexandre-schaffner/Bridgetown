@@ -6,7 +6,7 @@ import type { Action } from "../src/domain/action.ts"
 import type { Alert } from "../src/domain/alert.ts"
 import { holdsSlot, NO_MILESTONES, type Session } from "../src/domain/session.ts"
 import { Hub } from "../src/hub.ts"
-import { AlertPipeline } from "../src/intake/alerts.ts"
+import { AlertChannels } from "../src/intake/alerts.ts"
 import { Intake } from "../src/intake/intake.ts"
 import { SessionRunner } from "../src/sessions/runner.ts"
 import { Shipper } from "../src/ship/shipper.ts"
@@ -157,9 +157,9 @@ describe("re-triage never overwrites a session you just started (M4)", () => {
     const out = await world.runPromise(
       Effect.gen(function* () {
         const store = yield* Store
-        const pipeline = yield* AlertPipeline
+        const alerts = yield* AlertChannels
         yield* store.putAlert(makeAlert({ id, channelId: "C0AUKD42N3U", ts, title: "an older headline", triage: { decision: "ignore", reason: "noise", jev: null } }), "stale")
-        const poll = yield* pipeline.pollOnce.pipe(Effect.forkChild)
+        const poll = yield* alerts.poll.pipe(Effect.forkChild)
         yield* Deferred.await(judging)
         yield* (yield* Intake).investigate(id)
         const started = (yield* store.getAlert(id))?.sessionId

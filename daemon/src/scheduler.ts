@@ -5,7 +5,7 @@ import { Health } from "./health.ts"
 import { Housekeeping } from "./housekeeping/housekeeping.ts"
 import { Boards } from "./grafana/board.ts"
 import { Hub } from "./hub.ts"
-import { AlertPipeline } from "./intake/alerts.ts"
+import { AlertChannels } from "./intake/alerts.ts"
 import { Inbox } from "./intake/inbox.ts"
 import { SessionRunner } from "./sessions/runner.ts"
 import { Shipper } from "./ship/shipper.ts"
@@ -60,7 +60,7 @@ export const SchedulerLive = Layer.effect(Scheduler)(
   Effect.gen(function* () {
     const hub = yield* Hub
     const health = yield* Health
-    const alerts = yield* AlertPipeline
+    const alerts = yield* AlertChannels
     const inbox = yield* Inbox
     const shipper = yield* Shipper
     const critic = yield* Critic
@@ -76,7 +76,7 @@ export const SchedulerLive = Layer.effect(Scheduler)(
     })
     const loops: Record.ReadonlyRecord<LoopName, Effect.Effect<void, unknown>> = {
       github: health.probeGithub,
-      poll: alerts.pollOnce,
+      poll: alerts.poll,
       ship: shipper.tick,
       critique: critic.tick,
       inbox: inbox.poll,

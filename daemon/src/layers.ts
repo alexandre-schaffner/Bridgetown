@@ -9,7 +9,7 @@ import { Grafana, GrafanaLive } from "./grafana/client.ts"
 import { HealthLive } from "./health.ts"
 import { HousekeepingLive } from "./housekeeping/housekeeping.ts"
 import { HubLive } from "./hub.ts"
-import { AlertPipelineLive } from "./intake/alerts.ts"
+import { AlertChannelsLive } from "./intake/alerts.ts"
 import { InboxLive } from "./intake/inbox.ts"
 import { IntakeLive } from "./intake/intake.ts"
 import { SchedulerLive } from "./scheduler.ts"
@@ -55,6 +55,6 @@ export const appLayerWith = <E>(env: Env, base: Layer.Layer<Store | SlackClient 
   const withAsks = Layer.mergeAll(AsksLive, ClaimsLive).pipe(Layer.provideMerge(records))
   const withRunner = SessionRunnerLive.pipe(Layer.provideMerge(withAsks))
   const withIntake = Layer.mergeAll(ShipperLive, CriticLive, HousekeepingLive, IntakeLive).pipe(Layer.provideMerge(withRunner))
-  const withEdges = Layer.mergeAll(AlertPipelineLive, InboxLive, WatcherLive, ActionsLive).pipe(Layer.provideMerge(withIntake))
+  const withEdges = Layer.mergeAll(AlertChannelsLive, InboxLive, WatcherLive, ActionsLive).pipe(Layer.provideMerge(withIntake))
   return SchedulerLive.pipe(Layer.provideMerge(withEdges))
 }
