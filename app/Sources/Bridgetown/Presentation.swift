@@ -72,10 +72,14 @@ extension Session {
         return activity
     }
 
+    /// How long it has run: up to `now` while active, up to its last update once it ended.
+    func elapsed(now: Date) -> String {
+        Format.duration(from: startedAt, to: isActive ? now : updatedAt)
+    }
+
     /// "Opus · 12m · $1.40".
     func meta(now: Date) -> String {
-        let end = isActive ? now : updatedAt
-        return [model, Format.duration(from: startedAt, to: end), Format.cost(costUsd)]
+        [model, elapsed(now: now), Format.cost(costUsd)]
             .filter { !$0.isEmpty }
             .joined(separator: " · ")
     }

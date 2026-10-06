@@ -254,6 +254,22 @@ import Testing
     }
 }
 
+@Suite struct ElapsedTests {
+    /// A row's time and the detail's meta line say the same: running, it counts on to now;
+    /// ended, it stops at the session's last update.
+    @Test func stopsWhenTheSessionEnds() throws {
+        var s = try #require(Fixture.snapshot().session(id: "ses_running"))
+        s.status = .running
+        s.startedAt = Date(timeIntervalSince1970: 1_791_100_000)
+        s.updatedAt = s.startedAt.addingTimeInterval(12 * 60)
+        let now = s.startedAt.addingTimeInterval(95 * 60)
+        #expect(s.elapsed(now: now) == "1h 35m")
+        s.status = .resolved
+        #expect(s.elapsed(now: now) == "12m")
+        #expect(s.meta(now: now).components(separatedBy: " · ").contains("12m"))
+    }
+}
+
 @Suite struct ChannelNameTests {
     @Test func directMessagesTakeNoHash() {
         #expect(Format.channel("alert-dev") == "#alert-dev")

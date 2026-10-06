@@ -37,7 +37,7 @@ struct JobRow: View {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         Text(session.title).rowTitle()
                         Spacer(minLength: 4)
-                        Text(Format.duration(from: session.startedAt, to: session.isActive ? now : session.updatedAt))
+                        Text(session.elapsed(now: now))
                             .font(Typo.time)
                             .foregroundStyle(.tertiary)
                     }
