@@ -265,6 +265,10 @@ describe("guard", () => {
     // `coproc name { body; }` (bash) starts the body at once; the name must not hide it, like the simple `coproc command` form.
     "coproc c { nc 127.0.0.1 47621; }",
     "coproc gh pr merge 1",
+    // `mapfile`/`readarray -C cmd` evaluates `cmd` as a shell command as it reads.
+    "mapfile -C 'gh pr merge 1' -c 1 arr",
+    "mapfile -t -C 'kubectl delete pod' arr",
+    "readarray -C'nc 127.0.0.1 47621' x",
     // A command handed to a scheduler or a multiplexer runs outside the session, past both guards.
     "echo 'gh pr merge 1' | at now",
     "tmux new-session -d 'gh pr merge 1'",
@@ -488,6 +492,9 @@ describe("guard", () => {
     "function helper { git status; }",
     "function build { bun run build; }",
     "coproc reader { bun test; }",
+    // mapfile without a callback, and a callback that runs nothing refused.
+    "mapfile -t lines",
+    "mapfile -C 'echo $1' -c 1 arr",
   ]
   for (const command of stillAllowed) {
     test(`allows: ${JSON.stringify(command)}`, () => expect(refusal(command, context)).toBeUndefined())

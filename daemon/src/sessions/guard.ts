@@ -353,6 +353,8 @@ const commandRefusal = (name: string, head: Word, args: ReadonlyArray<Word>, sco
   }
   // `trap 'cmd' SIGNAL` runs its first argument as a command when the signal fires.
   if (name === "trap") return args[0] === undefined ? undefined : checkString(args[0], scope)
+  // `mapfile`/`readarray -C cmd` evaluates `cmd` as a shell command as it reads.
+  if (name === "mapfile" || name === "readarray") return callbackRefusal(args, scope)
   // `let` evaluates its arguments as arithmetic, which runs any `$(…)` inside, even quoted (`let 'a[$(…)]'`).
   if (name === "let" && args.some(substitutes)) return REASONS.dynamic
   if (DECLARATIONS.has(name)) return declarationRefusal(name, args)
@@ -524,6 +526,25 @@ const shellRefusal = (args: ReadonlyArray<Word>, scope: Scope): string | undefin
 }
 
 const checkString = (word: Word, scope: Scope): string | undefined => (word.dynamic ? REASONS.dynamic : nested(word.text, scope))
+
+/** `mapfile`/`readarray -C cmd` runs `cmd` as a shell command every `-c` lines read. The callback is its own word, or glued (`-Ccmd`). */
+const callbackRefusal = (args: ReadonlyArray<Word>, scope: Scope): string | undefined => {
+  for (let i = 0; i < args.length; i++) {
+    const word = args[i]
+    if (word === undefined) break
+    if (word.text === "-C") {
+      const next = args[++i]
+      if (next !== undefined) {
+        const reason = checkString(next, scope)
+        if (reason !== undefined) return reason
+      }
+    } else if (word.text.startsWith("-C") && word.text.length > 2) {
+      const reason = checkString({ ...word, text: word.text.slice(2) }, scope)
+      if (reason !== undefined) return reason
+    }
+  }
+  return undefined
+}
 
 /** `find … -exec cmd {} ;` runs `cmd` with `{}` replaced by each found path, so `{}` is a runtime value. */
 const findRefusal = (args: ReadonlyArray<Word>, scope: Scope): string | undefined => {
