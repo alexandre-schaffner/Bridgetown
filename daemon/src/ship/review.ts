@@ -1,5 +1,5 @@
-import { GH_HOST } from "../config.ts"
 import { toMrkdwn } from "../slack/text.ts"
+import { prNumber, revvLink } from "./pr.ts"
 
 /** Slack user groups, as `packages/alerting/src/deployment.reviewers.ts` encodes them. */
 const DEV_PRODUCT = "<!subteam^S0ATVUW9T7V|dev-product>"
@@ -49,25 +49,6 @@ export const reviewRoute = (component: string | null): ReviewRoute => {
   const team = TEAMS[key] ?? (component === "merkl" ? ENGINE_TEAM : null)
   const channel = team === DEV_PRODUCT ? PRODUCT_APPROVALS : GENERAL_APPROVALS
   return { ...channel, mention: team }
-}
-
-const PR_URL = /^https:\/\/([^/]+)\/([^/]+\/[^/]+)\/pull\/(\d+)/
-
-/** Revv's PR deep link (`packages/shared/src/pr-deep-link.ts` in revv): opens the PR walkthrough. */
-export const revvLink = (prUrl: string): string | null => {
-  const match = PR_URL.exec(prUrl)
-  if (match === null) return null
-  const params = new URLSearchParams({ host: (match[1] ?? GH_HOST).toLowerCase(), repo: match[2] ?? "", number: match[3] ?? "" })
-  return `revv://pr?${params.toString()}`
-}
-
-/** The number of any pull request link (`…/pull/3244`, `…/pull/3244/files`), or `null`. */
-export const prNumber = (prUrl: string): string | null => /\/pull\/(\d+)(?:[/?#]|$)/.exec(prUrl)?.[1] ?? null
-
-/** "#3244" for a PR link; a link that is not one stays as it is. */
-export const prLabel = (prUrl: string): string => {
-  const number = prNumber(prUrl)
-  return number === null ? prUrl : `#${number}`
 }
 
 export interface ReviewRequest {

@@ -113,13 +113,6 @@ const proseToMrkdwn = (text: string): string => {
     .replace(/\u0000(\d+)\u0000/g, (_, index: string) => tokens[Number(index)] ?? "")
 }
 
-/** First line with content, skipping bare group pings like `<!subteam^S0AV…>` that Grafana alerts lead with. */
-export const firstLine = (text: string): string =>
-  text
-    .split("\n")
-    .map((line) => line.trim())
-    .find((line) => line !== "" && !/^(<!(subteam\^[A-Z0-9]+|here|channel)(\|[^>]*)?>\s*)+$/.test(line)) ?? ""
-
 /** Display text for titles: readable links, no mrkdwn emphasis. */
 export const clean = (mrkdwn: string): string =>
   plain(mrkdwn)
@@ -127,9 +120,6 @@ export const clean = (mrkdwn: string): string =>
     .replace(/(^|\s)_([^_]+)_(?=\s|$|[.,:;])/g, "$1$2")
     .replace(/\s+/g, " ")
     .trim()
-
-export const truncate = (text: string, max: number): string =>
-  text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`
 
 export const stripEmoji = (text: string): string => text.replace(/:[a-z0-9_+-]+:/g, "").replace(/\s+/g, " ").trim()
 

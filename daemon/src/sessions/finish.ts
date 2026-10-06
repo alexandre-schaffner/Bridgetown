@@ -3,9 +3,9 @@ import type { ActionQueueShape } from "../actions/queue.ts"
 import type { AdapterError } from "../domain/errors.ts"
 import { isFinished, type Session, withPatch } from "../domain/session.ts"
 import type { HubShape } from "../hub.ts"
+import { firstLine, truncate } from "../lib/text.ts"
 import type { GitHubShape } from "../ship/github.ts"
 import type { SlackThreadShape } from "../slack/thread.ts"
-import { truncate } from "../slack/text.ts"
 import type { StoreShape } from "../store/store.ts"
 import { decideOutcome, type Finalized } from "./finalize.ts"
 import type { SessionResult } from "./output.ts"
@@ -34,7 +34,7 @@ export const makeFinish = ({ store, thread, repo, queue, github, hub, sendBack }
   const finishFailed = (id: string, reason: string) =>
     Effect.gen(function* () {
       yield* repo.log(id, "error", reason).pipe(Effect.ignore)
-      const headline = reason.split("\n")[0] ?? reason
+      const headline = firstLine(reason)
       const failed = yield* repo.patch(id, { status: "failed", activity: headline, resolution: truncate(headline, 80) })
       if (failed !== undefined) yield* queue.retryCard(failed, "Agent failed", reason)
     })

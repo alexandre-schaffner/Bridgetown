@@ -2,7 +2,7 @@ import { createSdkMcpServer, tool, type McpSdkServerConfigWithInstance } from "@
 import { z } from "zod"
 import { VERSION } from "../config.ts"
 import type { Phase } from "../domain/session.ts"
-import { ownPrUrl } from "./output.ts"
+import { ownPrUrl } from "../ship/pr.ts"
 
 export const TOOL_SERVER = "bridgetown"
 export interface ToolCallbacks {

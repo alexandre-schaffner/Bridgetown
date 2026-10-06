@@ -3,7 +3,8 @@ import type { Alert, Claimant } from "../domain/alert.ts"
 import * as Messages from "../ship/messages.ts"
 import { SlackClient, type SlackMessage, type SlackReaction } from "./client.ts"
 import { SlackMe } from "./me.ts"
-import { BOT_PREFIX, firstLine, isPerson, plain, truncate } from "./text.ts"
+import { firstLine, truncate } from "../lib/text.ts"
+import { BOT_PREFIX, isPerson, plain } from "./text.ts"
 import { SlackThread } from "./thread.ts"
 
 /**

@@ -2,7 +2,8 @@ import { Schema } from "effect"
 import { type Decision, type ParsedAlert, type Triage, WATCH_CHANNEL } from "../domain/alert.ts"
 import { exploreLogsLink } from "../grafana/boards.ts"
 import { ERROR_LEVELS, regexLiteral, WARNING_LEVELS } from "../grafana/logsql.ts"
-import { clock, watchFingerprint } from "./detect.ts"
+import { clock, oneLine, pct } from "../lib/text.ts"
+import { watchFingerprint } from "./detect.ts"
 import type { LogPatternInput, LogPatternVerdict } from "./judge.ts"
 
 /**
@@ -252,11 +253,6 @@ export const patternLink = (p: LogPattern, sweptAt: Date, to: Date = sweptAt): s
 /** Prod's error lines in Grafana Explore over the 3 hours to `now`. */
 export const errorsLink = (now: Date): string => exploreLogsLink(SWEEPS.errors.levels, new Date(now.getTime() - LINK_HOURS * 3_600_000), now)
 
-const oneLine = (text: string, max: number) => {
-  const flat = text.replace(/\s+/g, " ").trim()
-  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
-}
-
 /** A judged pattern as an alert Bridgetown raised itself, in channel "Grafana" like the metric findings. */
 export const logFinding = (p: LogPattern, verdict: LogPatternVerdict, now: Date): ParsedAlert => {
   const since = new Date(now.getTime() - RECENT_MINUTES * 60_000)
@@ -282,7 +278,7 @@ export const logFinding = (p: LogPattern, verdict: LogPatternVerdict, now: Date)
       `Pattern (numbers collapsed to <N>): ${oneLine(p.message, 600)}`,
       `Example line: ${oneLine(p.example, 600)}`,
       `Find its lines (VictoriaLogs, LogsQL): ${query}`,
-      `Jev: problem ${Math.round(verdict.problem * 100)}% · agent ${Math.round(verdict.agent * 100)}% · users affected ${Math.round(verdict.users * 100)}%`,
+      `Jev: problem ${pct(verdict.problem)} · agent ${pct(verdict.agent)} · users affected ${pct(verdict.users)}`,
       `Dashboard: ${patternLink(p, now)}`,
     ].join("\n"),
     source: "watch",
@@ -291,8 +287,6 @@ export const logFinding = (p: LogPattern, verdict: LogPatternVerdict, now: Date)
     mentionsMe: false,
   }
 }
-
-const pct = (value: number) => `${Math.round(value * 100)}%`
 
 /**
  * A pattern Jev calls a problem is an anomaly: it gets an investigation, like a metric's (`decideAnomaly`), unless

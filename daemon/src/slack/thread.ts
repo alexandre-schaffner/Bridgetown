@@ -1,6 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { type Alert, type ThreadReply, threadTsOf } from "../domain/alert.ts"
 import { Hub } from "../hub.ts"
+import { clock } from "../lib/text.ts"
 import { SlackClient, type SlackMessage } from "./client.ts"
 import { SlackMe } from "./me.ts"
 import { BOT_PREFIX, flattenMessage, plain, toThreadReplies } from "./text.ts"
@@ -88,10 +89,7 @@ export const SlackThreadLive = Layer.effect(SlackThread)(
             [...messages]
               .filter((m) => m.ts !== alert.ts)
               .reverse()
-              .map((m) => {
-                const when = new Date(Number(m.ts) * 1000).toISOString().slice(11, 16)
-                return `[${when} UTC] ${plain(flattenMessage(m)).slice(0, 1_500)}`
-              }),
+              .map((m) => `[${clock(new Date(Number(m.ts) * 1000))}] ${plain(flattenMessage(m)).slice(0, 1_500)}`),
           ),
           Effect.orElseSucceed((): ReadonlyArray<string> => []),
         )

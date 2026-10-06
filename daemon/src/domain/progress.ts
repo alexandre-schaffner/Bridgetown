@@ -1,3 +1,4 @@
+import { plural } from "../lib/text.ts"
 import { critiquePassed, findingCounts, findingsUnanswered, REVIEWER_NAMES } from "./critique.ts"
 import { isActive, type Session, SHIPPING_STATUSES, WORKING_STATUSES } from "./session.ts"
 
@@ -65,8 +66,6 @@ export const progressOf = (session: Session): Progress => {
 }
 
 const reviewerNameOf = (session: Session): string => REVIEWER_NAMES[session.critique?.reviewer ?? "codex"]
-
-const plural = (n: number, one: string, many: string): string => (n === 1 ? `1 ${one}` : `${n} ${many}`)
 
 /** From the review step and the last review. The step stays current for the whole loop, so only `critiquing` is a review running now. */
 const critiqueLineOf = (session: Session, steps: ReadonlyArray<Step>): string => {

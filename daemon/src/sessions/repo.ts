@@ -5,7 +5,7 @@ import { now } from "../domain/ids.ts"
 import { SESSION_RESUMED_EVENT, sessionEndEvent } from "../domain/progress.ts"
 import { isFinished, type Session, type TranscriptKind, withPatch } from "../domain/session.ts"
 import { Hub } from "../hub.ts"
-import { truncate } from "../slack/text.ts"
+import { firstLine, truncate } from "../lib/text.ts"
 import { makeKeyedLock } from "../store/keyed-lock.ts"
 import { Store } from "../store/store.ts"
 
@@ -83,7 +83,7 @@ export const SessionRepoLive = Layer.effect(SessionRepo)(
       log: (id, kind, text, options) =>
         Effect.gen(function* () {
           yield* store.appendTranscript(id, { at: now(), kind, text: truncate(text, 4_000) })
-          if (options?.activity === true) yield* patch(id, { activity: truncate(text.split("\n")[0] ?? text, 140) })
+          if (options?.activity === true) yield* patch(id, { activity: truncate(firstLine(text), 140) })
         }),
     }
   }),

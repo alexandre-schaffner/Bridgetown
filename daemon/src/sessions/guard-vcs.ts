@@ -1,4 +1,5 @@
 import { GH_HOST } from "../config.ts"
+import { escapeRegExp } from "../lib/text.ts"
 import { flags, REASONS } from "./guard-reasons.ts"
 import type { Word } from "./shell.ts"
 
@@ -137,7 +138,7 @@ const ghApiRefusal = (args: ReadonlyArray<Word>): string | undefined => {
 /** A `curl`/`wget` write to the GitHub API (any host carrying its path), e.g. with a token from `gh auth token`, is as much an API write as `gh api`. */
 export const githubApiWriteRefusal = (name: string, args: ReadonlyArray<Word>): string | undefined => {
   const line = args.map((arg) => arg.text).join(" ")
-  const ghApi = new RegExp(`(api\\.github\\.com|${GH_HOST.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/api)`, "i").test(line)
+  const ghApi = new RegExp(`(api\\.github\\.com|${escapeRegExp(GH_HOST)}/api)`, "i").test(line)
   if (!ghApi) return undefined
   const writes = args.some((arg) => {
     const t = arg.text
@@ -265,7 +266,7 @@ const pushRefusal = (args: ReadonlyArray<Word>, branch: string): string | undefi
   }
   const own = (ref: string) => {
     const name = ref.replace(/^refs\/heads\//, "")
-    return name === branch || new RegExp(`^${branch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-\\d+$`).test(name)
+    return name === branch || new RegExp(`^${escapeRegExp(branch)}-\\d+$`).test(name)
   }
   const explicit = explicitPush(branch)
   const [remote, ...refspecs] = positional

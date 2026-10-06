@@ -5,7 +5,7 @@ import { isFinished, NO_MILESTONES, type Session, type TranscriptEntry } from ".
 import { type Channel, DEFAULT_CHANNELS, DEFAULT_SETTINGS, type Settings } from "../../src/domain/settings.ts"
 import { newSession } from "../../src/sessions/new-session.ts"
 import { releaseDetail } from "../../src/ship/cards.ts"
-import { truncate } from "../../src/slack/text.ts"
+import { truncate } from "../../src/lib/text.ts"
 import type { FakePr } from "./fakes.ts"
 
 /** The log finding's fingerprint: the Goldsky pattern in the mock's log sweep (grafana.ts) points at it. */

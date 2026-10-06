@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { reviewRequestText, reviewRoute, revvLink } from "../src/ship/review.ts"
+import { revvLink } from "../src/ship/pr.ts"
+import { reviewRequestText, reviewRoute } from "../src/ship/review.ts"
 
 describe("review routing", () => {
   test("product apps go to product-approvals with dev-product", () => {

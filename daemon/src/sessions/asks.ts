@@ -2,7 +2,7 @@ import { Context, Deferred, Duration, Effect, Layer, Option, SynchronizedRef } f
 import { ActionQueue } from "../actions/queue.ts"
 import type { AdapterError } from "../domain/errors.ts"
 import type { Session } from "../domain/session.ts"
-import { truncate } from "../slack/text.ts"
+import { truncate } from "../lib/text.ts"
 import { SessionRepo } from "./repo.ts"
 
 const ASK_TIMEOUT = Duration.minutes(30)

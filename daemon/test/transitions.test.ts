@@ -1,21 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { NO_MILESTONES } from "../src/domain/session.ts"
-import { nextTagFrom, type PullRequest } from "../src/ship/github.ts"
-import {
-  afterMerge,
-  APPROVAL_TIMEOUT_MS,
-  type CiStep,
-  ciTransition,
-  DEPLOY_TIMEOUT_MS,
-  deployStalled,
-  deployTransition,
-  followsDeploy,
-  MAX_CI_ROUNDS,
-  MERGE_QUEUE_TIMEOUT_MS,
-  needsReviewRequest,
-  releasePrefixOf,
-  sendBackOrHandOff,
-} from "../src/ship/transitions.ts"
+import { nextTagFrom, releasePrefixOf } from "../src/ship/tags.ts"
+import type { PullRequest } from "../src/ship/github.ts"
+import { afterMerge, APPROVAL_TIMEOUT_MS, type CiStep, ciTransition, DEPLOY_TIMEOUT_MS, deployStalled, deployTransition, followsDeploy, MAX_CI_ROUNDS, MERGE_QUEUE_TIMEOUT_MS, needsReviewRequest, sendBackOrHandOff } from "../src/ship/transitions.ts"
 import { makeSession } from "./fixtures/records.ts"
 
 const pr = (overrides: Partial<PullRequest> = {}): PullRequest => ({

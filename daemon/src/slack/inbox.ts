@@ -1,7 +1,8 @@
-import { GH_HOST } from "../config.ts"
 import type { InboxFields, ParsedAlert } from "../domain/alert.ts"
+import { findPrUrl } from "../ship/pr.ts"
 import type { SearchMatch, SlackMessage } from "./client.ts"
-import { BOT_PREFIX, clean, firstLine, flattenMessage, isPerson, truncate } from "./text.ts"
+import { firstLine, truncate } from "../lib/text.ts"
+import { BOT_PREFIX, clean, flattenMessage, isPerson } from "./text.ts"
 
 export type InboxVia = InboxFields["via"]
 
@@ -25,8 +26,6 @@ export const threadTsFromPermalink = (permalink: string | undefined): string | n
     return null
   }
 }
-
-const PR_LINK = new RegExp(`https://${GH_HOST.replaceAll(".", "\\.")}/[\\w.-]+/[\\w.-]+/pull/\\d+`)
 
 export interface InboxContext {
   readonly me: string
@@ -72,7 +71,7 @@ export const parseInbox = (match: SearchMatch, via: InboxVia, ctx: InboxContext)
       channelKind,
       via,
       threadTs,
-      prUrl: PR_LINK.exec(text)?.[0] ?? null,
+      prUrl: findPrUrl(text),
     },
     mentionsMe: via === "mention",
   }

@@ -1,8 +1,7 @@
 import type { Decision, JevVerdict } from "../domain/alert.ts"
 import type { FindingVerdict } from "../domain/critique.ts"
 import type { Thresholds } from "../domain/settings.ts"
-
-const pct = (value: number): string => `${Math.round(value * 100)}%`
+import { pct } from "../lib/text.ts"
 
 /**
  * Thresholds turn Jev's independent judgments into one decision. `human_on_it`

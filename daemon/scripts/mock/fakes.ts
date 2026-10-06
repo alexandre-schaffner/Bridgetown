@@ -2,7 +2,9 @@ import { Duration, Effect } from "effect"
 import type { ReviewerShape } from "../../src/critique/reviewer.ts"
 import type { JevVerdict } from "../../src/domain/alert.ts"
 import { GheBlocked, type GitHubError } from "../../src/domain/errors.ts"
-import { type GitHubShape, nextTagFrom, type PullRequest } from "../../src/ship/github.ts"
+import type { GitHubShape, PullRequest } from "../../src/ship/github.ts"
+import { prLabel, prNumber } from "../../src/ship/pr.ts"
+import { nextTagFrom } from "../../src/ship/tags.ts"
 import type { SlackClientShape } from "../../src/slack/client.ts"
 import type { JevShape } from "../../src/triage/jev.ts"
 
@@ -128,7 +130,7 @@ export const makeFakeGitHub = (options: FakeGitHubOptions) => {
     const known = prs.get(url)
     if (known !== undefined) return known
     // A PR an agent just opened in the mock: it moves through CI and review on its own.
-    const opened = { title: `Bridgetown fix #${url.split("/").pop() ?? ""}`, checks: "pending" as const, review: "REVIEW_REQUIRED" as const, merged: false, moves: true, openedAt: Date.now(), mergedAt: null }
+    const opened = { title: `Bridgetown fix ${prLabel(url)}`, checks: "pending" as const, review: "REVIEW_REQUIRED" as const, merged: false, moves: true, openedAt: Date.now(), mergedAt: null }
     prs.set(url, opened)
     return opened
   }
@@ -139,7 +141,7 @@ export const makeFakeGitHub = (options: FakeGitHubOptions) => {
     const ci = pr.moves && age > 15_000 ? "green" : pr.checks
     const review = pr.moves && age > 30_000 ? "APPROVED" : pr.review
     return {
-      number: Number(url.split("/").pop()),
+      number: Number(prNumber(url)),
       title: pr.title,
       state: pr.mergedAt === null ? "OPEN" : "MERGED",
       mergedAt: pr.mergedAt,

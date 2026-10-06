@@ -11,6 +11,7 @@ import { type Alert, alertFromParsed, type Decision, type ThreadReply } from "..
 import { now } from "../src/domain/ids.ts"
 import type { Session } from "../src/domain/session.ts"
 import { DEFAULT_SETTINGS } from "../src/domain/settings.ts"
+import { pct as percent } from "../src/lib/text.ts"
 import { isAlertMessage } from "../src/pipeline/alerts.ts"
 import { makeSlackClient, type SlackMessage } from "../src/slack/client.ts"
 import { parseMessage } from "../src/slack/parse.ts"
@@ -32,7 +33,7 @@ const arg = (name: string): string | undefined => {
   return index === -1 ? undefined : process.argv[index + 1]
 }
 
-const pct = (n: number) => `${Math.round(n * 100)}%`.padStart(4)
+const pct = (n: number) => percent(n).padStart(4)
 
 const env = readEnv()
 const jev = makeJev(env.typesafeKey, env.jevModel)

@@ -2,6 +2,7 @@ import { Context, Effect, Layer, Schema } from "effect"
 import { GH_HOST, GHE_REPO } from "../config.ts"
 import { type AdapterError, decodeOr, GheBlocked, type GitHubError } from "../domain/errors.ts"
 import { run, runOk } from "../proc.ts"
+import { nextTagFrom } from "./tags.ts"
 
 /** What `gh` / git print when the Merkl org's IP allow list refuses this network. */
 export const refusedByAllowList = (stderr: string): boolean => /IP allow list|403/.test(stderr)
@@ -77,31 +78,6 @@ const viewPr = (prUrl: string) =>
 const mergePr = (prUrl: string) => gh(["pr", "merge", prUrl, "--squash"]).pipe(Effect.asVoid)
 
 const rerunFailedJobs = (runId: string) => gh(["run", "rerun", runId, "--failed", "-R", GHE_REPO]).pipe(Effect.asVoid)
-
-const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-
-const parseVersion = (tag: string, prefix: string): ReadonlyArray<number> | undefined => {
-  const match = new RegExp(`^${escape(prefix)}-v(\\d+)\\.(\\d+)\\.(\\d+)$`).exec(tag)
-  if (match === null) return undefined
-  return [Number(match[1]), Number(match[2]), Number(match[3])]
-}
-
-const compare = (a: ReadonlyArray<number>, b: ReadonlyArray<number>): number =>
-  (a[0] ?? 0) - (b[0] ?? 0) || (a[1] ?? 0) - (b[1] ?? 0) || (a[2] ?? 0) - (b[2] ?? 0)
-
-/**
- * The tag after the highest `<prefix>-vX.Y.Z` in `tags`: a patch bump, or
- * `<prefix>-v0.1.0` for the first release of a prefix.
- */
-export const nextTagFrom = (tags: ReadonlyArray<string>, prefix: string): string => {
-  const latest = tags
-    .map((tag) => parseVersion(tag, prefix))
-    .filter((v): v is ReadonlyArray<number> => v !== undefined)
-    .sort(compare)
-    .at(-1)
-  if (latest === undefined) return `${prefix}-v0.1.0`
-  return `${prefix}-v${latest[0] ?? 0}.${latest[1] ?? 0}.${(latest[2] ?? 0) + 1}`
-}
 
 const nextPatchTag = (repoPath: string, prefix: string) =>
   onGhe(runOk(["git", "ls-remote", "--tags", "--refs", "origin", `refs/tags/${prefix}-v*`], { cwd: repoPath, timeoutMs: 60_000 })).pipe(

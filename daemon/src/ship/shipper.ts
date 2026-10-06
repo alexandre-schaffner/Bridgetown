@@ -14,20 +14,11 @@ import { SlackThread } from "../slack/thread.ts"
 import { Store } from "../store/store.ts"
 import { mergeDetail, releaseDetail } from "./cards.ts"
 import { mergeOnce, releaseOnce } from "./gates.ts"
+import { prLabel } from "./pr.ts"
 import { ciState, GitHub, type PullRequest } from "./github.ts"
 import * as Messages from "./messages.ts"
-import { prLabel, reviewRequestText, reviewRoute } from "./review.ts"
-import {
-  afterMerge,
-  ciTransition,
-  deployStalled,
-  deployTransition,
-  type Escalation,
-  followsDeploy,
-  MAX_CI_ROUNDS,
-  mergedResolution,
-  needsReviewRequest,
-} from "./transitions.ts"
+import { reviewRequestText, reviewRoute } from "./review.ts"
+import { afterMerge, ciTransition, deployStalled, deployTransition, type Escalation, followsDeploy, MAX_CI_ROUNDS, mergedResolution, needsReviewRequest } from "./transitions.ts"
 
 /** PR → CI → review → merge → release → deploy, driven by polling GitHub and reading the release tracker. */
 export interface ShipperShape {

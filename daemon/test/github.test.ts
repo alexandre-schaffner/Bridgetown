@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { Health } from "../src/health.ts"
 import { Hub } from "../src/hub.ts"
-import { type GitHubShape, refusedByAllowList, type Reachability } from "../src/ship/github.ts"
+import { type GitHubShape, type Reachability, refusedByAllowList } from "../src/ship/github.ts"
 import { makeWorld } from "./fixtures/world.ts"
 
 describe("GHE allow list", () => {

@@ -1,7 +1,8 @@
 import { type ReleaseState, sameReleaseState } from "../domain/release.ts"
 import type { HandOff, Phase, Session } from "../domain/session.ts"
 import type { CiState, PullRequest } from "./github.ts"
-import { prLabel } from "./review.ts"
+import { prLabel } from "./pr.ts"
+import { isReleasePrefix } from "./tags.ts"
 
 /**
  * The ship flow's decisions, pure: given a session and what GitHub or the
@@ -189,18 +190,6 @@ export const deployStalled = (session: Session, nowMs: number): Extract<Escalati
   }
 }
 
-/** `admin`, `states-exporter`: what may stand before `-vX.Y.Z` in a release tag. */
-const RELEASE_PREFIX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
-
-/** `admin-v0.6.0` → `admin`; a bare prefix stays as it is. */
-export const tagPrefix = (tag: string): string => tag.replace(/-v\d+\.\d+\.\d+.*$/, "")
-
-/** The prefix the agent named, as a prefix: a full tag (`admin-v0.6.0`) gives its prefix, nothing or blank gives `null`. */
-export const releasePrefixOf = (named: string | null): string | null => {
-  const prefix = tagPrefix(named?.trim() ?? "")
-  return prefix === "" ? null : prefix
-}
-
 export type AfterMerge =
   | { readonly _tag: "NothingToRelease" }
   | { readonly _tag: "Release"; readonly prefix: string }
@@ -210,7 +199,7 @@ export type AfterMerge =
 export const afterMerge = (session: Session): AfterMerge => {
   const prefix = session.releasePrefix
   if (prefix === null) return { _tag: "NothingToRelease" }
-  return RELEASE_PREFIX.test(prefix) ? { _tag: "Release", prefix } : { _tag: "BadPrefix", prefix }
+  return isReleasePrefix(prefix) ? { _tag: "Release", prefix } : { _tag: "BadPrefix", prefix }
 }
 
 /** "merged #3244" for a merged session with nothing to ship. */

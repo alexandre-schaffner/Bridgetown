@@ -3,7 +3,7 @@ import type { Alert } from "../domain/alert.ts"
 import { passedAt } from "../domain/critique.ts"
 import { type HandOff, type SentBack, type Session, type SessionStatus, shipStatus } from "../domain/session.ts"
 import * as Messages from "../ship/messages.ts"
-import { releasePrefixOf } from "../ship/transitions.ts"
+import { releasePrefixOf } from "../ship/tags.ts"
 import type { SessionResult } from "./output.ts"
 import { pushBackPrompt } from "./prompts.ts"
 

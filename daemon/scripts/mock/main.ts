@@ -49,6 +49,7 @@ import { SessionRepo } from "../../src/sessions/repo.ts"
 import { SessionRunner } from "../../src/sessions/runner.ts"
 import { GitHub } from "../../src/ship/github.ts"
 import { Shipper } from "../../src/ship/shipper.ts"
+import { tagPrefix } from "../../src/ship/tags.ts"
 import { SlackClient } from "../../src/slack/client.ts"
 import { Store, StoreLive } from "../../src/store/store.ts"
 import { Jev } from "../../src/triage/jev.ts"
@@ -135,7 +136,7 @@ const trackerAlert = (tag: string, stages: ReadonlyArray<Stage>): Alert => {
   return {
     id: `C0AUKD42N3U:${ts}`, channelId: "C0AUKD42N3U", channelName: "alert-releases", ts, permalink: null, title: `Deployment ${tag}`, summary: "", raw: "",
     source: "releases", fingerprint: `release:${tag}`, mentionsMe: false, receivedAt: now(), sessionId: null, feedback: null, events: [], disposition: null, claimedBy: [],
-    fields: { _tag: "release", image: tag.replace(/-v\d.*$/, ""), version: tag.slice(tag.lastIndexOf("-v") + 1), actor: "alex", runId: null, runUrl: null, tag, stages },
+    fields: { _tag: "release", image: tagPrefix(tag), version: tag.slice(tagPrefix(tag).length + 1), actor: "alex", runId: null, runUrl: null, tag, stages },
     triage: { decision: "filtered", reason: "Release tracker", jev: null },
   }
 }

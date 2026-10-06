@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import { tagPrefix } from "../src/ship/tags.ts"
 import { ciState } from "../src/ship/github.ts"
-import { tagPrefix } from "../src/ship/transitions.ts"
 
 const pr = (checks: ReadonlyArray<Record<string, string | null>>) => ({
   number: 1,
