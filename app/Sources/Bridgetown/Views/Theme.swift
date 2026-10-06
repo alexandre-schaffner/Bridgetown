@@ -199,23 +199,6 @@ struct PixelStroke<S: ShapeStyle>: View {
     }
 }
 
-// MARK: Brand mark
-
-/// Bridgetown's mark: the app icon's arch, flat, in the text colour.
-struct BrandMark: View {
-    /// The height of the line it sits on; the arch takes 70% of it.
-    var size: CGFloat = 20
-
-    var body: some View {
-        let height = size * 0.7
-        ArchShape(joint: max(1, size * 0.06))
-            .fill(.primary)
-            .frame(width: height * ArchMark.aspect, height: height)
-            .frame(height: size)
-            .accessibilityHidden(true)
-    }
-}
-
 // MARK: Buttons
 
 /// Three buttons, as in Geist: white primary (the one next step), outlined secondary,
