@@ -75,7 +75,9 @@ struct AlertDetailView: View {
     private func sections(_ alert: AlertView) -> some View {
         summary(alert)
             .padding(.horizontal, Metrics.inset)
-        DetailSection(title: "How it ended") { howItEnded(alert) }
+        DetailSection(title: Self.isOpen(alert, session: session, openActions: openActions) ? "Where it stands" : "How it ended") {
+            howItEnded(alert)
+        }
         GrafanaSection(alertId: alert.id)
         DetailSection(title: "Jev's call") {
             jevsCall(alert)
@@ -150,6 +152,12 @@ struct AlertDetailView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, Metrics.inset)
         }
+    }
+
+    /// Not over yet: not triaged, a card waiting on you, or an agent still on it. Its outcome
+    /// is then where it stands, not how it ended.
+    static func isOpen(_ alert: AlertView, session: Session?, openActions: [Action]) -> Bool {
+        alert.outcome.kind == .pending || alert.outcome.kind == .waiting || session?.isActive == true || !openActions.isEmpty
     }
 
     private static func noSessionLine(_ kind: AlertOutcome.Kind) -> String {

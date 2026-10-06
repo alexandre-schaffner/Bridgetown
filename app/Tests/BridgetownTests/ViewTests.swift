@@ -30,6 +30,27 @@ import Testing
     }
 }
 
+@Suite struct AlertOutcomeTitleTests {
+    /// Only an alert nothing is left open on has "ended".
+    @Test func anAlertIsOpenWhileACardOrAnAgentIsOnIt() throws {
+        let snapshot = try Fixture.snapshot()
+        var alert = try #require(snapshot.alert(id: "C0AUKD42N3U:1790930000.000100"))
+        let closed = try #require(snapshot.session(id: "ses_closed"))
+        let card = try #require(snapshot.actions.first { $0.id == "act_review_1" })
+
+        alert.outcome.kind = .session
+        #expect(!AlertDetailView.isOpen(alert, session: closed, openActions: []))
+        #expect(AlertDetailView.isOpen(alert, session: closed, openActions: [card]))
+        var running = closed
+        running.status = .running
+        #expect(AlertDetailView.isOpen(alert, session: running, openActions: []))
+        alert.outcome.kind = .waiting
+        #expect(AlertDetailView.isOpen(alert, session: nil, openActions: []))
+        alert.outcome.kind = .dismissed
+        #expect(!AlertDetailView.isOpen(alert, session: nil, openActions: []))
+    }
+}
+
 @Suite struct ProseLinkTests {
     /// Prose links are drawn in the text's colour, so the underline is what marks them.
     @Test func onlyLinksAreUnderlined() throws {
