@@ -74,8 +74,6 @@ export class Reviewer extends Context.Service<Reviewer, ReviewerShape>()("Review
 /** A cold, deep review of a large diff takes a while; past this it is stuck. */
 const REVIEW_TIMEOUT_MS = 20 * 60_000
 
-/** The user's own `codex` (with its login), or `BRIDGETOWN_CODEX_PATH`. */
-const codexExecutable = (): string | undefined => process.env.BRIDGETOWN_CODEX_PATH ?? Bun.which("codex") ?? undefined
 
 /**
  * Read-only sandbox, nothing persisted, and the user's config (notify hooks,
@@ -111,9 +109,10 @@ export const execFailure = (result: { readonly exitCode: number; readonly stdout
   return `exited ${result.exitCode}: ${(lines.at(-1) ?? "no output").slice(0, 300)}`
 }
 
-const codexReview = (request: ReviewRequest): Effect.Effect<Verdict, AdapterError> =>
+/** The user's own `codex` (with its login), or `codexPath` (`BRIDGETOWN_CODEX_PATH`). */
+const codexReview = (request: ReviewRequest, codexPath: string | undefined): Effect.Effect<Verdict, AdapterError> =>
   Effect.gen(function* () {
-    const codex = codexExecutable()
+    const codex = codexPath ?? Bun.which("codex") ?? undefined
     if (codex === undefined) {
       return yield* new AdapterError({ adapter: "codex", operation: "exec", message: "codex is not installed (or set BRIDGETOWN_CODEX_PATH)", cause: null })
     }
@@ -136,11 +135,12 @@ const codexReview = (request: ReviewRequest): Effect.Effect<Verdict, AdapterErro
     return yield* decodeOr("codex", "verdict", Schema.fromJsonString(Verdict))(output)
   }).pipe(Effect.scoped)
 
-export const ReviewerLive = Layer.succeed(Reviewer)({
-  review: (request) => {
-    switch (request.profile.vendor) {
-      case "codex":
-        return codexReview(request)
-    }
-  },
-})
+export const ReviewerLive = (codexPath: string | undefined) =>
+  Layer.succeed(Reviewer)({
+    review: (request) => {
+      switch (request.profile.vendor) {
+        case "codex":
+          return codexReview(request, codexPath)
+      }
+    },
+  })

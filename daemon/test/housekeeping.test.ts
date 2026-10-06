@@ -8,26 +8,23 @@ import { Housekeeping } from "../src/housekeeping/housekeeping.ts"
 import { ROWS_MS } from "../src/housekeeping/retention.ts"
 import { claudeProjectDir } from "../src/sessions/agent.ts"
 import { SessionRunner } from "../src/sessions/runner.ts"
-import { Worktrees, worktreePath } from "../src/sessions/worktree.ts"
+import { Worktrees } from "../src/sessions/worktree.ts"
 import { Store } from "../src/store/store.ts"
 import { makeAlert, makeSession } from "./fixtures/records.ts"
 import { scratchRepo, sh } from "./fixtures/repo.ts"
 import { scratchDir } from "./fixtures/tmp.ts"
 import { makeWorld } from "./fixtures/world.ts"
 
-const claudeConfig = process.env.CLAUDE_CONFIG_DIR
-process.env.CLAUDE_CONFIG_DIR = scratchDir("bt-claude-")
+const claudeConfigDir = scratchDir("bt-claude-")
 const repo = scratchRepo()
-const world = makeWorld()
-afterAll(async () => {
-  await world.dispose()
-  if (claudeConfig === undefined) delete process.env.CLAUDE_CONFIG_DIR
-  else process.env.CLAUDE_CONFIG_DIR = claudeConfig
-})
+const world = makeWorld({ claudeConfigDir })
+afterAll(() => world.dispose())
 
 const HOUR = 60 * 60_000
 const ago = (ms: number) => new Date(Date.now() - ms).toISOString()
 const branches = () => sh("git for-each-ref '--format=%(refname:short)' refs/heads/", repo).split("\n")
+/** Where the agent of the session on `branch` keeps its conversation. */
+const conversationOf = (branch: string) => run(Worktrees.use((w) => Effect.sync(() => claudeProjectDir(claudeConfigDir, w.path(repo, branch)))))
 
 type Services = Store | Worktrees | Housekeeping | SessionRunner | Hub
 const run = <A, E>(effect: Effect.Effect<A, E, Services>) => world.runPromise(effect)
@@ -124,7 +121,7 @@ describe("rows past retention", () => {
     const old = await seed("old", "failed", ago(ROWS_MS + HOUR), { worktree: null })
     const recent = await seed("recent", "resolved", ago(HOUR))
     for (const { branch } of [old, recent]) {
-      const conversation = claudeProjectDir(worktreePath(repo, branch))
+      const conversation = await conversationOf(branch)
       mkdirSync(conversation, { recursive: true })
       writeFileSync(join(conversation, "c.jsonl"), "{}")
     }
@@ -139,8 +136,8 @@ describe("rows past retention", () => {
     expect(left).toEqual({ session: undefined, alert: undefined, transcript: [] })
     expect(existsSync(old.path)).toBe(false)
     expect(branches()).not.toContain(old.branch)
-    expect(existsSync(claudeProjectDir(worktreePath(repo, old.branch)))).toBe(false)
+    expect(existsSync(await conversationOf(old.branch))).toBe(false)
     // A session that is merely finished keeps its conversation until its row goes.
-    expect(existsSync(claudeProjectDir(worktreePath(repo, recent.branch)))).toBe(true)
+    expect(existsSync(await conversationOf(recent.branch))).toBe(true)
   })
 })

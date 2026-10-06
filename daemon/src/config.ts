@@ -1,5 +1,6 @@
 import { homedir } from "node:os"
 import { join } from "node:path"
+import { Context } from "effect"
 import { type Secrets, secretsFromEnv } from "./secrets.ts"
 
 export const VERSION = "0.1.0" // x-release-please-version
@@ -28,26 +29,37 @@ export const gitOverHttpsEnv = (env: NodeJS.ProcessEnv): Record<string, string> 
   return out
 }
 
-export const appSupportDir = (): string =>
-  process.env.BRIDGETOWN_HOME ?? join(homedir(), "Library", "Application Support", "Bridgetown")
-
 export interface Env {
+  /** The loopback port the API listens on; sessions are refused network calls to it. */
   readonly port: number
+  /** Where the store lives, and the worktrees of a repo without `.shared/`. */
+  readonly home: string
   readonly apiToken: string | undefined
   readonly slackToken: string | undefined
   readonly typesafeKey: string | undefined
   readonly forceDryRun: boolean
   readonly jevModel: string
+  /** The `claude` CLI sessions run, over the default (`AgentLive`). */
+  readonly claudePath: string | undefined
+  /** Where that CLI keeps its conversations, as it reads it: `CLAUDE_CONFIG_DIR`, else `~/.claude`. */
+  readonly claudeConfigDir: string
+  /** The `codex` CLI reviews run, over the one on the PATH. */
+  readonly codexPath: string | undefined
 }
 
-/** The loopback port the API listens on; sessions are refused network calls to it. */
-export const daemonPort = (): number => Number(process.env.BRIDGETOWN_PORT ?? 47621)
+/** The environment the daemon was launched with, for the services that need some of it. */
+export class Environment extends Context.Service<Environment, Env>()("Environment") {}
 
+/** The daemon's own settings from the process environment and argv, read once at launch: the only place that reads them. */
 export const readEnv = (secrets: Secrets = secretsFromEnv(process.env), argv: ReadonlyArray<string> = process.argv): Env => ({
-  port: daemonPort(),
+  port: Number(process.env.BRIDGETOWN_PORT ?? 47621),
+  home: process.env.BRIDGETOWN_HOME ?? join(homedir(), "Library", "Application Support", "Bridgetown"),
   apiToken: secrets.apiToken,
   slackToken: secrets.slackToken,
   typesafeKey: secrets.typesafeKey,
   forceDryRun: argv.includes("--dry-run") || process.env.BRIDGETOWN_DRY_RUN === "1",
   jevModel: process.env.JEV_MODEL ?? "jev-1.13.0",
+  claudePath: process.env.BRIDGETOWN_CLAUDE_PATH,
+  claudeConfigDir: process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"),
+  codexPath: process.env.BRIDGETOWN_CODEX_PATH,
 })

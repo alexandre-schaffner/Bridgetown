@@ -2,16 +2,17 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { Effect, ManagedRuntime, Schema } from "effect"
 import { authorized, bind, type BoundServer, serve } from "../src/api/server.ts"
 import { AdapterError, Conflict, GheBlocked, InvalidInput, MissingCredential, NotFound, SlackApiError, statusOf } from "../src/domain/errors.ts"
-import type { Env } from "../src/config.ts"
 import type { Alert } from "../src/domain/alert.ts"
 import { NO_MILESTONES, type Session } from "../src/domain/session.ts"
 import { Settings } from "../src/domain/settings.ts"
 import { appLayer } from "../src/layers.ts"
 import { Store } from "../src/store/store.ts"
 import { scratchDir } from "./fixtures/tmp.ts"
+import { testEnv } from "./fixtures/world.ts"
 
 const TOKEN = "test-token"
-const env: Env = { port: 0, apiToken: TOKEN, slackToken: undefined, typesafeKey: undefined, forceDryRun: true, jevModel: "jev" }
+const home = scratchDir("bt-api-")
+const env = testEnv(home, { apiToken: TOKEN, slackToken: undefined, typesafeKey: undefined })
 
 const alert: Alert = {
   id: "C1:1790933006.433649", channelId: "C1", channelName: "alert-releases", ts: "1790933006.433649", permalink: null,
@@ -31,10 +32,8 @@ const queued: Session = {
 
 let server: BoundServer
 let dispose = async () => {}
-const home = scratchDir("bt-api-")
 
 beforeAll(async () => {
-  process.env.BRIDGETOWN_HOME = home
   const rt = ManagedRuntime.make(appLayer(env))
   dispose = () => rt.dispose()
   server = bind(0)

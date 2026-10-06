@@ -12,7 +12,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect, Layer } from "effect"
-import { readEnv } from "../src/config.ts"
+import { Environment, readEnv } from "../src/config.ts"
 import type { Alert } from "../src/domain/alert.ts"
 import { Hub, HubLive } from "../src/hub.ts"
 import { ActionQueueLive } from "../src/actions/queue.ts"
@@ -28,8 +28,6 @@ import { SlackThreadLive } from "../src/slack/thread.ts"
 import { Store, StoreLive } from "../src/store/store.ts"
 
 const root = mkdtempSync(join(tmpdir(), "bt-smoke-"))
-// The store and the worktree (the repo has no .shared) both live under it, never in the app's own home.
-process.env.BRIDGETOWN_HOME = `${root}/home`
 mkdirSync(`${root}/repo/src`, { recursive: true })
 const sh = (cmd: string, cwd = `${root}/repo`) => execSync(cmd, { cwd, stdio: "pipe" }).toString()
 writeFileSync(`${root}/repo/package.json`, JSON.stringify({ name: "demo", private: true, scripts: { type: "tsc --noEmit -p ." }, devDependencies: { typescript: "^5.9.0" } }, null, 2))
@@ -40,9 +38,10 @@ sh("git init -q -b main && git add -A && git -c user.email=bt@test -c user.name=
 sh(`git init -q --bare ${root}/origin.git`, root)
 sh(`git remote add origin ${root}/origin.git && git push -q origin main`)
 
-const env = { ...readEnv(), slackToken: undefined, forceDryRun: true }
-const base = Layer.mergeAll(StoreLive(`${root}/home`), SlackClientLive(undefined), AgentLive, GitHubLive)
-const withHub = HubLive(env).pipe(Layer.provideMerge(base))
+// The store and the worktree (the repo has no .shared) both live under the root, never in the app's own home.
+const env = { ...readEnv(), home: `${root}/home`, slackToken: undefined, forceDryRun: true }
+const base = Layer.mergeAll(StoreLive(env.home), SlackClientLive(undefined), AgentLive(env.claudePath), GitHubLive, Layer.succeed(Environment)(env))
+const withHub = HubLive.pipe(Layer.provideMerge(base))
 const withMe = SlackMeLive.pipe(Layer.provideMerge(withHub))
 const records = Layer.mergeAll(SlackThreadLive, SessionRepoLive, ActionQueueLive, WorktreesLive).pipe(Layer.provideMerge(withMe))
 const layer = SessionRunnerLive.pipe(Layer.provideMerge(AsksLive.pipe(Layer.provideMerge(records))))
@@ -100,7 +99,7 @@ const program = Effect.gen(function* () {
 })
 
 const { passed, branch } = await Effect.runPromise(program.pipe(Effect.provide(layer), Effect.scoped))
-const leftovers = [root, ...(branch === null ? [] : [claudeProjectDir(worktreePath(`${root}/repo`, branch))])]
+const leftovers = [root, ...(branch === null ? [] : [claudeProjectDir(env.claudeConfigDir, worktreePath(env.home, `${root}/repo`, branch))])]
 if (!passed) {
   console.log(`FAILED; kept for a look: ${leftovers.join(" and ")}`)
   process.exit(1)

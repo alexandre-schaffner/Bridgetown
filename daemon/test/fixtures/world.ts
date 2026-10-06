@@ -1,3 +1,4 @@
+import { join } from "node:path"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import type { Env } from "../../src/config.ts"
 import type { JevVerdict } from "../../src/domain/alert.ts"
@@ -45,6 +46,8 @@ export const noGrafana: GrafanaShape = {
 }
 
 export interface WorldOptions {
+  /** Where the claude CLI keeps conversations; under `home` by default. */
+  readonly claudeConfigDir?: string
   readonly slack?: SlackClientShape
   readonly jev?: JevShape
   readonly dryRun?: boolean
@@ -56,17 +59,31 @@ export interface WorldOptions {
   readonly home?: string
 }
 
+/** A launch environment for tests: everything under `home`, dry run, and the default CLIs. */
+export const testEnv = (home: string, overrides: Partial<Env> = {}): Env => ({
+  port: 0,
+  home,
+  apiToken: "t",
+  slackToken: "xoxp-test",
+  typesafeKey: "k",
+  forceDryRun: true,
+  jevModel: "jev",
+  claudePath: undefined,
+  claudeConfigDir: join(home, "claude"),
+  codexPath: undefined,
+  ...overrides,
+})
+
 /** The real services over a temp store, with Slack and Jev faked (and the SDK and GitHub when a test passes them). Nothing reaches the network or the SDK unless a test starts a turn. */
 export const makeWorld = (options: WorldOptions = {}) => {
   const home = options.home ?? scratchDir("bt-world-")
-  process.env.BRIDGETOWN_HOME = home
-  const env: Env = { port: 0, apiToken: "t", slackToken: "xoxp-test", typesafeKey: "k", forceDryRun: options.dryRun ?? true, jevModel: "jev" }
+  const env = testEnv(home, { forceDryRun: options.dryRun ?? true, claudeConfigDir: options.claudeConfigDir ?? join(home, "claude") })
   const base = Layer.mergeAll(
-    StoreLive(home),
+    StoreLive(env.home),
     Layer.succeed(SlackClient)(options.slack ?? fakeSlack(() => [])),
     Layer.succeed(Jev)(options.jev ?? noJev),
-    options.agent === undefined ? AgentLive : Layer.succeed(Agent)(options.agent),
-    options.reviewer === undefined ? ReviewerLive : Layer.succeed(Reviewer)(options.reviewer),
+    options.agent === undefined ? AgentLive(undefined) : Layer.succeed(Agent)(options.agent),
+    options.reviewer === undefined ? ReviewerLive(undefined) : Layer.succeed(Reviewer)(options.reviewer),
     options.github === undefined ? GitHubLive : Layer.succeed(GitHub)(options.github),
     Layer.succeed(Grafana)(options.grafana ?? noGrafana),
   )

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { basename, join } from "node:path"
 import { Context, Effect, Layer } from "effect"
-import { appSupportDir } from "../config.ts"
+import { Environment } from "../config.ts"
 import { AdapterError, attempt } from "../domain/errors.ts"
 import { run, runOk } from "../proc.ts"
 import { makeKeyedLock } from "../store/keyed-lock.ts"
@@ -27,11 +27,9 @@ const SESSION_BRANCH = /^fix-bt-[a-z0-9_-]+$/
 
 export const isSessionBranch = (branch: string | null): branch is string => branch !== null && SESSION_BRANCH.test(branch)
 
-/** The monorepo keeps agent worktrees under `.shared/worktrees/`; other repos get one in app support. */
-export const worktreePath = (repoPath: string, branch: string): string =>
-  existsSync(join(repoPath, ".shared"))
-    ? join(repoPath, ".shared", "worktrees", branch)
-    : join(appSupportDir(), "worktrees", basename(repoPath), branch)
+/** The monorepo keeps agent worktrees under `.shared/worktrees/`; other repos get one in the daemon's `home`. */
+export const worktreePath = (home: string, repoPath: string, branch: string): string =>
+  existsSync(join(repoPath, ".shared")) ? join(repoPath, ".shared", "worktrees", branch) : join(home, "worktrees", basename(repoPath), branch)
 
 export interface Worktree {
   readonly path: string
@@ -50,6 +48,8 @@ export interface WorktreesShape {
   readonly create: (repoPath: string, branch: string) => Effect.Effect<Worktree, AdapterError>
   /** Deletes the worktree, and with `deleteBranch` its branch and follow-ups (`<branch>-2`). Idempotent. */
   readonly remove: (repoPath: string, branch: string, options: { readonly deleteBranch: boolean }) => Effect.Effect<void, AdapterError>
+  /** Where the session's worktree is, or would be (`worktreePath`). */
+  readonly path: (repoPath: string, branch: string) => string
 }
 
 /** Session worktrees: the only code that makes or deletes them, one at a time per path, so a Retry never races a removal. */
@@ -131,8 +131,7 @@ const install = Effect.fn("install")(function* (path: string) {
   return []
 })
 
-const create = Effect.fn("Worktrees.create")(function* (repoPath: string, branch: string) {
-  const path = worktreePath(repoPath, branch)
+const create = Effect.fn("Worktrees.create")(function* (repoPath: string, branch: string, path: string) {
   const warnings: Array<string> = []
   if (!existsSync(join(path, ".git"))) {
     const fetchWarning = yield* fetchMain(repoPath)
@@ -149,10 +148,9 @@ const create = Effect.fn("Worktrees.create")(function* (repoPath: string, branch
   return worktree
 })
 
-const remove = Effect.fn("Worktrees.remove")(function* (repoPath: string, branch: string, options: { readonly deleteBranch: boolean }) {
+const remove = Effect.fn("Worktrees.remove")(function* (repoPath: string, branch: string, path: string, options: { readonly deleteBranch: boolean }) {
   // No repo, no worktree or branch of it.
   if (!existsSync(repoPath)) return
-  const path = worktreePath(repoPath, branch)
   if (existsSync(path)) {
     // Forced twice: a worktree with changes or a lock goes too. A directory git no longer knows is deleted outright.
     yield* run(["git", "worktree", "remove", "--force", "--force", path], { cwd: repoPath, timeoutMs: REMOVE_TIMEOUT_MS })
@@ -172,12 +170,18 @@ const sessionBranch = (branch: string): Effect.Effect<string, AdapterError> =>
     ? Effect.succeed(branch)
     : Effect.fail(new AdapterError({ adapter: "git", operation: "worktree", message: `"${branch}" is not a session branch`, cause: null }))
 
-export const WorktreesLive = Layer.sync(Worktrees)(() => {
-  const locks = makeKeyedLock()
-  return {
-    create: (repoPath, branch) =>
-      sessionBranch(branch).pipe(Effect.flatMap((valid) => create(repoPath, valid).pipe(locks.withLock(worktreePath(repoPath, valid))))),
-    remove: (repoPath, branch, options) =>
-      sessionBranch(branch).pipe(Effect.flatMap((valid) => remove(repoPath, valid, options).pipe(locks.withLock(worktreePath(repoPath, valid))))),
-  }
-})
+export const WorktreesLive = Layer.effect(Worktrees)(
+  Effect.gen(function* () {
+    const { home } = yield* Environment
+    const locks = makeKeyedLock()
+    const path = (repoPath: string, branch: string) => worktreePath(home, repoPath, branch)
+    /** `f` on the session's worktree path, one at a time per path. */
+    const onPath = <A>(repoPath: string, branch: string, f: (valid: string, path: string) => Effect.Effect<A, AdapterError>) =>
+      sessionBranch(branch).pipe(Effect.flatMap((valid) => f(valid, path(repoPath, valid)).pipe(locks.withLock(path(repoPath, valid)))))
+    return {
+      create: (repoPath, branch) => onPath(repoPath, branch, (valid, at) => create(repoPath, valid, at)),
+      remove: (repoPath, branch, options) => onPath(repoPath, branch, (valid, at) => remove(repoPath, valid, at, options)),
+      path,
+    }
+  }),
+)

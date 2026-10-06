@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import type { CanUseTool, McpServerConfig, Options } from "@anthropic-ai/claude-agent-sdk"
 import { Schema } from "effect"
-import { daemonPort, GH_HOST } from "../config.ts"
+import { GH_HOST } from "../config.ts"
 import type { Session } from "../domain/session.ts"
 import { childEnv } from "../secrets.ts"
 import { readScript } from "./guard.ts"
@@ -39,16 +39,6 @@ export const repoMcpServers = (repoPath: string): Record<string, McpServerConfig
   return out
 }
 
-/**
- * A compiled daemon has no SDK-bundled CLI next to it, so it runs the user's own
- * `claude` (which also carries their login). From source the SDK's bundled CLI is used.
- */
-const claudeExecutable = (): string | undefined =>
-  process.env.BRIDGETOWN_CLAUDE_PATH ?? (import.meta.url.includes("$bunfs") ? (Bun.which("claude") ?? undefined) : undefined)
-
-const withExecutable = (path: string | undefined): { pathToClaudeCodeExecutable?: string } =>
-  path === undefined ? {} : { pathToClaudeCodeExecutable: path }
-
 /** The agent's environment: no daemon credential or config, plus what sessions need. */
 export const sessionEnv = (env: Record<string, string | undefined>, sessionId: string): Record<string, string> => ({
   ...childEnv(env),
@@ -64,6 +54,8 @@ export interface TurnSetup {
   readonly tools: ToolCallbacks
   /** Records a refused command or write in the transcript. */
   readonly onRefused: (what: string, reason: string) => void
+  /** The daemon's API port, which the session may not reach. */
+  readonly daemonPort: number
 }
 
 /**
@@ -83,11 +75,11 @@ const SESSION_TOOLS: ReadonlyArray<string> = ["Bash", "Read", "Glob", "Grep", "E
 const SESSION_DISALLOWED_TOOLS: ReadonlyArray<string> = ["Task"]
 
 /** The SDK options for one turn: guards, write confinement, MCP servers, structured output, a scrubbed env. */
-export const sdkOptions = ({ session, abort, resume, tools, onRefused }: TurnSetup): Options => {
+export const sdkOptions = ({ session, abort, resume, tools, onRefused, daemonPort }: TurnSetup): Options => {
   const guard: ToolGuard = {
     branch: session.branch ?? "",
     cwd: session.worktree ?? session.repoPath,
-    daemonPort: daemonPort(),
+    daemonPort,
     readFile: readScript,
     worktree: session.worktree,
   }
@@ -118,7 +110,6 @@ export const sdkOptions = ({ session, abort, resume, tools, onRefused }: TurnSet
     outputFormat: { type: "json_schema", schema: SESSION_RESULT_JSON_SCHEMA },
     persistSession: true,
     maxTurns: MAX_TURNS,
-    ...withExecutable(claudeExecutable()),
     env: sessionEnv(process.env, session.id),
     ...(resume && session.claudeSessionId !== null ? { resume: session.claudeSessionId } : {}),
   }

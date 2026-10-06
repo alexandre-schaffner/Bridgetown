@@ -193,9 +193,8 @@ const steer = (input: ReturnType<typeof Bun.stdin.stream>) =>
 
 const program = Effect.gen(function* () {
   const root = yield* mockRoot
-  // Sessions' worktrees live under it too (`appSupportDir`); a caller's own home is kept.
-  process.env.BRIDGETOWN_HOME ??= join(root, "home")
-  const home = process.env.BRIDGETOWN_HOME
+  // Sessions' worktrees live under it too (`worktreePath`); a caller's own home is kept.
+  const home = process.env.BRIDGETOWN_HOME ?? join(root, "home")
   const repoPath = yield* makeRepo(root)
   const fixtures = buildFixtures({ now: Date.now(), repoPath, worktrees: join(home, "worktrees", "monorepo"), world, static: staticWorld })
 
@@ -224,7 +223,7 @@ const program = Effect.gen(function* () {
   }
 
   const agent = staticWorld ? noAgent : scriptedAgent(scriptFor({ extra: process.env.MOCK_EXTRA === "1", prs: new Map(fixtures.sessions.map((s) => [s.id, s.prUrl])) }))
-  const env: Env = { ...launch.env, apiToken: token, slackToken: "xoxp-mock", typesafeKey: "mock", jevModel: "mock" }
+  const env: Env = { ...launch.env, home, apiToken: token, slackToken: "xoxp-mock", typesafeKey: "mock", jevModel: "mock" }
   const layer = appLayerWith(
     env,
     Layer.mergeAll(

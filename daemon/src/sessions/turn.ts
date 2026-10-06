@@ -45,6 +45,8 @@ export interface TurnDeps {
   readonly agent: AgentShape
   readonly onEnd: (id: string) => (end: TurnEnd) => Effect.Effect<void, AdapterError>
   readonly onFailure: (id: string, reason: string) => Effect.Effect<void>
+  /** The daemon's API port, which sessions may not reach. */
+  readonly daemonPort: number
 }
 
 export const makeTurns = (deps: TurnDeps) => {
@@ -101,7 +103,7 @@ export const makeTurns = (deps: TurnDeps) => {
         }
         const messages = deps.agent.query({
           prompt: Stream.toAsyncIterable(Stream.fromQueue(input)),
-          options: sdkOptions({ session, abort, resume, tools: toolsFor(session, runPromise), onRefused }),
+          options: sdkOptions({ session, abort, resume, tools: toolsFor(session, runPromise), onRefused, daemonPort: deps.daemonPort }),
         })
         yield* Stream.fromAsyncIterable(
           abortOnReturn(messages, abort),

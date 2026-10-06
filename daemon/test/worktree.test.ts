@@ -1,11 +1,15 @@
 import { describe, expect, test } from "bun:test"
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
+import { Environment } from "../src/config.ts"
 import { pinnedBunVersion, Worktrees, WorktreesLive } from "../src/sessions/worktree.ts"
 import { commit, scratchRepo, sh } from "./fixtures/repo.ts"
+import { scratchDir } from "./fixtures/tmp.ts"
+import { testEnv } from "./fixtures/world.ts"
 
-const worktrees = <A, E>(f: (w: Worktrees["Service"]) => Effect.Effect<A, E>) => Effect.runPromise(Worktrees.use(f).pipe(Effect.provide(WorktreesLive)))
+const live = WorktreesLive.pipe(Layer.provide(Layer.succeed(Environment)(testEnv(scratchDir("bt-worktrees-")))))
+const worktrees = <A, E>(f: (w: Worktrees["Service"]) => Effect.Effect<A, E>) => Effect.runPromise(Worktrees.use(f).pipe(Effect.provide(live)))
 
 const FAILING = { name: "x", private: true, packageManager: "bun@0.0.1", dependencies: { "bridgetown-no-such-package-xyz": "9.9.9" } }
 
@@ -69,9 +73,9 @@ describe("worktree setup", () => {
   test("anything but a session branch is refused before a path is made from it", async () => {
     const repo = scratchRepo()
     for (const branch of ["", "main", "fix-bt-../../x", "feat-mine"]) {
-      const created = await Effect.runPromise(Worktrees.use((w) => w.create(repo, branch)).pipe(Effect.provide(WorktreesLive), Effect.flip))
+      const created = await Effect.runPromise(Worktrees.use((w) => w.create(repo, branch)).pipe(Effect.provide(live), Effect.flip))
       expect(created.message).toContain("is not a session branch")
-      const removed = await Effect.runPromise(Worktrees.use((w) => w.remove(repo, branch, { deleteBranch: true })).pipe(Effect.provide(WorktreesLive), Effect.flip))
+      const removed = await Effect.runPromise(Worktrees.use((w) => w.remove(repo, branch, { deleteBranch: true })).pipe(Effect.provide(live), Effect.flip))
       expect(removed.message).toContain("is not a session branch")
     }
     expect(existsSync(join(repo, ".shared", ".keep"))).toBe(true)

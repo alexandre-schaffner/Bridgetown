@@ -1,5 +1,6 @@
 import { Context, Effect, Fiber, FiberMap, Layer, Option, Queue, SynchronizedRef } from "effect"
 import { ActionQueue } from "../actions/queue.ts"
+import { Environment } from "../config.ts"
 import { MAX_CRITIQUE_ROUNDS } from "../critique/transitions.ts"
 import type { Alert } from "../domain/alert.ts"
 import { type AdapterError, Conflict, errorMessage, NotFound } from "../domain/errors.ts"
@@ -161,6 +162,7 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
       agent,
       onEnd: (id) => (end: TurnEnd) => (end._tag === "Failed" ? finishFailed(id, end.reason) : finalize(id, end.result)),
       onFailure: (id, reason) => finishFailed(id, reason).pipe(Effect.ignore),
+      daemonPort: (yield* Environment).port,
     })
 
     /**
