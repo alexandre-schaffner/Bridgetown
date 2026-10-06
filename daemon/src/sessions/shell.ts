@@ -11,7 +11,7 @@ export interface Word {
   readonly text: string
   /** Holds an expansion, substitution or glob, so its runtime value is unknown. */
   readonly dynamic: boolean
-  /** Holds one outside quotes, so at runtime it may become several words, or none: `$X` may be `1 --watch`. */
+  /** May become several words at runtime, or none: an expansion or glob outside quotes (`$X` may be `1 --watch`), or `"$@"`. */
   readonly splits: boolean
   /** Some part of it was quoted; a quoted heredoc delimiter disables expansion of the body. */
   readonly quoted: boolean
@@ -37,6 +37,8 @@ const NAME_CHAR = /[A-Za-z0-9_]/
 const SPECIAL_PARAMETER = /[0-9@*#?$!-]/
 /** Unquoted text that the shell would expand as a glob or brace pattern. */
 const PATTERN = /[*?]|\[[^\]]*\]|\{[^}]*(,|\.\.)[^}]*\}/
+/** An expansion that is one word per element even inside double quotes: `"$@"`, `"${args[@]}"`, `"${!prefix@}"`, zsh's `"${(@)x}"`. */
+const ELEMENTS = /^\$(@|\{(@|!?[A-Za-z_][A-Za-z0-9_]*\[@\]|![A-Za-z_][A-Za-z0-9_]*@|\([^)]*@[^)]*\)))/
 
 /** Nesting (`$(…)`, subshells, `"…"`) past this many levels is reported rather than recursed into, so a pathological `$(` chain cannot blow the stack. Far above anything a real command reaches. */
 const MAX_NESTING = 256
@@ -200,6 +202,7 @@ class Parser {
         const inner = this.readExpanding('"')
         text += inner.text
         dynamic ||= inner.dynamic
+        splits ||= inner.splits
         quoted = true
         plainDigits = false
       } else if (c === "\\") {
@@ -271,10 +274,11 @@ class Parser {
    * Double-quoted text (terminated by `"`), `${…}` contents (by `}`) or an
    * expanding heredoc body (by the end of input). Substitutions inside run.
    */
-  readExpanding(terminator: '"' | "}" | undefined): { readonly text: string; readonly dynamic: boolean } {
+  readExpanding(terminator: '"' | "}" | undefined): { readonly text: string; readonly dynamic: boolean; readonly splits: boolean } {
     this.enter()
     let text = ""
     let dynamic = false
+    let splits = false
     while (!this.done && this.peek() !== terminator) {
       const c = this.peek()
       if (c === "\\") {
@@ -292,6 +296,7 @@ class Parser {
         const expansion = this.readExpansion()
         text += expansion
         dynamic ||= expansion !== "$"
+        splits ||= ELEMENTS.test(expansion)
       } else {
         text += c
         this.i++
@@ -302,7 +307,7 @@ class Parser {
       this.i++
     }
     this.depth--
-    return { text, dynamic }
+    return { text, dynamic, splits }
   }
 
   /** At `$` or a backtick. Returns the raw text; any command it runs is recorded. */
