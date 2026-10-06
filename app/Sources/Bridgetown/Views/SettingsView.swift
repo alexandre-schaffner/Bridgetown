@@ -141,8 +141,13 @@ private struct AccountsTab: View {
         typesafeKey = savedTypesafe
     }
 
+    /// Only the fields you edited: one left empty because the Keychain refused to read
+    /// would otherwise remove its secret once the Keychain allows the save.
     private func save() {
-        guard Keychain.save([.slackUserToken: slackToken, .typesafeAPIKey: typesafeKey]) else {
+        var edits: [Keychain.Account: String] = [:]
+        if slackToken != savedSlack { edits[.slackUserToken] = slackToken }
+        if typesafeKey != savedTypesafe { edits[.typesafeAPIKey] = typesafeKey }
+        guard Keychain.save(edits) else {
             savedNote = "Couldn't save to the Keychain"
             return
         }
