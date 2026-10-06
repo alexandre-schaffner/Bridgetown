@@ -4,10 +4,12 @@ import * as SqliteClient from "@effect/sql-sqlite-bun/SqliteClient"
 import * as SqliteMigrator from "@effect/sql-sqlite-bun/SqliteMigrator"
 import { Context, Effect, Layer, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
+import { Action } from "../domain/action.ts"
+import { Alert, type Disposition } from "../domain/alert.ts"
 import { AdapterError, decodeOr, errorMessage } from "../domain/errors.ts"
 import { now } from "../domain/ids.ts"
-import { Action, ACTIVE_STATUSES, Alert, type Disposition, Session, SessionStatus, TranscriptEntry } from "../domain/model.ts"
-import { makeKeyedLock } from "./keyed-lock.ts"
+import { ACTIVE_STATUSES, Session, SessionStatus, TranscriptEntry } from "../domain/session.ts"
+import { makeKeyedLock } from "../lib/keyed-lock.ts"
 import { migrations } from "./migrations.ts"
 
 /** What retention reads of every alert and session, without decoding their JSON. */
@@ -24,6 +26,9 @@ export const SessionRef = Schema.Struct({
   repoPath: Schema.String,
 })
 export type SessionRef = typeof SessionRef.Type
+
+/** What an alert history line records besides itself. */
+export type AlertEventChange = Partial<Pick<Alert, "claimedBy" | "feedback" | "sessionId">> & { readonly disposition?: Disposition["kind"] }
 
 export interface StoreShape {
   readonly getAlert: (id: string) => Effect.Effect<Alert | undefined, AdapterError>
@@ -42,10 +47,15 @@ export interface StoreShape {
     f: (current: Alert | undefined) => Alert | undefined,
     contentHash?: string,
   ) => Effect.Effect<Alert | undefined, AdapterError>
-  /** Appends a line to the alert's history; `disposition` also records what you did to its card. */
-  readonly appendAlertEvent: (id: string, text: string, disposition?: Disposition["kind"]) => Effect.Effect<void, AdapterError>
+  /**
+   * Appends a line to the alert's history, with the change it records: what you did to its card (`disposition`),
+   * who is on it, your feedback, the session started on it. Nothing for an alert no longer stored.
+   */
+  readonly appendAlertEvent: (id: string, text: string, change?: AlertEventChange) => Effect.Effect<void, AdapterError>
   readonly alertHash: (id: string) => Effect.Effect<string | undefined, AdapterError>
   readonly recentAlerts: (limit: number) => Effect.Effect<ReadonlyArray<Alert>, AdapterError>
+  /** Every alert from Slack (not a watch finding) received at or after `since` (ISO), newest first. */
+  readonly slackAlertsSince: (since: string) => Effect.Effect<ReadonlyArray<Alert>, AdapterError>
   readonly alertsByFingerprint: (fingerprint: string, since: string) => Effect.Effect<ReadonlyArray<Alert>, AdapterError>
   readonly getSession: (id: string) => Effect.Effect<Session | undefined, AdapterError>
   /** Raw write. Only `SessionRepo` calls it; everything else changes sessions through the repo. */
@@ -54,6 +64,7 @@ export interface StoreShape {
   readonly recentSessions: (limit: number) => Effect.Effect<ReadonlyArray<Session>, AdapterError>
   /** Every session updated at or after `since` (ISO), so every one started then too. */
   readonly sessionsUpdatedSince: (since: string) => Effect.Effect<ReadonlyArray<Session>, AdapterError>
+  readonly getAction: (id: string) => Effect.Effect<Action | undefined, AdapterError>
   readonly putAction: (action: Action) => Effect.Effect<void, AdapterError>
   readonly deleteAction: (id: string) => Effect.Effect<void, AdapterError>
   /** Deletes every action matching `predicate`; returns how many. */
@@ -151,12 +162,13 @@ const StoreImpl = Layer.effect(Store)(
       getAlert,
       putAlert,
       modifyAlert,
-      appendAlertEvent: (id, text, disposition) =>
+      appendAlertEvent: (id, text, { disposition, ...change } = {}) =>
         modifyAlert(id, (alert) => {
           if (alert === undefined) return undefined
           const at = now()
           return {
             ...alert,
+            ...change,
             events: [...alert.events, { at, text }],
             disposition: disposition === undefined ? alert.disposition : { kind: disposition, at },
           }
@@ -171,6 +183,11 @@ const StoreImpl = Layer.effect(Store)(
           Effect.mapError(sqlError("recent alerts")),
           Effect.flatMap(decodeRows("decode alert", Alert)),
         ),
+      slackAlertsSince: (since) =>
+        sql<{ readonly json: string }>`
+          SELECT json FROM alerts WHERE received_at >= ${since} AND json_extract(json, '$.source') != 'watch'
+          ORDER BY received_at DESC
+        `.pipe(Effect.mapError(sqlError("slack alerts since")), Effect.flatMap(decodeRows("decode alert", Alert))),
       alertsByFingerprint: (fingerprint, since) =>
         sql<{ readonly json: string }>`
           SELECT json FROM alerts WHERE fingerprint = ${fingerprint} AND received_at >= ${since}
@@ -201,6 +218,12 @@ const StoreImpl = Layer.effect(Store)(
         sql<{ readonly json: string }>`SELECT json FROM sessions WHERE updated_at >= ${since} ORDER BY updated_at DESC`.pipe(
           Effect.mapError(sqlError("sessions since")),
           Effect.flatMap(decodeRows("decode session", Session)),
+        ),
+      getAction: (id) =>
+        sql<{ readonly json: string }>`SELECT json FROM actions WHERE id = ${id}`.pipe(
+          Effect.mapError(sqlError("get action")),
+          Effect.flatMap(decodeRows("decode action", Action)),
+          Effect.map(first),
         ),
       putAction: (action) =>
         sql`
@@ -282,22 +305,22 @@ const INCREMENTAL = 2
 /**
  * Space that pruning frees goes back to the disk. An existing file only takes incremental auto-vacuum
  * through a VACUUM, which cannot run inside the migrations' transaction, so it runs here, once, after
- * them. The WAL file shrinks back to 8 MB after each checkpoint instead of keeping its peak.
+ * them. The WAL file shrinks back to 8 MB after each checkpoint instead of keeping its peak. Best effort:
+ * a VACUUM that cannot run (a full disk, a writer holding the lock) is logged, the file keeps its mode,
+ * and the next start tries again; the daemon starts either way.
  */
-const tuning = Layer.effectDiscard(
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    yield* sql`PRAGMA journal_size_limit = 8388608`
-    const [mode] = yield* sql<{ readonly auto_vacuum: number }>`PRAGMA auto_vacuum`
-    if (mode?.auto_vacuum === INCREMENTAL) return
-    yield* sql`PRAGMA auto_vacuum = INCREMENTAL`
-    yield* sql`VACUUM`
-  }),
-)
+export const tuneStorage = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql`PRAGMA journal_size_limit = 8388608`
+  const [mode] = yield* sql<{ readonly auto_vacuum: number }>`PRAGMA auto_vacuum`
+  if (mode?.auto_vacuum === INCREMENTAL) return
+  yield* sql`PRAGMA auto_vacuum = INCREMENTAL`
+  yield* sql`VACUUM`
+}).pipe(Effect.catch((error) => Effect.logWarning(`Storage tuning skipped until the next start: ${errorMessage(error)}`)))
 
 export const StoreLive = (directory: string) => {
   mkdirSync(directory, { recursive: true })
   const sqlLayer = SqliteClient.layer({ filename: join(directory, "bridgetown.db") })
   const migrationLayer = SqliteMigrator.layer({ loader: migrations, table: "bridgetown_migrations" })
-  return StoreImpl.pipe(Layer.provide(tuning), Layer.provide(migrationLayer), Layer.provide(sqlLayer))
+  return StoreImpl.pipe(Layer.provide(Layer.effectDiscard(tuneStorage)), Layer.provide(migrationLayer), Layer.provide(sqlLayer))
 }

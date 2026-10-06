@@ -1,4 +1,5 @@
-import type { Finding, Session } from "../domain/model.ts"
+import type { Finding } from "../domain/critique.ts"
+import type { Session } from "../domain/session.ts"
 import { type Escalation, sendBackOrHandOff } from "../ship/transitions.ts"
 
 /** Times the review may send the agent back on one PR before the user decides. */

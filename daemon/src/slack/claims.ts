@@ -1,9 +1,10 @@
 import { Context, Effect, Layer } from "effect"
-import { type Alert, type Claimant, threadTsOf } from "../domain/model.ts"
-import * as Messages from "../ship/messages.ts"
+import type { Alert, Claimant } from "../domain/alert.ts"
+import { firstLine, truncate } from "../lib/text.ts"
 import { SlackClient, type SlackMessage, type SlackReaction } from "./client.ts"
 import { SlackMe } from "./me.ts"
-import { BOT_PREFIX, firstLine, plain, truncate } from "./text.ts"
+import * as Messages from "./messages.ts"
+import { BOT_PREFIX, isPerson, plain } from "./mrkdwn.ts"
 import { SlackThread } from "./thread.ts"
 
 /**
@@ -32,11 +33,8 @@ export type Take = { readonly _tag: "Taken" } | { readonly _tag: "TakenBy"; read
 const CLAIM_PREFIX = `${BOT_PREFIX} ${Messages.investigating.replace(/…$/, "")}`
 const LATEST_MAX = 160
 
-/** Posted as a person (a user token), never by an app or a bot. */
-const byPerson = (message: SlackMessage): message is SlackMessage & { readonly user: string } =>
-  message.user !== undefined && message.bot_id === undefined
-
-const isClaimPost = (message: SlackMessage): boolean => byPerson(message) && (message.text ?? "").trimStart().startsWith(CLAIM_PREFIX)
+/** A `🤖 Investigating…` post, as a person (a user token): an app or a bot claims nothing. */
+const isClaimPost = (message: SlackMessage): boolean => isPerson(message) && (message.text ?? "").trimStart().startsWith(CLAIM_PREFIX)
 
 /** Who posted the first claim in the thread, whoever it is. */
 export const firstClaimant = (replies: ReadonlyArray<SlackMessage>): string | undefined =>
@@ -45,7 +43,7 @@ export const firstClaimant = (replies: ReadonlyArray<SlackMessage>): string | un
 /** A user's latest 🤖 post in the thread, readable and on one line. */
 const latestPostOf = (replies: ReadonlyArray<SlackMessage>, userId: string): string | null => {
   const post = [...replies]
-    .filter((m) => byPerson(m) && m.user === userId && (m.text ?? "").trimStart().startsWith(BOT_PREFIX))
+    .filter((m) => isPerson(m) && m.user === userId && (m.text ?? "").trimStart().startsWith(BOT_PREFIX))
     .sort((a, b) => Number(b.ts) - Number(a.ts))[0]
   if (post === undefined) return null
   return truncate(firstLine(plain(post.text ?? "").trimStart().slice(BOT_PREFIX.length)), LATEST_MAX)
@@ -90,9 +88,6 @@ export const ClaimsLive = Layer.effect(Claims)(
         return yield* named(claimsIn(reactions, replies, (yield* me.known)?.user_id))
       })
 
-    const repliesOf = (alert: Alert) =>
-      slack.replies(alert.channelId, threadTsOf(alert)).pipe(Effect.orElseSucceed((): ReadonlyArray<SlackMessage> => []))
-
     /** The 👀 seen at the last poll, as reactions again, so `read` treats them like fresh ones. */
     const eyesOf = (alert: Alert): ReadonlyArray<SlackReaction> => {
       const users = alert.claimedBy.filter((c) => c.via === "eyes").map((c) => c.userId)
@@ -105,13 +100,13 @@ export const ClaimsLive = Layer.effect(Claims)(
         // Inbox items are yours alone; the prod watcher's findings have no Slack thread to claim in.
         if (alert.fields._tag === "inbox" || alert.source === "watch") return taken
         if (yieldTo) {
-          const already = yield* read(eyesOf(alert), yield* repliesOf(alert))
+          const already = yield* read(eyesOf(alert), yield* thread.messages(alert))
           if (already.length > 0) return { _tag: "TakenBy", claimedBy: already } satisfies Take
         }
         const posted = yield* thread.postUpdate(alert, Messages.investigating)
         if (!yieldTo || posted._tag === "NotPosted") return taken
         // Two copies can both find the thread empty and post. Both read it back; the earlier post wins.
-        const after = yield* repliesOf(alert)
+        const after = yield* thread.messages(alert)
         const first = firstClaimant(after)
         const mine = (yield* me.known)?.user_id
         if (first === undefined || mine === undefined || first === mine) return taken

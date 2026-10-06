@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { type Alert, type AlertKind, AlertKind as AlertKindSchema } from "../domain/model.ts"
+import { type Alert, type AlertKind, AlertKind as AlertKindSchema } from "../domain/alert.ts"
 
 /** What a prod signal rising means, for the watcher's findings when Jev gave no kind. */
 const WATCH_KINDS: Readonly<Record<string, AlertKind>> = {

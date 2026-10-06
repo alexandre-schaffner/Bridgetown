@@ -2,20 +2,23 @@ import { afterAll, describe, expect, test } from "bun:test"
 import { Deferred, Effect, Fiber } from "effect"
 import { Actions } from "../src/actions/actions.ts"
 import { DRY_RUN_REPLY } from "../src/actions/handlers.ts"
-import { type Action, type Alert, holdsSlot, NO_MILESTONES, type Session } from "../src/domain/model.ts"
+import type { Action } from "../src/domain/action.ts"
+import type { Alert } from "../src/domain/alert.ts"
+import { holdsSlot, NO_MILESTONES, type Session } from "../src/domain/session.ts"
 import { Hub } from "../src/hub.ts"
-import { AlertPipeline } from "../src/pipeline/alerts.ts"
+import { AlertChannels } from "../src/intake/alerts.ts"
+import { Intake } from "../src/intake/intake.ts"
 import { SessionRunner } from "../src/sessions/runner.ts"
 import { Shipper } from "../src/ship/shipper.ts"
 import { MAX_CI_ROUNDS } from "../src/ship/transitions.ts"
 import { Store } from "../src/store/store.ts"
-import type { JevShape } from "../src/triage/jev.ts"
-import { makeAlert, makeSession } from "./fixtures/records.ts"
-import { fakeSlack, makeWorld, verdict } from "./fixtures/world.ts"
+import { fakeJev, fakeSlack, postedIn, verdict } from "./support/fakes.ts"
+import { makeAlert, makeSession } from "./support/records.ts"
+import { makeWorld } from "./support/world.ts"
 
 const card = (overrides: Partial<Action>): Action => ({
   id: "a_x", kind: "review", title: "t", detail: "", primaryLabel: "Close session", options: [], sessionId: null, alertId: null,
-  payload: null, url: null, createdAt: "2026-10-01T00:00:00.000Z", ...overrides,
+  fingerprint: null, retry: false, url: null, createdAt: "2026-10-01T00:00:00.000Z", ...overrides,
 })
 
 const seed = (session: Session, alert: Partial<Alert> = {}) =>
@@ -60,8 +63,8 @@ describe("deliver respects status and maxConcurrent (M6, L2)", () => {
 })
 
 describe("cards (L3, L4)", () => {
-  const dry = makeWorld({ dryRun: true })
-  const live = makeWorld({ dryRun: false })
+  const dry = makeWorld()
+  const live = makeWorld({ env: { forceDryRun: false } })
   afterAll(async () => {
     await dry.dispose()
     await live.dispose()
@@ -73,7 +76,7 @@ describe("cards (L3, L4)", () => {
       Effect.gen(function* () {
         const store = yield* Store
         yield* seed(makeSession("awaiting_merge", { id: "s_merge", alertId: "C1:merge", prUrl: "https://ghe/pull/1", milestones: { ...NO_MILESTONES, prOpened: true, ciGreen: true } }))
-        yield* store.putAction(card({ id: "a_merge", kind: "merge", sessionId: "s_merge", alertId: "C1:merge", payload: "https://ghe/pull/1" }))
+        yield* store.putAction(card({ id: "a_merge", kind: "merge", sessionId: "s_merge", alertId: "C1:merge" }))
         yield* (yield* Actions).dismiss("a_merge")
         return yield* store.getSession("s_merge")
       }),
@@ -86,7 +89,7 @@ describe("cards (L3, L4)", () => {
       Effect.gen(function* () {
         const store = yield* Store
         yield* seed(makeSession("waiting", { id: "s_reply", alertId: "C1:reply" }), inbox)
-        yield* store.putAction(card({ id: "a_reply", kind: "reply", sessionId: "s_reply", alertId: "C1:reply", payload: "Done, see PR" }))
+        yield* store.putAction(card({ id: "a_reply", kind: "reply", sessionId: "s_reply", alertId: "C1:reply", detail: "Done, see PR" }))
         yield* (yield* Actions).resolve("a_reply", null)
         return yield* store.getSession("s_reply")
       }),
@@ -101,7 +104,7 @@ describe("cards (L3, L4)", () => {
         const hub = yield* Hub
         yield* hub.updateSettings({ ...(yield* hub.settings), dryRun: false })
         yield* seed(makeSession("waiting", { id: "s_sent", alertId: "C1:sent" }), inbox)
-        yield* store.putAction(card({ id: "a_sent", kind: "reply", sessionId: "s_sent", alertId: "C1:sent", payload: "Done" }))
+        yield* store.putAction(card({ id: "a_sent", kind: "reply", sessionId: "s_sent", alertId: "C1:sent", detail: "Done" }))
         yield* (yield* Actions).resolve("a_sent", "Done, thanks")
         return yield* store.getSession("s_sent")
       }),
@@ -123,7 +126,7 @@ describe("deploy tracker edits (M3)", () => {
       Effect.gen(function* () {
         const store = yield* Store
         const shipper = yield* Shipper
-        yield* seed(makeSession("deploying", { id: "s_dep", alertId: "C1:dep", ciRounds: MAX_CI_ROUNDS, release: { image: "", tag: "admin-v0.6.1", version: "" } }))
+        yield* seed(makeSession("deploying", { id: "s_dep", alertId: "C1:dep", ciRounds: MAX_CI_ROUNDS, releaseTag: "admin-v0.6.1" }))
         yield* shipper.trackDeploy(tracker("Build", "1 attempt failed"))
         const first = yield* store.getSession("s_dep")
         yield* shipper.trackDeploy(tracker("Build", "1 attempt failed · 👀"))
@@ -143,24 +146,22 @@ describe("re-triage never overwrites a session you just started (M4)", () => {
   const id = `C0AUKD42N3U:${ts}`
   const judging = Effect.runSync(Deferred.make<void>())
   const answer = Effect.runSync(Deferred.make<void>())
-  const jev: JevShape = {
+  const jev = fakeJev({
     judge: () => Deferred.succeed(judging, undefined).pipe(Effect.andThen(Deferred.await(answer)), Effect.as(verdict())),
     judgeInbox: () => Effect.succeed(verdict()),
-    judgeFinding: () => Effect.die("unused"),
-    judgeLogPatterns: () => Effect.die("unused"),
-  }
-  const world = makeWorld({ jev, slack: fakeSlack((channel) => (channel === "C0AUKD42N3U" ? [{ ts, text: "API 5xx spike on /v4/opportunities", bot_id: "B1" }] : [])) })
+  })
+  const world = makeWorld({ jev, slack: fakeSlack({ latest: postedIn("C0AUKD42N3U", () => [{ ts, text: "API 5xx spike on /v4/opportunities", bot_id: "B1" }]) }) })
   afterAll(() => world.dispose())
 
   test("the session started during triage stays, and triage does not start a second one", async () => {
     const out = await world.runPromise(
       Effect.gen(function* () {
         const store = yield* Store
-        const pipeline = yield* AlertPipeline
+        const alerts = yield* AlertChannels
         yield* store.putAlert(makeAlert({ id, channelId: "C0AUKD42N3U", ts, title: "an older headline", triage: { decision: "ignore", reason: "noise", jev: null } }), "stale")
-        const poll = yield* pipeline.pollOnce.pipe(Effect.forkChild)
+        const poll = yield* alerts.poll.pipe(Effect.forkChild)
         yield* Deferred.await(judging)
-        yield* pipeline.investigate(id)
+        yield* (yield* Intake).investigate(id)
         const started = (yield* store.getAlert(id))?.sessionId
         yield* Deferred.succeed(answer, undefined)
         yield* Fiber.join(poll)

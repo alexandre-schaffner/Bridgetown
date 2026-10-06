@@ -1,27 +1,14 @@
 import { Effect } from "effect"
+import type { Action, ActionKind } from "../domain/action.ts"
+import type { Alert } from "../domain/alert.ts"
 import { type AdapterError, type DaemonError, InvalidInput, NotFound, SlackApiError } from "../domain/errors.ts"
-import { type Action, type ActionKind, type Alert, RETRY, type Session } from "../domain/model.ts"
+import type { Session } from "../domain/session.ts"
 import type { SessionRepoShape } from "../sessions/repo.ts"
 import type { SessionRunnerShape } from "../sessions/runner.ts"
 import type { ShipperShape } from "../ship/shipper.ts"
-import { tagPrefix } from "../ship/transitions.ts"
-import { toMrkdwn } from "../slack/text.ts"
+import { toMrkdwn } from "../slack/mrkdwn.ts"
 import type { SlackThreadShape } from "../slack/thread.ts"
 import type { StoreShape } from "../store/store.ts"
-
-/** The honest one-line outcome of a session you close without a verified fix. Never "resolved". */
-export const closedResolution = (session: Session): string =>
-  session.status === "failed"
-    ? "agent failed"
-    : session.rootCauseFound === false
-      ? "root cause not found"
-      : session.outcome === "recommendation"
-        ? "recommendation handed to you"
-        : session.milestones.merged
-          ? "merged, not released"
-          : session.milestones.prOpened
-            ? "PR open, not merged"
-            : "not fixed"
 
 /** Recorded when a reply could not go out because dry run is on: closed, not resolved, and says so. */
 export const DRY_RUN_REPLY = "dry run · reply not sent"
@@ -50,17 +37,6 @@ export interface Resolution {
  */
 export type Handler = (resolution: Resolution) => Effect.Effect<void, DaemonError>
 
-/** Closing without a verified outcome: recorded as closed, never as resolved. */
-export const closeUnresolved = (repo: SessionRepoShape, sessionId: string) =>
-  repo.modify(
-    sessionId,
-    (current) =>
-      current.status === "resolved" || current.status === "closed" || current.status === "stopped"
-        ? undefined
-        : { ...current, status: "closed", activity: "Closed by you", resolution: closedResolution(current) },
-    { evenIfFinished: true },
-  )
-
 const alertOf = (store: StoreShape, action: Action) =>
   action.alertId === null ? Effect.succeed<Alert | undefined>(undefined) : store.getAlert(action.alertId)
 
@@ -68,15 +44,13 @@ export const makeHandlers = (deps: HandlerDeps): Readonly<Record<ActionKind, Han
   investigate: ({ action }) => (action.alertId === null ? Effect.void : deps.investigate(action.alertId)),
 
   escalate: ({ action }) =>
-    action.alertId === null ? Effect.void : deps.store.appendAlertEvent(action.alertId, "Opened by you in Slack or Revv", "opened"),
+    action.alertId === null ? Effect.void : deps.store.appendAlertEvent(action.alertId, "Opened by you in Slack or Revv", { disposition: "opened" }),
 
   merge: ({ session }) => (session === undefined ? Effect.void : deps.shipper.merge(session.id)),
 
-  release: ({ action, session }) =>
-    session === undefined || action.payload === null ? Effect.void : deps.shipper.release(session.id, tagPrefix(action.payload)),
+  release: ({ session }) => (session === undefined ? Effect.void : deps.shipper.release(session.id)),
 
-  rerun: ({ action, session }) =>
-    session === undefined || action.payload === null ? Effect.void : deps.shipper.rerun(session.id, action.payload),
+  rerun: ({ session }) => (session === undefined ? Effect.void : deps.shipper.rerun(session.id)),
 
   answer: ({ action, response }) => deps.runner.answer(action.id, response ?? "").pipe(Effect.asVoid),
 
@@ -85,7 +59,8 @@ export const makeHandlers = (deps: HandlerDeps): Readonly<Record<ActionKind, Han
       // Nothing to send, or nowhere to send it: the card stays, and nothing is recorded as replied.
       const alert = yield* alertOf(deps.store, action)
       if (alert === undefined) return yield* new NotFound({ message: "The message this replies to is gone" })
-      const text = (response ?? action.payload ?? "").trim()
+      // The draft is the card's detail; what you edited it to, the response.
+      const text = (response ?? action.detail).trim()
       if (text === "") return yield* new InvalidInput({ message: "The reply is empty" })
       const posted = yield* deps.thread.post(alert, toMrkdwn(text))
       if (posted._tag === "NotPosted" && posted.reason === "error") {
@@ -110,7 +85,7 @@ export const makeHandlers = (deps: HandlerDeps): Readonly<Record<ActionKind, Han
   review: ({ action, session }) =>
     session === undefined
       ? Effect.void
-      : action.payload === RETRY
+      : action.retry
         ? deps.runner.retry(session.id)
-        : closeUnresolved(deps.repo, session.id).pipe(Effect.asVoid),
+        : deps.runner.close(session.id),
 })

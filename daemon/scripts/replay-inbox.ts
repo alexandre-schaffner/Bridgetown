@@ -1,8 +1,10 @@
 /** Calibration for inbox triage: `bun scripts/replay-inbox.ts <file.json>` with [{ from, where, kind, text, thread? }]. */
 import { Effect, Schema } from "effect"
-import { DEFAULT_SETTINGS, readEnv } from "../src/config.ts"
-import { parseInbox } from "../src/slack/inbox.ts"
-import { makeJev } from "../src/triage/jev.ts"
+import { readEnv } from "../src/config.ts"
+import { DEFAULT_SETTINGS } from "../src/domain/settings.ts"
+import { makeJev } from "../src/jev.ts"
+import { pct as percent } from "../src/lib/text.ts"
+import { parseInbox } from "../src/slack/inbox-parse.ts"
 import { decideInbox } from "../src/triage/policy.ts"
 
 const Items = Schema.Array(
@@ -17,7 +19,7 @@ const Items = Schema.Array(
 
 const env = readEnv()
 const jev = makeJev(env.typesafeKey, env.jevModel)
-const pct = (n: number) => `${Math.round(n * 100)}%`.padStart(4)
+const pct = (n: number) => percent(n).padStart(4)
 
 const program = Effect.gen(function* () {
   const items = Schema.decodeUnknownSync(Items)(yield* Effect.promise(() => Bun.file(process.argv[2] ?? "").json()))

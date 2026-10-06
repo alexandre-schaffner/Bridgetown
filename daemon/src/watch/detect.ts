@@ -1,7 +1,29 @@
-import type { ParsedAlert } from "../domain/alert.ts"
-import { WATCH_CHANNEL } from "../domain/model.ts"
+import { type ParsedAlert, WATCH_CHANNEL } from "../domain/alert.ts"
 import type { Deploy, Panel } from "../grafana/board.ts"
-import { type PanelSpec, type Unit, WATCH_HOURS } from "../grafana/boards.ts"
+import { type BoardSpec, HOUR, type OverviewView, overviewPanels, type PanelSpec, type Unit } from "../grafana/boards.ts"
+import { clock } from "../lib/text.ts"
+
+/** How far back the prod watcher looks: the last 15 minutes against the 3 hours before. */
+const WATCH_HOURS = 3
+const WATCH_STEP_SECONDS = 300
+/** The overview views the prod watcher sweeps: the database board has no rules of its own yet. */
+const WATCHED_VIEWS: ReadonlyArray<OverviewView> = ["incidents", "infra"]
+
+/** The watched overview panels over the watch window. */
+export const watchBoard = (now: Date): BoardSpec => {
+  const from = new Date(now.getTime() - WATCH_HOURS * HOUR)
+  return {
+    key: "watch",
+    title: "Prod watch",
+    from,
+    to: now,
+    stepSeconds: WATCH_STEP_SECONDS,
+    marker: null,
+    panels: WATCHED_VIEWS.flatMap(overviewPanels),
+    deployImage: null,
+    deploysFrom: new Date(from.getTime() - HOUR),
+  }
+}
 
 /**
  * Two kinds of anomaly, each against the 90th percentile of the steps before the last three (15 minutes):
@@ -21,7 +43,7 @@ export interface Rule {
   readonly perStep: boolean
 }
 
-export const RULES: Readonly<Record<string, Rule>> = {
+const RULES: Readonly<Record<string, Rule>> = {
   api_5xx: { floor: 50, factor: 3, spike: { floor: 100, factor: 4 }, perStep: true },
   api_p99: { floor: 1_500, factor: 2, spike: { floor: 3_000, factor: 3 }, perStep: false },
   engine_errors: { floor: 1_500, factor: 3, spike: { floor: 1_500, factor: 3 }, perStep: true },
@@ -34,7 +56,7 @@ export const RULES: Readonly<Record<string, Rule>> = {
 
 export const RECENT_STEPS = 3
 /** Two hours before the recent steps; with less there is no baseline to compare to. */
-export const MIN_BASELINE_STEPS = 24
+const MIN_BASELINE_STEPS = 24
 
 /** Where a ruled signal stands: its recent level against its usual one. */
 export interface Measure {
@@ -133,8 +155,6 @@ export const formatValue = (value: number, unit: Unit): string => {
   }
 }
 
-export const clock = (date: Date) => `${date.toISOString().slice(11, 16)} UTC`
-
 const span = (minutes: number): string =>
   minutes < 60 ? `${minutes} minutes` : minutes % 60 === 0 ? `${minutes / 60} hours` : `${Math.floor(minutes / 60)} h ${minutes % 60} min`
 
@@ -167,6 +187,5 @@ export const findingOf = (anomaly: Anomaly, spec: PanelSpec, stepSeconds: number
     fingerprint: watchFingerprint(panel.id),
     fields: { _tag: "watch", signal: panel.id, query, datasource: spec.source, level, usual, since: since.toISOString(), shape },
     mentionsMe: false,
-    fromHuman: false,
   }
 }

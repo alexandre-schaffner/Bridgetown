@@ -3,24 +3,26 @@ import { Cause, Data, Effect, Stream } from "effect"
 import { Actions } from "../actions/actions.ts"
 import { VERSION } from "../config.ts"
 import { type DaemonError, errorMessage, NotFound, statusOf } from "../domain/errors.ts"
+import { mergeSettings, SettingsPatch } from "../domain/settings.ts"
 import { Boards } from "../grafana/board.ts"
 import { alertBoard, OVERVIEW_VIEWS, type OverviewView, overviewBoard } from "../grafana/boards.ts"
 import { Hub } from "../hub.ts"
-import { AlertPipeline } from "../pipeline/alerts.ts"
+import { AlertChannels } from "../intake/alerts.ts"
+import { Intake } from "../intake/intake.ts"
 import { SessionRunner } from "../sessions/runner.ts"
 import { Store } from "../store/store.ts"
-import { FeedbackBody, mergeSettings, MessageBody, pathId, PauseBody, readBody, ResolveBody, SettingsPatch } from "./requests.ts"
+import { FeedbackBody, MessageBody, pathId, PauseBody, readBody, ResolveBody } from "./requests.ts"
 import { snapshotEvents, SSE_TIMING, type SseTiming } from "./sse.ts"
 import { alertDetail, logSweep, snapshot } from "./views.ts"
 
-type Services = Store | Hub | Actions | AlertPipeline | SessionRunner | Boards
+type Services = Store | Hub | Actions | AlertChannels | Intake | SessionRunner | Boards
 
 const isOverviewView = (value: string): value is OverviewView => OVERVIEW_VIEWS.some((view) => view === value)
 
 const TRANSCRIPT_LIMIT = 200
 
 /** Exit status when the port is taken; the app shows it instead of restarting. */
-export const PORT_IN_USE_EXIT = 98
+const PORT_IN_USE_EXIT = 98
 
 /** Refused before any service runs: a foreign Host or any Origin (403), a bad token (401), a method no route takes (405). */
 class Refused extends Data.TaggedError("Refused")<{ readonly status: 401 | 403 | 405; readonly message: string }> {}
@@ -133,11 +135,11 @@ const postRoute = (path: string, request: Request) =>
     }
     const alert = /^\/alerts\/([^/]+)\/(investigate|feedback)$/.exec(path)
     if (alert !== null) {
-      const alerts = yield* AlertPipeline
       const id = yield* pathId(alert[1])
-      if (alert[2] === "investigate") return yield* thenSnapshot(alerts.investigate(id))
+      const intake = yield* Intake
+      if (alert[2] === "investigate") return yield* thenSnapshot(intake.investigate(id))
       const body = yield* readBody(request, FeedbackBody)
-      return yield* thenSnapshot(alerts.feedback(id, body.label))
+      return yield* thenSnapshot(intake.feedback(id, body.label))
     }
     const session = /^\/sessions\/([^/]+)\/(stop|message)$/.exec(path)
     if (session !== null) {
@@ -156,7 +158,7 @@ const postRoute = (path: string, request: Request) =>
       const body = yield* readBody(request, PauseBody)
       return yield* thenSnapshot(hub.patchStatus({ paused: body.paused }))
     }
-    if (path === "/poll") return yield* thenSnapshot((yield* AlertPipeline).pollOnce)
+    if (path === "/poll") return yield* thenSnapshot((yield* AlertChannels).poll)
     return yield* new NotFound({ message: "not found" })
   })
 

@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect"
-import { GRAFANA_MCP_URL } from "./grafana/client.ts"
+import { Grafana } from "./grafana/client.ts"
 import { Hub } from "./hub.ts"
 import { GitHub } from "./ship/github.ts"
 
@@ -17,11 +17,9 @@ export const HealthLive = Layer.effect(Health)(
   Effect.gen(function* () {
     const hub = yield* Hub
     const gh = yield* GitHub
+    const grafana = yield* Grafana
     return {
-      probeGrafana: Effect.tryPromise(() => fetch(GRAFANA_MCP_URL, { method: "GET", signal: AbortSignal.timeout(2_000) })).pipe(
-        Effect.match({ onFailure: () => "down" as const, onSuccess: () => "up" as const }),
-        Effect.flatMap((state) => hub.patchStatus({ grafanaMcp: state })),
-      ),
+      probeGrafana: grafana.reachable.pipe(Effect.flatMap((up) => hub.patchStatus({ grafanaMcp: up ? "up" : "down" }))),
       // `Status.github` is the whole story (the app says what it means); it is not repeated in `Status.error`.
       probeGithub: gh.reachability.pipe(Effect.flatMap((github) => hub.patchStatus({ github }))),
     }

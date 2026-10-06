@@ -1,14 +1,15 @@
 import { Context, Effect, Layer } from "effect"
+import { type Action, cardStands, dismissCloses } from "../domain/action.ts"
 import { Conflict, type DaemonError } from "../domain/errors.ts"
-import { type Action, cardStands, dismissCloses, type Session } from "../domain/model.ts"
+import type { Session } from "../domain/session.ts"
 import { Hub } from "../hub.ts"
-import { AlertPipeline } from "../pipeline/alerts.ts"
+import { Intake } from "../intake/intake.ts"
 import { SessionRepo } from "../sessions/repo.ts"
 import { SessionRunner } from "../sessions/runner.ts"
 import { Shipper } from "../ship/shipper.ts"
 import { SlackThread } from "../slack/thread.ts"
 import { Store } from "../store/store.ts"
-import { closeUnresolved, makeHandlers } from "./handlers.ts"
+import { makeHandlers } from "./handlers.ts"
 import { makeInFlight } from "./in-flight.ts"
 import { ActionQueue } from "./queue.ts"
 
@@ -40,7 +41,6 @@ export const ActionsLive = Layer.effect(Actions)(
     const queue = yield* ActionQueue
     const repo = yield* SessionRepo
     const runner = yield* SessionRunner
-    const pipeline = yield* AlertPipeline
     const inFlight = yield* makeInFlight(hub.notify)
     const handlers = makeHandlers({
       store,
@@ -48,7 +48,7 @@ export const ActionsLive = Layer.effect(Actions)(
       runner,
       shipper: yield* Shipper,
       thread: yield* SlackThread,
-      investigate: pipeline.investigate,
+      investigate: (yield* Intake).investigate,
     })
 
     /**
@@ -89,10 +89,10 @@ export const ActionsLive = Layer.effect(Actions)(
             yield* store.appendAlertEvent(
               action.alertId,
               action.kind === "escalate" ? "Dismissed by you without opening it" : "Dismissed by you, no agent started",
-              "dismissed",
+              { disposition: "dismissed" },
             )
           }
-          if (session !== undefined && dismissCloses(action, session)) yield* closeUnresolved(repo, session.id)
+          if (session !== undefined && dismissCloses(action, session)) yield* runner.close(session.id)
           yield* hub.notify
         }),
       )

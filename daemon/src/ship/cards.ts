@@ -1,6 +1,7 @@
-import { passedAt, REVIEWER_NAMES, type Session } from "../domain/model.ts"
+import { passedAt, REVIEWER_NAMES } from "../domain/critique.ts"
+import type { Session } from "../domain/session.ts"
 import type { PullRequest } from "./github.ts"
-import { prLabel } from "./review.ts"
+import { prLabel } from "./pr.ts"
 
 /**
  * What the human-gate cards say under their title. A gate card is where the user decides,
@@ -19,7 +20,7 @@ export const mergeDetail = (session: Session, pr: PullRequest): string => {
     ...(approvers.length > 0 ? [`approved by ${approvers.join(", ")}`] : []),
     checks > 0 ? `CI green, ${checks === 1 ? "1 check" : `${checks} checks`}` : "CI green",
     // Only a pass on the head being merged: one on an earlier head (pushed again with the review off) is no evidence.
-    ...(critique !== null && passedAt(critique, pr.headRefOid ?? null) ? [`${REVIEWER_NAMES[critique.reviewer]} passed`] : []),
+    ...(critique !== null && passedAt(critique, pr.headRefOid) ? [`${REVIEWER_NAMES[critique.reviewer]} passed`] : []),
   ].join(" · ")
 }
 

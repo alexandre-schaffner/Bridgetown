@@ -1,11 +1,12 @@
 import { Context, Effect, Layer } from "effect"
+import { cardStands } from "../domain/action.ts"
 import type { AdapterError } from "../domain/errors.ts"
 import { now } from "../domain/ids.ts"
-import { cardStands, isFinished, type Session, type TranscriptKind } from "../domain/model.ts"
-import { progressOf } from "../domain/progress.ts"
+import { SESSION_RESUMED_EVENT, sessionEndEvent } from "../domain/progress.ts"
+import { isFinished, type Session, type TranscriptKind, withPatch } from "../domain/session.ts"
 import { Hub } from "../hub.ts"
-import { truncate } from "../slack/text.ts"
-import { makeKeyedLock } from "../store/keyed-lock.ts"
+import { makeKeyedLock } from "../lib/keyed-lock.ts"
+import { firstLine, truncate } from "../lib/text.ts"
 import { Store } from "../store/store.ts"
 
 export interface ModifyOptions {
@@ -49,18 +50,6 @@ export interface SessionRepoShape {
 
 export class SessionRepo extends Context.Service<SessionRepo, SessionRepoShape>()("SessionRepo") {}
 
-/** The alert history line for a session that just ended, e.g. "Agent session ended · Closed · root cause not found". */
-export const sessionEndEvent = (session: Session): string => `Agent session ended · ${progressOf(session).headline}`
-
-export const SESSION_RESUMED_EVENT = "Agent session resumed"
-
-/** A patch applied to a session; `milestones` merge instead of replacing. */
-export const withPatch = (session: Session, patch: Partial<Session>): Session => ({
-  ...session,
-  ...patch,
-  milestones: { ...session.milestones, ...patch.milestones },
-})
-
 export const SessionRepoLive = Layer.effect(SessionRepo)(
   Effect.gen(function* () {
     const store = yield* Store
@@ -94,7 +83,7 @@ export const SessionRepoLive = Layer.effect(SessionRepo)(
       log: (id, kind, text, options) =>
         Effect.gen(function* () {
           yield* store.appendTranscript(id, { at: now(), kind, text: truncate(text, 4_000) })
-          if (options?.activity === true) yield* patch(id, { activity: truncate(text.split("\n")[0] ?? text, 140) })
+          if (options?.activity === true) yield* patch(id, { activity: truncate(firstLine(text), 140) })
         }),
     }
   }),

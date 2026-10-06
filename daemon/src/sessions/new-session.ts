@@ -1,7 +1,19 @@
+import type { Alert, Depth } from "../domain/alert.ts"
 import { now } from "../domain/ids.ts"
-import { type Alert, NO_MILESTONES, type Session } from "../domain/model.ts"
-import { PROFILES } from "../triage/policy.ts"
+import { type Effort, NO_MILESTONES, type Session } from "../domain/session.ts"
 import { slug } from "./worktree.ts"
+
+export interface LaunchProfile {
+  readonly model: string
+  readonly effort: Effort
+}
+
+/** Jev answers an abstract tier; only this table names models, so the API can never pick one. */
+export const PROFILES: Readonly<Record<Depth, LaunchProfile>> = {
+  quick: { model: "claude-sonnet-5-5", effort: "medium" },
+  standard: { model: "claude-opus-5-5", effort: "high" },
+  deep: { model: "claude-opus-5-5", effort: "max" },
+}
 
 /** `fix-bt-<what>-<id tail>`: the only branch the session's guard lets it push. */
 export const branchFor = (alert: Alert, id: string): string => {
@@ -34,12 +46,11 @@ export const newSession = (alert: Alert, id: string, repoPath: string): Session 
     costUsd: 0,
     // A watch finding's permalink is its Grafana dashboard: there is no Slack thread.
     slackThreadUrl: alert.source === "watch" ? null : alert.permalink,
-    release: null,
     milestones: NO_MILESTONES,
     rootCauseFound: null,
     resolution: null,
     pushbacks: 0,
-    component: alert.fields._tag === "release" ? alert.fields.image : null,
+    releasePrefix: null,
     review: null,
     critiqueRounds: 0,
     critique: null,

@@ -1,7 +1,8 @@
 /**
  * A real Agent SDK session (it costs money) against a throwaway repo:
- * worktree → Agent SDK session → report tool → structured result → finalize.
- * Slack is faked (dry run) and `origin` is a local bare repo, so nothing leaves the machine.
+ * worktree → Agent SDK session → report tool → structured result → its outcome.
+ * The test world with the real agent and GitHub: Slack is faked (dry run) and `origin` is a
+ * local bare repo, so nothing leaves the machine but the agent's own calls.
  * Everything it writes (store, repo, worktree, the agent's conversation) goes on success; on
  * a failure or timeout it is kept for a look and the script exits 1.
  *
@@ -11,24 +12,18 @@ import { execSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Effect, Layer } from "effect"
+import { Effect } from "effect"
+import { AgentLive, claudeProjectDir } from "../src/agent/agent.ts"
 import { readEnv } from "../src/config.ts"
-import type { Alert } from "../src/domain/model.ts"
-import { Hub, HubLive } from "../src/hub.ts"
-import { ActionQueueLive } from "../src/actions/queue.ts"
-import { AgentLive, claudeProjectDir } from "../src/sessions/agent.ts"
-import { AsksLive } from "../src/sessions/asks.ts"
-import { SessionRepoLive } from "../src/sessions/repo.ts"
-import { SessionRunner, SessionRunnerLive } from "../src/sessions/runner.ts"
-import { worktreePath, WorktreesLive } from "../src/sessions/worktree.ts"
+import { Hub } from "../src/hub.ts"
+import { SessionRunner } from "../src/sessions/runner.ts"
+import { worktreePath } from "../src/sessions/worktree.ts"
 import { GitHubLive } from "../src/ship/github.ts"
-import { SlackClientLive } from "../src/slack/client.ts"
-import { SlackThreadLive } from "../src/slack/thread.ts"
-import { Store, StoreLive } from "../src/store/store.ts"
+import { Store } from "../src/store/store.ts"
+import { makeAlert } from "../test/support/records.ts"
+import { worldLayer } from "../test/support/world.ts"
 
 const root = mkdtempSync(join(tmpdir(), "bt-smoke-"))
-// The store and the worktree (the repo has no .shared) both live under it, never in the app's own home.
-process.env.BRIDGETOWN_HOME = `${root}/home`
 mkdirSync(`${root}/repo/src`, { recursive: true })
 const sh = (cmd: string, cwd = `${root}/repo`) => execSync(cmd, { cwd, stdio: "pipe" }).toString()
 writeFileSync(`${root}/repo/package.json`, JSON.stringify({ name: "demo", private: true, scripts: { type: "tsc --noEmit -p ." }, devDependencies: { typescript: "^5.9.0" } }, null, 2))
@@ -39,33 +34,25 @@ sh("git init -q -b main && git add -A && git -c user.email=bt@test -c user.name=
 sh(`git init -q --bare ${root}/origin.git`, root)
 sh(`git remote add origin ${root}/origin.git && git push -q origin main`)
 
-const env = { ...readEnv(), slackToken: undefined, forceDryRun: true }
-const base = Layer.mergeAll(StoreLive(`${root}/home`), SlackClientLive(undefined), AgentLive, GitHubLive)
-const withHub = HubLive(env).pipe(Layer.provideMerge(base))
-const records = Layer.mergeAll(SlackThreadLive, SessionRepoLive, ActionQueueLive, WorktreesLive).pipe(Layer.provideMerge(withHub))
-const layer = SessionRunnerLive.pipe(Layer.provideMerge(AsksLive.pipe(Layer.provideMerge(records))))
+// The store and the worktree (the repo has no .shared) both live under the root, never in the app's own home. The
+// agent is the user's own CLI, with their login, so it keeps its conversations where they do.
+const { claudePath, claudeConfigDir } = readEnv()
+const home = `${root}/home`
+const layer = worldLayer(home, { env: { claudePath, claudeConfigDir }, agent: AgentLive(claudePath), github: GitHubLive })
 
-const alert: Alert = {
+const alert = makeAlert({
   id: "CTEST:1790933006.433649",
   channelId: "CTEST",
-  channelName: "alert-releases",
   ts: "1790933006.433649",
-  permalink: null,
   title: "merkl-demo v0.0.1 · Build failed",
   summary: "Build ✗ (1 attempt failed)",
   raw: "merkl-demo\nby alex\n:red_circle:  *Build*\nBuild failed · _1 attempt failed_\nThe build step runs `bun type` (tsc --noEmit). There is no GitHub run to read in this environment; reproduce locally.",
-  source: "releases",
   fingerprint: "release:merkl-demo:v0.0.1",
   fields: { _tag: "release", image: "merkl-demo", version: "v0.0.1", actor: "alex", runId: null, runUrl: null, tag: "demo-v0.0.1", stages: [{ name: "Build", status: "failure", detail: "Build failed · 1 attempt failed" }] },
   mentionsMe: true,
   receivedAt: new Date().toISOString(),
-  triage: { decision: "auto", reason: "e2e", jev: { actionable: 0.95, agentResolvable: 0.9, humanOnIt: 0.01, kind: "build_failure", kindConfidence: 1, depth: "quick", urgency: 1 } },
-  sessionId: null,
-  feedback: null,
-  events: [],
-  disposition: null,
-  claimedBy: [],
-}
+  triage: { decision: "auto", reason: "smoke", jev: { actionable: 0.95, agentResolvable: 0.9, humanOnIt: 0.01, kind: "build_failure", kindConfidence: 1, depth: "quick", urgency: 1 } },
+})
 
 /** Whether the session got as far as a structured result it did not fail on, and its branch. */
 const program = Effect.gen(function* () {
@@ -73,7 +60,7 @@ const program = Effect.gen(function* () {
   const store = yield* Store
   const runner = yield* SessionRunner
   yield* hub.updateSettings({ ...(yield* hub.settings), monorepoPath: `${root}/repo` })
-  yield* store.putAlert(alert, "e2e")
+  yield* store.putAlert(alert, "smoke")
   const session = yield* runner.enqueue(alert)
   yield* runner.tick
   const started = Date.now()
@@ -98,7 +85,7 @@ const program = Effect.gen(function* () {
 })
 
 const { passed, branch } = await Effect.runPromise(program.pipe(Effect.provide(layer), Effect.scoped))
-const leftovers = [root, ...(branch === null ? [] : [claudeProjectDir(worktreePath(`${root}/repo`, branch))])]
+const leftovers = [root, ...(branch === null ? [] : [claudeProjectDir(claudeConfigDir, worktreePath(home, `${root}/repo`, branch))])]
 if (!passed) {
   console.log(`FAILED; kept for a look: ${leftovers.join(" and ")}`)
   process.exit(1)

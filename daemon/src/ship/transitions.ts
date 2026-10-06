@@ -1,7 +1,8 @@
-import type { Phase, Session } from "../domain/model.ts"
 import { type ReleaseState, sameReleaseState } from "../domain/release.ts"
+import type { HandOff, Phase, Session } from "../domain/session.ts"
 import type { CiState, PullRequest } from "./github.ts"
-import { prLabel } from "./review.ts"
+import { prLabel } from "./pr.ts"
+import { isReleasePrefix } from "./tags.ts"
 
 /**
  * The ship flow's decisions, pure: given a session and what GitHub or the
@@ -22,7 +23,7 @@ export const MERGE_QUEUE_TIMEOUT_MS = 60 * 60_000
 /** Another round for the agent, or the user once the budget is spent. */
 export type Escalation =
   | { readonly _tag: "SendBack"; readonly round: number; readonly phase: Phase; readonly activity: string }
-  | { readonly _tag: "HandOff"; readonly activity: string; readonly title: string; readonly detail: string }
+  | ({ readonly _tag: "HandOff" } & HandOff)
 
 export interface Failure {
   /** Phase for the new round. */
@@ -30,7 +31,7 @@ export interface Failure {
   /** Status line while the agent works on round `n`. */
   readonly working: (round: number) => string
   /** What the user sees once the budget is spent. */
-  readonly exhausted: { readonly activity: string; readonly title: string; readonly detail: string }
+  readonly exhausted: HandOff
 }
 
 /** A round budget: by default the CI one, shared by red CI, requested changes and failed deploys. */
@@ -129,14 +130,13 @@ export type DeployStep =
 
 /**
  * Whether `tag`'s release tracker reports this session's own deploy: it cut that release (or re-ran it) and the
- * deploy has not landed. Before a release, `release.tag` is only the prefix the agent named, which can be a full tag:
- * the tracker of that tag (the failure being fixed) says nothing about this session. A re-run sent back once it failed
- * again still follows it, until the agent opens a PR of its own: from then on it ships that PR.
+ * deploy has not landed. A tag still being cut is not followed yet; a re-run sent back once it failed again still is,
+ * until the agent opens a PR of its own, which ships on its own (`decideOutcome` then forgets the re-run's tag).
  */
 export const followsDeploy = (session: Session, tag: string): boolean =>
-  session.release?.tag === tag &&
+  session.releaseTag === tag &&
   !session.milestones.deployed &&
-  (session.status === "deploying" || session.milestones.released || (session.deployStage !== null && session.prUrl === null))
+  (session.milestones.released || session.status === "deploying" || session.deployStage !== null)
 
 /** A deploying session, given the tracker's state. Only a changed state moves it: a tracker edit never re-sends the agent. */
 export const deployTransition = (session: Session, state: ReleaseState): DeployStep => {
@@ -164,26 +164,31 @@ export const deployTransition = (session: Session, state: ReleaseState): DeployS
   }
 }
 
-/** A deploy that went quiet, as the hand-off that says so; `null` while it is moving. Waiting for approval gets a day. */
+/**
+ * A deploy that went quiet, as the hand-off that says so; `null` while it is moving. Waiting for approval gets a day.
+ * A failure the tracker reported is no stall: it sits here only when its send-back never ran (a restart dropped the
+ * turn parked for a slot), and the hand-off says that.
+ */
 export const deployStalled = (session: Session, nowMs: number): Extract<Escalation, { _tag: "HandOff" }> | null => {
   if (session.status !== "deploying") return null
-  const tag = session.release?.tag ?? "the release"
+  const tag = session.releaseTag ?? "the release"
   const quiet = nowMs - Date.parse(session.updatedAt)
-  if (session.deployStage?._tag === "AwaitingApproval") {
-    return quiet > APPROVAL_TIMEOUT_MS
-      ? { _tag: "HandOff", activity: "No release approval for 24h", title: "Release not approved", detail: `${tag} has been waiting for approval for a day.` }
-      : null
+  const stage = session.deployStage
+  switch (stage?._tag) {
+    case "AwaitingApproval":
+      return quiet > APPROVAL_TIMEOUT_MS
+        ? { _tag: "HandOff", activity: "No release approval for 24h", title: "Release not approved", detail: `${tag} has been waiting for approval for a day.` }
+        : null
+    case "Failed":
+      return quiet > DEPLOY_TIMEOUT_MS
+        ? { _tag: "HandOff", activity: `${stage.stage} failed, not taken up`, title: "Deploy failed", detail: `${stage.stage} failed for ${tag} (${stage.detail}), and no agent turn took it up.` }
+        : null
+    default:
+      return quiet > DEPLOY_TIMEOUT_MS
+        ? { _tag: "HandOff", activity: "No deploy progress for 3h", title: "Deploy stalled", detail: `No tracker update for ${tag} in 3 hours.` }
+        : null
   }
-  return quiet > DEPLOY_TIMEOUT_MS
-    ? { _tag: "HandOff", activity: "No deploy progress for 3h", title: "Deploy stalled", detail: `No tracker update for ${tag} in 3 hours.` }
-    : null
 }
-
-/** `admin`, `states-exporter`: what may stand before `-vX.Y.Z` in a release tag. */
-const RELEASE_PREFIX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
-
-/** `admin-v0.6.0` → `admin`; a bare prefix stays as it is. */
-export const tagPrefix = (tag: string): string => tag.replace(/-v\d+\.\d+\.\d+.*$/, "")
 
 export type AfterMerge =
   | { readonly _tag: "NothingToRelease" }
@@ -192,9 +197,9 @@ export type AfterMerge =
   | { readonly _tag: "BadPrefix"; readonly prefix: string }
 
 export const afterMerge = (session: Session): AfterMerge => {
-  if (session.release === null || session.release.tag === "") return { _tag: "NothingToRelease" }
-  const prefix = tagPrefix(session.release.tag)
-  return RELEASE_PREFIX.test(prefix) ? { _tag: "Release", prefix } : { _tag: "BadPrefix", prefix }
+  const prefix = session.releasePrefix
+  if (prefix === null) return { _tag: "NothingToRelease" }
+  return isReleasePrefix(prefix) ? { _tag: "Release", prefix } : { _tag: "BadPrefix", prefix }
 }
 
 /** "merged #3244" for a merged session with nothing to ship. */

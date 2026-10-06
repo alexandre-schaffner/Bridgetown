@@ -1,8 +1,8 @@
 import { Context, Deferred, Duration, Effect, Layer, Option, SynchronizedRef } from "effect"
 import { ActionQueue } from "../actions/queue.ts"
 import type { AdapterError } from "../domain/errors.ts"
-import type { Session } from "../domain/model.ts"
-import { truncate } from "../slack/text.ts"
+import type { Session } from "../domain/session.ts"
+import { truncate } from "../lib/text.ts"
 import { SessionRepo } from "./repo.ts"
 
 const ASK_TIMEOUT = Duration.minutes(30)
@@ -72,7 +72,6 @@ export const AsksLive = Layer.effect(Asks)(
           options: [...options],
           sessionId: session.id,
           alertId: session.alertId,
-          payload: null,
         })
         const waiting: Pending = { actionId: card.id, sessionId: session.id, reply: yield* Deferred.make<string | undefined>() }
         yield* SynchronizedRef.update(pending, (current) => new Map([...current, [card.id, waiting]]))

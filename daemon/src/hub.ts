@@ -1,7 +1,8 @@
-import { Context, Effect, Layer, PubSub, Ref, Schema, type Scope, Semaphore, Stream } from "effect"
-import { DEFAULT_CHANNELS, DEFAULT_SETTINGS, type Env } from "./config.ts"
-import { type AdapterError, errorMessage } from "./domain/errors.ts"
-import { Settings } from "./domain/model.ts"
+import { Context, Effect, Layer, PubSub, Ref, type Scope, Semaphore, Stream } from "effect"
+import { Environment } from "./config.ts"
+import type { AdapterError } from "./domain/errors.ts"
+import { loadSettings, type Settings } from "./domain/settings.ts"
+import type { Reachability } from "./ship/github.ts"
 import { Store } from "./store/store.ts"
 
 export interface Status {
@@ -10,7 +11,7 @@ export interface Status {
   readonly jev: "ok" | "error" | "missing_key"
   readonly grafanaMcp: "up" | "down"
   /** GitHub Enterprise reachability. `blocked` is the Merkl org's IP allow list refusing this network. */
-  readonly github: "ok" | "blocked" | "unknown"
+  readonly github: Reachability
   readonly lastPollAt: string | null
   /** The latest problem still standing (`HubShape.problem`). */
   readonly error: string | null
@@ -73,90 +74,70 @@ const withProblem = (problems: ReadonlyMap<ProblemSource, string>, source: Probl
   return next
 }
 
-/**
- * Stored settings decode against the current schema; new fields fall back to
- * defaults, and default channels added since are appended to the stored ones.
- */
-export const loadSettings = (raw: string | undefined): Settings => {
-  if (raw === undefined) return DEFAULT_SETTINGS
-  try {
-    const parsed: unknown = JSON.parse(raw)
-    const merged = typeof parsed === "object" && parsed !== null ? { ...DEFAULT_SETTINGS, ...parsed } : DEFAULT_SETTINGS
-    const settings = Schema.decodeUnknownSync(Settings)(merged)
-    // A channel added to the defaults later is listed, but off: you never chose to watch it.
-    const known = new Set(settings.channels.map((c) => c.id))
-    const added = DEFAULT_CHANNELS.filter((c) => !known.has(c.id)).map((c) => ({ ...c, enabled: false }))
-    return { ...settings, channels: [...settings.channels, ...added] }
-  } catch (cause) {
-    console.error(`Ignoring stored settings: ${errorMessage(cause)}`)
-    return DEFAULT_SETTINGS
-  }
-}
+export const HubLive = Layer.effect(Hub)(
+  Effect.gen(function* () {
+    const env = yield* Environment
+    const store = yield* Store
+    const stored = yield* store.getKv(SETTINGS_KEY)
+    const settings = yield* Ref.make(loadSettings(stored))
+    const state = yield* Ref.make<State>({
+      status: {
+        paused: (yield* store.getKv("paused")) === "true",
+        slack: env.slackToken === undefined || env.slackToken === "" ? "missing_token" : "ok",
+        jev: env.typesafeKey === undefined || env.typesafeKey === "" ? "missing_key" : "ok",
+        grafanaMcp: "down",
+        github: "unknown",
+        lastPollAt: null,
+      },
+      problems: new Map(),
+    })
+    const persisting = yield* Semaphore.make(1)
+    const configuring = yield* Semaphore.make(1)
+    // Sliding: a subscriber that has not caught up only needs to know that something changed, not how often.
+    const changed = yield* Effect.acquireRelease(PubSub.sliding<void>(1), PubSub.shutdown)
+    const notify = PubSub.publish(changed, undefined).pipe(Effect.asVoid)
 
-export const HubLive = (env: Env) =>
-  Layer.effect(Hub)(
-    Effect.gen(function* () {
-      const store = yield* Store
-      const stored = yield* store.getKv(SETTINGS_KEY)
-      const settings = yield* Ref.make(loadSettings(stored))
-      const state = yield* Ref.make<State>({
-        status: {
-          paused: (yield* store.getKv("paused")) === "true",
-          slack: env.slackToken === undefined || env.slackToken === "" ? "missing_token" : "ok",
-          jev: env.typesafeKey === undefined || env.typesafeKey === "" ? "missing_key" : "ok",
-          grafanaMcp: "down",
-          github: "unknown",
-          lastPollAt: null,
-        },
-        problems: new Map(),
+    const modifySettings = <E>(f: (current: Settings) => Effect.Effect<Settings, E>) =>
+      Effect.gen(function* () {
+        const next = yield* f(yield* Ref.get(settings))
+        yield* store.setKv(SETTINGS_KEY, JSON.stringify(next))
+        yield* Ref.set(settings, next)
+        yield* notify
+        return next
+      }).pipe(configuring.withPermits(1))
+
+    /** Applies `f` in one step; true when anything the snapshot shows changed. */
+    const update = (f: (current: State) => State) =>
+      Ref.modify(state, (before): readonly [boolean, State] => {
+        const after = f(before)
+        return [after.problems !== before.problems || JSON.stringify(after.status) !== JSON.stringify(before.status), after]
       })
-      const persisting = yield* Semaphore.make(1)
-      const configuring = yield* Semaphore.make(1)
-      // Sliding: a subscriber that has not caught up only needs to know that something changed, not how often.
-      const changed = yield* Effect.acquireRelease(PubSub.sliding<void>(1), PubSub.shutdown)
-      const notify = PubSub.publish(changed, undefined).pipe(Effect.asVoid)
 
-      const modifySettings = <E>(f: (current: Settings) => Effect.Effect<Settings, E>) =>
+    return {
+      status: Ref.get(state).pipe(Effect.map(({ status, problems }) => ({ ...status, error: [...problems.values()].at(-1) ?? null }))),
+      patchStatus: (patch) =>
         Effect.gen(function* () {
-          const next = yield* f(yield* Ref.get(settings))
-          yield* store.setKv(SETTINGS_KEY, JSON.stringify(next))
-          yield* Ref.set(settings, next)
+          if (!(yield* update((current) => ({ ...current, status: { ...current.status, ...patch } })))) return
+          // Written from the state as it is by then, one write at a time, so the stored flag always ends where memory did.
+          if (patch.paused !== undefined) {
+            yield* Ref.get(state).pipe(
+              Effect.flatMap((current) => store.setKv("paused", String(current.status.paused))),
+              persisting.withPermits(1),
+              Effect.ignore,
+            )
+          }
           yield* notify
-          return next
-        }).pipe(configuring.withPermits(1))
-
-      /** Applies `f` in one step; true when anything the snapshot shows changed. */
-      const update = (f: (current: State) => State) =>
-        Ref.modify(state, (before): readonly [boolean, State] => {
-          const after = f(before)
-          return [after.problems !== before.problems || JSON.stringify(after.status) !== JSON.stringify(before.status), after]
-        })
-
-      return {
-        status: Ref.get(state).pipe(Effect.map(({ status, problems }) => ({ ...status, error: [...problems.values()].at(-1) ?? null }))),
-        patchStatus: (patch) =>
-          Effect.gen(function* () {
-            if (!(yield* update((current) => ({ ...current, status: { ...current.status, ...patch } })))) return
-            // Written from the state as it is by then, one write at a time, so the stored flag always ends where memory did.
-            if (patch.paused !== undefined) {
-              yield* Ref.get(state).pipe(
-                Effect.flatMap((current) => store.setKv("paused", String(current.status.paused))),
-                persisting.withPermits(1),
-                Effect.ignore,
-              )
-            }
-            yield* notify
-          }),
-        problem: (source, message) =>
-          update((current) => ({ ...current, problems: withProblem(current.problems, source, message) })).pipe(
-            Effect.flatMap((changed) => (changed ? notify : Effect.void)),
-          ),
-        settings: Ref.get(settings),
-        modifySettings,
-        updateSettings: (next) => modifySettings(() => Effect.succeed(next)),
-        dryRun: Ref.get(settings).pipe(Effect.map((s) => s.dryRun || env.forceDryRun)),
-        notify,
-        subscribe: PubSub.subscribe(changed).pipe(Effect.map(Stream.fromSubscription)),
-      }
-    }),
-  )
+        }),
+      problem: (source, message) =>
+        update((current) => ({ ...current, problems: withProblem(current.problems, source, message) })).pipe(
+          Effect.flatMap((changed) => (changed ? notify : Effect.void)),
+        ),
+      settings: Ref.get(settings),
+      modifySettings,
+      updateSettings: (next) => modifySettings(() => Effect.succeed(next)),
+      dryRun: Ref.get(settings).pipe(Effect.map((s) => s.dryRun || env.forceDryRun)),
+      notify,
+      subscribe: PubSub.subscribe(changed).pipe(Effect.map(Stream.fromSubscription)),
+    }
+  }),
+)

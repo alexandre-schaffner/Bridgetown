@@ -1,7 +1,8 @@
 import { Context, Effect, Layer, Schema } from "effect"
 import { GH_HOST, GHE_REPO } from "../config.ts"
 import { type AdapterError, decodeOr, GheBlocked, type GitHubError } from "../domain/errors.ts"
-import { run, runOk } from "../proc.ts"
+import { run, runOk } from "../lib/proc.ts"
+import { nextTagFrom } from "./tags.ts"
 
 /** What `gh` / git print when the Merkl org's IP allow list refuses this network. */
 export const refusedByAllowList = (stderr: string): boolean => /IP allow list|403/.test(stderr)
@@ -41,7 +42,7 @@ const PullRequest = Schema.Struct({
   mergedAt: Schema.NullOr(Schema.String),
   isDraft: Schema.optional(Schema.Boolean),
   /** The head commit, which a passed review must have read for the merge card to say so. */
-  headRefOid: Schema.optional(Schema.String),
+  headRefOid: Schema.String,
   url: Schema.String,
   reviewDecision: Schema.NullOr(Schema.String),
   latestReviews: Schema.Array(Review),
@@ -78,31 +79,6 @@ const mergePr = (prUrl: string) => gh(["pr", "merge", prUrl, "--squash"]).pipe(E
 
 const rerunFailedJobs = (runId: string) => gh(["run", "rerun", runId, "--failed", "-R", GHE_REPO]).pipe(Effect.asVoid)
 
-const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-
-const parseVersion = (tag: string, prefix: string): ReadonlyArray<number> | undefined => {
-  const match = new RegExp(`^${escape(prefix)}-v(\\d+)\\.(\\d+)\\.(\\d+)$`).exec(tag)
-  if (match === null) return undefined
-  return [Number(match[1]), Number(match[2]), Number(match[3])]
-}
-
-const compare = (a: ReadonlyArray<number>, b: ReadonlyArray<number>): number =>
-  (a[0] ?? 0) - (b[0] ?? 0) || (a[1] ?? 0) - (b[1] ?? 0) || (a[2] ?? 0) - (b[2] ?? 0)
-
-/**
- * The tag after the highest `<prefix>-vX.Y.Z` in `tags`: a patch bump, or
- * `<prefix>-v0.1.0` for the first release of a prefix.
- */
-export const nextTagFrom = (tags: ReadonlyArray<string>, prefix: string): string => {
-  const latest = tags
-    .map((tag) => parseVersion(tag, prefix))
-    .filter((v): v is ReadonlyArray<number> => v !== undefined)
-    .sort(compare)
-    .at(-1)
-  if (latest === undefined) return `${prefix}-v0.1.0`
-  return `${prefix}-v${latest[0] ?? 0}.${latest[1] ?? 0}.${(latest[2] ?? 0) + 1}`
-}
-
 const nextPatchTag = (repoPath: string, prefix: string) =>
   onGhe(runOk(["git", "ls-remote", "--tags", "--refs", "origin", `refs/tags/${prefix}-v*`], { cwd: repoPath, timeoutMs: 60_000 })).pipe(
     Effect.map((out) => nextTagFrom(out.split("\n").map((line) => line.split("refs/tags/")[1]?.trim() ?? ""), prefix)),
@@ -124,9 +100,19 @@ const branchHead = (repoPath: string, branch: string) =>
     Effect.orElseSucceed(() => null),
   )
 
-/** The commit a PR's head points at: what the adversarial review reads, whichever branch the PR is on. */
+/** Where a PR's head is: the commit the adversarial review reads, and the branch it is on. */
+export interface PrHead {
+  readonly sha: string
+  readonly branch: string
+}
+
+const HeadRef = Schema.Struct({ headRefOid: Schema.String, headRefName: Schema.String })
+
 const prHead = (prUrl: string) =>
-  gh(["pr", "view", prUrl, "--json", "headRefOid", "-q", ".headRefOid"]).pipe(Effect.map((out) => (out.trim() === "" ? null : out.trim())))
+  gh(["pr", "view", prUrl, "--json", "headRefOid,headRefName"]).pipe(
+    Effect.flatMap((out) => decodeOr("gh", "pr view", Schema.fromJsonString(HeadRef))(out)),
+    Effect.map((head): PrHead | null => (head.headRefOid === "" ? null : { sha: head.headRefOid, branch: head.headRefName })),
+  )
 
 /** Takes a draft PR out of draft once the adversarial review passed. Idempotent: an already ready PR stays ready. */
 const markReady = (prUrl: string) => gh(["pr", "ready", prUrl]).pipe(Effect.asVoid)
@@ -154,7 +140,7 @@ export interface GitHubShape {
   readonly createRelease: (tag: string, notes: string) => Effect.Effect<void, GitHubError>
   /** The commit `branch` points at on origin, `null` when it was not pushed. */
   readonly branchHead: (repoPath: string, branch: string) => Effect.Effect<string | null>
-  readonly prHead: (prUrl: string) => Effect.Effect<string | null, GitHubError>
+  readonly prHead: (prUrl: string) => Effect.Effect<PrHead | null, GitHubError>
   readonly markReady: (prUrl: string) => Effect.Effect<void, GitHubError>
   /** `blocked`: the Merkl org's IP allow list refuses this network. */
   readonly reachability: Effect.Effect<Reachability>

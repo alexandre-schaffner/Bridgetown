@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { run } from "../src/proc.ts"
+import { sessionEnv } from "../src/agent/options.ts"
+import { run } from "../src/lib/proc.ts"
 import { childEnv, decodeSecretsLine, readFirstLine, scrubProcessEnv, secretsFromEnv } from "../src/secrets.ts"
-import { sessionEnv } from "../src/sessions/sdk-options.ts"
 
 const streamOf = (...chunks: ReadonlyArray<string>) =>
   new ReadableStream<Uint8Array>({

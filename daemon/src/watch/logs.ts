@@ -1,8 +1,9 @@
 import { Schema } from "effect"
-import type { ParsedAlert } from "../domain/alert.ts"
-import { type Decision, type Triage, WATCH_CHANNEL } from "../domain/model.ts"
+import { type Decision, type ParsedAlert, type Triage, WATCH_CHANNEL } from "../domain/alert.ts"
 import { exploreLogsLink } from "../grafana/boards.ts"
-import { clock, watchFingerprint } from "./detect.ts"
+import { ERROR_LEVELS, regexLiteral, WARNING_LEVELS } from "../grafana/logsql.ts"
+import { clock, oneLine, pct } from "../lib/text.ts"
+import { watchFingerprint } from "./detect.ts"
 import type { LogPatternInput, LogPatternVerdict } from "./judge.ts"
 
 /**
@@ -21,8 +22,8 @@ import type { LogPatternInput, LogPatternVerdict } from "./judge.ts"
  * Queries are constants; nothing from a log line goes into one Bridgetown runs.
  */
 
-export const RECENT_MINUTES = 15
-export const MIN_RECENT = 10
+const RECENT_MINUTES = 15
+const MIN_RECENT = 10
 const MIN_SURGE = 20
 const SURGE_FACTOR = 5
 /** Patterns per Jev call: three questions each. */
@@ -39,10 +40,10 @@ interface SweepSpec {
 }
 
 export const SWEEPS: Readonly<Record<Sweep, SweepSpec>> = {
-  errors: { windowMinutes: 24 * 60, levels: `(severity_text:="ERROR" OR severity_text:="FATAL")`, words: null },
+  errors: { windowMinutes: 24 * 60, levels: ERROR_LEVELS, words: null },
   warnings: {
     windowMinutes: 2 * 60,
-    levels: `(severity_text:="WARN" OR severity_text:="WARNING")`,
+    levels: WARNING_LEVELS,
     words: [
       `(deadlock OR timeout OR "timed out" OR ECONNREFUSED OR ECONNRESET OR "rate limit" OR "rate limited" OR throttled OR deprecated`,
       `OR retired OR "will be removed" OR "out of memory" OR "insufficient funds" OR nonce OR reverted OR panic OR unhandled`,
@@ -113,7 +114,7 @@ const parseJson = (text: string | undefined): unknown => {
 
 /** "merkl-compute-<N>" → a regex filter for it; anything outside a job name's characters gets no filter. */
 const jobFilter = (job: string): string | null =>
-  /^[a-z0-9.-]+(<N>[a-z0-9.-]*)*$/i.test(job) ? `merkl.job:~"^${job.replaceAll(".", "[.]").replaceAll("<N>", "[0-9]+")}$"` : null
+  /^[a-z0-9.-]+(<N>[a-z0-9.-]*)*$/i.test(job) ? `merkl.job:~"^${regexLiteral(job).replaceAll("<N>", "[0-9]+")}$"` : null
 
 const nameFilter = (field: string, name: string): string | null => (/^[a-z0-9.-]{1,80}$/i.test(name) ? `${field}:="${name}"` : null)
 
@@ -200,7 +201,7 @@ export const candidates = (patterns: ReadonlyArray<LogPattern>, judged: Readonly
     .slice(0, BATCH)
 
 /** "merkl-compute-*", or "merkl-compute-* and 2 more". */
-export const sourcesText = (p: LogPattern): string =>
+const sourcesText = (p: LogPattern): string =>
   p.sources.length <= 1 ? (p.sources[0] ?? "unknown") : `${p.sources[0]} and ${p.sources.length - 1} more`
 
 const window = (sweep: Sweep) => (sweep === "errors" ? "the day" : "the 2 hours")
@@ -252,11 +253,6 @@ export const patternLink = (p: LogPattern, sweptAt: Date, to: Date = sweptAt): s
 /** Prod's error lines in Grafana Explore over the 3 hours to `now`. */
 export const errorsLink = (now: Date): string => exploreLogsLink(SWEEPS.errors.levels, new Date(now.getTime() - LINK_HOURS * 3_600_000), now)
 
-const oneLine = (text: string, max: number) => {
-  const flat = text.replace(/\s+/g, " ").trim()
-  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
-}
-
 /** A judged pattern as an alert Bridgetown raised itself, in channel "Grafana" like the metric findings. */
 export const logFinding = (p: LogPattern, verdict: LogPatternVerdict, now: Date): ParsedAlert => {
   const since = new Date(now.getTime() - RECENT_MINUTES * 60_000)
@@ -282,18 +278,15 @@ export const logFinding = (p: LogPattern, verdict: LogPatternVerdict, now: Date)
       `Pattern (numbers collapsed to <N>): ${oneLine(p.message, 600)}`,
       `Example line: ${oneLine(p.example, 600)}`,
       `Find its lines (VictoriaLogs, LogsQL): ${query}`,
-      `Jev: problem ${Math.round(verdict.problem * 100)}% · agent ${Math.round(verdict.agent * 100)}% · users affected ${Math.round(verdict.users * 100)}%`,
+      `Jev: problem ${pct(verdict.problem)} · agent ${pct(verdict.agent)} · users affected ${pct(verdict.users)}`,
       `Dashboard: ${patternLink(p, now)}`,
     ].join("\n"),
     source: "watch",
     fingerprint: watchFingerprint(`log:${id}`),
     fields: { _tag: "watch", signal: `log:${id}`, query, datasource: "logs", level: p.recent, usual: shownUsual(p), since: since.toISOString(), shape: "rise" },
     mentionsMe: false,
-    fromHuman: false,
   }
 }
-
-const pct = (value: number) => `${Math.round(value * 100)}%`
 
 /**
  * A pattern Jev calls a problem is an anomaly: it gets an investigation, like a metric's (`decideAnomaly`), unless

@@ -1,6 +1,7 @@
 import { Effect } from "effect"
+import type { Decision, JevVerdict, Triage } from "../domain/alert.ts"
 import type { AdapterError, MissingCredential } from "../domain/errors.ts"
-import type { Decision, JevVerdict, Thresholds, Triage } from "../domain/model.ts"
+import type { Thresholds } from "../domain/settings.ts"
 import type { HubShape } from "../hub.ts"
 
 /** The Jev status after a call: ok (and its last problem gone), or why it failed (no key, an error). */

@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { type AdapterError, Conflict, type GitHubError } from "../domain/errors.ts"
-import type { Session } from "../domain/model.ts"
+import type { Session } from "../domain/session.ts"
 
 /**
  * The two human gates that act on GitHub, made idempotent per session: a

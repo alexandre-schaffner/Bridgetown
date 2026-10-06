@@ -1,14 +1,7 @@
 import { Effect } from "effect"
 import type { ActionQueueShape } from "../actions/queue.ts"
-import type { Session } from "../domain/model.ts"
-import { type SessionRepoShape, withPatch } from "./repo.ts"
-
-/** What you are told when a session comes back to you: its status line and its card. */
-export interface HandOff {
-  readonly activity: string
-  readonly title: string
-  readonly detail: string
-}
+import { type HandOff, type Session, withPatch } from "../domain/session.ts"
+import type { SessionRepoShape } from "./repo.ts"
 
 /** A send-back that could not start a turn: the agent's worktree or SDK session is gone. */
 export const cannotResume = (what: string): HandOff => ({

@@ -1,10 +1,12 @@
-import { DEFAULT_CHANNELS, DEFAULT_SETTINGS } from "../../src/config.ts"
-import { type Action, type Alert, type AlertFields, type AlertSource, type Channel, type Disposition, NO_MILESTONES, RETRY, type Session, type Settings, type TranscriptEntry, type Triage, triageEvent, WATCH_CHANNEL } from "../../src/domain/model.ts"
+import type { Action } from "../../src/domain/action.ts"
+import { type Alert, type AlertFields, type AlertSource, type Disposition, type Triage, triageEvent, WATCH_CHANNEL } from "../../src/domain/alert.ts"
+import { sessionEndEvent, sessionStartEvent } from "../../src/domain/progress.ts"
+import { isFinished, NO_MILESTONES, type Session, type TranscriptEntry } from "../../src/domain/session.ts"
+import { type Channel, DEFAULT_CHANNELS, DEFAULT_SETTINGS, type Settings } from "../../src/domain/settings.ts"
+import { truncate } from "../../src/lib/text.ts"
 import { newSession } from "../../src/sessions/new-session.ts"
-import { sessionEndEvent } from "../../src/sessions/repo.ts"
 import { releaseDetail } from "../../src/ship/cards.ts"
-import { truncate } from "../../src/slack/text.ts"
-import type { FakePr } from "./fakes.ts"
+import type { MockPr } from "./fakes.ts"
 
 /** The log finding's fingerprint: the Goldsky pattern in the mock's log sweep (grafana.ts) points at it. */
 export const LOG_FINDING_FINGERPRINT = "watch:log:1234567890"
@@ -262,35 +264,35 @@ export const buildFixtures = (options: WorldOptions) => {
       ? session(A.ask, "waiting", { started: 25, updated: 2 }, { activity: `Asked: ${truncate(ASK.question, 100)}`, costUsd: 0.31, milestones: { ...NO_MILESTONES, diagnosed: true } })
       : { ...newSession(A.ask, SESSION.ask, options.repoPath), startedAt: ago(25) },
     ci: session(A.ci, "ci", { started: 37, updated: 3 }, {
-      activity: "CI running on #3340", phase: "ci", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3340), ciRounds: 1, costUsd: 1.84, review: reviewed, component: "studio",
+      activity: "CI running on #3340", phase: "ci", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3340), ciRounds: 1, costUsd: 1.84, review: reviewed,
       diagnosis: "vite 6.4.0 (pulled in by a caret range) changed how `import.meta.glob` resolves eager imports, breaking the route manifest in apps/studio. Pinning vite to 6.3.5 restores it.",
-      release: { image: "merkl-studio", tag: "studio", version: "" }, milestones: shipped({}),
+      releasePrefix: "studio", milestones: shipped({}),
     }),
     merge: session(A.merge, "awaiting_merge", { started: 69, updated: 12 }, {
-      activity: "#3345 approved and green, ready to merge", phase: "ci", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3345), costUsd: 0.97, review: reviewed, component: "app",
+      activity: "#3345 approved and green, ready to merge", phase: "ci", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3345), costUsd: 0.97, review: reviewed,
       diagnosis: "The sparkline component imports `d3-shape` from a path that only exists in d3 v7; the lockfile resolved v6 after a dedupe. Import from the package root.",
-      release: { image: "merkl-app", tag: "app", version: "" }, milestones: shipped({ ciGreen: true }),
+      releasePrefix: "app", milestones: shipped({ ciGreen: true }),
     }),
     release: session(A.release, "awaiting_release", { started: 109, updated: 30 }, {
-      activity: "Merged, ready to cut dispute-v0.4.3", phase: "deploy", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3338), costUsd: 0.62, review: reviewed, component: "dispute",
+      activity: "Merged, ready to cut dispute-v0.4.3", phase: "deploy", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3338), costUsd: 0.62, review: reviewed,
       diagnosis: "The Dockerfile copies `bun.lockb`, which the repo replaced with `bun.lock`. Copy the new lockfile.",
-      release: { image: "merkl-dispute", tag: "dispute", version: "" }, milestones: shipped({ ciGreen: true, merged: true }), mergeRequestedAt: ago(31),
+      releasePrefix: "dispute", milestones: shipped({ ciGreen: true, merged: true }), mergeRequestedAt: ago(31),
     }),
     inFlight: session(A.inFlight, "awaiting_release", { started: 149, updated: 2 }, {
-      activity: "Merged, ready to cut indexer-v0.9.3", phase: "deploy", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3336), costUsd: 0.88, review: reviewed, component: "indexer",
+      activity: "Merged, ready to cut indexer-v0.9.3", phase: "deploy", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3336), costUsd: 0.88, review: reviewed,
       diagnosis: "Base image pulls hit Docker Hub's anonymous rate limit on the shared runner. Pull from the GHCR mirror instead.",
-      release: { image: "merkl-indexer", tag: "indexer", version: "" }, milestones: shipped({ ciGreen: true, merged: true }), mergeRequestedAt: ago(20),
+      releasePrefix: "indexer", milestones: shipped({ ciGreen: true, merged: true }), mergeRequestedAt: ago(20),
     }),
     deploying: session(A.deploying, "deploying", { started: 189, updated: 15 }, {
-      activity: "Waiting for release approval", phase: "deploy", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3333), costUsd: 1.21, review: reviewed, component: "api",
+      activity: "Waiting for release approval", phase: "deploy", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3333), costUsd: 1.21, review: reviewed,
       diagnosis: "The ETL job's new migration adds a NOT NULL column without a default; existing rows fail it. Added a default and a backfill.",
-      release: { image: "merkl-api", tag: "api-v1.35.11", version: "v1.35.11" }, milestones: shipped({ ciGreen: true, merged: true, released: true }),
+      releasePrefix: "api", milestones: shipped({ ciGreen: true, merged: true, released: true }),
       mergeRequestedAt: ago(40), releaseTag: "api-v1.35.11", deployStage: { _tag: "AwaitingApproval" },
     }),
     resolved: session(A.resolved, "resolved", { started: 297, updated: 250 }, {
-      activity: "Deployed admin-v0.6.1", phase: "done", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3329), costUsd: 1.31, review: reviewed, component: "admin", worktree: null,
+      activity: "Deployed admin-v0.6.1", phase: "done", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3329), costUsd: 1.31, review: reviewed, worktree: null,
       diagnosis: "A caret range let vite 6.4.0 in, which changed eager `import.meta.glob` resolution and emptied the route manifest. Pinned vite to 6.3.5.",
-      release: { image: "merkl-admin", tag: "admin-v0.6.1", version: "v0.6.1" }, milestones: shipped({ ciGreen: true, merged: true, released: true, deployed: true }),
+      releasePrefix: "admin", milestones: shipped({ ciGreen: true, merged: true, released: true, deployed: true }),
       resolution: "deployed admin-v0.6.1", mergeRequestedAt: ago(280), releaseTag: "admin-v0.6.1", deployStage: { _tag: "Deployed" },
     }),
     closed: session(A.closed, "closed", { started: 418, updated: 380 }, {
@@ -299,9 +301,9 @@ export const buildFixtures = (options: WorldOptions) => {
       milestones: { ...NO_MILESTONES },
     }),
     failedCi: session(A.failedCi, "failed", { started: 598, updated: 540 }, {
-      activity: "Agent stopped: error_max_turns", phase: "ci", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3302), ciRounds: 2, costUsd: 3.92, component: "states-exporter",
+      activity: "Agent stopped: error_max_turns", phase: "ci", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3302), ciRounds: 2, costUsd: 3.92,
       diagnosis: "The exporter's Dockerfile pins a Debian image whose apt mirror is gone; switching to bookworm fixes the build, but the integration test then times out against the staging RPC.",
-      release: { image: "merkl-states-exporter", tag: "states-exporter", version: "" }, milestones: shipped({}), resolution: "agent stopped: error_max_turns",
+      releasePrefix: "states-exporter", milestones: shipped({}), resolution: "agent stopped: error_max_turns",
     }),
     failedSetup: session(A.failedSetup, "failed", { started: 139.6, updated: 139 }, {
       activity: "Could not start: git fetch: The requested URL returned error: 403", worktree: null, claudeSessionId: null, costUsd: 0,
@@ -321,9 +323,9 @@ export const buildFixtures = (options: WorldOptions) => {
       diagnosis: "Couldn't reproduce the timeout: the same epoch computes in **212s** locally against an archive node.\n\nRuled out:\n- RPC latency (p99 180ms)\n- the campaign config (unchanged)\n- memory (61% peak)\n\nThe slow part in the failing run is `fetchPositions` for 3 Uniswap v4 pools (18k sequential calls); a cold cache on the engine pod is possible but unproven.",
     }),
     critique: session(A.critique, "critiquing", { started: 15, updated: 0.5 }, {
-      activity: "Waiting for review", phase: "critique", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3352), costUsd: 0.86, component: "api",
+      activity: "Waiting for review", phase: "critique", outcome: "fix_pr", rootCauseFound: true, prUrl: pr(3352), costUsd: 0.86,
       diagnosis: "Linea's RPC returns reward amounts as hex strings above 2^53; `Number()` in `RewardService.format` overflows to Infinity and JSON serialisation fails. Parse with BigInt.",
-      release: { image: "merkl-api", tag: "api", version: "" }, milestones: shipped({ critiqued: false }),
+      releasePrefix: "api", milestones: shipped({ critiqued: false }),
     }),
   } satisfies Record<keyof typeof SESSION, Session>
 
@@ -337,26 +339,26 @@ export const buildFixtures = (options: WorldOptions) => {
     preparing: session(STILL_A.preparing, "preparing", { started: 1, updated: 0.8 }, { activity: "Creating worktree…", claudeSessionId: null }),
   } satisfies Record<keyof typeof STILL_SESSION, Session>
 
-  const card = (spec: Omit<Action, "id" | "createdAt" | "url" | "options"> & { readonly url?: string | null; readonly options?: ReadonlyArray<string>; readonly minutesAgo: number }): Action => {
+  const card = (spec: Omit<Action, "id" | "createdAt" | "url" | "options" | "fingerprint" | "retry"> & Partial<Pick<Action, "url" | "options" | "fingerprint" | "retry">> & { readonly minutesAgo: number }): Action => {
     const { minutesAgo, ...rest } = spec
-    return { options: [], url: null, ...rest, id: `a_mock_${spec.kind}_${spec.sessionId ?? spec.alertId ?? ""}`.replace(/[^a-z0-9_]/gi, "_"), createdAt: ago(minutesAgo) }
+    return { options: [], url: null, fingerprint: null, retry: false, ...rest, id: `a_mock_${spec.kind}_${spec.sessionId ?? spec.alertId ?? ""}`.replace(/[^a-z0-9_]/gi, "_"), createdAt: ago(minutesAgo) }
   }
   const forSession = (s: Session) => ({ sessionId: s.id, alertId: s.alertId })
 
   const actions: ReadonlyArray<Action> = [
-    card({ kind: "escalate", title: A.escalated.title, detail: A.escalated.triage.reason, primaryLabel: "Open in Slack", sessionId: null, alertId: A.escalated.id, payload: A.escalated.fingerprint, url: A.escalated.permalink, minutesAgo: 1 }),
-    card({ kind: "reply", title: "Reply to Pierre", detail: "Reproduced: /opportunities 500s when chainId is empty because the param parses as NaN and slips past validation. A one-line fix coerces empty strings to undefined; I can open the PR.", primaryLabel: "Send reply", ...forSession(S.reply), payload: "Reproduced: /opportunities 500s when chainId is empty because the param parses as NaN and slips past validation. A one-line fix coerces empty strings to undefined; I can open the PR.", minutesAgo: 1.5 }),
-    card({ kind: "review", title: `Root cause not found · ${S.review.title}`, detail: S.review.diagnosis ?? "", primaryLabel: "Close session", ...forSession(S.review), payload: null, minutesAgo: 4 }),
-    card({ kind: "investigate", title: A.logs.title, detail: `Grafana · ${A.logs.triage.reason}`, primaryLabel: "Investigate", sessionId: null, alertId: A.logs.id, payload: A.logs.fingerprint, minutesAgo: 9 }),
-    card({ kind: "investigate", title: A.watch.title, detail: `Grafana · ${A.watch.triage.reason}`, primaryLabel: "Investigate", sessionId: null, alertId: A.watch.id, payload: A.watch.fingerprint, minutesAgo: 3 }),
-    card({ kind: "investigate", title: A.investigate.title, detail: `#${A.investigate.channelName} · ${A.investigate.triage.reason}`, primaryLabel: "Investigate", sessionId: null, alertId: A.investigate.id, payload: A.investigate.fingerprint, minutesAgo: 7 }),
-    card({ kind: "merge", title: "Merge fix(app): import d3-shape from the package root", detail: "#3345 · approved by julien · CI green, 6 checks · Codex passed", primaryLabel: "Merge", ...forSession(S.merge), payload: S.merge.prUrl, minutesAgo: 12 }),
-    card({ kind: "release", title: `Ship ${S.release.title}`, detail: releaseDetail(pr(3338), "dispute-v0.4.3", "dispute"), primaryLabel: "Cut dispute-v0.4.3", ...forSession(S.release), payload: "dispute-v0.4.3", minutesAgo: 30 }),
-    card({ kind: "release", title: `Ship ${S.inFlight.title}`, detail: releaseDetail(pr(3336), IN_FLIGHT_TAG, "indexer"), primaryLabel: `Cut ${IN_FLIGHT_TAG}`, ...forSession(S.inFlight), payload: IN_FLIGHT_TAG, minutesAgo: 20 }),
-    card({ kind: "review", title: `Agent failed · ${S.failedSetup.title}`, detail: "Could not start: git fetch: The requested URL returned error: 403 (the Merkl IP allow list refused this network)", primaryLabel: "Retry", ...forSession(S.failedSetup), payload: RETRY, minutesAgo: 139 }),
-    card({ kind: "review", title: `Agent failed · ${S.failedCi.title}`, detail: "Agent stopped: error_max_turns", primaryLabel: "Retry", ...forSession(S.failedCi), payload: RETRY, minutesAgo: 540 }),
+    card({ kind: "escalate", title: A.escalated.title, detail: A.escalated.triage.reason, primaryLabel: "Open in Slack", sessionId: null, alertId: A.escalated.id, fingerprint: A.escalated.fingerprint, url: A.escalated.permalink, minutesAgo: 1 }),
+    card({ kind: "reply", title: "Reply to Pierre", detail: "Reproduced: /opportunities 500s when chainId is empty because the param parses as NaN and slips past validation. A one-line fix coerces empty strings to undefined; I can open the PR.", primaryLabel: "Send reply", ...forSession(S.reply), minutesAgo: 1.5 }),
+    card({ kind: "review", title: `Root cause not found · ${S.review.title}`, detail: S.review.diagnosis ?? "", primaryLabel: "Close session", ...forSession(S.review), minutesAgo: 4 }),
+    card({ kind: "investigate", title: A.logs.title, detail: `Grafana · ${A.logs.triage.reason}`, primaryLabel: "Investigate", sessionId: null, alertId: A.logs.id, fingerprint: A.logs.fingerprint, minutesAgo: 9 }),
+    card({ kind: "investigate", title: A.watch.title, detail: `Grafana · ${A.watch.triage.reason}`, primaryLabel: "Investigate", sessionId: null, alertId: A.watch.id, fingerprint: A.watch.fingerprint, minutesAgo: 3 }),
+    card({ kind: "investigate", title: A.investigate.title, detail: `#${A.investigate.channelName} · ${A.investigate.triage.reason}`, primaryLabel: "Investigate", sessionId: null, alertId: A.investigate.id, fingerprint: A.investigate.fingerprint, minutesAgo: 7 }),
+    card({ kind: "merge", title: "Merge fix(app): import d3-shape from the package root", detail: "#3345 · approved by julien · CI green, 6 checks · Codex passed", primaryLabel: "Merge", ...forSession(S.merge), minutesAgo: 12 }),
+    card({ kind: "release", title: `Ship ${S.release.title}`, detail: releaseDetail(pr(3338), "dispute-v0.4.3", "dispute"), primaryLabel: "Cut dispute-v0.4.3", ...forSession(S.release), minutesAgo: 30 }),
+    card({ kind: "release", title: `Ship ${S.inFlight.title}`, detail: releaseDetail(pr(3336), IN_FLIGHT_TAG, "indexer"), primaryLabel: `Cut ${IN_FLIGHT_TAG}`, ...forSession(S.inFlight), minutesAgo: 20 }),
+    card({ kind: "review", title: `Agent failed · ${S.failedSetup.title}`, detail: "Could not start: git fetch: The requested URL returned error: 403 (the Merkl IP allow list refused this network)", primaryLabel: "Retry", ...forSession(S.failedSetup), retry: true, minutesAgo: 139 }),
+    card({ kind: "review", title: `Agent failed · ${S.failedCi.title}`, detail: "Agent stopped: error_max_turns", primaryLabel: "Retry", ...forSession(S.failedCi), retry: true, minutesAgo: 540 }),
     // Live, the asking agent puts this card up itself.
-    ...(options.static ? [card({ kind: "answer", title: ASK.question, detail: S.ask.title, primaryLabel: "Reply", options: ASK.options, ...forSession(S.ask), payload: null, minutesAgo: 2 })] : []),
+    ...(options.static ? [card({ kind: "answer", title: ASK.question, detail: S.ask.title, primaryLabel: "Reply", options: ASK.options, ...forSession(S.ask), minutesAgo: 2 })] : []),
   ]
 
   const t = (minutesAgo: number, kind: TranscriptEntry["kind"], text: string): TranscriptEntry => ({ at: ago(minutesAgo), kind, text })
@@ -476,8 +478,8 @@ export const buildFixtures = (options: WorldOptions) => {
     [SESSION.resolved]: [t(297, "status", "Session started"), t(281, "result", "Pinned vite to 6.3.5. PR #3329."), t(250, "status", "Deployed admin-v0.6.1")],
   }
 
-  const fakePr = (title: string, checks: FakePr["checks"], review: FakePr["review"], merged = false): FakePr => ({ title, checks, review, merged, moves: false })
-  const prs: Readonly<Record<string, FakePr>> = {
+  const fakePr = (title: string, checks: MockPr["checks"], review: MockPr["review"], merged = false): MockPr => ({ title, checks, review, merged, moves: false })
+  const prs: Readonly<Record<string, MockPr>> = {
     [pr(3340)]: fakePr("fix(app-studio): pin vite to 6.3", "pending", "REVIEW_REQUIRED"),
     [pr(3345)]: fakePr("fix(app): import d3-shape from the package root", "green", "APPROVED"),
     [pr(3338)]: fakePr("fix(dispute): copy bun.lock in the Dockerfile", "green", "APPROVED", true),
@@ -503,8 +505,8 @@ export const buildFixtures = (options: WorldOptions) => {
   const alerts: ReadonlyArray<Alert> = [...Object.values(A), ...(options.static ? Object.values(STILL_A) : [])].map((a) => {
     const s = sessions.find((x) => x.id === a.sessionId)
     if (s === undefined) return a
-    const started = { at: s.startedAt, text: `Agent session started (${s.model}, ${s.effort})` }
-    const ended = s.status === "resolved" || s.status === "closed" || s.status === "failed" || s.status === "stopped" ? [{ at: s.updatedAt, text: sessionEndEvent(s) }] : []
+    const started = { at: s.startedAt, text: sessionStartEvent(s) }
+    const ended = isFinished(s) ? [{ at: s.updatedAt, text: sessionEndEvent(s) }] : []
     return { ...a, events: [...a.events, started, ...ended] }
   })
 

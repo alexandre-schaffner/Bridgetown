@@ -1,17 +1,18 @@
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import { type Cause, Effect, Exit, FiberSet, Queue, Stream } from "effect"
+import { abortOnReturn, type AgentShape } from "../agent/agent.ts"
+import { type EventSink, handleMessage, type TurnEnd } from "../agent/events.ts"
+import { sdkOptions } from "../agent/options.ts"
+import type { ToolCallbacks } from "../agent/tools.ts"
 import { AdapterError, errorMessage } from "../domain/errors.ts"
-import type { Session } from "../domain/model.ts"
+import type { Session } from "../domain/session.ts"
 import type { HubShape } from "../hub.ts"
+import { truncate } from "../lib/text.ts"
 import type { SlackThreadShape } from "../slack/thread.ts"
-import { truncate } from "../slack/text.ts"
 import type { StoreShape } from "../store/store.ts"
-import { abortOnReturn, type AgentShape } from "./agent.ts"
 import type { AsksShape } from "./asks.ts"
+import { slackContextText } from "./prompts.ts"
 import type { SessionRepoShape } from "./repo.ts"
-import { type EventSink, handleMessage, type TurnEnd } from "./sdk-events.ts"
-import { sdkOptions } from "./sdk-options.ts"
-import type { ToolCallbacks } from "./tools.ts"
 
 /**
  * A turn's streaming input. The first prompt goes in when the turn is claimed;
@@ -44,6 +45,8 @@ export interface TurnDeps {
   readonly agent: AgentShape
   readonly onEnd: (id: string) => (end: TurnEnd) => Effect.Effect<void, AdapterError>
   readonly onFailure: (id: string, reason: string) => Effect.Effect<void>
+  /** The daemon's API port, which sessions may not reach. */
+  readonly daemonPort: number
 }
 
 export const makeTurns = (deps: TurnDeps) => {
@@ -56,15 +59,7 @@ export const makeTurns = (deps: TurnDeps) => {
         Effect.gen(function* () {
           const alert = yield* store.getAlert(session.alertId)
           if (alert === undefined) return "The alert is no longer stored."
-          const replies = yield* thread.replies(alert)
-          const around = yield* thread.nearby(alert, minutes)
-          return [
-            `Thread replies (${replies.length}):`,
-            ...replies.map((r) => `- ${r.slice(0, 1_500)}`),
-            "",
-            `#${alert.channelName} within ±${minutes} min (${around.length}):`,
-            ...around.map((m) => `- ${m}`),
-          ].join("\n")
+          return slackContextText(alert, yield* thread.replies(alert), yield* thread.nearby(alert, minutes), minutes)
         }).pipe(Effect.orElseSucceed(() => "Slack context is unavailable right now.")),
       ),
     report: (phase, note, prUrl) =>
@@ -108,7 +103,7 @@ export const makeTurns = (deps: TurnDeps) => {
         }
         const messages = deps.agent.query({
           prompt: Stream.toAsyncIterable(Stream.fromQueue(input)),
-          options: sdkOptions({ session, abort, resume, tools: toolsFor(session, runPromise), onRefused }),
+          options: sdkOptions({ session, abort, resume, tools: toolsFor(session, runPromise), onRefused, daemonPort: deps.daemonPort }),
         })
         yield* Stream.fromAsyncIterable(
           abortOnReturn(messages, abort),
