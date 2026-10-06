@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import type { ActionQueueShape } from "../actions/queue.ts"
 import type { AdapterError } from "../domain/errors.ts"
-import { isFinished, type Session } from "../domain/model.ts"
+import { isFinished, type Session, withPatch } from "../domain/session.ts"
 import type { HubShape } from "../hub.ts"
 import type { GitHubShape } from "../ship/github.ts"
 import type { SlackThreadShape } from "../slack/thread.ts"
@@ -9,7 +9,7 @@ import { truncate } from "../slack/text.ts"
 import type { StoreShape } from "../store/store.ts"
 import { decideOutcome, type Finalized } from "./finalize.ts"
 import type { SessionResult } from "./output.ts"
-import { type SessionRepoShape, withPatch } from "./repo.ts"
+import type { SessionRepoShape } from "./repo.ts"
 
 export interface FinishDeps {
   readonly store: StoreShape

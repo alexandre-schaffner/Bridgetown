@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Stage } from "../src/domain/model.ts"
+import type { Stage } from "../src/domain/alert.ts"
 import { type ReleaseState, releaseHeadline, releaseState, sameReleaseState } from "../src/domain/release.ts"
 
 const stage = (name: string, status: Stage["status"], detail = ""): Stage => ({ name, status, detail })

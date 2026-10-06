@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect"
-import { type Alert, type Claimant, threadTsOf } from "../domain/model.ts"
+import { type Alert, type Claimant, threadTsOf } from "../domain/alert.ts"
 import * as Messages from "../ship/messages.ts"
 import { SlackClient, type SlackMessage, type SlackReaction } from "./client.ts"
 import { SlackMe } from "./me.ts"

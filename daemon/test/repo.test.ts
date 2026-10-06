@@ -1,8 +1,9 @@
 import { afterAll, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { ActionQueue } from "../src/actions/queue.ts"
-import { type Action, type Session } from "../src/domain/model.ts"
-import { recoverInterrupted, wasInterrupted } from "../src/sessions/recovery.ts"
+import type { Action } from "../src/domain/action.ts"
+import { type Session, wasInterrupted } from "../src/domain/session.ts"
+import { recoverInterrupted } from "../src/sessions/recovery.ts"
 import { SessionRepo } from "../src/sessions/repo.ts"
 import { Store } from "../src/store/store.ts"
 import { makeAlert, makeSession } from "./fixtures/records.ts"
@@ -173,12 +174,12 @@ describe("recoverInterrupted (M5)", () => {
     sessionId, alertId: null, fingerprint: null, retry: false, url: null, createdAt: "2026-10-01T00:00:00.000Z",
   })
   test("pure rule: mid-turn, or blocked on an ask even after a first result", () => {
-    expect(wasInterrupted(makeSession("running"), [])).toBe(true)
-    expect(wasInterrupted(makeSession("preparing"), [])).toBe(true)
-    expect(wasInterrupted(makeSession("waiting", { outcome: null }), [])).toBe(true)
-    expect(wasInterrupted(makeSession("waiting", { id: "s_x", outcome: "needs_human" }), [answer("s_x")])).toBe(true)
-    expect(wasInterrupted(makeSession("waiting", { id: "s_x", outcome: "needs_human" }), [])).toBe(false)
-    expect(wasInterrupted(makeSession("ci"), [])).toBe(false)
+    expect(wasInterrupted(makeSession("running"), false)).toBe(true)
+    expect(wasInterrupted(makeSession("preparing"), false)).toBe(true)
+    expect(wasInterrupted(makeSession("waiting", { outcome: null }), false)).toBe(true)
+    expect(wasInterrupted(makeSession("waiting", { id: "s_x", outcome: "needs_human" }), true)).toBe(true)
+    expect(wasInterrupted(makeSession("waiting", { id: "s_x", outcome: "needs_human" }), false)).toBe(false)
+    expect(wasInterrupted(makeSession("ci"), false)).toBe(false)
   })
   test("a waiting session with a prior outcome blocked on ask fails with a retry card; answer cards go", async () => {
     const out = await run(

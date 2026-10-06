@@ -1,6 +1,7 @@
 import { Context, Effect, Layer } from "effect"
+import { type Action, cardStands, dismissCloses } from "../domain/action.ts"
 import { Conflict, type DaemonError } from "../domain/errors.ts"
-import { type Action, cardStands, dismissCloses, type Session } from "../domain/model.ts"
+import type { Session } from "../domain/session.ts"
 import { Hub } from "../hub.ts"
 import { Intake } from "../pipeline/intake.ts"
 import { SessionRepo } from "../sessions/repo.ts"

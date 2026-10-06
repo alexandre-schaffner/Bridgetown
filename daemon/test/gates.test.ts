@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { Deferred, Effect, Fiber } from "effect"
 import { makeInFlight } from "../src/actions/in-flight.ts"
+import { type Action, cardStands, dismissCloses, openableUrl } from "../src/domain/action.ts"
 import { AdapterError } from "../src/domain/errors.ts"
-import { acceptsMessages, type Action, cardStands, closedResolution, dismissCloses, NO_MILESTONES, openableUrl, type Session, type SessionStatus } from "../src/domain/model.ts"
+import { acceptsMessages, closedResolution, NO_MILESTONES, type Session, type SessionStatus } from "../src/domain/session.ts"
 import { mergeOnce, releaseOnce } from "../src/ship/gates.ts"
 import { makeSession } from "./fixtures/records.ts"
 

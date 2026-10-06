@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import { type Alert, NO_MILESTONES, type Session, type SessionStatus } from "../src/domain/model.ts"
-import { decideOutcome, type FinalizeInput, shipStatus } from "../src/sessions/finalize.ts"
+import type { Alert } from "../src/domain/alert.ts"
+import { NO_MILESTONES, type Session, type SessionStatus, shipStatus } from "../src/domain/session.ts"
+import { decideOutcome, type FinalizeInput } from "../src/sessions/finalize.ts"
 import type { SessionResult } from "../src/sessions/output.ts"
 import { makeAlert, makeSession } from "./fixtures/records.ts"
 

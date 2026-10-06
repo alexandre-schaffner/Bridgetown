@@ -1,4 +1,6 @@
-import type { Decision, Depth, FindingVerdict, JevVerdict, ReviewerVendor, Thresholds } from "../domain/model.ts"
+import type { Decision, Depth, JevVerdict } from "../domain/alert.ts"
+import type { FindingVerdict, ReviewerVendor } from "../domain/critique.ts"
+import type { Thresholds } from "../domain/settings.ts"
 
 const pct = (value: number): string => `${Math.round(value * 100)}%`
 

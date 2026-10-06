@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import { Effect, Exit, Fiber } from "effect"
-import type { Session } from "../src/domain/model.ts"
+import type { Session } from "../src/domain/session.ts"
 import { Hub } from "../src/hub.ts"
 import type { AgentShape } from "../src/sessions/agent.ts"
 import { Asks } from "../src/sessions/asks.ts"

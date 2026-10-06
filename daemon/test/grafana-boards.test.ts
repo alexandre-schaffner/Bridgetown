@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { deploysQuery, toDeploy, zeroFilled } from "../src/grafana/board.ts"
 import { alertBoard, chainOf, imageOf, overviewBoard, routeOf, stepFor, watchBoard } from "../src/grafana/boards.ts"
 import { rowsOf } from "../src/grafana/client.ts"
-import type { Alert, JevVerdict } from "../src/domain/model.ts"
+import type { Alert, JevVerdict } from "../src/domain/alert.ts"
 import { makeAlert } from "./fixtures/records.ts"
 
 const now = new Date("2026-10-04T12:00:00.000Z")

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { type Alert, NO_MILESTONES } from "../src/domain/model.ts"
+import type { Alert } from "../src/domain/alert.ts"
+import { NO_MILESTONES } from "../src/domain/session.ts"
 import { deployFailedPrompt, followUpPrompt, inboxPrompt, slackContextText } from "../src/sessions/prompts.ts"
 
 const alert = { title: "t", raw: "please take a look", fields: { _tag: "inbox" as const, threadTs: null }, permalink: null } as unknown as Alert

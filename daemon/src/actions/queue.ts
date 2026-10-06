@@ -1,7 +1,8 @@
 import { Context, Effect, Layer } from "effect"
+import type { Action } from "../domain/action.ts"
 import { type AdapterError, NotFound } from "../domain/errors.ts"
 import { newId, now } from "../domain/ids.ts"
-import type { Action, Session } from "../domain/model.ts"
+import type { Session } from "../domain/session.ts"
 import { Hub } from "../hub.ts"
 import { Store } from "../store/store.ts"
 

@@ -1,4 +1,5 @@
-import { type Alert, NO_MILESTONES, type Session, type SessionStatus } from "../../src/domain/model.ts"
+import type { Alert } from "../../src/domain/alert.ts"
+import { NO_MILESTONES, type Session, type SessionStatus } from "../../src/domain/session.ts"
 
 /** A session with every field set to something plausible; tests override what they are about. */
 export const makeSession = (status: SessionStatus, overrides: Partial<Session> = {}): Session => ({

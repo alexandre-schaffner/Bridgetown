@@ -1,6 +1,5 @@
 import { GH_HOST } from "../config.ts"
-import type { InboxFields } from "../domain/model.ts"
-import type { ParsedAlert } from "../domain/alert.ts"
+import type { InboxFields, ParsedAlert } from "../domain/alert.ts"
 import type { SearchMatch, SlackMessage } from "./client.ts"
 import { BOT_PREFIX, clean, firstLine, flattenMessage, truncate } from "./text.ts"
 

@@ -1,5 +1,6 @@
 import { SNAPSHOT_ALERTS, SNAPSHOT_FINISHED_SESSIONS } from "../api/views.ts"
-import { type Action, ACTIVE_STATUSES, type SessionStatus } from "../domain/model.ts"
+import type { Action } from "../domain/action.ts"
+import { ACTIVE_STATUSES, type SessionStatus } from "../domain/session.ts"
 import type { AlertRef, SessionRef } from "../store/store.ts"
 
 const DAY = 24 * 60 * 60_000

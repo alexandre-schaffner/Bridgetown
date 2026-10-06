@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect"
-import { type Alert, threadTsOf } from "../domain/model.ts"
+import { type Alert, threadTsOf } from "../domain/alert.ts"
 import { Hub } from "../hub.ts"
 import { SlackClient } from "./client.ts"
 import { BOT_PREFIX, flattenMessage, plain } from "./text.ts"

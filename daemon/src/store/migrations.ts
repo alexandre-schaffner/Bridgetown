@@ -5,7 +5,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 /**
  * The schema, and one-time rewrites of rows an older daemon wrote. Rows are JSON
  * documents: a field added later decodes with a default (`nullByDefault` in
- * model.ts), so a migration is only needed when the right value has to be read
+ * domain/schema.ts), so a migration is only needed when the right value has to be read
  * from something else the old row kept. Those run over every row, once.
  */
 

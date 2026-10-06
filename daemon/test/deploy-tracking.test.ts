@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { alertFromParsed } from "../src/domain/alert.ts"
-import { NO_MILESTONES } from "../src/domain/model.ts"
+import { NO_MILESTONES } from "../src/domain/session.ts"
 import { AlertPipeline } from "../src/pipeline/alerts.ts"
 import { SessionRunner } from "../src/sessions/runner.ts"
 import { Shipper } from "../src/ship/shipper.ts"

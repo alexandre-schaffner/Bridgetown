@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { type Alert, type Decision, type Disposition, NO_MILESTONES, type Session, type SessionStatus } from "../src/domain/model.ts"
+import type { Alert, Decision, Disposition } from "../src/domain/alert.ts"
+import { NO_MILESTONES, type Session, type SessionStatus } from "../src/domain/session.ts"
 import { makeSession } from "./fixtures/records.ts"
-import { alertOutcome } from "../src/domain/outcome.ts"
+import { alertOutcome } from "../src/domain/alert-outcome.ts"
 
 const alert = (decision: Decision, disposition: Disposition["kind"] | null = null): Alert => ({
   id: "C1:1", channelId: "C1", channelName: "alert-releases", ts: "1", permalink: null, title: "t", summary: "", raw: "",

@@ -1,9 +1,11 @@
 import { Context, Effect, Fiber, FiberMap, Layer, Option, Queue, SynchronizedRef } from "effect"
 import { ActionQueue } from "../actions/queue.ts"
 import { MAX_CRITIQUE_ROUNDS } from "../critique/transitions.ts"
+import type { Alert } from "../domain/alert.ts"
 import { type AdapterError, Conflict, errorMessage, NotFound } from "../domain/errors.ts"
 import { newId, now } from "../domain/ids.ts"
-import { acceptsMessages, type Alert, closedResolution, holdsSlot, isActive, isFinished, type Session } from "../domain/model.ts"
+import { sessionStartEvent } from "../domain/progress.ts"
+import { acceptsMessages, closedResolution, holdsSlot, isActive, isFinished, type Session, withPatch } from "../domain/session.ts"
 import { Hub } from "../hub.ts"
 import { GitHub } from "../ship/github.ts"
 import { SlackThread } from "../slack/thread.ts"
@@ -13,7 +15,7 @@ import { Agent } from "./agent.ts"
 import { Asks } from "./asks.ts"
 import { makeFinish } from "./finish.ts"
 import { inboxPrompt, initialPrompt, RETRY_PROMPT, setupNotes } from "./prompts.ts"
-import { type ModifyOptions, SessionRepo, withPatch } from "./repo.ts"
+import { type ModifyOptions, SessionRepo } from "./repo.ts"
 import type { TurnEnd } from "./sdk-events.ts"
 import { makeTurnInput, makeTurns, type TurnInput, userMessage } from "./turn.ts"
 import { newSession } from "./new-session.ts"
@@ -362,7 +364,7 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
         const id = newId("s")
         const session = newSession(alert, id, settings.monorepoPath)
         yield* repo.create(session)
-        yield* store.appendAlertEvent(alert.id, `Agent session started (${session.model}, ${session.effort})`, { sessionId: id })
+        yield* store.appendAlertEvent(alert.id, sessionStartEvent(session), { sessionId: id })
         yield* hub.notify
         return session
       }),

@@ -1,5 +1,6 @@
 import { GH_HOST } from "../config.ts"
-import { type Alert, type AlertKind, channelLabel, type Session } from "../domain/model.ts"
+import { type Alert, type AlertKind, channelLabel } from "../domain/alert.ts"
+import type { Session } from "../domain/session.ts"
 import type { SessionResult } from "./output.ts"
 
 const playbooks = (deploymentRepo: string): Readonly<Record<AlertKind, string>> => ({

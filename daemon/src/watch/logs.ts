@@ -1,6 +1,5 @@
 import { Schema } from "effect"
-import type { ParsedAlert } from "../domain/alert.ts"
-import { type Decision, type Triage, WATCH_CHANNEL } from "../domain/model.ts"
+import { type Decision, type ParsedAlert, type Triage, WATCH_CHANNEL } from "../domain/alert.ts"
 import { exploreLogsLink } from "../grafana/boards.ts"
 import { clock, watchFingerprint } from "./detect.ts"
 import type { LogPatternInput, LogPatternVerdict } from "./judge.ts"

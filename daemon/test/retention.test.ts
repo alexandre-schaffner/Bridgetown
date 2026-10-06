@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { Action, SessionStatus } from "../src/domain/model.ts"
+import type { Action } from "../src/domain/action.ts"
+import type { SessionStatus } from "../src/domain/session.ts"
 import { planPrune, type PruneRefs, ROWS_MS, worktreeDue } from "../src/housekeeping/retention.ts"
 import type { AlertRef, SessionRef } from "../src/store/store.ts"
 

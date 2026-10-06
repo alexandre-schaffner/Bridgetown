@@ -1,7 +1,7 @@
 import { createSdkMcpServer, tool, type McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk"
 import { z } from "zod"
 import { VERSION } from "../config.ts"
-import type { Phase } from "../domain/model.ts"
+import type { Phase } from "../domain/session.ts"
 import { ownPrUrl } from "./output.ts"
 
 export const TOOL_SERVER = "bridgetown"

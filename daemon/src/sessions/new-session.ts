@@ -1,5 +1,6 @@
+import type { Alert } from "../domain/alert.ts"
 import { now } from "../domain/ids.ts"
-import { type Alert, NO_MILESTONES, type Session } from "../domain/model.ts"
+import { NO_MILESTONES, type Session } from "../domain/session.ts"
 import { PROFILES } from "../triage/policy.ts"
 import { slug } from "./worktree.ts"
 

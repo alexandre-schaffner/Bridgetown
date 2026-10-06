@@ -1,7 +1,7 @@
 import { Duration, Effect } from "effect"
 import type { ReviewerShape } from "../../src/critique/reviewer.ts"
+import type { JevVerdict } from "../../src/domain/alert.ts"
 import { GheBlocked, type GitHubError } from "../../src/domain/errors.ts"
-import type { JevVerdict } from "../../src/domain/model.ts"
 import { type GitHubShape, nextTagFrom, type PullRequest } from "../../src/ship/github.ts"
 import type { SlackClientShape } from "../../src/slack/client.ts"
 import type { JevShape } from "../../src/triage/jev.ts"

@@ -1,5 +1,6 @@
-import { type Alert, claimHeadline, type Session } from "./model.ts"
+import { type Alert, claimHeadline } from "./alert.ts"
 import { progressOf, type Tone } from "./progress.ts"
+import type { Session } from "./session.ts"
 
 export type OutcomeKind = "pending" | "filtered" | "ignored" | "suggested" | "escalated" | "waiting" | "dismissed" | "opened" | "withdrawn" | "teammate" | "session"
 

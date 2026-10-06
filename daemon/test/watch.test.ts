@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { ActionQueue } from "../src/actions/queue.ts"
-import type { Alert } from "../src/domain/model.ts"
+import type { Alert } from "../src/domain/alert.ts"
 import type { Panel } from "../src/grafana/board.ts"
 import { watchBoard } from "../src/grafana/boards.ts"
 import type { GrafanaShape, Range } from "../src/grafana/client.ts"

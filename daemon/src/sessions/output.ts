@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { GH_HOST, GHE_REPO } from "../config.ts"
-import { Outcome, Recommendation } from "../domain/model.ts"
+import { Outcome, Recommendation } from "../domain/session.ts"
 
 export const SessionResult = Schema.Struct({
   outcome: Outcome,

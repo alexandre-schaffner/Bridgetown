@@ -1,4 +1,4 @@
-import type { Alert } from "../domain/model.ts"
+import type { Alert } from "../domain/alert.ts"
 import { alertKind } from "../triage/kind.ts"
 import { LOGS_DATASOURCE } from "./client.ts"
 

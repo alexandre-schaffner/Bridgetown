@@ -1,6 +1,6 @@
 import { Effect, Record, Schema } from "effect"
 import { attempt, errorMessage, InvalidInput } from "../domain/errors.ts"
-import { Settings } from "../domain/model.ts"
+import { Settings } from "../domain/settings.ts"
 
 /** Request bodies and path ids: anything malformed or out of range is `InvalidInput` (400). */
 

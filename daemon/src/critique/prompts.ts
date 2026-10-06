@@ -1,4 +1,6 @@
-import { type Alert, channelLabel, type Finding, type Session } from "../domain/model.ts"
+import { type Alert, channelLabel } from "../domain/alert.ts"
+import type { Finding } from "../domain/critique.ts"
+import type { Session } from "../domain/session.ts"
 import { untrusted } from "../sessions/prompts.ts"
 import { findingLine } from "./transitions.ts"
 

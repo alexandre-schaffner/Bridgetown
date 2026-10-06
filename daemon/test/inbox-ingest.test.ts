@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import type { JevVerdict } from "../src/domain/model.ts"
+import type { JevVerdict } from "../src/domain/alert.ts"
 import { Hub } from "../src/hub.ts"
 import { Inbox } from "../src/pipeline/inbox.ts"
 import type { SearchMatch } from "../src/slack/client.ts"

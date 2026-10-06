@@ -1,4 +1,5 @@
-import { passedAt, REVIEWER_NAMES, type Session } from "../domain/model.ts"
+import { passedAt, REVIEWER_NAMES } from "../domain/critique.ts"
+import type { Session } from "../domain/session.ts"
 import type { PullRequest } from "./github.ts"
 import { prLabel } from "./review.ts"
 

@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { alertOutcome } from "../src/domain/outcome.ts"
+import { alertOutcome } from "../src/domain/alert-outcome.ts"
 import { Hub } from "../src/hub.ts"
 import { AlertPipeline } from "../src/pipeline/alerts.ts"
 import { claimsIn, firstClaimant } from "../src/slack/claims.ts"

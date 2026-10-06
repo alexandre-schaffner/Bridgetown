@@ -1,13 +1,4 @@
-import type { ParsedAlert } from "../domain/alert.ts"
-import type {
-  AlertSource,
-  EngineFields,
-  ReleaseFields,
-  Stage,
-  StageStatus,
-  UptimeFields,
-  UptimeState,
-} from "../domain/model.ts"
+import type { AlertSource, EngineFields, ParsedAlert, ReleaseFields, Stage, StageStatus, UptimeFields, UptimeState } from "../domain/alert.ts"
 import { releaseHeadline, releaseState } from "../domain/release.ts"
 import type { SlackMessage } from "./client.ts"
 import { clean, firstLine, flattenMessage, plain, stripEmoji, truncate } from "./text.ts"

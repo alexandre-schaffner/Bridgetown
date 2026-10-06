@@ -1,6 +1,6 @@
-import { type Alert, type Claimant, claimHeadline, type Session } from "../domain/model.ts"
-import type { ParsedAlert } from "../domain/alert.ts"
+import { type Alert, type Claimant, claimHeadline, type ParsedAlert } from "../domain/alert.ts"
 import { releaseState } from "../domain/release.ts"
+import type { Session } from "../domain/session.ts"
 
 export type RuleOutcome =
   | { readonly _tag: "Filtered"; readonly reason: string }

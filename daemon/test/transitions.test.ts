@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { NO_MILESTONES } from "../src/domain/model.ts"
+import { NO_MILESTONES } from "../src/domain/session.ts"
 import { nextTagFrom, type PullRequest } from "../src/ship/github.ts"
 import {
   afterMerge,

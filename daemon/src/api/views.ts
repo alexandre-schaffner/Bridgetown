@@ -1,8 +1,11 @@
 import { Effect } from "effect"
 import { Actions } from "../actions/actions.ts"
-import { acceptsMessages, type Action, type Alert, critiquePassed, dismissCloses, openableUrl, type Session, triageEvent } from "../domain/model.ts"
-import { alertOutcome } from "../domain/outcome.ts"
+import { type Action, dismissCloses, openableUrl } from "../domain/action.ts"
+import { alertOutcome } from "../domain/alert-outcome.ts"
+import { type Alert, triageEvent } from "../domain/alert.ts"
+import { critiquePassed, findingCounts } from "../domain/critique.ts"
 import { progressOf } from "../domain/progress.ts"
+import { acceptsMessages, type Session } from "../domain/session.ts"
 import { Hub } from "../hub.ts"
 import { metricsOf, windowStart } from "./metrics.ts"
 import { revvLink } from "../ship/review.ts"
@@ -54,8 +57,7 @@ export const sessionView = (session: Session) => ({
       : {
           reviewer: session.critique.reviewer,
           passed: critiquePassed(session.critique),
-          blocking: session.critique.findings.filter((f) => f.blocks).length,
-          dropped: session.critique.findings.filter((f) => !f.blocks).length,
+          ...findingCounts(session.critique),
         },
   costUsd: session.costUsd,
   slackThreadUrl: session.slackThreadUrl,

@@ -1,8 +1,8 @@
 import { choice, type EntryType, noul, type Questions, score, TypeSafeClient } from "@typesafe-ai/sdk"
 import { Context, Effect, Layer } from "effect"
+import { type Alert, channelLabel, type JevVerdict, type ParsedAlert, type ThreadReply } from "../domain/alert.ts"
+import type { FindingVerdict } from "../domain/critique.ts"
 import { type AdapterError, attempt, MissingCredential } from "../domain/errors.ts"
-import { type Alert, channelLabel, type FindingVerdict, type JevVerdict } from "../domain/model.ts"
-import type { ParsedAlert, ThreadReply } from "../domain/alert.ts"
 import { type FindingJudgeInput, findingQuestions, findingState } from "../critique/judge.ts"
 import { type LogPatternInput, type LogPatternVerdict, logPatternQuestions, logPatternState } from "../watch/judge.ts"
 

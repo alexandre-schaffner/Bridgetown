@@ -1,7 +1,10 @@
 import { DEFAULT_CHANNELS, DEFAULT_SETTINGS } from "../../src/config.ts"
-import { type Action, type Alert, type AlertFields, type AlertSource, type Channel, type Disposition, NO_MILESTONES, type Session, type Settings, type TranscriptEntry, type Triage, triageEvent, WATCH_CHANNEL } from "../../src/domain/model.ts"
+import type { Action } from "../../src/domain/action.ts"
+import { type Alert, type AlertFields, type AlertSource, type Disposition, type Triage, triageEvent, WATCH_CHANNEL } from "../../src/domain/alert.ts"
+import { sessionEndEvent, sessionStartEvent } from "../../src/domain/progress.ts"
+import { isFinished, NO_MILESTONES, type Session, type TranscriptEntry } from "../../src/domain/session.ts"
+import type { Channel, Settings } from "../../src/domain/settings.ts"
 import { newSession } from "../../src/sessions/new-session.ts"
-import { sessionEndEvent } from "../../src/sessions/repo.ts"
 import { releaseDetail } from "../../src/ship/cards.ts"
 import { truncate } from "../../src/slack/text.ts"
 import type { FakePr } from "./fakes.ts"
@@ -503,8 +506,8 @@ export const buildFixtures = (options: WorldOptions) => {
   const alerts: ReadonlyArray<Alert> = [...Object.values(A), ...(options.static ? Object.values(STILL_A) : [])].map((a) => {
     const s = sessions.find((x) => x.id === a.sessionId)
     if (s === undefined) return a
-    const started = { at: s.startedAt, text: `Agent session started (${s.model}, ${s.effort})` }
-    const ended = s.status === "resolved" || s.status === "closed" || s.status === "failed" || s.status === "stopped" ? [{ at: s.updatedAt, text: sessionEndEvent(s) }] : []
+    const started = { at: s.startedAt, text: sessionStartEvent(s) }
+    const ended = isFinished(s) ? [{ at: s.updatedAt, text: sessionEndEvent(s) }] : []
     return { ...a, events: [...a.events, started, ...ended] }
   })
 

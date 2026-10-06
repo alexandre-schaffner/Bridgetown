@@ -1,7 +1,7 @@
 import { Context, Effect, Layer, PubSub, Ref, Schema, type Scope, Semaphore, Stream } from "effect"
 import { DEFAULT_CHANNELS, DEFAULT_SETTINGS, type Env } from "./config.ts"
 import { type AdapterError, errorMessage } from "./domain/errors.ts"
-import { Settings } from "./domain/model.ts"
+import { Settings } from "./domain/settings.ts"
 import { Store } from "./store/store.ts"
 
 export interface Status {

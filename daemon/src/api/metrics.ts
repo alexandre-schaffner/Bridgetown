@@ -1,4 +1,4 @@
-import type { Session } from "../domain/model.ts"
+import type { Session } from "../domain/session.ts"
 
 /** The overview's numbers over the last day. */
 

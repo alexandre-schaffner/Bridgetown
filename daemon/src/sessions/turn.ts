@@ -1,7 +1,7 @@
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import { type Cause, Effect, Exit, FiberSet, Queue, Stream } from "effect"
 import { AdapterError, errorMessage } from "../domain/errors.ts"
-import type { Session } from "../domain/model.ts"
+import type { Session } from "../domain/session.ts"
 import type { HubShape } from "../hub.ts"
 import type { SlackThreadShape } from "../slack/thread.ts"
 import { truncate } from "../slack/text.ts"

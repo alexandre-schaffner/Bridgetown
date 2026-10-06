@@ -1,7 +1,7 @@
 import { Context, Deferred, Duration, Effect, Layer, Option, SynchronizedRef } from "effect"
 import { ActionQueue } from "../actions/queue.ts"
 import type { AdapterError } from "../domain/errors.ts"
-import type { Session } from "../domain/model.ts"
+import type { Session } from "../domain/session.ts"
 import { truncate } from "../slack/text.ts"
 import { SessionRepo } from "./repo.ts"
 

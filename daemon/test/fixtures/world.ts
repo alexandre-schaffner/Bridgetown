@@ -1,7 +1,7 @@
 import { Effect, Layer, ManagedRuntime } from "effect"
 import type { Env } from "../../src/config.ts"
+import type { JevVerdict } from "../../src/domain/alert.ts"
 import { MissingCredential } from "../../src/domain/errors.ts"
-import type { JevVerdict } from "../../src/domain/model.ts"
 import { Grafana, type GrafanaShape } from "../../src/grafana/client.ts"
 import { appLayerWith } from "../../src/layers.ts"
 import { Reviewer, ReviewerLive, type ReviewerShape } from "../../src/critique/reviewer.ts"

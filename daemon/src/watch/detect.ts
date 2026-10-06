@@ -1,5 +1,4 @@
-import type { ParsedAlert } from "../domain/alert.ts"
-import { WATCH_CHANNEL } from "../domain/model.ts"
+import { type ParsedAlert, WATCH_CHANNEL } from "../domain/alert.ts"
 import type { Deploy, Panel } from "../grafana/board.ts"
 import { type PanelSpec, type Unit, WATCH_HOURS } from "../grafana/boards.ts"
 

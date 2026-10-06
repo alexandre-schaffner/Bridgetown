@@ -1,4 +1,5 @@
-import { critiquePassed, findingsUnanswered, isActive, REVIEWER_NAMES, type Session } from "./model.ts"
+import { critiquePassed, findingCounts, findingsUnanswered, REVIEWER_NAMES } from "./critique.ts"
+import { isActive, type Session, SHIPPING_STATUSES, WORKING_STATUSES } from "./session.ts"
 
 export type StepKey = "diagnose" | "fix" | "pr" | "critique" | "ci" | "deploy"
 export type StepState = "done" | "current" | "pending" | "failed" | "skipped"
@@ -28,11 +29,6 @@ const LABELS: Readonly<Record<StepKey, string>> = {
   deploy: "Deploy",
 }
 
-/** Statuses past the review, on the way to production. */
-const SHIPPING: ReadonlyArray<Session["status"]> = ["ci", "awaiting_merge", "awaiting_release", "deploying"]
-/** Statuses where Bridgetown or the agent is working on the frontier step, rather than waiting on someone. */
-const WORKING: ReadonlyArray<Session["status"]> = ["preparing", "running", "critiquing", "ci", "deploying"]
-
 /**
  * The stepper and status line, from evidence only. A step is done when its
  * milestone happened; the first step that did not happen is where the session
@@ -44,7 +40,7 @@ export const progressOf = (session: Session): Progress => {
   const noReleaseNeeded = session.status === "resolved" && m.merged && !m.released
   // Shipped on without an adversarial review: the setting was off, or the session predates it.
   // Skipped only when no review ever ran; a review sending the agent back is still the step in progress.
-  const noReview = !m.critiqued && session.critique === null && session.status !== "critiquing" && (m.ciGreen || m.merged || SHIPPING.includes(session.status))
+  const noReview = !m.critiqued && session.critique === null && session.status !== "critiquing" && (m.ciGreen || m.merged || SHIPPING_STATUSES.includes(session.status))
   const achieved: ReadonlyArray<readonly [StepKey, boolean]> = [
     ["diagnose", m.diagnosed || m.fixed || m.prOpened],
     ["fix", m.fixed || m.prOpened],
@@ -61,7 +57,7 @@ export const progressOf = (session: Session): Progress => {
     if (done) return { key, label: key === "deploy" && m.deployed ? "Deployed" : LABELS[key], state: "done" }
     if (session.status === "resolved") return { key, label: LABELS[key], state: "skipped" }
     if (index !== frontier) return { key, label: LABELS[key], state: "pending" }
-    if (active) return { key, label: LABELS[key], state: key === "diagnose" || WORKING.includes(session.status) ? "current" : "pending" }
+    if (active) return { key, label: LABELS[key], state: key === "diagnose" || WORKING_STATUSES.includes(session.status) ? "current" : "pending" }
     const label = key === "diagnose" && session.rootCauseFound === false ? "Root cause?" : key === "pr" ? "No PR" : LABELS[key]
     return { key, label, state: "failed" }
   })
@@ -76,7 +72,7 @@ const plural = (n: number, one: string, many: string): string => (n === 1 ? `1 $
 const critiqueLineOf = (session: Session, steps: ReadonlyArray<Step>): string => {
   const critique = session.critique
   if (session.status === "critiquing" && !findingsUnanswered(critique)) return `Reviewing · round ${session.critiqueRounds + 1}`
-  const dropped = critique === null ? 0 : critique.findings.filter((f) => !f.blocks).length
+  const { blocking, dropped } = critique === null ? { blocking: 0, dropped: 0 } : findingCounts(critique)
   const droppedPart = dropped > 0 ? [`${dropped} dropped by Jev`] : []
   switch (steps.find((step) => step.key === "critique")?.state) {
     case "done":
@@ -85,7 +81,6 @@ const critiqueLineOf = (session: Session, steps: ReadonlyArray<Step>): string =>
       return "Not run"
     default: {
       if (critique === null || critiquePassed(critique)) return "Not run"
-      const blocking = critique.findings.length - dropped
       const fixing = session.status === "running" ? ["agent fixing"] : session.status === "critiquing" ? ["waiting for an agent slot"] : []
       return [plural(blocking, "blocking finding", "blocking findings"), ...droppedPart, ...fixing].join(" · ")
     }
@@ -130,3 +125,11 @@ const headlineOf = (session: Session): { readonly headline: string; readonly ton
       return { headline: "Stopped by you", tone: "neutral" }
   }
 }
+
+/** The alert history line for a session just started on it: "Agent session started (claude-opus-5-5, high)". */
+export const sessionStartEvent = (session: Session): string => `Agent session started (${session.model}, ${session.effort})`
+
+/** The alert history line for a session that just ended, e.g. "Agent session ended · Closed · root cause not found". */
+export const sessionEndEvent = (session: Session): string => `Agent session ended · ${progressOf(session).headline}`
+
+export const SESSION_RESUMED_EVENT = "Agent session resumed"

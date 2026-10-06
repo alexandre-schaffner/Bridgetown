@@ -1,5 +1,7 @@
 import type { NewAction } from "../actions/queue.ts"
-import { type Alert, passedAt, type SentBack, type Session, type SessionStatus } from "../domain/model.ts"
+import type { Alert } from "../domain/alert.ts"
+import { passedAt } from "../domain/critique.ts"
+import { type HandOff, type SentBack, type Session, type SessionStatus, shipStatus } from "../domain/session.ts"
 import * as Messages from "../ship/messages.ts"
 import { releasePrefixOf } from "../ship/transitions.ts"
 import type { SessionResult } from "./output.ts"
@@ -8,25 +10,12 @@ import { pushBackPrompt } from "./prompts.ts"
 /** Times an agent that hands off without a root cause is sent back before the user sees it. */
 export const MAX_PUSHBACKS = 1
 
-/**
- * Where a session with a PR in flight goes back to after a side turn (a
- * teammate's follow-up, your message): the ship flow, which re-checks GitHub
- * and the tracker on its own. `undefined` when nothing is shipping.
- */
-export const shipStatus = (session: Session): SessionStatus | undefined => {
-  const m = session.milestones
-  if (m.released && !m.deployed) return "deploying"
-  if (m.merged && !m.released) return session.releasePrefix === null ? undefined : "awaiting_release"
-  if (session.prUrl !== null && !m.merged) return "ci"
-  return undefined
-}
-
 /** The hand-off card's title when a send-back comes back without a fix. */
 const SENT_BACK_TITLES: Readonly<Record<SentBack, string>> = { ci: "CI still red", changes: "Changes requested", deploy: "Deploy failed" }
 
 /** A card the result asks for: a hand-off goes through the queue's dedupe, anything else is put as is. */
 export type CardRequest =
-  | { readonly _tag: "HandOff"; readonly title: string; readonly detail: string }
+  | ({ readonly _tag: "HandOff" } & Pick<HandOff, "title" | "detail">)
   | { readonly _tag: "Card"; readonly action: NewAction }
 
 export interface FinalizeInput {

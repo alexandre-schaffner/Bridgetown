@@ -1,5 +1,5 @@
-import type { Phase, Session } from "../domain/model.ts"
 import { type ReleaseState, sameReleaseState } from "../domain/release.ts"
+import type { HandOff, Phase, Session } from "../domain/session.ts"
 import type { CiState, PullRequest } from "./github.ts"
 import { prLabel } from "./review.ts"
 
@@ -22,7 +22,7 @@ export const MERGE_QUEUE_TIMEOUT_MS = 60 * 60_000
 /** Another round for the agent, or the user once the budget is spent. */
 export type Escalation =
   | { readonly _tag: "SendBack"; readonly round: number; readonly phase: Phase; readonly activity: string }
-  | { readonly _tag: "HandOff"; readonly activity: string; readonly title: string; readonly detail: string }
+  | ({ readonly _tag: "HandOff" } & HandOff)
 
 export interface Failure {
   /** Phase for the new round. */
@@ -30,7 +30,7 @@ export interface Failure {
   /** Status line while the agent works on round `n`. */
   readonly working: (round: number) => string
   /** What the user sees once the budget is spent. */
-  readonly exhausted: { readonly activity: string; readonly title: string; readonly detail: string }
+  readonly exhausted: HandOff
 }
 
 /** A round budget: by default the CI one, shared by red CI, requested changes and failed deploys. */
