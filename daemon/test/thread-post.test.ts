@@ -2,8 +2,8 @@ import { afterAll, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { Hub } from "../src/hub.ts"
 import { SlackThread } from "../src/slack/thread.ts"
-import { makeAlert } from "./fixtures/records.ts"
-import { fakeSlack, makeWorld } from "./fixtures/world.ts"
+import { makeAlert } from "./support/records.ts"
+import { fakeSlack, makeWorld } from "./support/world.ts"
 
 const posts: Array<{ readonly channel: string; readonly thread: string | undefined; readonly text: string }> = []
 const world = makeWorld({

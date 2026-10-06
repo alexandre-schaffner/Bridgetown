@@ -4,9 +4,9 @@ import { join } from "node:path"
 import { Effect, Layer } from "effect"
 import { Environment } from "../src/config.ts"
 import { pinnedBunVersion, Worktrees, WorktreesLive } from "../src/sessions/worktree.ts"
-import { commit, scratchRepo, sh } from "./fixtures/repo.ts"
-import { scratchDir } from "./fixtures/tmp.ts"
-import { testEnv } from "./fixtures/world.ts"
+import { commit, scratchRepo, sh } from "./support/repo.ts"
+import { scratchDir } from "./support/tmp.ts"
+import { testEnv } from "./support/world.ts"
 
 const live = WorktreesLive.pipe(Layer.provide(Layer.succeed(Environment)(testEnv(scratchDir("bt-worktrees-")))))
 const worktrees = <A, E>(f: (w: Worktrees["Service"]) => Effect.Effect<A, E>) => Effect.runPromise(Worktrees.use(f).pipe(Effect.provide(live)))

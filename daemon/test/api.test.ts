@@ -7,8 +7,8 @@ import { NO_MILESTONES, type Session } from "../src/domain/session.ts"
 import { Settings } from "../src/domain/settings.ts"
 import { appLayer } from "../src/layers.ts"
 import { Store } from "../src/store/store.ts"
-import { scratchDir } from "./fixtures/tmp.ts"
-import { testEnv } from "./fixtures/world.ts"
+import { scratchDir } from "./support/tmp.ts"
+import { testEnv } from "./support/world.ts"
 
 const TOKEN = "test-token"
 const home = scratchDir("bt-api-")

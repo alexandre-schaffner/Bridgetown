@@ -7,7 +7,7 @@ import { type Finding, type FindingVerdict, ReviewFinding } from "../src/domain/
 import { DEFAULT_SETTINGS } from "../src/domain/settings.ts"
 import { findingState } from "../src/critique/judge.ts"
 import { decideFinding } from "../src/triage/policy.ts"
-import { makeAlert, makeSession } from "./fixtures/records.ts"
+import { makeAlert, makeSession } from "./support/records.ts"
 
 const finding = (overrides: Partial<Finding> = {}): Finding => ({
   file: "packages/api/src/services/reward.ts", line: 88, title: "pending rewards still go through Number()",

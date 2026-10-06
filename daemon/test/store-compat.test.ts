@@ -5,8 +5,8 @@ import { Effect } from "effect"
 import { alertDetail, snapshot } from "../src/api/views.ts"
 import { legacyClosed, legacyDisposition, legacyPayload, legacyRelease, legacyReviewPosted, legacyTracker } from "../src/store/migrations.ts"
 import { Store } from "../src/store/store.ts"
-import { OLD_ALERTS, OLD_SESSIONS, oldStore } from "./fixtures/old-store.ts"
-import { makeWorld } from "./fixtures/world.ts"
+import { OLD_ALERTS, OLD_SESSIONS, oldStore } from "./support/old-store.ts"
+import { makeWorld } from "./support/world.ts"
 
 const home = oldStore()
 const world = makeWorld({ home })

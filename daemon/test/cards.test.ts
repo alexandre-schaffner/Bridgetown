@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { PullRequest } from "../src/ship/github.ts"
 import { mergeDetail, releaseDetail } from "../src/ship/cards.ts"
 import { mergedResolution } from "../src/ship/transitions.ts"
-import { makeSession } from "./fixtures/records.ts"
+import { makeSession } from "./support/records.ts"
 
 const PR = "https://nocturlab.ghe.com/Merkl/monorepo/pull/3352"
 const pr = (overrides: Partial<PullRequest> = {}): PullRequest => ({

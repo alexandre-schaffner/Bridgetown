@@ -3,7 +3,7 @@ import { mkdirSync, symlinkSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { writeRefusal } from "../src/sessions/confine.ts"
-import { scratchDir } from "./fixtures/tmp.ts"
+import { scratchDir } from "./support/tmp.ts"
 
 const root = scratchDir("bt-confine-")
 const worktree = join(root, "wt")

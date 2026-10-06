@@ -7,8 +7,8 @@ import { SlackApiError } from "../src/domain/errors.ts"
 import type { Session } from "../src/domain/session.ts"
 import { Hub } from "../src/hub.ts"
 import { Store } from "../src/store/store.ts"
-import { makeAlert, makeSession } from "./fixtures/records.ts"
-import { fakeSlack, makeWorld } from "./fixtures/world.ts"
+import { makeAlert, makeSession } from "./support/records.ts"
+import { fakeSlack, makeWorld } from "./support/world.ts"
 
 const card = (overrides: Partial<Action>): Action => ({
   id: "a_x", kind: "review", title: "t", detail: "", primaryLabel: "Close session", options: [], sessionId: null, alertId: null,

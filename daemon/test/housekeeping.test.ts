@@ -10,10 +10,10 @@ import { claudeProjectDir } from "../src/sessions/agent.ts"
 import { SessionRunner } from "../src/sessions/runner.ts"
 import { Worktrees } from "../src/sessions/worktree.ts"
 import { Store } from "../src/store/store.ts"
-import { makeAlert, makeSession } from "./fixtures/records.ts"
-import { scratchRepo, sh } from "./fixtures/repo.ts"
-import { scratchDir } from "./fixtures/tmp.ts"
-import { makeWorld } from "./fixtures/world.ts"
+import { makeAlert, makeSession } from "./support/records.ts"
+import { scratchRepo, sh } from "./support/repo.ts"
+import { scratchDir } from "./support/tmp.ts"
+import { makeWorld } from "./support/world.ts"
 
 const claudeConfigDir = scratchDir("bt-claude-")
 const repo = scratchRepo()

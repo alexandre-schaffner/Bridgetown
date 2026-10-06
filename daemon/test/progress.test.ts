@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { progressOf } from "../src/domain/progress.ts"
 import { NO_MILESTONES, type Session } from "../src/domain/session.ts"
-import { makeSession } from "./fixtures/records.ts"
+import { makeSession } from "./support/records.ts"
 
 const session = (overrides: Partial<Session>): Session => makeSession(overrides.status ?? "running", { worktree: "/w", ...overrides })
 const states = (s: Session) => progressOf(s).steps.map((step) => `${step.label}:${step.state}`)

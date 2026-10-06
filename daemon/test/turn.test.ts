@@ -10,10 +10,10 @@ import { SessionRunner, type SessionRunnerShape } from "../src/sessions/runner.t
 import type { GitHubShape } from "../src/ship/github.ts"
 import { Shipper } from "../src/ship/shipper.ts"
 import { Store } from "../src/store/store.ts"
-import { init, type Play, playingAgent, RESULT } from "./fixtures/agent.ts"
-import { makeAlert, makeSession } from "./fixtures/records.ts"
-import { scratchDir } from "./fixtures/tmp.ts"
-import { makeWorld } from "./fixtures/world.ts"
+import { init, type Play, playingAgent, RESULT } from "./support/agent.ts"
+import { makeAlert, makeSession } from "./support/records.ts"
+import { scratchDir } from "./support/tmp.ts"
+import { makeWorld } from "./support/world.ts"
 
 const OWN_PR = "https://nocturlab.ghe.com/Merkl/monorepo/pull/3401"
 

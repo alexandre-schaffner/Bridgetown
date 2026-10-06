@@ -5,7 +5,7 @@ import { overviewBoard } from "../src/grafana/boards.ts"
 import { watchBoard } from "../src/watch/detect.ts"
 import type { GrafanaShape } from "../src/grafana/client.ts"
 import { Hub } from "../src/hub.ts"
-import { makeWorld } from "./fixtures/world.ts"
+import { makeWorld } from "./support/world.ts"
 
 let calls = 0
 const slowGrafana: GrafanaShape = {

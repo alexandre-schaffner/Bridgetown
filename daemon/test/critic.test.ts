@@ -11,8 +11,8 @@ import { Hub } from "../src/hub.ts"
 import { Shipper } from "../src/ship/shipper.ts"
 import { Store } from "../src/store/store.ts"
 import type { JevShape } from "../src/triage/jev.ts"
-import { makeAlert, makeSession } from "./fixtures/records.ts"
-import { makeWorld, verdict } from "./fixtures/world.ts"
+import { makeAlert, makeSession } from "./support/records.ts"
+import { makeWorld, verdict } from "./support/world.ts"
 
 const PR = "https://ghe/pull/3352"
 

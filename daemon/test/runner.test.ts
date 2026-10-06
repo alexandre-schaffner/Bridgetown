@@ -8,9 +8,9 @@ import { Asks } from "../src/sessions/asks.ts"
 import { SessionRepo } from "../src/sessions/repo.ts"
 import { SessionRunner } from "../src/sessions/runner.ts"
 import { Store } from "../src/store/store.ts"
-import { makeAlert, makeSession } from "./fixtures/records.ts"
-import { scratchDir } from "./fixtures/tmp.ts"
-import { makeWorld } from "./fixtures/world.ts"
+import { makeAlert, makeSession } from "./support/records.ts"
+import { scratchDir } from "./support/tmp.ts"
+import { makeWorld } from "./support/world.ts"
 
 /**
  * An agent that reads its streaming input and never finishes on its own: it

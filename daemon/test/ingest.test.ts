@@ -6,8 +6,8 @@ import { AlertPipeline, commitHorizon, readHorizon } from "../src/pipeline/alert
 import type { SlackMessage } from "../src/slack/client.ts"
 import { Store } from "../src/store/store.ts"
 import type { JevShape } from "../src/triage/jev.ts"
-import { adminBuildFailed } from "./fixtures/messages.ts"
-import { fakeSlack, makeWorld, verdict } from "./fixtures/world.ts"
+import { adminBuildFailed } from "./support/messages.ts"
+import { fakeSlack, makeWorld, verdict } from "./support/world.ts"
 
 const CHANNEL = "C0AUKD42N3U"
 const recent = (minutesAgo: number) => (Date.now() / 1000 - minutesAgo * 60).toFixed(6)

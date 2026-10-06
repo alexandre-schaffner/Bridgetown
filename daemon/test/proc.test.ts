@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { Effect, Fiber } from "effect"
 import { run, runOk } from "../src/proc.ts"
-import { scratchDir } from "./fixtures/tmp.ts"
+import { scratchDir } from "./support/tmp.ts"
 
 const alive = (pid: number): boolean => {
   try {

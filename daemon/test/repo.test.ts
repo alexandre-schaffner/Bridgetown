@@ -6,8 +6,8 @@ import { type Session, wasInterrupted } from "../src/domain/session.ts"
 import { recoverInterrupted } from "../src/sessions/recovery.ts"
 import { SessionRepo } from "../src/sessions/repo.ts"
 import { Store } from "../src/store/store.ts"
-import { makeAlert, makeSession } from "./fixtures/records.ts"
-import { makeWorld } from "./fixtures/world.ts"
+import { makeAlert, makeSession } from "./support/records.ts"
+import { makeWorld } from "./support/world.ts"
 
 const world = makeWorld()
 afterAll(() => world.dispose())

@@ -5,8 +5,8 @@ import { Effect } from "effect"
 import { makeFakeGitHub } from "../scripts/mock/fakes.ts"
 import { ASK, buildFixtures, pr, SESSION, STILL_SESSION, type WorldOptions } from "../scripts/mock/fixtures.ts"
 import { mergeDetail } from "../src/ship/cards.ts"
-import { makeSession } from "./fixtures/records.ts"
-import { scratchDir } from "./fixtures/tmp.ts"
+import { makeSession } from "./support/records.ts"
+import { scratchDir } from "./support/tmp.ts"
 
 const NOW = "2026-10-04T12:00:00.000Z"
 const scratch = scratchDir("bt-mock-test-")

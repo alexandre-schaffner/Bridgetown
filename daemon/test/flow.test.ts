@@ -13,8 +13,8 @@ import { Shipper } from "../src/ship/shipper.ts"
 import { MAX_CI_ROUNDS } from "../src/ship/transitions.ts"
 import { Store } from "../src/store/store.ts"
 import type { JevShape } from "../src/triage/jev.ts"
-import { makeAlert, makeSession } from "./fixtures/records.ts"
-import { fakeSlack, makeWorld, verdict } from "./fixtures/world.ts"
+import { makeAlert, makeSession } from "./support/records.ts"
+import { fakeSlack, makeWorld, verdict } from "./support/world.ts"
 
 const card = (overrides: Partial<Action>): Action => ({
   id: "a_x", kind: "review", title: "t", detail: "", primaryLabel: "Close session", options: [], sessionId: null, alertId: null,

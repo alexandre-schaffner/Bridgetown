@@ -3,7 +3,7 @@ import type { Alert } from "../src/domain/alert.ts"
 import { NO_MILESTONES, type Session, type SessionStatus, shipStatus } from "../src/domain/session.ts"
 import { decideOutcome, type FinalizeInput } from "../src/sessions/finalize.ts"
 import type { SessionResult } from "../src/sessions/output.ts"
-import { makeAlert, makeSession } from "./fixtures/records.ts"
+import { makeAlert, makeSession } from "./support/records.ts"
 
 const result = (overrides: Partial<SessionResult> = {}): SessionResult => ({
   outcome: "needs_human", rootCauseFound: true, diagnosis: "vite 6.4 dropped CJS", tried: [], summary: "pin vite",

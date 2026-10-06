@@ -9,8 +9,8 @@ import { Store } from "../src/store/store.ts"
 import type { JevShape } from "../src/triage/jev.ts"
 import { detect, findingOf, formatValue, RECENT_STEPS, watchBoard } from "../src/watch/detect.ts"
 import { coveredBySlack, Watcher } from "../src/watch/watcher.ts"
-import { makeAlert, makeSession } from "./fixtures/records.ts"
-import { makeWorld, noGrafana, verdict } from "./fixtures/world.ts"
+import { makeAlert, makeSession } from "./support/records.ts"
+import { makeWorld, noGrafana, verdict } from "./support/world.ts"
 
 const STEP = 300
 const NOW = new Date("2026-10-04T12:00:00Z")

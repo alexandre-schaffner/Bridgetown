@@ -4,10 +4,10 @@ import { join } from "node:path"
 import * as SqliteClient from "@effect/sql-sqlite-bun/SqliteClient"
 import { Effect } from "effect"
 import { Store, tuneStorage } from "../src/store/store.ts"
-import { oldStore } from "./fixtures/old-store.ts"
-import { makeAlert, makeSession } from "./fixtures/records.ts"
-import { scratchDir } from "./fixtures/tmp.ts"
-import { makeWorld } from "./fixtures/world.ts"
+import { oldStore } from "./support/old-store.ts"
+import { makeAlert, makeSession } from "./support/records.ts"
+import { scratchDir } from "./support/tmp.ts"
+import { makeWorld } from "./support/world.ts"
 
 const home = scratchDir("bt-prune-")
 const world = makeWorld({ home })

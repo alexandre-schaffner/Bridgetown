@@ -7,9 +7,9 @@ import type { Session } from "../src/domain/session.ts"
 import type { GitHubShape, PullRequest } from "../src/ship/github.ts"
 import { Shipper } from "../src/ship/shipper.ts"
 import { Store } from "../src/store/store.ts"
-import { makeAlert, makeSession } from "./fixtures/records.ts"
+import { makeAlert, makeSession } from "./support/records.ts"
 import { Hub } from "../src/hub.ts"
-import { fakeSlack, makeWorld } from "./fixtures/world.ts"
+import { fakeSlack, makeWorld } from "./support/world.ts"
 
 const PR = "https://ghe/pull/3345"
 const green = [{ name: "lint", status: "COMPLETED", conclusion: "SUCCESS" }]

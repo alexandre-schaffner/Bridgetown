@@ -4,7 +4,7 @@ import { alertBoard, chainOf, imageOf, overviewBoard, routeOf, stepFor } from ".
 import { watchBoard } from "../src/watch/detect.ts"
 import { rowsOf } from "../src/grafana/client.ts"
 import type { Alert, JevVerdict } from "../src/domain/alert.ts"
-import { makeAlert } from "./fixtures/records.ts"
+import { makeAlert } from "./support/records.ts"
 
 const now = new Date("2026-10-04T12:00:00.000Z")
 const at = "2026-10-04T09:00:00.000Z"

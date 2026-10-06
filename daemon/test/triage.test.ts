@@ -6,7 +6,7 @@ import { parseMessage } from "../src/slack/parse.ts"
 import { alertState } from "../src/triage/judge.ts"
 import { decide, decideAnomaly } from "../src/triage/policy.ts"
 import { applyRules } from "../src/triage/rules.ts"
-import * as m from "./fixtures/messages.ts"
+import * as m from "./support/messages.ts"
 
 const releases = { channelId: "C0AUKD42N3U", channelName: "alert-releases", myUserId: "U07ALEX" }
 const uptime = { channelId: "C0B001L8UQ1", channelName: "alert-uptime", myUserId: "U07ALEX" }

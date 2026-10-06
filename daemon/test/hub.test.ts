@@ -4,8 +4,8 @@ import { SlackApiError } from "../src/domain/errors.ts"
 import { Hub, problemOf, type StatusPatch } from "../src/hub.ts"
 import { SlackThread } from "../src/slack/thread.ts"
 import { Store } from "../src/store/store.ts"
-import { makeAlert } from "./fixtures/records.ts"
-import { fakeSlack, makeWorld } from "./fixtures/world.ts"
+import { makeAlert } from "./support/records.ts"
+import { fakeSlack, makeWorld } from "./support/world.ts"
 
 describe("status problems", () => {
   const world = makeWorld()

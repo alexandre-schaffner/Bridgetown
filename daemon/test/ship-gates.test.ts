@@ -8,8 +8,8 @@ import type { Session } from "../src/domain/session.ts"
 import type { GitHubShape } from "../src/ship/github.ts"
 import { Shipper } from "../src/ship/shipper.ts"
 import { Store } from "../src/store/store.ts"
-import { makeAlert, makeSession } from "./fixtures/records.ts"
-import { makeWorld } from "./fixtures/world.ts"
+import { makeAlert, makeSession } from "./support/records.ts"
+import { makeWorld } from "./support/world.ts"
 
 /** GitHub whose `gh pr merge` / `gh release create` wait for `release` to be completed, counting the calls that act. */
 const slowGitHub = (release: Deferred.Deferred<void>, options: { readonly createFails?: boolean } = {}) => {

@@ -5,7 +5,7 @@ import { ownPrUrl } from "../src/ship/pr.ts"
 import { SESSION_RESULT_JSON_SCHEMA, SessionResult } from "../src/sessions/output.ts"
 import { impliedPhase } from "../src/sessions/sdk-events.ts"
 import { repoMcpServers } from "../src/sessions/sdk-options.ts"
-import { scratchDir } from "./fixtures/tmp.ts"
+import { scratchDir } from "./support/tmp.ts"
 
 describe("implied phase", () => {
   test("edits mean fixing, gh pr create means pr", () => {

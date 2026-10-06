@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { Alert, Decision, Disposition } from "../src/domain/alert.ts"
 import type { Session } from "../src/domain/session.ts"
-import { makeSession } from "./fixtures/records.ts"
+import { makeSession } from "./support/records.ts"
 import { alertOutcome } from "../src/domain/alert-outcome.ts"
 
 const alert = (decision: Decision, disposition: Disposition["kind"] | null = null): Alert => ({

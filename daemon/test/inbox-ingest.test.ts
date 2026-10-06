@@ -7,8 +7,8 @@ import type { SearchMatch } from "../src/slack/client.ts"
 import { SlackMe } from "../src/slack/me.ts"
 import { Store } from "../src/store/store.ts"
 import type { JevShape } from "../src/triage/jev.ts"
-import { makeAlert, makeSession } from "./fixtures/records.ts"
-import { fakeSlack, makeWorld, verdict } from "./fixtures/world.ts"
+import { makeAlert, makeSession } from "./support/records.ts"
+import { fakeSlack, makeWorld, verdict } from "./support/world.ts"
 
 const ME = "UME"
 const ago = (minutes: number) => (Date.now() / 1000 - minutes * 60).toFixed(6)

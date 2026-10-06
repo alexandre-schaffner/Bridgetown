@@ -3,7 +3,7 @@ import { NO_MILESTONES } from "../src/domain/session.ts"
 import { nextTagFrom, releasePrefixOf } from "../src/ship/tags.ts"
 import type { PullRequest } from "../src/ship/github.ts"
 import { afterMerge, APPROVAL_TIMEOUT_MS, type CiStep, ciTransition, DEPLOY_TIMEOUT_MS, deployStalled, deployTransition, followsDeploy, MAX_CI_ROUNDS, MERGE_QUEUE_TIMEOUT_MS, needsReviewRequest, sendBackOrHandOff } from "../src/ship/transitions.ts"
-import { makeSession } from "./fixtures/records.ts"
+import { makeSession } from "./support/records.ts"
 
 const pr = (overrides: Partial<PullRequest> = {}): PullRequest => ({
   number: 7, title: "fix(app-admin): pin vite", state: "OPEN", mergedAt: null, headRefOid: "aaaa111", url: "https://ghe/pull/7",

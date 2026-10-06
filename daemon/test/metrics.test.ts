@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { metricsOf } from "../src/api/metrics.ts"
-import { makeSession } from "./fixtures/records.ts"
+import { makeSession } from "./support/records.ts"
 
 const now = new Date("2026-10-04T14:25:00.000Z")
 

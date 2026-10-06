@@ -4,7 +4,7 @@ import { writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { type GuardContext, readScript, refusal } from "../src/sessions/guard.ts"
 import { parseShell } from "../src/sessions/shell.ts"
-import { scratchDir } from "./fixtures/tmp.ts"
+import { scratchDir } from "./support/tmp.ts"
 
 const branch = "fix-bt-merkl-admin-v0-6-0"
 const worktree = "/w"

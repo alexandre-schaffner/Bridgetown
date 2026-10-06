@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import { SlackApiError } from "../src/domain/errors.ts"
 import { Hub } from "../src/hub.ts"
 import { SlackMe } from "../src/slack/me.ts"
-import { fakeSlack, makeWorld } from "./fixtures/world.ts"
+import { fakeSlack, makeWorld } from "./support/world.ts"
 
 const calls = { identity: 0, groups: 0, names: 0 }
 const refused = (method: string) => new SlackApiError({ method, code: "fatal_error", message: "fatal_error" })

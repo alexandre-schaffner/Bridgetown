@@ -5,7 +5,7 @@ import { type Action, cardStands, dismissCloses, openableUrl } from "../src/doma
 import { AdapterError } from "../src/domain/errors.ts"
 import { acceptsMessages, closedResolution, NO_MILESTONES, type Session, type SessionStatus } from "../src/domain/session.ts"
 import { mergeOnce, releaseOnce } from "../src/ship/gates.ts"
-import { makeSession } from "./fixtures/records.ts"
+import { makeSession } from "./support/records.ts"
 
 const session = (status: SessionStatus, overrides: Partial<Session> = {}): Session =>
   makeSession(status, { prUrl: "https://ghe/pull/1", claudeSessionId: "c", ...overrides })

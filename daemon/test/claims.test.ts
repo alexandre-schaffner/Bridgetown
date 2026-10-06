@@ -7,7 +7,7 @@ import { claimsIn, firstClaimant } from "../src/slack/claims.ts"
 import type { SlackMessage, SlackReaction } from "../src/slack/client.ts"
 import { Store } from "../src/store/store.ts"
 import type { JevShape } from "../src/triage/jev.ts"
-import { fakeSlack, makeWorld, verdict } from "./fixtures/world.ts"
+import { fakeSlack, makeWorld, verdict } from "./support/world.ts"
 
 const claim = (ts: string, user: string): SlackMessage => ({ ts, user, text: "🤖 Investigating with Bridgetown…" })
 
