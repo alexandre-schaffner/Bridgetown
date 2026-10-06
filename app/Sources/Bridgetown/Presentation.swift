@@ -64,6 +64,14 @@ extension Session {
         return resolution
     }
 
+    /// What the agent is doing, under the session's headline in its detail. Nil once it has
+    /// ended (its resolution says how), and while it waits on you with its card shown under
+    /// it: the agent's last words ("Asked: …", "ready to merge") would repeat the card.
+    func activityLine(besideCard: Bool) -> String? {
+        guard isActive, !activity.isEmpty, !(besideCard && holder == .you) else { return nil }
+        return activity
+    }
+
     /// "Opus · 12m · $1.40".
     func meta(now: Date) -> String {
         let end = isActive ? now : updatedAt

@@ -229,6 +229,31 @@ import Testing
     }
 }
 
+@Suite struct ActivityLineTests {
+    private func session(_ status: Session.State, activity: String) throws -> Session {
+        var s = try #require(Fixture.snapshot().session(id: "ses_running"))
+        s.status = status
+        s.activity = activity
+        return s
+    }
+
+    /// Waiting on you, the session's card stands under its headline: "Asked: Switch the
+    /// keeper to the fallback provider?" would say the card's question twice.
+    @Test func notRepeatedOverTheCardItWaitsOn() throws {
+        let asked = try session(.waiting, activity: "Asked: Switch the keeper to the fallback provider?")
+        #expect(asked.activityLine(besideCard: true) == nil)
+        #expect(asked.activityLine(besideCard: false) == "Asked: Switch the keeper to the fallback provider?")
+        #expect(try session(.awaiting_merge, activity: "#3345 approved and green, ready to merge").activityLine(besideCard: true) == nil)
+    }
+
+    @Test func shownWhileTheAgentWorks() throws {
+        let running = try session(.running, activity: "Guarding computeApr")
+        #expect(running.activityLine(besideCard: true) == "Guarding computeApr")
+        #expect(try session(.running, activity: "").activityLine(besideCard: false) == nil)
+        #expect(try session(.closed, activity: "Guarding computeApr").activityLine(besideCard: false) == nil)
+    }
+}
+
 @Suite struct ChannelNameTests {
     @Test func directMessagesTakeNoHash() {
         #expect(Format.channel("alert-dev") == "#alert-dev")

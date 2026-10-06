@@ -77,8 +77,8 @@ struct SessionDetailView: View {
             PhaseStepper(session: session)
                 .padding(.vertical, 4)
             VStack(alignment: .leading, spacing: 5) {
-                if session.isActive && !session.activity.isEmpty {
-                    Text(Markdown.line(session.activity, size: 13))
+                if let activity = session.activityLine(besideCard: action != nil) {
+                    Text(Markdown.line(activity, size: 13))
                         .font(Typo.lead)
                         .lineSpacing(Typo.rowLineSpacing)
                         .foregroundStyle(.secondary)
