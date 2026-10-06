@@ -10,9 +10,11 @@ struct AlertRow: View {
     @Environment(\.now) private var now
 
     /// The time column: "now", "59m", "23h", "Oct 12" right-aligned, so the times read down.
-    static let timeWidth: CGFloat = 40
+    private static let timeWidth: CGFloat = 40
     /// Less than the column's inset: the times' right edge, not their left, lines up.
-    static let leading: CGFloat = 4
+    private static let leading: CGFloat = 4
+    /// Where the glyphs start, past the time column: a fold row's words line up with them.
+    static let glyphColumn = leading + timeWidth + 10
 
     /// Jev's call can be labelled right here, as in the detail: the thumbs take the rating's
     /// place while the pointer is on the row. Rule decisions had no call to judge.

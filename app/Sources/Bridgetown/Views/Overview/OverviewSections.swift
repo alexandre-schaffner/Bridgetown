@@ -277,12 +277,12 @@ struct RecentSection: View {
                     case let .alert(alert):
                         AlertRow(alert: alert, session: snapshot.session(id: alert.sessionId), pick: $selection.pick(alert.id, in: order))
                     case let .more(hidden):
-                        FoldRow(title: showAll ? "Show fewer" : "Show \(hidden) more", open: showAll) {
+                        FoldRow(title: showAll ? "Show fewer" : "Show \(hidden) more", open: showAll, leading: AlertRow.glyphColumn) {
                             withAnimation(Easing.state) { showAll.toggle() }
                         }
                         .accessibilityIdentifier("recent.showMore")
                     case let .quiet(count):
-                        FoldRow(title: count == 1 ? "1 filtered or ignored" : "\(count) filtered or ignored", open: showQuiet) {
+                        FoldRow(title: count == 1 ? "1 filtered or ignored" : "\(count) filtered or ignored", open: showQuiet, leading: AlertRow.glyphColumn) {
                             withAnimation(Easing.state) { showQuiet.toggle() }
                         }
                         .accessibilityLabel(showQuiet ? "Hide \(count) filtered or ignored alerts" : "Show \(count) filtered or ignored alerts")
@@ -329,31 +329,5 @@ struct RecentSection: View {
         .fixedSize()
         .disabled(picked.isEmpty)
         .help("Tell Jev whether it triaged these right")
-    }
-}
-
-/// A row that shows more of the table: what it holds, and a chevron that turns down as it
-/// opens. Its words line up with the alerts' glyphs.
-private struct FoldRow: View {
-    let title: String
-    let open: Bool
-    let toggle: () -> Void
-
-    var body: some View {
-        TableRow(open: toggle) { _ in
-            HStack(spacing: 10) {
-                Text(title)
-                    .font(Typo.body)
-                    .foregroundStyle(.tertiary)
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-                    .rotationEffect(.degrees(open ? 90 : 0))
-            }
-            .padding(.leading, AlertRow.leading + AlertRow.timeWidth + 10)
-            .padding(.trailing, Metrics.inset)
-            .frame(height: 42)
-        }
     }
 }

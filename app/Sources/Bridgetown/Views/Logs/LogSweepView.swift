@@ -32,39 +32,54 @@ private struct SweepContent: View {
     @Environment(\.now) private var now
     @ViewState private var showSteady = false
 
+    /// A line of the table: a pattern, or the fold the steady ones sit behind.
+    private enum Row: Identifiable {
+        case pattern(LogSweep.Pattern)
+        case steady(count: Int)
+
+        var id: String {
+            switch self {
+            case let .pattern(pattern): pattern.key
+            case .steady: "fold.steady"
+            }
+        }
+    }
+
     var body: some View {
         let suspicious = sweep.patterns.filter(\.suspicious)
         let steady = sweep.patterns.filter { !$0.suspicious }
+        let rows = suspicious.map(Row.pattern)
+            + (steady.isEmpty ? [] : [Row.steady(count: steady.count)])
+            + (showSteady ? steady.map(Row.pattern) : [])
         VStack(alignment: .leading, spacing: 10) {
             if let error = sweep.error {
                 BoardMessage(symbol: "exclamationmark.triangle", text: error)
             }
-            if sweep.sweptAt == nil {
-                if sweep.error == nil {
+            // A failed query says so above: "not swept" or "nothing suspicious" would then
+            // claim more than was read.
+            if sweep.error == nil {
+                if sweep.sweptAt == nil {
                     BoardMessage(
                         symbol: "text.magnifyingglass",
                         text: "Not swept yet. Every 10 minutes Bridgetown groups prod's error and warning lines into patterns; the first sweep runs a few minutes after it starts."
                     )
-                }
-            } else if suspicious.isEmpty {
-                // A failed query says so above; "nothing suspicious" would claim more than was read.
-                if sweep.error == nil {
+                } else if suspicious.isEmpty {
                     BoardMessage(symbol: "checkmark", text: "Nothing suspicious in the last sweep: no new or surging error, no risky warning.")
                 }
-            } else {
-                RowList(data: suspicious) { PatternRow(pattern: $0) }
             }
-            if !steady.isEmpty {
-                if showSteady {
-                    RowList(data: steady) { PatternRow(pattern: $0) }
-                        .transition(.opacity)
+            if !rows.isEmpty {
+                RowList(data: rows) { row in
+                    switch row {
+                    case let .pattern(pattern):
+                        PatternRow(pattern: pattern)
+                    case let .steady(count):
+                        FoldRow(title: count == 1 ? "1 steady error" : "\(count) steady errors", open: showSteady, leading: PatternRow.textColumn) {
+                            withAnimation(Easing.state) { showSteady.toggle() }
+                        }
+                        .accessibilityLabel(showSteady ? "Hide \(count) steady errors" : "Show \(count) steady errors")
+                        .accessibilityIdentifier("logs.showSteady")
+                    }
                 }
-                Button(showSteady ? "Hide steady errors" : "Show \(steady.count) steady error\(steady.count == 1 ? "" : "s")") {
-                    withAnimation(Easing.state) { showSteady.toggle() }
-                }
-                .buttonStyle(.stage(.secondary))
-                .frame(maxWidth: .infinity)
-                .accessibilityIdentifier("logs.showSteady")
             }
             footer
                 .padding(.horizontal, Metrics.inset)
@@ -93,10 +108,25 @@ private struct PatternRow: View {
     @Environment(Store.self) private var store
     let pattern: LogSweep.Pattern
 
+    /// Where the words start, past the level's glyph: a fold row's line up with them.
+    static let textColumn = Metrics.inset + 16 + 10
+
     /// Jev called it a problem and the daemon raised a finding for it.
     private var problem: Bool { pattern.alertId != nil }
 
     var body: some View {
+        TableRow(open: { SystemActions.open(pattern.link) }) { _ in
+            content
+        } menu: {
+            menu
+        }
+        .help(tooltip)
+        .accessibilityIdentifier("logs.pattern.\(pattern.key)")
+        .accessibilityAddTraits(.isLink)
+        .accessibilityHint("Opens its lines in Grafana")
+    }
+
+    private var content: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: pattern.level == .warning ? "exclamationmark.triangle" : "xmark.octagon")
                 .font(.geist(12.5, .medium))
@@ -146,17 +176,6 @@ private struct PatternRow: View {
         }
         .padding(.horizontal, Metrics.inset)
         .padding(.vertical, 14)
-        .contentShape(Rectangle())
-        .hoverFill()
-        .onTapGesture { SystemActions.open(pattern.link) }
-        .help(tooltip)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("logs.pattern.\(pattern.key)")
-        .accessibilityAddTraits(.isLink)
-        .accessibilityHint("Opens its lines in Grafana")
-        // What the click does, for VoiceOver and AXPress: a tap gesture answers neither.
-        .accessibilityAction { SystemActions.open(pattern.link) }
-        .contextMenu { menu }
     }
 
     @ViewBuilder

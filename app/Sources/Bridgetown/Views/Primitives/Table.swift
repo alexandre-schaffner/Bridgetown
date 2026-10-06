@@ -222,3 +222,32 @@ extension TableRow where Overlay == EmptyView, Menu == EmptyView {
         self.init(pick: nil, open: open, content: content, overlay: { _ in EmptyView() }, menu: { EmptyView() })
     }
 }
+
+// MARK: Fold row
+
+/// A row that shows more of its table: what it holds, and a chevron that turns down as it
+/// opens. Its words start at `leading`, where the rows' glyphs do.
+struct FoldRow: View {
+    let title: String
+    let open: Bool
+    let leading: CGFloat
+    let toggle: () -> Void
+
+    var body: some View {
+        TableRow(open: toggle) { _ in
+            HStack(spacing: 10) {
+                Text(title)
+                    .font(Typo.body)
+                    .foregroundStyle(.tertiary)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .rotationEffect(.degrees(open ? 90 : 0))
+            }
+            .padding(.leading, leading)
+            .padding(.trailing, Metrics.inset)
+            .frame(height: 42)
+        }
+    }
+}
