@@ -232,6 +232,10 @@
     {"restart": {"tokenMismatch": true}},
     {"shot": "problem-rejected"},
     {"restart": {}},
+    {"surface": "open", "preset": "wide"},
+    {"action": {"on": "needsYou.row.a_mock_answer_s_mock_ask", "name": "Only re-submit"}},
+    {"wait": "settled"},
+    {"shot": "needsyou-answered-from-row"},
 
     {"restart": {"world": "empty"}},
     {"surface": "open", "preset": "wide"},
