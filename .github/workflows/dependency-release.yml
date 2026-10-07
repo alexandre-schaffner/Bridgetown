@@ -1,0 +1,43 @@
+name: Dependency patch batch
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Merge eligible patches and publish/deploy (false is read-only)
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: dependency-patch-batch
+  cancel-in-progress: false
+
+jobs:
+  batch:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      # Only trusted main code; PR branches and dependency install scripts never run here.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test the policy
+        run: python3 -m unittest discover -s scripts -p 'test_dependency_release.py'
+      - name: Batch patches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          APPLY: ${{ github.event_name == 'schedule' || inputs.apply }}
+        run: |
+          args=()
+          if [ "$APPLY" = true ]; then args+=(--apply); fi
+          python3 scripts/dependency-release.py "${args[@]}"

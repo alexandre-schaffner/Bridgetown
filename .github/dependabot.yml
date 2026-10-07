@@ -22,7 +22,11 @@ updates:
       prefix: deps
       prefix-development: chore
     groups:
+      automatic-patches:
+        patterns: [zod, '@types/bun', typescript]
+        update-types: [patch]
       minor-and-patch:
+        exclude-patterns: [zod, '@types/bun', typescript]
         update-types: [minor, patch]
     cooldown:
       default-days: 7
@@ -39,7 +43,31 @@ updates:
     commit-message:
       prefix: chore
     groups:
+      automatic-patches:
+        patterns:
+          - '@fontsource-variable/geist'
+          - '@fontsource-variable/geist-mono'
+          - gsap
+          - lenis
+          - lucide-static
+          - three
+          - '@types/bun'
+          - '@types/three'
+          - playwright-core
+          - typescript
+        update-types: [patch]
       minor-and-patch:
+        exclude-patterns:
+          - '@fontsource-variable/geist'
+          - '@fontsource-variable/geist-mono'
+          - gsap
+          - lenis
+          - lucide-static
+          - three
+          - '@types/bun'
+          - '@types/three'
+          - playwright-core
+          - typescript
         update-types: [minor, patch]
     cooldown:
       default-days: 7
