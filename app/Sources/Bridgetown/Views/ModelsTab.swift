@@ -60,13 +60,13 @@ private struct ModelRoleSection: View {
 
     var body: some View {
         Section {
-            Picker("Provider", selection: Binding(get: { provider }, set: chooseProvider)) {
+            Picker("Provider", selection: Binding(get: { provider }, set: { chooseProvider($0) })) {
                 Text("Automatic").tag("automatic")
                 ForEach(AgentProvider.allCases, id: \.rawValue) { Text($0.name).tag($0.rawValue) }
             }
             .accessibilityIdentifier("models.\(title.lowercased()).provider")
             if vendor != nil {
-                Picker("Model", selection: Binding(get: { custom ? "__custom__" : model }, set: chooseModel)) {
+                Picker("Model", selection: Binding(get: { custom ? "__custom__" : model }, set: { chooseModel($0) })) {
                     ForEach(available?.models ?? []) { Text($0.name).tag($0.id) }
                     if !model.isEmpty && known == nil && !custom { Text(model).tag(model) }
                     Text("Custom model…").tag("__custom__")
@@ -82,7 +82,7 @@ private struct ModelRoleSection: View {
                             .disabled(customID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
-                Picker("Effort", selection: Binding(get: { effort }, set: chooseEffort)) {
+                Picker("Effort", selection: Binding(get: { effort }, set: { chooseEffort($0) })) {
                     Text("Provider default").tag("")
                     ForEach(efforts, id: \.self) { Text(effortName($0)).tag($0) }
                     if !effort.isEmpty && !efforts.contains(effort) { Text(effortName(effort)).tag(effort) }
