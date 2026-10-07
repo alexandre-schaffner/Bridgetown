@@ -17,12 +17,27 @@ export default {
     if (!range || request.method !== "GET" || !size) return env.ASSETS.fetch(request);
 
     const bounds = parseRange(range, size);
-    if (bounds === "unsatisfiable") {
+    const ifRange = request.headers.get("If-Range");
+    if (bounds === "unsatisfiable" && !["If-Range", "If-Match", "If-None-Match", "If-Modified-Since", "If-Unmodified-Since"].some((h) => request.headers.has(h))) {
       return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${size}`, "Accept-Ranges": "bytes" } });
     }
     // A Range it can't serve as one range is ignored: the whole film.
-    const whole = await env.ASSETS.fetch(new Request(request.url, { method: "GET" }));
-    if (!bounds || !whole.ok || !whole.body) return whole;
+    const assetHeaders = new Headers(request.headers);
+    assetHeaders.delete("Range");
+    assetHeaders.delete("If-Range");
+    const whole = await env.ASSETS.fetch(new Request(request.url, { method: request.method, headers: assetHeaders }));
+    if (!bounds || whole.status !== 200 || !whole.body) return whole;
+    // A weak or changed validator means the caller needs the new film in full.
+    // Asset dates cannot establish a strong validator, so only a matching strong ETag resumes.
+    if (ifRange && (!ifRange.startsWith('"') || ifRange !== whole.headers.get("ETag"))) return whole;
+    if (bounds === "unsatisfiable") {
+      await whole.body.cancel();
+      const headers = new Headers(whole.headers);
+      headers.set("Content-Range", `bytes */${size}`);
+      headers.set("Accept-Ranges", "bytes");
+      headers.delete("Content-Length");
+      return new Response(null, { status: 416, headers });
+    }
 
     const [start, end] = bounds;
     const headers = new Headers(whole.headers);

@@ -113,6 +113,7 @@ struct NeedsYouSection: View {
         Button(closes > 0 ? "Close…" : "Dismiss") {
             if closes > 0 { confirmingClose = true } else { finish { picked.forEach(store.dismiss) } }
         }
+        .accessibilityIdentifier("needsYou.dismissPicked")
         .buttonStyle(.stage(.secondary))
         .disabled(picked.isEmpty)
         .help(closes > 0 ? "Some of these close their session without a fix" : "Dismiss the selected cards")

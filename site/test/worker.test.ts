@@ -41,6 +41,7 @@ describe("parseRange", () => {
     expect(parseRange("bytes=100-", 100)).toBe("unsatisfiable");
     expect(parseRange("bytes=100-200", 100)).toBe("unsatisfiable");
     expect(parseRange("bytes=-0", 100)).toBe("unsatisfiable");
+    expect(parseRange("bytes=-1", 0)).toBe("unsatisfiable");
   });
 
   test("a malformed header, or several ranges, is null: ignored", () => {
@@ -120,6 +121,29 @@ describe("the Worker", () => {
       expect(res.headers.get("Content-Range")).toBeNull();
       expect(calls).toHaveLength(1);
       expect(calls[0]!.headers.get("Range")).toBeNull();
+    }
+  });
+
+  test("conditional headers reach the assets, and a 304 is never sliced", async () => {
+    const request = new Request(`https://bridgetown.test${path}`, {
+      headers: { Range: "bytes=0-1", "If-None-Match": '"same"' },
+    });
+    const res = await worker.fetch(request, { ASSETS: { fetch: async (r) => {
+      expect(new Request(r).headers.get("If-None-Match")).toBe('"same"');
+      return new Response(null, { status: 304 });
+    } } });
+    expect(res.status).toBe(304);
+  });
+
+  test("If-Range serves a part only for the current strong validator", async () => {
+    for (const validator of ['"current"', '"old"', 'W/"current"']) {
+      const res = await worker.fetch(new Request(`https://bridgetown.test${path}`, {
+        headers: { Range: "bytes=0-1", "If-Range": validator },
+      }), { ASSETS: { fetch: async () => new Response(source(1, 10).stream, {
+        headers: { ETag: '"current"', "Content-Type": "video/mp4" },
+      }) } });
+      expect(res.status).toBe(validator === '"current"' ? 206 : 200);
+      await res.body?.cancel();
     }
   });
 

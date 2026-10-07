@@ -52,19 +52,19 @@ export interface Allow {
 export const ALLOW: Allow[] = [
   {
     rule: "clipped-text",
-    within: "[data-track]",
+    within: "[data-track] .frame",
     // Where the frames sit in a row (Journey.astro); stacked on a narrow screen, nothing in them may be cut.
     media: "(min-width: 981px)",
     why: "The journey reel runs sideways: the frames either side of the middle one pass the screen's edges.",
   },
   {
     rule: "clipped-text",
-    within: "[data-screen]",
+    within: "[data-screen] .menubar, [data-screen] .window, [data-screen] [data-island]",
     by: "[data-mac] .bezel",
     // island.ts zooms while the screen inside the bezel is under 900px: the Mac is the page less
     // two 4vw gutters (MacScreen.astro), so up to a 1008px window.
     media: "(max-width: 1008px)",
-    why: "Narrow screens zoom the drawn Mac in on its notch (island.ts, fit): its menu bar and terminal run off both sides, and a phone sees only the open island's middle column.",
+    why: "Narrow screens zoom the drawn Mac in on its notch (island.ts, fit): its menu bar, terminal and island wings or columns pass the bezel, and a phone sees only the open island's middle column.",
   },
   {
     rule: "text-overlap",

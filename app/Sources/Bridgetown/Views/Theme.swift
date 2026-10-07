@@ -58,7 +58,17 @@ enum Ink {
 /// island's content unfolding) are plain fades there, chosen where each is declared from
 /// the environment's `accessibilityReduceMotion`, the same setting this reads.
 enum Easing {
-    static var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    #if DEBUG
+    /// Set once by the harness before any view reads the timings.
+    nonisolated(unsafe) static var reduceMotionOverride: Bool?
+    #endif
+
+    static var reduceMotion: Bool {
+        #if DEBUG
+        if let reduceMotionOverride { return reduceMotionOverride }
+        #endif
+        return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
 
     static var quick: Animation { reduceMotion ? .easeOut(duration: 0.08) : .easeOut(duration: 0.12) }
     static var state: Animation { reduceMotion ? .easeOut(duration: 0.12) : .smooth(duration: 0.24) }

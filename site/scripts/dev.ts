@@ -35,10 +35,14 @@ export async function devServer() {
   return { url, stop };
 }
 
-/** Chromium drawing WebGL in software, as on any machine; `args` are flags on top. */
-export async function launchBrowser(args: string[] = []) {
+/**
+ * Chromium drawing WebGL in software, as on any machine, or with `gpu` on this Mac's GPU (Metal),
+ * when requested; `args` are flags on top.
+ */
+export async function launchBrowser(args: string[] = [], gpu = false) {
+  const webgl = gpu ? ["--use-angle=metal"] : ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"];
   try {
-    return await chromium.launch({ args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", ...args] });
+    return await chromium.launch({ args: [...webgl, ...args] });
   } catch (e) {
     // playwright-core brings no browser, and the `npx playwright install` its error suggests
     // fetches the newest Playwright's, which this pinned version may not run.

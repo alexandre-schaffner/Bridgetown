@@ -1,8 +1,9 @@
 // The landing page, end to end, for whoever changes it next (person or agent). Builds the site
 // if dist/ is older than its sources, serves dist/ on a free port with the headers Cloudflare
 // adds (public/_headers, its Content-Security-Policy included), and walks each page at six
-// viewports (e2e/screens.ts), with and without Reduce Motion. At every scroll stop it takes a screenshot and
-// lints the frame it shows: sideways scroll, text or media spilling past the screen, text cut
+// viewports (e2e/screens.ts), with and without Reduce Motion, four walks at a time, each in a
+// browser context of its own. At every scroll stop it takes a screenshot and lints the frame
+// it shows: sideways scroll, text or media spilling past the screen, text cut
 // off, ellipsised or grown out of its box, text drawn over other text, broken images and
 // videos, console errors (a blocked script or style among them), page errors and failed
 // requests (e2e/lint.ts). Then it checks what the page has to do: focus, landing, the nav, the
@@ -13,9 +14,11 @@
 // in red), sheets/ and checks/ (the screen when a check failed). Exits 0 when clean, 1 on lint
 // errors or a failed check, 2 when the harness itself failed.
 //
-// usage: bun scripts/e2e.ts [--quick] [--only <part of a shot name>] [--no-build] [--dist <dir>]
+// usage: bun scripts/e2e.ts [--quick] [--gpu] [--only <part of a shot name>] [--jobs <n>] [--no-build] [--dist <dir>]
 //   --quick     one stop per section instead of one per screen
+//   --gpu       WebGL on this Mac's GPU instead of the default software renderer (SwiftShader)
 //   --only      e.g. `--only 375x812`, `--only home.1920x1080.reduce`, `--only checks`
+//   --jobs      walks at a time, 4 by default; 1 walks them one after another
 //   --dist      walk another build as it is (main's, say, to compare shots), without building
 
 import type { Browser, BrowserContext, Page } from "playwright-core";
@@ -41,7 +44,12 @@ const ROOT = resolve(SITE, "..");
 const OTHER = option("--dist");
 const DIST = OTHER ? resolve(OTHER) : join(SITE, "dist");
 const QUICK = flag("--quick");
+const GPU = flag("--gpu");
 const ONLY = option("--only");
+const JOBS = Number(option("--jobs") ?? 4);
+if (!Number.isSafeInteger(JOBS) || JOBS < 1 || JOBS > 4) {
+  throw new Error("--jobs must be an integer from 1 to 4");
+}
 
 // MARK: What it visits
 
@@ -99,13 +107,18 @@ function serve(out: string) {
     port: 0,
     fetch(req) {
       const url = new URL(req.url);
-      const name = decodeURIComponent(url.pathname);
+      let name: string;
+      try {
+        name = decodeURIComponent(url.pathname);
+      } catch {
+        return new Response(null, { status: 400 });
+      }
       const ours = name.startsWith("/__e2e/");
       const headers = ours ? new Headers() : headersFor(url.pathname);
       const path = ours
         ? file(join(out, name.slice(7)))
         : (file(join(DIST, name)) ?? file(join(DIST, name, "index.html")) ?? file(join(DIST, `${name}.html`)));
-      if (!path || !path.startsWith(ours ? out : DIST)) {
+      if (!path || !path.startsWith((ours ? out : DIST) + "/")) {
         return new Response(Bun.file(join(DIST, "404.html")), { status: 404, headers });
       }
       const body = Bun.file(path);
@@ -376,6 +389,20 @@ async function check(browser: Browser, base: string, out: string, c: Check, n: n
   return result;
 }
 
+/** Runs `tasks` at most `limit` at a time; the results come back in the tasks' order. */
+async function pool<T>(limit: number, tasks: (() => Promise<T>)[]): Promise<T[]> {
+  const results: T[] = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < tasks.length) {
+      const i = next++;
+      results[i] = await tasks[i]!();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
+  return results;
+}
+
 // MARK: Report
 
 function report(out: string, run: string, browser: string, walks: Walk[], checks: CheckResult[], started: number) {
@@ -508,30 +535,42 @@ let code = 2;
 try {
   if (!flag("--no-build") && !OTHER) buildIfStale();
   const server = serve(out);
-  const browser = await launchBrowser(["--autoplay-policy=no-user-gesture-required"]);
-  const version = `chromium ${browser.version()}`;
-  const walks: Walk[] = [];
-  const checks: CheckResult[] = [];
+  const browser = await launchBrowser(["--autoplay-policy=no-user-gesture-required"], GPU).catch((e) => {
+    server.stop();
+    throw e;
+  });
+  const version = `chromium ${browser.version()}, WebGL ${GPU ? "on the GPU" : "in SwiftShader"}`;
+  let walks: Walk[] = [];
+  let checks: CheckResult[] = [];
   try {
-    for (const spec of PAGES) {
-      for (const vp of VIEWPORTS) {
-        for (const motion of MOTIONS) {
+    const walking = PAGES.flatMap((spec) =>
+      VIEWPORTS.flatMap((vp) =>
+        MOTIONS.flatMap((motion) => {
           const name = `${spec.name}.${vp.width}x${vp.height}.${motion}`;
-          if (ONLY && !name.includes(ONLY) && !ONLY.startsWith(name)) continue;
-          const w = await walk(browser, server.url, out, spec, vp, motion);
-          await sheet(browser, server.url, out, w);
-          walks.push(w);
-          const bad = w.issues.length + w.shots.flatMap((s) => s.issues).filter((i) => !i.allowed && i.severity === "error").length;
-          console.log(`${name}: ${w.shots.length} stops, ${bad} errors${w.error ? `, failed: ${w.error}` : ""}`);
-        }
-      }
-    }
-    for (const [n, c] of CHECKS.entries()) {
-      if (ONLY && !c.name.includes(ONLY) && ONLY !== "checks") continue;
-      const r = await check(browser, server.url, out, c, n);
-      checks.push(r);
-      console.log(`${r.ok ? "✓" : "✗"} ${c.name}${r.ok ? "" : `: ${r.error}`}`);
-    }
+          if (ONLY && !name.includes(ONLY) && !ONLY.startsWith(name)) return [];
+          return [
+            async () => {
+              const w = await walk(browser, server.url, out, spec, vp, motion);
+              await sheet(browser, server.url, out, w);
+              const bad = w.issues.length + w.shots.flatMap((s) => s.issues).filter((i) => !i.allowed && i.severity === "error").length;
+              console.log(`${name}: ${w.shots.length} stops, ${bad} errors${w.error ? `, failed: ${w.error}` : ""}`);
+              return w;
+            },
+          ];
+        }),
+      ),
+    );
+    walks = await pool(JOBS, walking);
+    const checking = [...CHECKS.entries()]
+      .filter(([, c]) => !ONLY || c.name.includes(ONLY) || ONLY === "checks")
+      .map(([n, c]) => async () => {
+        const r = await check(browser, server.url, out, c, n);
+        console.log(`${r.ok ? "✓" : "✗"} ${c.name}${r.ok ? "" : `: ${r.error}`}`);
+        return r;
+      });
+    // Checks time what moves (a headline rising, a dialog fading in): one at a time, so no
+    // other page's work slows one past its timeout.
+    checks = await pool(1, checking);
   } finally {
     await browser.close();
     server.stop();

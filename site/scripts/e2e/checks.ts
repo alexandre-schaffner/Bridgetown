@@ -242,7 +242,12 @@ export const CHECKS: Check[] = [
       expect(await page.evaluate(() => document.documentElement.classList.contains("js")), "the theme script was blocked");
       await page.click('nav a[href="#light"]');
       await page.waitForFunction(() => document.documentElement.classList.contains("scene-ready"), null, { timeout: 15_000 });
+      // The link scrolls there smoothly (Lenis), and a scene drawn on the GPU is ready before it
+      // lands: sent back up mid-way, the page would carry on down.
+      const still = () => !document.documentElement.classList.contains("lenis-scrolling");
+      await page.waitForFunction(still);
       await page.evaluate(() => scrollTo(0, 0));
+      await page.waitForFunction(still);
       await page.click("[data-open-film]");
       await page.waitForFunction(() => document.querySelector<HTMLVideoElement>("[data-film-video]")!.readyState >= 2, null, { timeout: 10_000 });
       expect(blocked.length === 0, blocked.join("; "));

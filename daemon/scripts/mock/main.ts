@@ -12,6 +12,7 @@
  *   MOCK_GITHUB=blocked …   # start with GHE refusing this network; `kill -USR1 <pid>` toggles it
  *   MOCK_RELEASE_HOLD_SECONDS=600 …  # how long the release in flight at startup takes
  *   MOCK_GRAFANA=live …     # real prod charts through the local grafana MCP (read-only) instead of fake series
+ *   MOCK_EXIT_AT_START=1 …  # exit 97 on every launch, before binding or creating a store
  *   MOCK_STATIC=1 …         # nothing moves: no scheduler, no agents, the release held in flight (make e2e)
  *   MOCK_WORLD=empty …      # a fresh install that has received nothing yet
  *   MOCK_NOW=2026-10-04T12:00:00Z …  # the wall clock stopped there (clock.ts)
@@ -31,7 +32,7 @@ import { execSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Effect, Fiber, Schedule, Schema } from "effect"
+import { Deferred, Effect, Fiber, Schedule, Schema } from "effect"
 import { Actions } from "../../src/actions/actions.ts"
 import { bind, serve } from "../../src/api/server.ts"
 import { readEnv } from "../../src/config.ts"
@@ -75,6 +76,8 @@ const launch: Launch =
     ? { env: { ...readEnv(), apiToken: process.env.BRIDGETOWN_API_TOKEN || "dev" }, closed: new Promise<void>(() => {}) }
     : await readLaunch(launchInput)
 const token = process.env.MOCK_API_TOKEN || launch.env.apiToken
+// A launch that dies before creating its store, for the app's restart diagnostic.
+if (process.env.MOCK_EXIT_AT_START === "1") process.exit(97)
 
 // Bound first, like the daemon: a taken port exits 98 before anything is created.
 const server = bind(launch.env.port)
@@ -190,6 +193,7 @@ const program = Effect.gen(function* () {
 
   /** Releases cut during this run, and when: the tracker below walks each through approval, build and production. */
   const released: Array<{ readonly tag: string; readonly at: number }> = []
+  const releaseStarted = yield* Deferred.make<void>()
   const fake = mockGitHub({
     prs: fixtures.prs,
     branches: new Map(fixtures.sessions.flatMap((s) => (s.prUrl === null || s.branch === null ? [] : [[s.prUrl, s.branch] as const]))),
@@ -199,6 +203,7 @@ const program = Effect.gen(function* () {
     holds: { [IN_FLIGHT_TAG]: staticWorld ? Infinity : holdSeconds * 1_000 },
     blocked: process.env.MOCK_GITHUB === "blocked",
     onRelease: (tag) => released.push({ tag, at: Date.now() }),
+    onReleaseStart: (tag) => tag === IN_FLIGHT_TAG ? Deferred.succeed(releaseStarted, undefined).pipe(Effect.asVoid) : Effect.void,
   })
 
   /** What the mock's Jev said about each sweep pattern, keyed as the sweep keys them. */
@@ -256,7 +261,6 @@ const program = Effect.gen(function* () {
     // The release in flight: a real resolve through the gates, held up in the fake `gh release create`.
     const inFlight = fixtures.actions.find((a) => a.kind === "release" && a.sessionId === SESSION.inFlight)
     if (inFlight !== undefined && inFlight.sessionId !== null) {
-      const session = inFlight.sessionId
       const resolving = yield* actions.resolve(inFlight.id, null).pipe(
         Effect.tapCause((cause) => Effect.logWarning("in-flight release failed", cause)),
         Effect.forkScoped,
@@ -264,10 +268,7 @@ const program = Effect.gen(function* () {
       // Static: served once the tag is being cut, so the first snapshot is the one that stays. A resolve that ends
       // first takes the mock down with it, so the app sees a daemon that died rather than one that never answers.
       if (staticWorld) {
-        const tagCut = Effect.gen(function* () {
-          while (((yield* repo.get(session))?.releaseTag ?? null) === null) yield* Effect.sleep("10 millis")
-        })
-        yield* Effect.raceFirst(tagCut, Fiber.join(resolving).pipe(Effect.andThen(Effect.die(`the release in flight ended before ${IN_FLIGHT_TAG} was cut`))))
+        yield* Effect.raceFirst(Deferred.await(releaseStarted), Fiber.join(resolving).pipe(Effect.andThen(Effect.die(`the release in flight ended before ${IN_FLIGHT_TAG} was cut`))))
       }
     }
     yield* serve(server, { token })

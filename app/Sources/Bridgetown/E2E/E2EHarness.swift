@@ -109,6 +109,7 @@ final class E2EHarness {
         setvbuf(stdout, nil, _IOLBF, 0)
         AppClock.override = suite.now
         Haptics.muted = true
+        Easing.reduceMotionOverride = true
         app.island.offscreen = true
         // Unbundled, the debug binary launches as a regular app and SwiftUI opens its one
         // scene, Settings, on the user's screen. A run draws Settings off screen itself.
@@ -130,6 +131,7 @@ final class E2EHarness {
             "MOCK_GRAFANA": "",
             "MOCK_GITHUB": "",
             "MOCK_API_TOKEN": "",
+            "MOCK_EXIT_AT_START": "",
             "BRIDGETOWN_DRY_RUN": "",
         ]
         UserDefaults.standard.removePersistentDomain(forName: defaultsDomain)

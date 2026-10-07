@@ -89,6 +89,8 @@ export interface MockGitHubOptions {
   readonly blocked: boolean
   /** A release was cut: the mock's release tracker takes it from here. */
   readonly onRelease: (tag: string) => void
+  /** The release tag is saved and the fake is about to hold its creation in flight. */
+  readonly onReleaseStart?: (tag: string) => Effect.Effect<unknown>
 }
 
 /** A PR's head commit: one per PR, the same from `gh pr view` and the head lookup, so a review's pass shows on its merge card. */
@@ -171,7 +173,8 @@ export const mockGitHub = (options: MockGitHubOptions) => {
     createRelease: (tag) =>
       ghe(
         "release create",
-        slow(options.holds[tag] ?? options.latencyMs).pipe(
+        (options.onReleaseStart?.(tag) ?? Effect.void).pipe(
+          Effect.andThen(slow(options.holds[tag] ?? options.latencyMs)),
           Effect.andThen(
             Effect.sync(() => {
               if (!tags.includes(tag)) tags.push(tag)
