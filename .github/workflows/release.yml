@@ -56,9 +56,9 @@ jobs:
         run: |
           if [ -n "$EXPECTED_SHA" ]; then
             current=$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)
-            [ "$GITHUB_SHA" = "$EXPECTED_SHA" ] && [ "$current" = "$EXPECTED_SHA" ] || {
-              echo "main moved since batch CI; leave the release for the next batch" >&2; exit 1;
-            }
+            if [ "$GITHUB_SHA" != "$EXPECTED_SHA" ] || [ "$current" != "$EXPECTED_SHA" ]; then
+              echo "main moved since batch CI; leave the release for the next batch" >&2; exit 1
+            fi
           fi
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
