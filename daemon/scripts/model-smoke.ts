@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { Effect, Schema } from "effect"
 import { Models, ModelsLive } from "../src/agent/models.ts"
 import { codexHookCommand, hasCodexGuards, prepareCodexHome } from "../src/agent/codex-home.ts"
-import { CODEX_TOOLS } from "../src/agent/codex.ts"
+import { CODEX_TOOLS } from "../src/agent/tools.ts"
 import { CodexRpc } from "../src/agent/codex-rpc.ts"
 import type { AgentRequest } from "../src/agent/protocol.ts"
 import { newSession } from "../src/sessions/new-session.ts"
@@ -34,7 +34,7 @@ try {
   console.log("codex: required guard configuration loaded")
   const model = catalog.providers.find((p) => p.provider === "codex")?.models[0]?.id
   Schema.decodeUnknownSync(Schema.Struct({ thread: Schema.Struct({ id: Schema.String }) }))(await rpc.request("thread/start", {
-    cwd: home, model, sandbox: "workspace-write", allowProviderModelFallback: false, dynamicTools: CODEX_TOOLS,
+    cwd: home, model, sandbox: "workspace-write", approvalPolicy: "never", allowProviderModelFallback: false, dynamicTools: CODEX_TOOLS,
     config: { mcp_servers: {}, sandbox_workspace_write: { network_access: true } },
   }))
   console.log("codex: thread configured without inference")
@@ -42,8 +42,9 @@ try {
     const hook = Bun.spawn(["/bin/sh", "-c", codexHookCommand(request)], { cwd: home, stdin: "pipe", stdout: "pipe", stderr: "pipe" })
     hook.stdin.write(JSON.stringify({ tool_name: "Bash", tool_input: { command }, cwd: home }))
     hook.stdin.end()
-    const verdict = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({ hookSpecificOutput: Schema.Struct({ permissionDecision: Schema.String }) })))(await new Response(hook.stdout).text())
+    const verdict = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({ hookSpecificOutput: Schema.Struct({ permissionDecision: Schema.String, updatedInput: Schema.optional(Schema.Struct({ command: Schema.String })) }) })))(await new Response(hook.stdout).text())
     if (await hook.exited !== 0 || verdict.hookSpecificOutput.permissionDecision !== decision) throw new Error(`The guard command failed to ${decision} ${command}`)
+    if (decision === "allow" && !verdict.hookSpecificOutput.updatedInput?.command.includes(" || exit\n")) throw new Error("The guard did not pin the checked working directory")
   }
   console.log("codex: hook runner allowed a read and denied a protected branch push")
 } finally {

@@ -52,7 +52,7 @@ export const prepareCodexHome = (request: AgentRequest): string => {
     `[projects.${JSON.stringify(request.session.worktree ?? request.session.repoPath)}]`, 'trust_level = "untrusted"',
     ...(request.session.worktree === request.session.repoPath ? [] : [`[projects.${JSON.stringify(request.session.repoPath)}]`, 'trust_level = "untrusted"']),
     '[features]', 'hooks = true', 'multi_agent = false', 'multi_agent_v2 = false',
-    'code_mode = false', 'code_mode_only = false', 'unified_exec = false', 'shell_snapshot = false',
+    'code_mode = false', 'code_mode_only = false', 'shell_snapshot = false',
     '[hooks]', '[[hooks.PreToolUse]]', '[[hooks.PreToolUse.hooks]]',
     'type = "command"', `command = ${JSON.stringify(codexHookCommand(request))}`, 'timeout = 10',
   ].join("\n") + "\n"

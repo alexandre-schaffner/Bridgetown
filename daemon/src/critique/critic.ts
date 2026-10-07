@@ -17,7 +17,7 @@ import { critiqueFailedPrompt, critiquePrompt } from "./prompts.ts"
 import { reviewerProfile, Reviewer, type Verdict } from "./reviewer.ts"
 import { critiqueStep, findingLine, fixingActivity, MAX_CRITIQUE_ROUNDS, reviewErrorStep } from "./transitions.ts"
 
-/** The adversarial review between a pushed fix and CI: another vendor's model reviews, Jev drops the nitpicks, the agent fixes the rest. */
+/** The adversarial review between a pushed fix and CI: the selected reviewer checks it, Jev drops the nitpicks, the agent fixes the rest. */
 export interface CriticShape {
   /** Starts a review for every `reviewing` session that has none running. */
   readonly tick: Effect.Effect<void, AdapterError>

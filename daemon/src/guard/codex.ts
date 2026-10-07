@@ -4,6 +4,7 @@ import { type ToolGuard, toolRefusal } from "./hook.ts"
 
 const HookInput = Schema.Struct({ tool_name: Schema.String, tool_input: Schema.Unknown, cwd: Schema.String })
 const Command = Schema.Union([Schema.Struct({ command: Schema.String }), Schema.Struct({ cmd: Schema.String })])
+const SHELL_TOOLS = new Set(["Bash", "exec_command", "shell", "shell_command"])
 
 /** All patch destinations, including moves, are checked before any patch is applied. */
 export const patchPaths = (patch: string): ReadonlyArray<string> | undefined => {
@@ -21,7 +22,7 @@ const SAFE_LOCAL_TOOLS = new Set(["update_plan", "read_file", "list_dir", "grep_
 
 /** Codex's tool names are normalized into the existing command and write policies. Unknown tools fail closed. */
 export const codexToolRefusal = (guard: ToolGuard, name: string, input: unknown): string | undefined => {
-  if (name === "Bash" || name === "exec_command" || name === "shell" || name === "shell_command") {
+  if (SHELL_TOOLS.has(name)) {
     const command = Schema.decodeUnknownOption(Command)(input)
     if (command._tag === "None") return "Bridgetown could not read this command."
     return toolRefusal(guard, "Bash", { command: "command" in command.value ? command.value.command : command.value.cmd })
@@ -46,7 +47,15 @@ export const codexHookVerdict = (raw: unknown, guard: ToolGuard) => {
   try {
     const input = Schema.decodeUnknownSync(HookInput)(raw)
     const reason = codexToolRefusal({ ...guard, cwd: input.cwd }, input.tool_name, input.tool_input)
-    return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: reason === undefined ? "allow" : "deny", ...(reason === undefined ? {} : { permissionDecisionReason: reason }) } }
+    if (reason !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason } }
+    if (SHELL_TOOLS.has(input.tool_name)) {
+      const args = Schema.decodeUnknownSync(Command)(input.tool_input)
+      const command = "command" in args ? args.command : args.cmd
+      // Codex's Bash hook omits the tool's workdir. Run where the policy checked scripts, even when workdir differs.
+      const cwd = `'${input.cwd.replaceAll("'", `'\\''`)}'`
+      return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow", updatedInput: { command: `cd -- ${cwd} || exit\n${command}` } } }
+    }
+    return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" } }
   } catch {
     return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "Bridgetown could not check this tool call." } }
   }

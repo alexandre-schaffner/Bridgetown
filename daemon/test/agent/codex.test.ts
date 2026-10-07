@@ -60,6 +60,14 @@ describe("Codex investigation adapter", () => {
     expect(run.audit()).toContain("Check staging first")
     expect(run.undelivered).toEqual([])
   })
+  test("shell-safe commands cannot obtain approval to escape the sandbox", async () => {
+    const run = setup("escalation")
+    await Array.fromAsync(codexAgent(run.request, run.cli))
+    expect(run.audit()).toContain('"approvalPolicy":"never"')
+    expect(run.audit()).toContain('"decision":"decline"')
+    expect(run.audit()).not.toContain('"decision":"accept"')
+    expect(run.calls).toContain("refused: echo changed > /tmp/outside")
+  })
   test("a completion racing a follow-up returns the unaccepted input to the runner", async () => {
     const run = setup("race")
     run.request = { ...run.request, prompt: { async *[Symbol.asyncIterator]() { yield { text: "Investigate", reopen: false }; yield { text: "Follow up", reopen: true } } } }

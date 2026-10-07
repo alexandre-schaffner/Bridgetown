@@ -430,7 +430,7 @@ struct Settings: Codable, Sendable, Equatable {
     var inbox: Bool
     var maxConcurrent: Int
     var dryRun: Bool
-    /// Another vendor's model reviews each pushed fix before the PR leaves draft.
+    /// The selected reviewer checks each pushed fix before the PR leaves draft.
     var adversarialReview: Bool
     /// Watch prod signals in Grafana and investigate one that rises before any alert (one Jev
     /// doubts is only suggested).

@@ -44,7 +44,7 @@ lines.on("line", (line) => {
     default:
       if (request.id === "report") send({ id: "ask", method: "item/tool/call", params: { tool: "ask", arguments: { question: "Which environment?", options: ["prod", "staging"] } } })
       if (request.id === "ask") {
-        send({ id: "approval", method: "item/commandExecution/requestApproval", params: { command: "git push origin main", cwd: process.env.CODEX_HOME } })
+        send({ id: "approval", method: "item/commandExecution/requestApproval", params: { command: scenario === "escalation" ? "echo changed > /tmp/outside" : "git push origin main", cwd: process.env.CODEX_HOME, additionalPermissions: null } })
       }
       if (request.id === "approval" && scenario !== "steer") complete()
   }

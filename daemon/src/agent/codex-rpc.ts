@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { createInterface } from "node:readline"
 import { Schema } from "effect"
+import { VERSION } from "../config.ts"
 import { childEnv } from "../secrets.ts"
 
 const Id = Schema.Union([Schema.String, Schema.Number])
@@ -72,7 +73,7 @@ export class CodexRpc {
   reject(id: string | number, message: string): void { this.write({ id, error: { code: -32601, message } }) }
 
   async initialize(): Promise<void> {
-    await this.request("initialize", { clientInfo: { name: "bridgetown", title: "Bridgetown", version: "1.0.1" }, capabilities: { experimentalApi: true } })
+    await this.request("initialize", { clientInfo: { name: "bridgetown", title: "Bridgetown", version: VERSION }, capabilities: { experimentalApi: true } })
     this.write({ method: "initialized" })
   }
 

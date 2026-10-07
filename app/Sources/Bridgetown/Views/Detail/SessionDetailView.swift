@@ -140,7 +140,7 @@ struct SessionDetailView: View {
                     Text(session.critiqueLine)
                         .foregroundStyle(.secondary)
                 }
-                .help("Another vendor's model reviews each fix the agent pushes; Jev drops the nitpicks. The PR leaves draft once it passes.")
+                .help("The selected reviewer checks each fix the agent pushes; Jev drops the nitpicks. The PR leaves draft once it passes.")
 
                 keyValue("CI") {
                     Text(session.ciLine)

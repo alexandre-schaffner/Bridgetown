@@ -27,7 +27,7 @@ import Testing
         let recorded = pending.record(from: base, to: edited)
         #expect(recorded)
         #expect(pending.shown(over: base).models == edited.models)
-        let pendingBody = try pending.beginSend()
+        let pendingBody = pending.beginSend()
         #expect(pendingBody == body)
     }
 

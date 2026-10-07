@@ -70,14 +70,18 @@ Sessions are headless, so `monorepo/AGENTS.md`'s prod-safety hard rule applies i
 - **No secrets in reach.** The daemon takes its tokens only on its stdin, from the app or `make dev` (see
   [API.md](API.md#launch)), never from the environment, where any process of yours could read them back. Every process
   it spawns, sessions included, gets an environment without `BRIDGETOWN_*`, `SLACK_*` or `TYPESAFE_*`.
-- **Named tools only.** Sessions get an explicit list of built-in tools (Bash, Read, Glob, Grep, Edit, Write, NotebookEdit,
+- **Named Claude tools only.** Claude sessions get an explicit list of built-in tools (Bash, Read, Glob, Grep, Edit, Write, NotebookEdit,
   WebSearch, WebFetch, TodoWrite) rather than the CLI's preset, and `Task` is taken away, so a newer tool that runs
   commands or reaches the network (subagents, Monitor, Cron, RemoteTrigger, Workflow) is never offered
   (`daemon/src/agent/options.ts`).
-- **One gate over every tool call.** A matcher-less `PreToolUse` hook, with `canUseTool` behind it
+- **One gate over every Claude tool call.** A matcher-less `PreToolUse` hook, with `canUseTool` behind it
   (`daemon/src/guard/hook.ts`), checks each call: a tool that runs a command goes through the command policy, a write
   tool through the worktree boundary, WebFetch's URL through the same host rules as a network command. A call it
   cannot check is refused.
+- **Codex investigations stay sandboxed.** Its required `PreToolUse` hook checks shell commands and patches with the
+  same command and write policies. Each shell command starts in the directory the hook checked; an explicit `cd`
+  inside the command is checked too. The workspace-write sandbox has approvals disabled, and Bridgetown refuses
+  requests to expand its permissions. Input to an existing process stays in that process's sandbox.
 - **The command policy** (`daemon/src/guard/bash.ts`, `guard/vcs.ts`) parses each command (`guard/shell.ts`: lists,
   pipes, subshells, `$(…)`, backticks, heredocs, function and `coproc` bodies, bash 5.3 `${ …; }`) and checks every
   command it would run, through wrappers (`env`, `time`, `xargs`, `timeout`, `nice`, `bash -c`, `eval`, `find -exec`,

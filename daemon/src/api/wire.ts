@@ -123,7 +123,7 @@ export interface SessionView {
   readonly channelLabel: string
   /**
    * resolved: a verified outcome (deployed, merged with nothing to ship, a confirmed no-op) · closed: closed without a
-   * fix, never a success · critiquing: another vendor's model reviews the pushed fix, the PR a draft until it passes.
+   * fix, never a success · critiquing: the selected reviewer checks the pushed fix, the PR a draft until it passes.
    */
   readonly status: SessionStatus
   /** Always six, in order, from evidence. */
