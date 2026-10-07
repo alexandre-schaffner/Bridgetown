@@ -6,8 +6,8 @@ import { codexArgs, execFailure, REVIEWERS, sweepReviewSandboxes, Verdict, VERDI
 import { ReviewFinding } from "../../src/domain/critique.ts"
 import { scratchDir } from "../support/tmp.ts"
 
-describe("the reviewer is another vendor", () => {
-  test("at every depth: the coder is always Claude", () => {
+describe("automatic reviewing", () => {
+  test("retains the Codex depth profiles", () => {
     for (const reviewer of Object.values(REVIEWERS)) expect(reviewer.vendor).not.toBe("claude")
     expect(REVIEWERS.deep).toEqual({ vendor: "codex", model: "gpt-5.6-sol", effort: "xhigh" })
   })

@@ -1,6 +1,6 @@
 import type { SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import { Effect } from "effect"
-import type { AgentShape } from "../../src/agent/agent.ts"
+import { claudeAgent, type AgentShape } from "../../src/agent/agent.ts"
 import type { SessionResult } from "../../src/agent/result.ts"
 import * as Sdk from "./sdk.ts"
 import { eventually } from "./wait.ts"
@@ -27,8 +27,7 @@ export const RESULT: SessionResult = {
  */
 export const playingAgent = (plays: ReadonlyArray<Play>) => {
   const state = { turns: 0, aborted: 0 }
-  const agent: AgentShape = {
-    query: ({ options }) => {
+  const agent: AgentShape = claudeAgent(({ options }) => {
       state.turns += 1
       const aborted = new Promise<"aborted">((resolve) =>
         options.abortController?.signal.addEventListener("abort", () => {
@@ -60,8 +59,7 @@ export const playingAgent = (plays: ReadonlyArray<Play>) => {
         }
       }
       return run()
-    },
-  }
+    })
   return { agent, state }
 }
 
@@ -72,8 +70,7 @@ export const playingAgent = (plays: ReadonlyArray<Play>) => {
 export const recordingAgent = () => {
   const seen: Array<SDKUserMessage> = []
   const state = { queries: 0, aborted: 0 }
-  const agent: AgentShape = {
-    query: ({ prompt, options }) => {
+  const agent: AgentShape = claudeAgent(({ prompt, options }) => {
       state.queries += 1
       const ended = new Promise<IteratorResult<SDKMessage>>((resolve) =>
         options.abortController?.signal.addEventListener("abort", () => {
@@ -85,8 +82,7 @@ export const recordingAgent = () => {
         for await (const message of prompt) seen.push(message)
       })()
       return { [Symbol.asyncIterator]: () => ({ next: () => ended }) }
-    },
-  }
+    })
   const texts = () => seen.map((m) => (typeof m.message.content === "string" ? m.message.content : ""))
   const received = (...wanted: ReadonlyArray<string>) =>
     Effect.runPromise(eventually(Effect.sync(texts), (all) => ((wanted.length === 0 ? all.length > 0 : wanted.every((text) => all.includes(text))) ? all : undefined)))

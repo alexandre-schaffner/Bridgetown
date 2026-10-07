@@ -77,7 +77,7 @@ export const noGrafana: GrafanaShape = {
 
 /** An agent SDK that a test did not expect to start a turn on. */
 export const noAgent: AgentShape = {
-  query: () => {
+  run: () => {
     throw new Error("no agent: this world starts no turn")
   },
 }

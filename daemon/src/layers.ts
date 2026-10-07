@@ -1,6 +1,7 @@
 import { Layer } from "effect"
 import { ActionsLive } from "./actions/actions.ts"
 import { ActionQueueLive } from "./actions/queue.ts"
+import { Models, ModelsLive } from "./agent/models.ts"
 import { Agent, AgentLive } from "./agent/agent.ts"
 import { type Env, Environment } from "./config.ts"
 import { CriticLive } from "./critique/critic.ts"
@@ -40,15 +41,16 @@ export const appLayer = (env: Env) =>
       StoreLive(env.home),
       SlackClientLive(env.slackToken),
       JevLive(env.typesafeKey, env.jevModel),
-      AgentLive(env.claudePath),
-      ReviewerLive(env.codexPath),
+      AgentLive(env.claudePath, env.codexPath),
+      ModelsLive(env),
+      ReviewerLive(env.codexPath, env.claudePath),
       GitHubLive,
       GrafanaLive,
     ),
   )
 
 /** The app over any Store, Slack client, Jev, agent SDK, reviewer, GitHub and Grafana: tests and the mock daemon pass fakes for the outside world. */
-export const appLayerWith = <E>(env: Env, base: Layer.Layer<Store | SlackClient | Jev | Agent | Reviewer | GitHub | Grafana, E>) => {
+export const appLayerWith = <E>(env: Env, base: Layer.Layer<Store | SlackClient | Jev | Agent | Models | Reviewer | GitHub | Grafana, E>) => {
   const withHub = HubLive.pipe(Layer.provideMerge(Layer.mergeAll(base, Layer.succeed(Environment)(env))))
   const withMe = SlackMeLive.pipe(Layer.provideMerge(withHub))
   const records = Layer.mergeAll(SlackThreadLive, SessionRepoLive, ActionQueueLive, HealthLive, BoardsLive, WorktreesLive).pipe(Layer.provideMerge(withMe))

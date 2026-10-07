@@ -14,7 +14,7 @@ import { eventually } from "../support/wait.ts"
 import { makeWorld } from "../support/world.ts"
 
 const session = (status: SessionStatus, overrides: Partial<Session> = {}): Session =>
-  makeSession(status, { prUrl: "https://ghe/pull/1", claudeSessionId: "c", ...overrides })
+  makeSession(status, { prUrl: "https://ghe/pull/1", agentSessionId: "c", ...overrides })
 
 const fail = (message: string) => Effect.fail(new AdapterError({ adapter: "gh", operation: "test", message, cause: null }))
 

@@ -66,7 +66,7 @@ const running: Session = {
   ...makeSession("awaiting_merge", { id: "ses_running", alertId: release.id, title: release.title, channelName: release.channelName }),
   phase: "ci", activity: "Waiting for you to merge PR #3340", diagnosis: "vite 6.4 dropped `build.cssTarget`; the admin build relies on it.",
   outcome: "fix_pr", prUrl: "https://nocturlab.ghe.com/Merkl/monorepo/pull/3340", branch: "fix-bt-admin-vite",
-  worktree: "/Users/alex/code/monorepo/.shared/worktrees/fix-bt-admin-vite", claudeSessionId: "4f1c2e9a-0d1b-4c55-9a77-3f0b1e2d9c10",
+  worktree: "/Users/alex/code/monorepo/.shared/worktrees/fix-bt-admin-vite", agentSessionId: "4f1c2e9a-0d1b-4c55-9a77-3f0b1e2d9c10",
   model: "claude-opus-5-5", ciRounds: 1, costUsd: 1.42, slackThreadUrl: release.permalink, rootCauseFound: true,
   milestones: { diagnosed: true, fixed: true, prOpened: true, critiqued: true, ciGreen: true, merged: false, released: false, deployed: false },
   review: { channelName: "product-approvals", permalink: "https://merkl.slack.com/archives/C0PRODAPP/p1790933900000100", handledReviewId: null, posted: true },

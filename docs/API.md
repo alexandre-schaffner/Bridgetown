@@ -40,6 +40,7 @@ The daemon binds the port before touching the store. If the port is taken it exi
 |---|---|---|---|
 | GET | `/health` | | `{ "ok": true, "version": "<daemon version>" }`, with no token |
 | GET | `/state` | | `Snapshot` |
+| GET | `/models` | | `ModelCatalog`: detected models, supported efforts, default effort and any discovery error per provider. `?refresh=true` bypasses the five-minute cache. Discovery launches no inference. |
 | GET | `/events` | | SSE stream. Every change sends `event: snapshot` with `data: <Snapshot JSON>` (at most one per 150ms: a burst shares snapshots, and the last one is always read after the last change). The first message arrives on connect. A `: ping` comment is sent every 15s. |
 | GET | `/sessions/:id/transcript` | | `TranscriptEntry[]`: the last 200, oldest first |
 | GET | `/boards/:view` | | `Board`: `incidents` (API 5xx and p99, engine and job errors), `infra` (RPC errors, failed job pods, OOM kills, Postgres backends waiting) or `database` (prod Postgres connections by state, backends waiting on locks, longest transaction, replication lag), over the last hour. |
@@ -76,14 +77,18 @@ reply, GitHub Enterprise unreachable, a store error).
 settings saved:
 
 - A key left out keeps its value. `thresholds` and `quietHours` merge key by key, so `{ "thresholds": { "autoActionable": 0.9 } }`
-  changes that one threshold. Anything else given replaces the whole value: `channels` is the full list.
+  changes that one threshold. `models` merges by role; each supplied role replaces its entire selection. `channels` is the full list.
 - Unknown keys are dropped. Every value is checked: thresholds between 0 and 1, `maxConcurrent` a whole number of at
   least 1, `quietHours` times as `HH:MM`, and `pollSeconds` a whole number of at least 10. A value out of range or of
-  the wrong type, or `null`, fails the whole request with `400` and changes nothing.
+  the wrong type, or an invalid `null`, fails the whole request with `400` and changes nothing.
 - The merged settings are checked again as a whole, saved in the store, and pushed to every `/events` stream.
 
 Settings stored by an older daemon load over the defaults the same way, so a setting added since takes its default,
 and a default channel added since is listed but off.
+
+Model selections are `{ "mode": "automatic" }` or `{ "mode": "manual", "provider": "codex" | "claude", "model": "<ID>", "effort": "<effort>" | null }`. `models.monitoring` and `models.reviewing` are independent. An explicit `null` effort restores the provider default. Detected models reject unsupported efforts with `400`; custom IDs remain available when discovery is unavailable. Blank IDs and incomplete selections fail with `400`.
+
+New sessions persist the selected provider, model and effort; existing sessions retain theirs. A new review snapshots the reviewing profile. Session views expose `provider`, `agentSessionId` and optional `agentConfigDir` for provider-specific takeover, replacing `claudeSessionId`; stored Claude conversations are migrated. `costUsd: null` means the provider did not report a cost.
 
 ## Cards
 

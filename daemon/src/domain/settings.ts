@@ -2,6 +2,7 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { Effect, Schema, Struct } from "effect"
 import { errorMessage, InvalidInput } from "./errors.ts"
+import { DEFAULT_MODELS, ModelSelection, ModelSettings } from "./models.ts"
 
 export const Channel = Schema.Struct({ id: Schema.String, name: Schema.String, enabled: Schema.Boolean })
 export type Channel = typeof Channel.Type
@@ -26,6 +27,7 @@ export type Thresholds = typeof Thresholds.Type
 const QuietHours = Schema.Struct({ enabled: Schema.Boolean, start: ClockTime, end: ClockTime })
 
 export const Settings = Schema.Struct({
+  models: ModelSettings,
   channels: Schema.Array(Channel),
   thresholds: Thresholds,
   autoStart: Schema.Boolean,
@@ -69,6 +71,7 @@ export const DEFAULT_CHANNELS: ReadonlyArray<Channel> = [
 ]
 
 export const DEFAULT_SETTINGS: Settings = {
+  models: DEFAULT_MODELS,
   channels: DEFAULT_CHANNELS,
   thresholds: {
     autoActionable: 0.8,
@@ -99,6 +102,7 @@ const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
  * (a list, a number) `top` gives replaces `base`'s whole. Keys `base` lacks are left out.
  */
 const over = (base: unknown, top: unknown): unknown =>
+  isRecord(top) && (top.mode === "automatic" || top.mode === "manual") ? top :
   isRecord(base) && isRecord(top)
     ? Object.fromEntries(Object.entries(base).map(([key, value]) => [key, top[key] === undefined ? value : over(value, top[key])]))
     : (top ?? base)
@@ -134,6 +138,7 @@ export const SettingsPatch = Schema.Struct({
   pollSeconds: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(MIN_POLL_SECONDS))),
   thresholds: Schema.optional(Thresholds.mapFields(Struct.map(Schema.optional))),
   quietHours: Schema.optional(QuietHours.mapFields(Struct.map(Schema.optional))),
+  models: Schema.optional(Schema.Struct({ monitoring: Schema.optional(ModelSelection), reviewing: Schema.optional(ModelSelection) })),
 })
 export type SettingsPatch = typeof SettingsPatch.Type
 

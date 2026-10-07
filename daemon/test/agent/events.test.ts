@@ -11,6 +11,9 @@ describe("implied phase", () => {
 })
 
 describe("MCP problems shown in the app", () => {
+  test("Codex authentication uses the saved runtime configuration", () => {
+    expect(mcpProblem("merkl", "needs-auth", "codex", "/bt/codex/s1")).toContain("CODEX_HOME='/bt/codex/s1' codex mcp login merkl")
+  })
   test("a login problem says where the login works", () => {
     expect(mcpProblem("merkl", "needs-auth")).toBe("merkl MCP · sessions: needs a login. Run `claude mcp login merkl` in the monorepo.")
   })

@@ -3,9 +3,13 @@ import { basename, dirname, join } from "node:path"
 import { type Options, query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import { Context, Layer } from "effect"
 
+import type { AgentEvent, AgentRequest } from "./protocol.ts"
+import { sdkOptions } from "./options.ts"
+import { codexAgent } from "./codex.ts"
+
 /** The Claude Agent SDK's `query`, as a service so tests can run turns without a CLI. */
 export interface AgentShape {
-  readonly query: (params: { readonly prompt: AsyncIterable<SDKUserMessage>; readonly options: Options }) => AsyncIterable<SDKMessage>
+  readonly run: (request: AgentRequest) => AsyncIterable<AgentEvent>
 }
 
 export class Agent extends Context.Service<Agent, AgentShape>()("Agent") {}
@@ -14,16 +18,53 @@ export class Agent extends Context.Service<Agent, AgentShape>()("Agent") {}
  * A compiled daemon has no SDK-bundled CLI next to it, so it runs the user's own `claude` (which also carries their
  * login); from source the SDK's bundled CLI runs. `claudePath` (`BRIDGETOWN_CLAUDE_PATH`) overrides both.
  */
-const claudeExecutable = (claudePath: string | undefined): string | undefined =>
+export const claudeExecutable = (claudePath: string | undefined): string | undefined =>
   claudePath ?? (import.meta.url.includes("$bunfs") ? (Bun.which("claude") ?? undefined) : undefined)
 
-export const AgentLive = (claudePath: string | undefined) =>
-  Layer.succeed(Agent)({
-    query: ({ prompt, options }) => {
-      const executable = claudeExecutable(claudePath)
-      return query({ prompt, options: executable === undefined ? options : { ...options, pathToClaudeCodeExecutable: executable } })
-    },
+/** Converts only at the Claude boundary, including odd messages from a user's CLI. */
+export function* claudeEvents(message: SDKMessage): Generator<AgentEvent> {
+  try {
+    switch (message.type) {
+      case "system":
+        if (message.subtype === "init") yield { kind: "init", conversationId: message.session_id, servers: message.mcp_servers.map((server) => ({ name: server.name, status: server.status })) }
+        return
+      case "assistant":
+        for (const block of message.message.content) {
+          if (block.type === "text") yield { kind: "text", text: block.text }
+          if (block.type === "tool_use") yield { kind: "tool", name: block.name, input: block.input }
+        }
+        return
+      case "result":
+        yield { kind: "result", text: message.subtype === "success" ? message.result : "", output: message.subtype === "success" ? message.structured_output : undefined,
+          costUsd: message.total_cost_usd, error: message.subtype === "success" ? null : message.errors.join("\n") || message.subtype }
+        return
+    }
+  } catch (cause) {
+    yield { kind: "error", text: `Skipped an SDK ${message.type} message: ${cause instanceof Error ? cause.message : String(cause)}` }
+  }
+}
+
+/** Used by the real Claude SDK and scripted SDKs in tests. */
+export const claudeAgent = (invoke: (params: { prompt: AsyncIterable<SDKUserMessage>; options: Options }) => AsyncIterable<SDKMessage>): AgentShape => ({
+  run: async function* (request) {
+    async function* prompt(): AsyncGenerator<SDKUserMessage> {
+      let first = true
+      for await (const input of request.prompt) {
+        yield { type: "user", message: { role: "user", content: input.text }, parent_tool_use_id: null, ...(first ? {} : { priority: "next" }) }
+        first = false
+      }
+    }
+    for await (const message of invoke({ prompt: prompt(), options: sdkOptions(request) })) yield* claudeEvents(message)
+  },
+})
+
+export const AgentLive = (claudePath: string | undefined, codexPath?: string) => {
+  const claude = claudeAgent(({ prompt, options }) => {
+    const executable = claudeExecutable(claudePath)
+    return query({ prompt, options: executable === undefined ? options : { ...options, pathToClaudeCodeExecutable: executable } })
   })
+  return Layer.succeed(Agent)({ run: (request) => request.session.provider === "codex" ? codexAgent(request, codexPath) : claude.run(request) })
+}
 
 /**
  * Where the SDK keeps the conversation of an agent that ran in `cwd` (Retry and take-over resume from

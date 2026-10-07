@@ -21,7 +21,7 @@ import { makeWorld } from "../support/world.ts"
 const OWN_PR = "https://nocturlab.ghe.com/Merkl/monorepo/pull/3401"
 
 /** Handed back with its worktree and agent conversation: your message starts a resumed turn. */
-const handedBack = (id: string): Session => makeSession("waiting", { id, alertId: `C1:${id}`, worktree: "/w", claudeSessionId: "c", outcome: "needs_human" })
+const handedBack = (id: string): Session => makeSession("waiting", { id, alertId: `C1:${id}`, worktree: "/w", agentSessionId: "c", outcome: "needs_human" })
 
 /** Seeds a session (handed back unless `session` says otherwise), starts a turn on it, and waits until the turn is over. */
 const turnOf = async (
@@ -187,7 +187,7 @@ describe("asks", () => {
         Effect.gen(function* () {
           const store = yield* Store
           const repo = yield* SessionRepo
-          const session = makeSession("running", { id: "s_moved", alertId: "C1:moved", worktree: "/w", claudeSessionId: "c" })
+          const session = makeSession("running", { id: "s_moved", alertId: "C1:moved", worktree: "/w", agentSessionId: "c" })
           yield* store.putSession(session)
           const asking = yield* (yield* Asks).ask(session, "Pin or revert?", []).pipe(Effect.forkChild)
           yield* eventually(store.listActions(), (actions) => (actions.length > 0 ? actions : undefined))
@@ -208,7 +208,7 @@ describe("asks", () => {
 describe("send-backs", () => {
   test("a failed deploy sent back and answered with a revert recommendation is handed to you", async () => {
     const deploying = makeSession("deploying", {
-      id: "s_deploy", alertId: "C1:deploy", worktree: "/w", claudeSessionId: "c", prUrl: OWN_PR, outcome: "fix_pr", rootCauseFound: true,
+      id: "s_deploy", alertId: "C1:deploy", worktree: "/w", agentSessionId: "c", prUrl: OWN_PR, outcome: "fix_pr", rootCauseFound: true,
       releasePrefix: "api",
       releaseTag: "api-v1.2.3",
       milestones: { ...NO_MILESTONES, prOpened: true, ciGreen: true, merged: true, released: true },

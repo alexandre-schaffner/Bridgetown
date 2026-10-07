@@ -95,12 +95,12 @@ describe("resolve", () => {
 
   test("review on a failed session with Retry: queued again, conversation kept", async () => {
     const out = await world.runPromise(Effect.gen(function* () {
-      const failed = makeSession("failed", { id: "s_retry", alertId: "C1:retry", claudeSessionId: "c", resolution: "agent failed" })
+      const failed = makeSession("failed", { id: "s_retry", alertId: "C1:retry", agentSessionId: "c", resolution: "agent failed" })
       yield* seed({ id: "C1:retry", sessionId: "s_retry" }, card({ id: "a_retry", kind: "review", sessionId: "s_retry", alertId: "C1:retry", retry: true, primaryLabel: "Retry" }), failed)
       yield* (yield* Actions).resolve("a_retry", null)
       return yield* (yield* Store).getSession("s_retry")
     }))
-    expect(out).toMatchObject({ status: "queued", resolution: null, claudeSessionId: "c" })
+    expect(out).toMatchObject({ status: "queued", resolution: null, agentSessionId: "c" })
   })
 
   test("review on a waiting session: closed with an honest resolution, never resolved", async () => {

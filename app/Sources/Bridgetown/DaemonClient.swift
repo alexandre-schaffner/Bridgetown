@@ -99,6 +99,10 @@ struct DaemonClient: Sendable {
     }
 
     /// Read from the daemon's store, never from Grafana: as quick as `/state`.
+    func models(refresh: Bool = false) async throws -> ModelCatalog {
+        try await get(refresh ? "/models?refresh=1" : "/models")
+    }
+
     func logs() async throws -> LogSweep {
         try await get("/logs")
     }

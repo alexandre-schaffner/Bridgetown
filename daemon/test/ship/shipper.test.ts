@@ -371,7 +371,7 @@ describe("a tracker edit that comes while the agent is busy", () => {
         yield* store.putAlert(makeAlert({ id: "C1:busy", sessionId: "s_busy" }))
         yield* store.putSession(
           makeSession("deploying", {
-            id: "s_busy", alertId: "C1:busy", worktree: "/w", claudeSessionId: "c", releasePrefix: "admin", releaseTag: tag, milestones: released,
+            id: "s_busy", alertId: "C1:busy", worktree: "/w", agentSessionId: "c", releasePrefix: "admin", releaseTag: tag, milestones: released,
             deployStage: { _tag: "AwaitingApproval" }, tracker: { id: TRACKER_ID, applied: "v1" },
           }),
         )

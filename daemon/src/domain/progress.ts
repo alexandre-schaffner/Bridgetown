@@ -119,7 +119,7 @@ const ciLineOf = (session: Session, state: StepState | undefined): string => {
   return rounds > 0 ? `${word} · ${plural(rounds, "round", "rounds")}` : word
 }
 
-const reviewerNameOf = (session: Session): string => REVIEWER_NAMES[session.critique?.reviewer ?? "codex"]
+const reviewerNameOf = (session: Session): string => REVIEWER_NAMES[session.reviewProfile?.vendor ?? session.critique?.reviewer ?? "codex"]
 
 /** From the review step and the last review. The step stays current for the whole loop, so only `critiquing` is a review running now. */
 const critiqueLineOf = (session: Session, state: StepState | undefined): string => {
@@ -180,7 +180,7 @@ const headlineOf = (session: Session): { readonly headline: string; readonly ton
 }
 
 /** The alert history line for a session just started on it: "Agent session started (claude-opus-5-5, high)". */
-export const sessionStartEvent = (session: Session): string => `Agent session started (${session.model}, ${session.effort})`
+export const sessionStartEvent = (session: Session): string => `Agent session started (${session.model}, ${session.effort ?? "provider default"})`
 
 /** The alert history line for a session that just ended, e.g. "Agent session ended · Closed · root cause not found". */
 export const sessionEndEvent = (session: Session): string => `Agent session ended · ${progressOf(session).headline}`

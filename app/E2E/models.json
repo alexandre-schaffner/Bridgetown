@@ -1,0 +1,32 @@
+{
+  "now": "2026-10-04T12:00:00Z",
+  "world": "empty",
+  "appearances": ["dark", "light"],
+  "beforeConnect": [
+    {"surface": "settings", "tab": "models"},
+    {"shot": "models-disconnected"}
+  ],
+  "steps": [
+    {"surface": "settings", "tab": "models"},
+    {"shot": "models-automatic"},
+    {"mock": {"settings": {"models": {
+      "monitoring": {"mode": "manual", "provider": "codex", "model": "gpt-6.1-sol", "effort": "ultra"},
+      "reviewing": {"mode": "manual", "provider": "claude", "model": "claude-opus-4-6", "effort": "max"}
+    }}}},
+    {"shot": "models-selected"},
+    {"mock": {"settings": {"models": {
+      "monitoring": {"mode": "manual", "provider": "claude", "model": "my-custom-model", "effort": null},
+      "reviewing": {"mode": "manual", "provider": "codex", "model": "gpt-5.6-sol", "effort": null}
+    }}}},
+    {"shot": "models-custom"},
+    {"type": {"into": "models.monitoring.custom", "text": "my-updated-model"}},
+    {"press": "Use model"},
+    {"wait": "settled"},
+    {"expect": {"models": {
+      "monitoring": {"mode": "manual", "provider": "claude", "model": "my-updated-model", "effort": null},
+      "reviewing": {"mode": "manual", "provider": "codex", "model": "gpt-5.6-sol", "effort": null}
+    }}},
+    {"surface": "settings", "tab": "models"},
+    {"shot": "models-custom-saved"}
+  ]
+}

@@ -1,8 +1,9 @@
 import { afterAll, describe, expect, test } from "bun:test"
-import { existsSync, mkdirSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { Effect } from "effect"
 import { claudeProjectDir } from "../../src/agent/agent.ts"
+import { codexSessionHome } from "../../src/agent/codex-home.ts"
 import { acceptsMessages, type Session } from "../../src/domain/session.ts"
 import { Housekeeping } from "../../src/housekeeping/housekeeping.ts"
 import { ROWS_MS } from "../../src/housekeeping/retention.ts"
@@ -37,7 +38,7 @@ const seed = (name: string, status: Session["status"], updatedAt: string, overri
       const branch = `fix-bt-${name}`
       const { path } = yield* (yield* Worktrees).create(repo, branch)
       const session = makeSession(status, {
-        id: `s_${name}`, alertId: `C1:${name}`, branch, repoPath: repo, worktree: path, claudeSessionId: "c", updatedAt, ...overrides,
+        id: `s_${name}`, alertId: `C1:${name}`, branch, repoPath: repo, worktree: path, agentSessionId: "c", updatedAt, ...overrides,
       })
       yield* store.putAlert(makeAlert({ id: session.alertId, sessionId: session.id, receivedAt: updatedAt }))
       yield* store.putSession(session)
@@ -122,6 +123,31 @@ describe("worktrees past their session's grace", () => {
 })
 
 describe("rows past retention", () => {
+  test("a pruned Codex session removes its isolated runtime without following its auth symlink", async () => {
+    const home = scratchDir("bt-codex-prune-")
+    const local = makeWorld({ home })
+    const conversation = codexSessionHome(home, "s_codex_old")
+    mkdirSync(conversation, { recursive: true })
+    writeFileSync(join(conversation, "config.toml"), "")
+    const auth = join(home, "user-auth.json")
+    writeFileSync(auth, "{}")
+    symlinkSync(auth, join(conversation, "auth.json"))
+    try {
+      await local.runPromise(Effect.gen(function* () {
+        const store = yield* Store
+        for (let i = 0; i < 30; i++) {
+          yield* store.putAlert(makeAlert({ id: `C1:codex-filler${i}`, receivedAt: ago(HOUR), sessionId: i < 20 ? `s_codex_filler${i}` : null }))
+          if (i < 20) yield* store.putSession(makeSession("closed", { id: `s_codex_filler${i}`, alertId: `C1:codex-filler${i}`, branch: null, worktree: null, updatedAt: ago(HOUR) }))
+        }
+        yield* store.putAlert(makeAlert({ id: "C1:codex_old", sessionId: "s_codex_old", receivedAt: ago(ROWS_MS + HOUR) }))
+        yield* store.putSession(makeSession("failed", { id: "s_codex_old", alertId: "C1:codex_old", repoPath: repo, branch: "fix-bt-codex-old", worktree: null, provider: "codex", agentConfigDir: conversation, updatedAt: ago(ROWS_MS + HOUR) }))
+        yield* (yield* Housekeeping).run
+        expect(yield* store.getSession("s_codex_old")).toBeUndefined()
+      }))
+      expect(existsSync(conversation)).toBe(false)
+      expect(existsSync(auth)).toBe(true)
+    } finally { await local.dispose() }
+  })
   test("a month later a session's row, transcript and alert go, with its branch and the agent's conversation", async () => {
     await run(
       Effect.gen(function* () {

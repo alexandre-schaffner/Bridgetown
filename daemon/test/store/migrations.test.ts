@@ -59,12 +59,12 @@ const reopen = async (home: string) => {
 const saved = { alert, hash: "hash", session, actions: [action], transcript: [entry], cursor: "123" }
 
 describe("the squashed schema baseline", () => {
-  test("a fresh store records one migration and creates every table and index", async () => {
+  test("a fresh store records the baseline and provider migration and creates every table and index", async () => {
     const home = scratchDir("bt-baseline-")
     await seed(home)
     const db = new Database(join(home, "bridgetown.db"), { readonly: true })
     try {
-      expect(db.query("SELECT migration_id, name FROM bridgetown_migrations").all()).toEqual([{ migration_id: 8, name: "initial" }])
+      expect(db.query("SELECT migration_id, name FROM bridgetown_migrations ORDER BY migration_id").all()).toEqual([{ migration_id: 8, name: "initial" }, { migration_id: 9, name: "agent_provider" }])
       expect(db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all()).toEqual(
         ["actions", "alerts", "bridgetown_migrations", "kv", "sessions", "transcript"].map((name) => ({ name })),
       )
@@ -84,6 +84,7 @@ describe("the squashed schema baseline", () => {
     const db = new Database(join(home, "bridgetown.db"))
     try {
       // The last migration's original name: the migrator must skip the baseline by version.
+      db.run("DELETE FROM bridgetown_migrations WHERE migration_id = 9")
       db.run("UPDATE bridgetown_migrations SET name = 'action_fields' WHERE migration_id = 8")
     } finally {
       db.close()
@@ -95,18 +96,43 @@ describe("the squashed schema baseline", () => {
         loader: Effect.all([
           migrations,
           SqliteMigrator.fromRecord({
-            "009_next": SqlClient.SqlClient.pipe(Effect.flatMap((sql) => sql`INSERT INTO kv (key, value) VALUES ('next', 'applied')`)),
+            "010_next": SqlClient.SqlClient.pipe(Effect.flatMap((sql) => sql`INSERT INTO kv (key, value) VALUES ('next', 'applied')`)),
           }),
         ]).pipe(Effect.map((groups) => groups.flat())),
       }).pipe(Effect.provide(SqliteClient.layer({ filename: join(home, "bridgetown.db") })), Effect.scoped),
     )
-    expect(applied).toEqual([[9, "next"]])
+    expect(applied).toEqual([[10, "next"]])
     expect(await reopen(home)).toEqual(saved)
     const updated = new Database(join(home, "bridgetown.db"), { readonly: true })
     try {
       expect(updated.query("SELECT value FROM kv WHERE key = 'next'").get()).toEqual({ value: "applied" })
     } finally {
       updated.close()
+    }
+  })
+
+  test("version 8 Claude conversations migrate once, including null IDs, without changing other session data", async () => {
+    for (const agentSessionId of ["claude-conversation", null]) {
+      const home = scratchDir("bt-provider-migration-")
+      await seed(home)
+      const { provider, agentSessionId: _, agentConfigDir, ...legacy } = session
+      const db = new Database(join(home, "bridgetown.db"))
+      try {
+        db.run("DELETE FROM bridgetown_migrations WHERE migration_id = 9")
+        db.run("UPDATE sessions SET json = ? WHERE id = ?", [JSON.stringify({ ...legacy, claudeSessionId: agentSessionId }), session.id])
+      } finally {
+        db.close()
+      }
+      const expected = { ...saved, session: { ...session, provider, agentSessionId, agentConfigDir } }
+      expect(await reopen(home)).toEqual(expected)
+      expect(await reopen(home)).toEqual(expected)
+      const updated = new Database(join(home, "bridgetown.db"), { readonly: true })
+      try {
+        expect(updated.query("SELECT json_type(json, '$.claudeSessionId') AS legacy FROM sessions WHERE id = ?").get(session.id)).toEqual({ legacy: null })
+        expect(updated.query("SELECT migration_id, name FROM bridgetown_migrations WHERE migration_id = 9").all()).toEqual([{ migration_id: 9, name: "agent_provider" }])
+      } finally {
+        updated.close()
+      }
     }
   })
 })
