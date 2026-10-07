@@ -35,6 +35,9 @@ final class E2ERunner {
     private var appearances: [E2EAppearance]
     /// The step running, for side effects and failures: `steps[3]`, `before[0]`, `control`.
     private var step = "setup"
+    /// The last frame found settled, until a step acts on the app (`E2EStep.acts`): a shot right
+    /// after a settled step only has to see it again.
+    private var lastSettled: Settled?
 
     init(app: AppDelegate, suite: E2ESuite, suiteName: String, options: Options, defaults: UserDefaults, commit: String) {
         store = app.store
@@ -102,7 +105,9 @@ final class E2ERunner {
     @discardableResult
     func perform(_ json: E2EJSON, as name: String? = nil) async throws -> [ShotResult] {
         if let name { step = name }
-        switch try E2EStep(json) {
+        let parsed = try E2EStep(json)
+        if parsed.acts { lastSettled = nil }
+        switch parsed {
         case let .surface(spec):
             surfaces.show(spec)
         case let .show(target):
@@ -128,6 +133,7 @@ final class E2ERunner {
             guard element.frame.contains(point) else {
                 throw Failure(description: "\(point) is outside \(target.target) (\(element.frame))")
             }
+            lastSettled = nil
             guard let host = surfaces.current?.host, await E2EAccessibility.click(at: point, in: host) else {
                 throw Failure(description: "nothing to click at \(point) on \(surfaces.current?.name ?? "?")")
             }
@@ -146,6 +152,7 @@ final class E2ERunner {
         case let .scroll(target, to):
             // "bottom" of what is there once it has finished growing (a press just before).
             try await wait(.settled, timeoutMs: 0)
+            lastSettled = nil
             try await retrying { try self.scroll(target, to: to) }
         case let .island(move, action):
             try moveIsland(move, action: action)
@@ -154,7 +161,11 @@ final class E2ERunner {
             // tail is off by a fraction of a pixel, differently each run.
             if let shown = surfaces.current, case .notch = shown.spec { surfaces.show(shown.spec) }
         case let .mock(line):
+            let before = store.snapshot
             daemon.sendControl(line.line)
+            // The patch lands with the daemon's next snapshot, on the event stream, which no
+            // request in flight stands for: the next frame waits for it.
+            try await until("the daemon's snapshot after \(line.line)", timeoutMs: 5_000) { store.snapshot != before }
         case let .crash(code):
             // On a quiet app: a request the steps before sent lands first rather than dying with it.
             try await wait(.settled, timeoutMs: 0)
@@ -382,20 +393,45 @@ final class E2ERunner {
         var settled: Bool
     }
 
-    /// Settled: no request in flight for 200ms, then two frames 120ms apart the same,
-    /// spinners masked. Past 4s the shot is taken anyway and says so.
+    /// A frame found settled: on which surface, in which appearance, and after how many
+    /// requests.
+    private struct Settled {
+        var host: ObjectIdentifier
+        var appearance: E2EAppearance
+        var requests: Int
+        var pixels: Data
+    }
+
+    /// No request in flight for this long before a frame counts: a response that sends
+    /// another request sends it well within it.
+    private static let quiet: Duration = .milliseconds(80)
+    /// Between the two frames that must match. Nothing animates here (`E2EEnvironment`
+    /// lands every change at once, and Reduce Motion stills what loops), so a change shows
+    /// in the next frame and the two can be close.
+    private static let frameGap: Duration = .milliseconds(40)
+
+    /// Settled: no request in flight for `quiet`, then two frames `frameGap` apart the same,
+    /// spinners masked. Right after a settled step, with no request since and nothing done
+    /// to the app (`lastSettled`), one frame that matches that step's is enough. Past 4s the
+    /// shot is taken anyway and says so.
     private func settle(_ shown: E2ESurfaces.Shown, appearance: E2EAppearance) async -> Frame {
         shown.window.appearance = NSAppearance(named: appearance == .dark ? .darkAqua : .aqua)
         let start = ContinuousClock.now
+        let host = ObjectIdentifier(shown.host)
+        let sent = { DaemonClient.requestsSent.withLock { $0 } }
         var quietSince: ContinuousClock.Instant?
-        var previous: Data?
+        var previous = lastSettled.flatMap { last in
+            last.host == host && last.appearance == appearance && last.requests == sent() ? last.pixels : nil
+        }
+        if previous != nil { quietSince = start - Self.quiet }
         var frame = Frame(tree: .init(), image: nil, masks: [], settledMs: 0, settled: false)
         while ContinuousClock.now - start < .seconds(4) {
             surfaces.fit()
             if DaemonClient.requestsInFlight.withLock({ $0 }) > 0 {
                 quietSince = nil
                 previous = nil
-            } else if let since = quietSince, ContinuousClock.now - since >= .milliseconds(200) {
+            } else if let since = quietSince, ContinuousClock.now - since >= Self.quiet {
+                let requests = sent()
                 frame.tree = E2EAccessibility.walk(shown.host)
                 frame.masks = frame.tree.elements.filter(\.spinner).map(\.frame)
                 frame.image = render(shown, appearance: appearance)
@@ -403,17 +439,19 @@ final class E2ERunner {
                 // An empty tree may still be building; after 2s it is what there is (and blank).
                 if let pixels, pixels == previous, !frame.tree.elements.isEmpty || ContinuousClock.now - start >= .seconds(2) {
                     frame.settled = true
+                    lastSettled = Settled(host: host, appearance: appearance, requests: requests, pixels: pixels)
                     break
                 }
                 previous = pixels
-                try? await Task.sleep(for: .milliseconds(120))
+                try? await Task.sleep(for: Self.frameGap)
                 continue
             } else if quietSince == nil {
                 quietSince = .now
             }
-            try? await Task.sleep(for: .milliseconds(40))
+            try? await Task.sleep(for: .milliseconds(20))
         }
         if !frame.settled {
+            lastSettled = nil
             frame.tree = E2EAccessibility.walk(shown.host)
             frame.masks = frame.tree.elements.filter(\.spinner).map(\.frame)
             frame.image = render(shown, appearance: appearance)

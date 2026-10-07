@@ -72,6 +72,8 @@ struct DaemonClient: Sendable {
     /// REST requests under way (the event stream is not one): the e2e harness waits for
     /// none before it calls a frame settled.
     static let requestsInFlight = OSAllocatedUnfairLock(initialState: 0)
+    /// REST requests sent so far: with none since, a frame the harness found settled still is.
+    static let requestsSent = OSAllocatedUnfairLock(initialState: 0)
     #endif
 
     private static func session(timeout: TimeInterval) -> URLSession {
@@ -207,6 +209,7 @@ struct DaemonClient: Sendable {
 
     private static func send(_ request: URLRequest, on session: URLSession) async throws -> (Data, URLResponse) {
         #if DEBUG
+        requestsSent.withLock { $0 += 1 }
         requestsInFlight.withLock { $0 += 1 }
         defer { requestsInFlight.withLock { $0 -= 1 } }
         #endif

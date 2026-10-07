@@ -214,6 +214,14 @@ enum E2EStep {
         let description: String
     }
 
+    /// It changes what the app shows (or may): a frame settled before it no longer stands.
+    var acts: Bool {
+        switch self {
+        case .appearance, .wait, .expect, .shot, .each: false
+        default: true
+        }
+    }
+
     static let openPresets: [String: CGSize] = [
         "wide": CGSize(width: 1100, height: 480),
         // A 1024×640 screen, the smallest the island is laid out for.
