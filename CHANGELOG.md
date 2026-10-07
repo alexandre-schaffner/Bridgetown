@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/alexandre-schaffner/Bridgetown/compare/v1.0.0...v1.0.1) (2026-10-07)
+
+
+### Dependencies
+
+* bump @anthropic-ai/claude-agent-sdk ([#4](https://github.com/alexandre-schaffner/Bridgetown/issues/4)) ([98d53ec](https://github.com/alexandre-schaffner/Bridgetown/commit/98d53ec703fedcf793f5dbc5c6fdea24b02a4318))
+
 ## 1.0.0 (2026-10-07)
 
 
