@@ -1,4 +1,7 @@
-/** Calibration for inbox triage: `bun scripts/replay-inbox.ts <file.json>` with [{ from, where, kind, text, thread? }]. */
+/**
+ * Calibration for inbox triage: `bun scripts/replay-inbox.ts <file.json>` (needs TYPESAFE_API_KEY) with
+ * [{ from, where: "#channel" | "DM", via: "mention" | "group" | "dm", text, thread?: [{ author: "me" | "teammate" | "bot", text }] }].
+ */
 import { Effect, Schema } from "effect"
 import { readEnv } from "../src/config.ts"
 import { DEFAULT_SETTINGS } from "../src/domain/settings.ts"
