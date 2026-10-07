@@ -33,6 +33,8 @@ jobs:
         with:
           advanced-security: false
           annotations: true
+      - name: Dependency release policy
+        run: python3 -m unittest discover -s scripts -p 'test_dependency_release.py'
 
   daemon:
     name: Daemon (types, tests)

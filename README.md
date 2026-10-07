@@ -221,6 +221,10 @@ To update the README visuals, see the [screenshot capture guide](docs/images/REA
 
 Every PR runs [CI](.github/workflows/ci.yml): daemon types and tests, Swift tests and a full DMG build, the landing-page build, and actionlint and zizmor on the workflows. `ci-ok` is the one check to require. PRs are squash-merged with a [conventional](https://www.conventionalcommits.org/) title, which sets the next version: `feat` is a minor release before 1.0; `fix`, `perf`, and `deps` are patches; everything else releases nothing.
 
+[Dependency patch batches](.github/workflows/dependency-release.yml) run daily at 06:17 UTC. The [policy](scripts/dependency_release.py) merges green Dependabot PRs containing only allowlisted stable patches in manifests and lockfiles. The daemon allows `zod`, `@types/bun`, and `typescript`; the site also allows fonts, animation, icons, Three.js, types, and Playwright. Claude/Anthropic, Effect, MCP, agent SDKs, frameworks, deployment tools, and non-patch updates require review, including transitive changes.
+
+Each batch checks the combined `main` commit. Runtime patches then refresh and test the next patch release PR before merging, publishing, and deploying. Site/tooling patches only deploy the site. Source or manual dependency changes hold app releases; active or failed pipelines and draft releases hold the batch. Bot merges explicitly dispatch workflows because `GITHUB_TOKEN` merges do not trigger push workflows. Manual dispatch defaults to read-only; select `apply` to process a batch. Locally, using your `gh` login: `GH_REPO=alexandre-schaffner/Bridgetown python3 scripts/dependency_release.py`.
+
 On `main`, [release-please](https://github.com/googleapis/release-please) keeps a release PR open with the changelog and the version bumps in `app/Info.plist`, `daemon/package.json`, and `daemon/src/config.ts`. Merging it runs [release.yml](.github/workflows/release.yml):
 
 1. release-please tags the version and opens a draft release.
