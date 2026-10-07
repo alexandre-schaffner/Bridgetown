@@ -10,6 +10,7 @@
 export function parseRange(header: string, size: number): [number, number] | "unsatisfiable" | null {
   const m = /^bytes=(\d*)-(\d*)$/i.exec(header.trim());
   if (!m || (m[1] === "" && m[2] === "")) return null;
+  if (size === 0) return "unsatisfiable";
   if (m[1] === "") {
     const last = Number(m[2]);
     return last === 0 ? "unsatisfiable" : [Math.max(0, size - last), size - 1];

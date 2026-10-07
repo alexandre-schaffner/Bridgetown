@@ -60,7 +60,10 @@ import Icon from "./Icon.astro";
     toggle.addEventListener("click", () => {
       userPaused = !video.paused;
       if (userPaused) video.pause();
-      else void video.play();
+      else void video.play().catch(() => {
+        userPaused = true;
+        setPaused(true);
+      });
       setPaused(userPaused);
     });
     new IntersectionObserver(
