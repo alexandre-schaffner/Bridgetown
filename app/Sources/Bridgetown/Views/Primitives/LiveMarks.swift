@@ -123,31 +123,3 @@ struct Spinner: View {
         }
     }
 }
-
-/// A light running through a label, left to right, as Vercel marks work in progress.
-struct Shimmer: ViewModifier {
-    var active: Bool
-    @Environment(\.marksHoldStill) private var still
-
-    private static let period: Double = 2
-
-    func body(content: Content) -> some View {
-        if active && !still {
-            content.overlay {
-                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
-                    GeometryReader { geo in
-                        let t = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: Self.period) / Self.period
-                        let band = max(28, geo.size.width * 0.8)
-                        LinearGradient(colors: [.white.opacity(0), .white.opacity(0.8), .white.opacity(0)], startPoint: .leading, endPoint: .trailing)
-                            .frame(width: band)
-                            .offset(x: -band + (geo.size.width + band) * t)
-                    }
-                }
-                .mask(content)
-                .allowsHitTesting(false)
-            }
-        } else {
-            content
-        }
-    }
-}

@@ -12,7 +12,7 @@ import { SessionRunner } from "../sessions/runner.ts"
 import { SlackMe } from "../slack/me.ts"
 import { Store } from "../store/store.ts"
 import { Watcher } from "../watch/watcher.ts"
-import { FeedbackBody, MessageBody, pathId, PauseBody, readBody, ResolveBody } from "./requests.ts"
+import { MessageBody, pathId, PauseBody, readBody, ResolveBody } from "./requests.ts"
 import { snapshotEvents, SSE_TIMING, type SseTiming } from "./sse.ts"
 import { alertDetail, boardView, logSweep, snapshot } from "./views.ts"
 
@@ -141,13 +141,11 @@ const postRoute = (path: string, request: Request) =>
       const body = yield* readBody(request, ResolveBody)
       return yield* thenSnapshot(actions.resolve(id, body.response ?? null))
     }
-    const alert = /^\/alerts\/([^/]+)\/(investigate|feedback)$/.exec(path)
+    const alert = /^\/alerts\/([^/]+)\/investigate$/.exec(path)
     if (alert !== null) {
       const id = yield* pathId(alert[1])
       const intake = yield* Intake
-      if (alert[2] === "investigate") return yield* thenSnapshot(intake.investigate(id))
-      const body = yield* readBody(request, FeedbackBody)
-      return yield* thenSnapshot(intake.feedback(id, body.label))
+      return yield* thenSnapshot(intake.investigate(id))
     }
     const session = /^\/sessions\/([^/]+)\/(stop|message)$/.exec(path)
     if (session !== null) {

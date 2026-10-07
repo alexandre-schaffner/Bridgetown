@@ -173,10 +173,6 @@ final class Store {
         perform(alert.id) { try await $0.investigate(alertId: alert.id) }
     }
 
-    func feedback(_ alert: AlertView, _ label: AlertView.Feedback) {
-        perform(alert.id) { try await $0.feedback(alertId: alert.id, label: label) }
-    }
-
     func stop(_ session: Session) {
         perform(session.id) { try await $0.stop(sessionId: session.id) }
     }

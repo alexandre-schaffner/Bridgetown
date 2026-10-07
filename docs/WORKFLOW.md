@@ -34,7 +34,7 @@ Decision policy, session boundaries, what Bridgetown keeps, and what it posts to
   Jev suggested it to you, your card goes. **Investigate anyway** still starts your own agent. Inbox items are yours alone, so
   they are never claimed.
 - **Policy** (`daemon/src/triage/policy.ts`) turns probabilities into a decision: auto, suggest, escalate, ignore or filtered. You can tune the
-  thresholds in Settings. Each verdict is stored with its numbers, and 👍/👎 in the app labels it for calibration.
+  thresholds in Settings. Each verdict is stored with its numbers.
 - **Depth picks the model.** `quick` runs Sonnet at medium effort, `standard` runs Opus at high, `deep` runs Opus at max. Only that local table
   (`PROFILES` in `daemon/src/sessions/new-session.ts`) names models.
 - **Another vendor reviews every fix.** Agents open PRs as drafts. Before a pushed fix goes to CI, Codex (never the coder's own vendor:
@@ -143,6 +143,9 @@ Everything stays on your Mac:
 - **The store:** `~/Library/Application Support/Bridgetown/bridgetown.db` (SQLite, moved by `BRIDGETOWN_HOME`): alerts,
   sessions with their transcripts, cards and settings. The exec-time guard's shims live beside it, in
   `guard-bin/<port>/`.
+- **Schema baseline:** `008_initial` creates a fresh store in one migration. Stores already upgraded through
+  version 8 keep their data and migration record; future migrations start at 9. Earlier database versions are
+  no longer upgraded by the daemon.
 - **Worktrees:** `monorepo/.shared/worktrees/fix-bt-*`, or `<home>/worktrees/<repo>/` for a repo without `.shared/`.
 - **Agent conversations:** where the Claude CLI keeps them, `~/.claude/projects/` (or under `CLAUDE_CONFIG_DIR`).
 - **Logs:** `~/Library/Logs/Bridgetown/daemon.log`, the daemon's output and the app's notes about it. Past 10 MB it

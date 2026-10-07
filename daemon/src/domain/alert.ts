@@ -140,9 +140,6 @@ export const Triage = Schema.Struct({
 })
 export type Triage = typeof Triage.Type
 
-export const Feedback = Schema.Literals(["good", "bad"])
-export type Feedback = typeof Feedback.Type
-
 export const AlertEvent = Schema.Struct({ at: Schema.String, text: Schema.String })
 export type AlertEvent = typeof AlertEvent.Type
 
@@ -204,7 +201,6 @@ export const Alert = Schema.Struct({
   receivedAt: Schema.String,
   triage: Triage,
   sessionId: Schema.NullOr(Schema.String),
-  feedback: Schema.NullOr(Feedback),
   /** What happened to this alert, oldest first: triage, your dismissals and investigations, edits. */
   events: Schema.Array(AlertEvent).pipe(Schema.withDecodingDefaultKey(Effect.succeed([]))),
   /** What you last did to its card when no agent ran: dismissed it, or opened it in Slack or Revv. */
@@ -244,7 +240,6 @@ export interface AlertRecord {
   readonly triage: Triage
   readonly sessionId: string | null
   readonly events: ReadonlyArray<AlertEvent>
-  readonly feedback?: Feedback | null
   readonly disposition?: Disposition | null
   readonly claimedBy?: ReadonlyArray<Claimant>
 }
@@ -266,7 +261,6 @@ export const alertFromParsed = (parsed: ParsedAlert, record: AlertRecord): Alert
   receivedAt: record.receivedAt,
   triage: record.triage,
   sessionId: record.sessionId,
-  feedback: record.feedback ?? null,
   events: record.events,
   disposition: record.disposition ?? null,
   claimedBy: record.claimedBy ?? [],

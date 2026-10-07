@@ -49,7 +49,7 @@ struct DetailTopBar: View {
                 .lineLimit(lineLimit)
                 .truncationMode(.tail)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 3.5)  // first line centred on the 24pt chevron
+                .padding(.top, 5.5)  // first line centred on the 28pt chevron
                 .help(title)
             Spacer(minLength: 0)
         }

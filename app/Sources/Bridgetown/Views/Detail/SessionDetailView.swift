@@ -204,14 +204,13 @@ struct SessionDetailView: View {
                 .inputField()
                 .accessibilityIdentifier("session.message")
             Button(action: send) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.geist(20))
-                    .symbolRenderingMode(.hierarchical)
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 12, weight: .semibold))
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(canSend ? Ink.text : Color.secondary)
+            .buttonStyle(.stage(.primary, iconOnly: true))
             .disabled(!canSend)
             .help("Send to the agent")
+            .accessibilityLabel("Send to the agent")
             .accessibilityIdentifier("session.send")
         }
     }

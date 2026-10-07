@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { ActionQueue, type NewAction } from "../actions/queue.ts"
 import type { Action } from "../domain/action.ts"
-import { type Alert, alertFromParsed, channelLabel, type Claimant, claimHeadline, type Feedback, type ParsedAlert, type Triage, triageEvent } from "../domain/alert.ts"
+import { type Alert, alertFromParsed, channelLabel, type Claimant, claimHeadline, type ParsedAlert, type Triage, triageEvent } from "../domain/alert.ts"
 import { type AdapterError, NotFound } from "../domain/errors.ts"
 import { now } from "../domain/ids.ts"
 import { isActive } from "../domain/session.ts"
@@ -51,8 +51,6 @@ export interface IntakeShape {
   readonly file: (parsed: ParsedAlert, filing: Filing, route: Route) => Effect.Effect<Alert | undefined, AdapterError>
   /** You asked: starts a session on the alert whatever Jev said, claimed in Slack even if a teammate is on it too. */
   readonly investigate: (alertId: string) => Effect.Effect<void, AdapterError | NotFound>
-  /** Your mark on Jev's call. */
-  readonly feedback: (alertId: string, label: Feedback) => Effect.Effect<void, AdapterError | NotFound>
 }
 
 export class Intake extends Context.Service<Intake, IntakeShape>()("Intake") {}
@@ -136,7 +134,6 @@ export const IntakeLive = Layer.effect(Intake)(
             triage,
             sessionId: current?.sessionId ?? (route._tag === "Attach" ? route.sessionId : null),
             events: [...(current?.events ?? []), ...[...(filing.seen ?? []), verdict].map((text) => ({ at: now(), text }))],
-            feedback: current?.feedback ?? null,
             disposition: current?.disposition ?? null,
             claimedBy: filing.claimedBy ?? current?.claimedBy ?? [],
           }),
@@ -167,12 +164,6 @@ export const IntakeLive = Layer.effect(Intake)(
       yield* runner.enqueue(alert)
     })
 
-    const feedback = Effect.fn("Intake.feedback")(function* (alertId: string, label: Feedback) {
-      yield* stored(alertId)
-      yield* store.appendAlertEvent(alertId, label === "good" ? "You marked Jev's call as right" : "You marked Jev's call as wrong", { feedback: label })
-      yield* hub.notify
-    })
-
-    return { file, investigate, feedback }
+    return { file, investigate }
   }),
 )

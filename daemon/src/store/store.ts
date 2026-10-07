@@ -28,7 +28,7 @@ export const SessionRef = Schema.Struct({
 export type SessionRef = typeof SessionRef.Type
 
 /** What an alert history line records besides itself. */
-export type AlertEventChange = Partial<Pick<Alert, "claimedBy" | "feedback" | "sessionId">> & { readonly disposition?: Disposition["kind"] }
+export type AlertEventChange = Partial<Pick<Alert, "claimedBy" | "sessionId">> & { readonly disposition?: Disposition["kind"] }
 
 export interface StoreShape {
   readonly getAlert: (id: string) => Effect.Effect<Alert | undefined, AdapterError>
@@ -49,7 +49,7 @@ export interface StoreShape {
   ) => Effect.Effect<Alert | undefined, AdapterError>
   /**
    * Appends a line to the alert's history, with the change it records: what you did to its card (`disposition`),
-   * who is on it, your feedback, the session started on it. Nothing for an alert no longer stored.
+   * who is on it, the session started on it. Nothing for an alert no longer stored.
    */
   readonly appendAlertEvent: (id: string, text: string, change?: AlertEventChange) => Effect.Effect<void, AdapterError>
   readonly alertHash: (id: string) => Effect.Effect<string | undefined, AdapterError>

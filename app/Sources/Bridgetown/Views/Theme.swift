@@ -46,6 +46,8 @@ enum Ink {
 
     static let panelRadius: CGFloat = 8
     static let controlRadius: CGFloat = 6
+    static let buttonRadius: CGFloat = 8
+    static let buttonHeight: CGFloat = 28
     static let tagRadius: CGFloat = 4
 }
 
@@ -214,19 +216,21 @@ struct PixelStroke<S: ShapeStyle>: View {
 
 // MARK: Buttons
 
-/// Three buttons, as in Geist: white primary (the one next step), outlined secondary,
-/// red for destructive confirmations. One size: the island's rows and bars are dense.
+/// White for the next step, a quiet surface for secondary actions, and a red tint for
+/// destructive confirmations. Icon controls share the same shape and press feedback.
 struct StageButtonStyle: ButtonStyle {
-    enum Kind { case primary, secondary, danger }
+    enum Kind { case primary, secondary, danger, quiet }
     var kind: Kind = .secondary
+    var iconOnly = false
 
     func makeBody(configuration: Configuration) -> some View {
-        StageButtonLabel(configuration: configuration, kind: kind)
+        StageButtonLabel(configuration: configuration, kind: kind, iconOnly: iconOnly)
     }
 
     private struct StageButtonLabel: View {
         let configuration: Configuration
         let kind: Kind
+        let iconOnly: Bool
         @Environment(\.isEnabled) private var isEnabled
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @ViewState private var hovering = false
@@ -237,19 +241,22 @@ struct StageButtonStyle: ButtonStyle {
                 .labelStyle(.titleAndIcon)
                 .lineLimit(1)
                 .foregroundStyle(foreground)
-                .padding(.horizontal, 8)
-                .frame(height: 24)
-                .background(background, in: RoundedRectangle(cornerRadius: Ink.controlRadius, style: .continuous))
+                .padding(.horizontal, iconOnly ? 0 : 12)
+                .frame(minWidth: Ink.buttonHeight, minHeight: Ink.buttonHeight)
+                .background(background, in: RoundedRectangle(cornerRadius: Ink.buttonRadius, style: .continuous))
                 .overlay {
-                    if kind == .secondary {
-                        PixelStroke(radius: Ink.controlRadius, style: Ink.outline)
+                    if kind == .secondary || kind == .danger {
+                        PixelStroke(radius: Ink.buttonRadius, style: outline)
                     }
                 }
                 .opacity(isEnabled ? 1 : 0.4)
-                .contentShape(RoundedRectangle(cornerRadius: Ink.controlRadius))
+                .contentShape(RoundedRectangle(cornerRadius: Ink.buttonRadius, style: .continuous))
                 // Pressed in a touch, so the click lands before the request does.
-                .scaleEffect(configuration.isPressed && !reduceMotion ? 0.965 : 1)
+                .scaleEffect(pressed && !reduceMotion ? 0.98 : 1)
                 .onHover { hovering = $0 }
+                #if DEBUG
+                .modifier(E2EHoverModifier(hovering: $hovering))
+                #endif
                 .animation(Easing.quick, value: hovering)
                 .animation(Easing.quick, value: configuration.isPressed)
         }
@@ -258,23 +265,35 @@ struct StageButtonStyle: ButtonStyle {
             switch kind {
             case .primary: .black
             case .secondary: Ink.text
-            case .danger: .white
+            case .danger: Ink.red
+            case .quiet: highlighted ? Ink.text : Ink.dim
             }
         }
 
         private var background: Color {
-            let lift = configuration.isPressed ? 2.0 : hovering && isEnabled ? 1.0 : 0
             switch kind {
-            case .primary: return Color(white: 0.93 - lift * 0.06)
-            case .secondary: return Color.white.opacity(lift * 0.05)
-            case .danger: return Ink.red.opacity(1 - lift * 0.1)
+            case .primary: return Color(white: pressed ? 0.82 : highlighted ? 1 : 0.93)
+            case .secondary: return Color.white.opacity(pressed ? 0.13 : highlighted ? 0.09 : 0.045)
+            case .danger: return Ink.red.opacity(pressed ? 0.18 : highlighted ? 0.13 : 0.07)
+            case .quiet: return Color.white.opacity(pressed ? 0.12 : highlighted ? 0.07 : 0)
             }
         }
+
+        private var outline: Color {
+            kind == .danger
+                ? Ink.red.opacity(highlighted || pressed ? 0.5 : 0.3)
+                : Color.white.opacity(highlighted || pressed ? 0.32 : 0.2)
+        }
+
+        private var highlighted: Bool { hovering && isEnabled }
+        private var pressed: Bool { configuration.isPressed && isEnabled }
     }
 }
 
 extension ButtonStyle where Self == StageButtonStyle {
-    static func stage(_ kind: StageButtonStyle.Kind) -> StageButtonStyle { StageButtonStyle(kind: kind) }
+    static func stage(_ kind: StageButtonStyle.Kind, iconOnly: Bool = false) -> StageButtonStyle {
+        StageButtonStyle(kind: kind, iconOnly: iconOnly)
+    }
 }
 
 // MARK: Tab switch
@@ -301,10 +320,10 @@ struct TabSwitch<Option: Hashable & Identifiable>: View {
                         .font(Typo.label)
                         .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                         .padding(.horizontal, 9)
-                        .frame(height: 20)
+                        .frame(height: 24)
                         .background {
                             if selected {
-                                RoundedRectangle(cornerRadius: Ink.tagRadius)
+                                RoundedRectangle(cornerRadius: Ink.controlRadius, style: .continuous)
                                     .fill(Ink.selected)
                                     .matchedGeometryEffect(id: "selection", in: fill)
                             }
@@ -312,11 +331,12 @@ struct TabSwitch<Option: Hashable & Identifiable>: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .hoverFill(radius: Ink.controlRadius)
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
         .padding(2)
-        .overlay(PixelStroke(radius: Ink.controlRadius, style: Ink.outline))
+        .overlay(PixelStroke(radius: Ink.buttonRadius, style: Ink.outline))
         .animation(reduceMotion ? nil : Easing.state, value: selection)
     }
 }

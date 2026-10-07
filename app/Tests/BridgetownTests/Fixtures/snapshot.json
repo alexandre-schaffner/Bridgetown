@@ -233,7 +233,6 @@
         }
       },
       "sessionId": "ses_running",
-      "feedback": "good",
       "outcome": {
         "kind": "session",
         "headline": "Ready to merge",
@@ -255,7 +254,6 @@
         "jev": null
       },
       "sessionId": "ses_closed",
-      "feedback": null,
       "outcome": {
         "kind": "session",
         "headline": "Closed · root cause not found",
@@ -277,7 +275,6 @@
         "jev": null
       },
       "sessionId": null,
-      "feedback": null,
       "outcome": {
         "kind": "filtered",
         "headline": "Filtered by a rule",
@@ -307,7 +304,6 @@
         }
       },
       "sessionId": null,
-      "feedback": "bad",
       "outcome": {
         "kind": "dismissed",
         "headline": "Dismissed by you",
@@ -329,7 +325,6 @@
         "jev": null
       },
       "sessionId": null,
-      "feedback": null,
       "outcome": {
         "kind": "waiting",
         "headline": "Waiting on you",

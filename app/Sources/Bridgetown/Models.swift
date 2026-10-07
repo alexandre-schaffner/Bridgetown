@@ -206,7 +206,6 @@ struct AlertView: Codable, Sendable, Equatable, Identifiable {
     /// `inbox` = a mention, group mention or DM anywhere in Slack. `watch` = Bridgetown saw a prod
     /// signal rise in Grafana on its own; `permalink` is then the Grafana dashboard, not a Slack message.
     enum Source: String, LenientStringEnum { case releases, uptime, engine, inbox, generic, watch, unknown }
-    enum Feedback: String, LenientStringEnum { case good, bad, unknown }
 
     var id: String
     /// Where it came from, as written: "#alert-releases", "DM", "group DM", "Grafana".
@@ -218,7 +217,6 @@ struct AlertView: Codable, Sendable, Equatable, Identifiable {
     var receivedAt: Date
     var triage: Triage
     var sessionId: String?
-    var feedback: Feedback?
     /// What happened to it, computed by the daemon. Render this; never infer it from
     /// the triage decision or history text.
     var outcome: AlertOutcome

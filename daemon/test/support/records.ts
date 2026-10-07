@@ -6,7 +6,7 @@ import { newSession } from "../../src/sessions/new-session.ts"
 export const makeAlert = (overrides: Partial<Alert> = {}): Alert => ({
   id: "C1:1", channelId: "C1", channelName: "alert-releases", ts: "1", permalink: null, title: "t", summary: "", raw: "",
   source: "releases", fingerprint: "f", fields: { _tag: "generic" }, mentionsMe: false, receivedAt: "",
-  triage: { decision: "auto", reason: "because", jev: null }, sessionId: null, feedback: null, events: [], disposition: null,
+  triage: { decision: "auto", reason: "because", jev: null }, sessionId: null, events: [], disposition: null,
   claimedBy: [], ...overrides,
 })
 

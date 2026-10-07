@@ -8,7 +8,7 @@ enum Metrics {
     static let inset: CGFloat = 12
     /// A section's header: tall enough for a stage button, so a selection header or a
     /// prompt can stand in for it without a jump.
-    static let headerHeight: CGFloat = 24
+    static let headerHeight = Ink.buttonHeight
 }
 
 // MARK: Section header
@@ -98,42 +98,6 @@ struct ChannelChip: View {
     }
 }
 
-// MARK: Feedback
-
-/// 👍 / 👎 on Jev's call for an alert: labels the verdict for calibration. The chosen one
-/// is filled; choosing again changes the label.
-struct FeedbackThumbs: View {
-    @Environment(Store.self) private var store
-    let alert: AlertView
-
-    var body: some View {
-        HStack(spacing: 4) {
-            thumb(.good, symbol: "hand.thumbsup", help: "Good call")
-            thumb(.bad, symbol: "hand.thumbsdown", help: "Bad call")
-        }
-        .disabled(store.isBusy(alert.id))
-    }
-
-    private func thumb(_ label: AlertView.Feedback, symbol: String, help: String) -> some View {
-        let selected = alert.feedback == label
-        return Button {
-            store.feedback(alert, label)
-        } label: {
-            Image(systemName: selected ? symbol + ".fill" : symbol)
-                .font(Typo.body)
-                .contentTransition(.symbolEffect(.replace))
-                .frame(width: 24, height: 22)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-        .hoverFill(radius: 5)
-        .help(help)
-        .accessibilityLabel(help)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-}
-
 // MARK: Icon button
 
 /// A borderless SF Symbol button: a detail's back chevron, a card's dismiss cross.
@@ -148,12 +112,8 @@ struct IconButton: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: size, weight: weight))
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .hoverFill(radius: 6)
+        .buttonStyle(.stage(.quiet, iconOnly: true))
         .help(help)
         .accessibilityLabel(help)
     }
