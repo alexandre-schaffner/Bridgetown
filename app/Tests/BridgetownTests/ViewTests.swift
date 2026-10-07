@@ -3,7 +3,7 @@ import Testing
 @testable import Bridgetown
 
 @Suite struct AlertDetailRefreshTests {
-    private let alertId = "C0AUKD42N3U:1790930000.000100"
+    private let alertId = "C0AUK4AUER0:1790930000.000100"
 
     @Test func followsTheLiveSessionAndCards() throws {
         let snapshot = try Fixture.snapshot()
@@ -34,7 +34,7 @@ import Testing
     /// Only an alert nothing is left open on has "ended".
     @Test func anAlertIsOpenWhileACardOrAnAgentIsOnIt() throws {
         let snapshot = try Fixture.snapshot()
-        var alert = try #require(snapshot.alert(id: "C0AUKD42N3U:1790930000.000100"))
+        var alert = try #require(snapshot.alert(id: "C0AUK4AUER0:1790930000.000100"))
         let closed = try #require(snapshot.session(id: "ses_closed"))
         let card = try #require(snapshot.actions.first { $0.id == "act_review_1" })
 

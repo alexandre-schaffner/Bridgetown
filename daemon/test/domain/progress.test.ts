@@ -78,4 +78,42 @@ describe("progress is evidence, not intent", () => {
       expect(states(session({ status: "running", critique, milestones: { ...pushed, ciGreen: true } }))[3]).toBe("Review:current")
     })
   })
+
+  describe("what the app shows as is", () => {
+    const pushed = { ...NO_MILESTONES, diagnosed: true, fixed: true, prOpened: true }
+    const holder = (overrides: Partial<Session>) => progressOf(session(overrides)).holder
+    test("who has the next move: the tone can't say, since 'In review' is live yet nobody works on it", () => {
+      expect(holder({ status: "running" })).toBe("agent")
+      expect(holder({ status: "critiquing", milestones: pushed })).toBe("critic")
+      // Findings recorded and the agent's turn parked for a slot: nobody is reviewing.
+      expect(holder({ status: "critiquing", critique: { reviewer: "codex", sha: "abc", findings: [makeFinding()], response: null }, milestones: pushed })).toBe("queue")
+      expect(holder({ status: "ci", milestones: pushed })).toBe("ci")
+      const review = { channelName: "product-approvals", permalink: null, handledReviewId: null, posted: true }
+      expect(holder({ status: "ci", review, milestones: { ...pushed, ciGreen: true } })).toBe("reviewers")
+      // CI green but the review request didn't go out: that is yours to sort out.
+      expect(holder({ status: "ci", review: { ...review, posted: false }, milestones: { ...pushed, ciGreen: true } })).toBe("you")
+      expect(holder({ status: "awaiting_merge" })).toBe("you")
+      expect(holder({ status: "queued" })).toBe("queue")
+      expect(holder({ status: "resolved" })).toBeNull()
+      expect(holder({ status: "closed" })).toBeNull()
+    })
+    test("the CI row, from the CI step and its rounds", () => {
+      const ciLine = (overrides: Partial<Session>) => progressOf(session(overrides)).ciLine
+      expect(ciLine({ status: "awaiting_merge", ciRounds: 1, milestones: { ...pushed, critiqued: true, ciGreen: true } })).toBe("Passed · 1 round")
+      expect(ciLine({ status: "ci", ciRounds: 2, milestones: { ...pushed, critiqued: true } })).toBe("Running · 2 rounds")
+      expect(ciLine({ status: "failed", ciRounds: 2, milestones: { ...pushed, critiqued: true } })).toBe("Failed · 2 rounds")
+      expect(ciLine({ status: "resolved", milestones: { ...NO_MILESTONES, diagnosed: true } })).toBe("Not needed")
+      expect(ciLine({ status: "running" })).toBe("Not run")
+    })
+    test("each step's line under its name: only what there is evidence for, and nothing for a step not reached", () => {
+      const details = (overrides: Partial<Session>) => progressOf(session(overrides)).steps.map((step) => step.detail)
+      expect(details({ status: "closed", rootCauseFound: false })).toEqual(["No root cause", null, null, null, null, null])
+      const passed = { reviewer: "codex" as const, sha: "abc", findings: [], response: null }
+      expect(
+        details({
+          status: "ci", rootCauseFound: true, prUrl: "https://ghe/Merkl/monorepo/pull/3340", ciRounds: 1, critique: passed, milestones: { ...pushed, critiqued: true },
+        }),
+      ).toEqual(["Cause found", null, "#3340", "Passed", "Running · 1 round", null])
+    })
+  })
 })

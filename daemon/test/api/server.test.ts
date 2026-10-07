@@ -172,6 +172,9 @@ describe("status codes", () => {
   test("a rejected settings patch changes nothing", async () => {
     const before = await settingsOf(call("/state"))
     expect((await post("/settings", { pollSeconds: -1, maxConcurrent: 5 })).status).toBe(400)
+    // The app reads whole seconds, and the poll loop waits 10 at the least.
+    expect((await post("/settings", { pollSeconds: 7.5 })).status).toBe(400)
+    expect((await post("/settings", { pollSeconds: 5 })).status).toBe(400)
     expect(await settingsOf(call("/state"))).toEqual(before)
   })
   test("405 for a method no route takes; errors are JSON", async () => {

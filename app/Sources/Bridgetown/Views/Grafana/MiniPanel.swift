@@ -58,7 +58,7 @@ struct MiniPanel: View {
                         title
                         // Only when it says something: a calm list stays quiet. Kept while
                         // hovering (it shows the time then), so the row keeps its height.
-                        if panel.spikeRatio != nil { context }
+                        if panel.spike != nil { context }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     plot(height: 22)
@@ -161,14 +161,14 @@ struct MiniPanel: View {
         .accessibilityHidden(true)
     }
 
-    /// Peak, usual and low across the window, and for a count of events its total. Hovering a stat
+    /// Peak, median and low across the window, and for a count of events its total. Hovering a stat
     /// with a time moves the crosshair to it.
     @ViewBuilder
     private var stats: some View {
         if let summary = panel.summary {
             HStack(alignment: .top, spacing: 12) {
                 stat("Peak", summary.peak.value, at: summary.peak.at)
-                stat("Usual", summary.median)
+                stat("Median", summary.median)
                 stat("Low", summary.low.value, at: summary.low.at)
                 // Events add up; a gauge (pods, memory) summed over time means nothing.
                 if style == .bars { stat("Total", summary.total) }
@@ -267,7 +267,7 @@ struct MiniPanel: View {
     /// panel to look at. Grey when it failed to load.
     private var valueStyle: AnyShapeStyle {
         if panel.error != nil { return AnyShapeStyle(.tertiary) }
-        if hover == nil, panel.spikeRatio != nil {
+        if hover == nil, panel.spike != nil {
             return AnyShapeStyle(Ink.amber)
         }
         return AnyShapeStyle(.primary)
@@ -312,23 +312,24 @@ struct MiniPanel: View {
         panel.series.count == 1 && (panel.unit == .count || panel.unit == .unknown) ? .bars : .levels
     }
 
-    /// Against the window's median: "near usual", or how far above or below it the latest
-    /// value is. While hovering, the time under the crosshair instead.
+    /// Against the prod watcher's usual level: how many times it the signal is when the
+    /// watcher finds it unusual, how far below it the latest value is, or "near usual". While
+    /// hovering, the time under the crosshair instead.
     @ViewBuilder
     private var context: some View {
         Group {
             if let hover {
                 Text(hover, format: Format.clock)
                     .foregroundStyle(.secondary)
-            } else if let spike = panel.spikeRatio {
+            } else if let spike = panel.spike {
                 Text("↑ \(Format.decimal(spike, digits: 1))× usual")
                     .foregroundStyle(Ink.amber)
-            } else if let typical = panel.typical, let latest = panel.latest {
-                let ratio = latest / typical
+            } else if let usual = panel.usual, usual > 0, let latest = panel.latest {
+                let ratio = latest / usual
                 if ratio <= 0.55 {
                     Text("↓ \(Format.decimal(ratio, digits: 1))× usual")
                         .foregroundStyle(.secondary)
-                } else {
+                } else if latest <= panel.spikeAbove ?? .infinity {
                     Text("near usual")
                         .foregroundStyle(.tertiary)
                 }
@@ -344,7 +345,8 @@ struct MiniPanel: View {
             series: board.buckets(of: panel),
             style: style,
             yMax: panel.chartTop,
-            typical: panel.typical,
+            usual: panel.usual,
+            spikeAbove: panel.spikeAbove,
             hovered: hover.map(board.column(of:)),
             deploys: board.deploys
                 .filter { $0.at >= board.from && $0.at <= board.to }

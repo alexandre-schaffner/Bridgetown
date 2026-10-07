@@ -33,6 +33,11 @@ import Testing
         #expect(running.tone == .waiting)
         #expect(running.steps.map(\.key) == [.diagnose, .fix, .pr, .critique, .ci, .deploy])
         #expect(running.critiqueLine == "Passed · 1 round of fixes · 2 dropped by Jev")
+        #expect(running.holder == .you)
+        #expect(running.ciLine == "Passed · 1 round")
+        #expect(running.steps.map(\.detail) == ["Cause found", nil, "#3340", running.critiqueLine, "Passed · 1 round", nil])
+        #expect(running.channelLabel == "#alert-releases")
+        #expect(snap.metrics.sessions == .init(started: 2, resolved: 0))
         #expect(snap.settings.adversarialReview && snap.settings.thresholds.findingReal == 0.6)
         #expect(snap.settings.watchProd)
         #expect(!snap.isQuiet)
@@ -46,10 +51,12 @@ import Testing
         #expect(!closed.acceptsMessages)
         #expect(closed.rootCauseFound == false)
         #expect(closed.steps.first?.label == "Root cause?")
+        #expect(closed.holder == nil)
 
         let kinds = snap.alerts.map(\.outcome.kind)
         #expect(kinds == [.session, .session, .filtered, .dismissed, .waiting])
-        #expect(snap.alerts[2].outcome.sentence == "Recovery notice")
+        #expect(snap.alerts[2].outcome.sentence == "No agent ran. A rule filtered it before triage.")
+        #expect(snap.alerts[4].channelLabel == "DM")
         #expect(snap.alerts[0].outcome.sentence == nil)
         #expect(snap.alerts[4].outcome.tone == .waiting)
 
@@ -67,7 +74,9 @@ import Testing
     @Test func alertDetailIsFlat() throws {
         let detail = try Fixture.decode(AlertDetail.self, "alert-detail")
         #expect(detail.alert.outcome.kind == .dismissed)
-        #expect(detail.raw.contains("dashboard"))
+        // Markdown, with people by name: the daemon translated the mrkdwn.
+        #expect(detail.raw.contains("[dashboard](<https://grafana.merkl.xyz/d/abc>)"))
+        #expect(detail.raw.hasSuffix("@Hugo"))
         #expect(detail.events.count == 2)
         #expect(detail.session == nil)
         #expect(detail.actions.isEmpty)
@@ -117,7 +126,7 @@ import Testing
         let base = try Fixture.snapshot().settings
         var next = base
         next.thresholds.autoActionable = 0.9
-        next[channel: "C0UPTIME"] = true
+        next[channel: "C0B001L8UQ1"] = true
         next.quietHours.start = "23:00"
         #expect(base.changedKeys(to: next) == [.thresholds, .channels, .quietHours])
         #expect(base.changedKeys(to: base).isEmpty)
@@ -130,7 +139,7 @@ import Testing
         let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
         #expect(Set(json.keys) == ["monorepoPath", "thresholds"])
         #expect(json["monorepoPath"] as? String == "~/src/monorepo")
-        // Partial<Settings> is shallow: a nested object goes whole.
+        // A changed nested object goes whole.
         #expect((json["thresholds"] as? [String: Any])?.count == 8)
     }
 
@@ -139,27 +148,27 @@ import Testing
         settings[channel: "nope"] = true
         #expect(settings == (try Fixture.snapshot().settings))
         #expect(settings[channel: "C0AUKD42N3U"])
-        #expect(!settings[channel: "C0UPTIME"])
+        #expect(!settings[channel: "C0B001L8UQ1"])
     }
 }
 
 @Suite struct BoardDecoding {
-    private let json = """
-    {"title":"API · /v4/opportunities","from":"2026-10-04T03:00:00.000Z","to":"2026-10-04T12:00:00.000Z",
-     "stepSeconds":720,"marker":"2026-10-04T09:00:00.000Z","fetchedAt":"2026-10-04T12:00:01.000Z","error":null,
-     "panels":[{"id":"api_5xx","title":"API 5xx","unit":"count","series":[{"label":"API 5xx","points":[[1791075600,3],[1791076320,0]]}],
-                "latest":0,"link":"https://grafana.internal.merkl.xyz/d/pihjbxm?from=1&to=2","error":null},
-               {"id":"api_p99","title":"API p99 latency","unit":"ms","series":[],"latest":null,"link":"x","error":"timed out"}],
-     "deploys":[{"at":"2026-10-04T08:41:00.000Z","image":"merkl-api","version":"v1.35.11","stage":"engine","status":"deployed"}]}
-    """
-
     @Test func decodesTheContract() throws {
-        let board = try JSON.decoder().decode(Board.self, from: Data(json.utf8))
-        #expect(board.panels.count == 2)
-        #expect(board.panels[0].series[0].points[0] == [1791075600, 3])
+        let board = try Fixture.decode(Board.self, "board")
+        #expect(board.panels.count == 3)
+        #expect(board.panels[0].series[0].points[0] == .init(t: 1_791_009_720, v: 230))
         #expect(board.panels[1].error == "timed out")
         #expect(board.deploys.first?.status == .deployed)
-        #expect(board.stepLabel == "12m")
+        #expect(board.stepLabel == "30m")
+        // The prod watcher's judgement, on the panel it watches only.
+        #expect(board.panels[0].usual != nil && board.panels[0].spike != nil)
+        #expect(board.lead?.id == "api_5xx")
+        #expect(board.panels[2].usual == nil && board.panels[2].spike == nil)
+    }
+
+    @Test func aPointIsAPair() throws {
+        #expect(throws: DecodingError.self) { try JSON.decoder().decode(Board.Panel.Point.self, from: Data("[1, 2, 3]".utf8)) }
+        #expect(try JSON.decoder().decode(Board.Panel.Point.self, from: Data("[1, 2]".utf8)) == Board.Panel.Point(t: 1, v: 2))
     }
 
     @Test func nullMeansNoBoard() throws {
@@ -185,8 +194,8 @@ import Testing
         let panel = Board.Panel(
             id: "pods", title: "Pods", unit: .count,
             series: [
-                .init(label: "v1", points: [[100, 4], [200, 4], [300, 1]]),
-                .init(label: "v2", points: [[200, 2], [300, 6]]),
+                .init(label: "v1", points: [.init(t: 100, v: 4), .init(t: 200, v: 4), .init(t: 300, v: 1)]),
+                .init(label: "v2", points: [.init(t: 200, v: 2), .init(t: 300, v: 6)]),
             ],
             latest: 7, link: "x"
         )
@@ -201,19 +210,29 @@ import Testing
         let empty = Board.Panel(id: "a", title: "A", unit: .ms, series: [], latest: nil, link: "x")
         #expect(empty.summary == nil)
         var failed = empty
-        failed.series = [.init(label: "A", points: [[100, 1]])]
+        failed.series = [.init(label: "A", points: [.init(t: 100, v: 1)])]
         failed.error = "timed out"
         #expect(failed.summary == nil)
     }
 
     @Test func seriesValueIsTheNearestSampleOrTheLast() {
-        let s = Board.Panel.Series(label: "A", points: [[100, 1], [200, 2], [300, 3]])
+        let s = Board.Panel.Series(label: "A", points: [.init(t: 100, v: 1), .init(t: 200, v: 2), .init(t: 300, v: 3)])
         #expect(Board.Panel.value(of: s, at: nil) == 3)
         #expect(Board.Panel.value(of: s, at: Date(timeIntervalSince1970: 190)) == 2)
     }
 }
 
 @Suite struct LogSweepDecoding {
+    @Test func decodesTheDaemonsSweep() throws {
+        let sweep = try Fixture.decode(LogSweep.self, "log-sweep")
+        #expect(sweep.sweptAt != nil)
+        #expect(sweep.patterns.map(\.behaviour) == [.surging, .steady])
+        #expect(sweep.patterns[0].headline == "Surging error · 55×")
+        #expect(sweep.patterns[0].verdictLine == "Jev · problem 46% · agent 38% · users 21%")
+        #expect(sweep.patterns[1].headline == "Risky warning")
+        #expect(sweep.patterns[1].sourcesLabel == "merkl-precompute-* +1")
+    }
+
     private let json = """
     {"sweptAt":"2026-10-04T11:55:00.000Z","link":"https://grafana.internal.merkl.xyz/explore?x","error":null,
      "patterns":[

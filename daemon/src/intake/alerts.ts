@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Semaphore } from "effect"
+import { Context, Effect, Layer } from "effect"
 import { ActionQueue } from "../actions/queue.ts"
 import { type Alert, alertFromParsed, claimHeadline, type ParsedAlert } from "../domain/alert.ts"
 import { daysAgo, now, tsToIso } from "../domain/ids.ts"
@@ -21,7 +21,7 @@ import { Intake, routeOf } from "./intake.ts"
 
 /** Alert channels: poll, parse, and file what is new (`Intake`); a known alert keeps its verdict unless its headline changed. */
 export interface AlertChannelsShape {
-  /** One Slack poll of the alert channels, serialized with the poll loop. */
+  /** One Slack poll of the alert channels; the poll loop runs one at a time. */
   readonly poll: Effect.Effect<void, SlackError>
 }
 
@@ -71,8 +71,6 @@ export const AlertChannelsLive = Layer.effect(AlertChannels)(
     const threads = yield* SlackThread
     const queue = yield* ActionQueue
     const claims = yield* Claims
-    /** Held by the poll loop and `POST /poll`, so two polls never ingest the same messages at once. */
-    const polling = yield* Semaphore.make(1)
 
     const reactionsOf = (message: SlackMessage, myId: string | undefined): ReadonlyArray<string> =>
       (message.reactions ?? []).map((r) => {
@@ -206,7 +204,7 @@ export const AlertChannelsLive = Layer.effect(AlertChannels)(
       yield* refreshTrackers(seen, problems)
       yield* hub.patchStatus({ slack: failures === enabled.length && failures > 0 ? "error" : "ok", lastPollAt: now() })
       yield* hub.problem("poll", problemOf(problems))
-    }).pipe(polling.withPermits(1))
+    })
 
     return { poll }
   }),

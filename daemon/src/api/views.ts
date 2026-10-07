@@ -2,28 +2,31 @@ import { Effect } from "effect"
 import { Actions } from "../actions/actions.ts"
 import { type Action, dismissCloses, openableUrl } from "../domain/action.ts"
 import { alertOutcome } from "../domain/alert-outcome.ts"
-import { type Alert, triageEvent } from "../domain/alert.ts"
-import { critiquePassed, findingCounts } from "../domain/critique.ts"
+import { type Alert, channelLabel, triageEvent } from "../domain/alert.ts"
 import { progressOf } from "../domain/progress.ts"
 import { acceptsMessages, type Session } from "../domain/session.ts"
-import { Hub } from "../hub.ts"
+import type { Settings } from "../domain/settings.ts"
+import type { FetchedBoard } from "../grafana/board.ts"
+import { Hub, type Status as HubStatus } from "../hub.ts"
 import { revvLink } from "../ship/pr.ts"
+import { SlackMe } from "../slack/me.ts"
+import { fromMrkdwn, mentionedUsers } from "../slack/mrkdwn.ts"
 import { Store } from "../store/store.ts"
+import { type Reading, readingOnBoard } from "../watch/detect.ts"
 import { byConcern, errorsLink, levelOf, type LogPattern, patternLink, shownUsual, suspicious } from "../watch/logs.ts"
 import { type Judged, loadJudged, loadSweep, type SweepRecord } from "../watch/sweep-store.ts"
 import { watchBlocked } from "../watch/watcher.ts"
 import { metricsOf, windowStart } from "./metrics.ts"
+import type { ActionView, AlertDetail, AlertView, Board, LogPatternView, LogSweep, Metrics, Panel, SessionView, Snapshot } from "./wire.ts"
 
-/** The wire shapes of docs/API.md, built from the store. */
+/** The wire shapes of wire.ts, built from the store: pure builders, then the effects that gather what they need. */
 
 export const SNAPSHOT_ALERTS = 30
 export const SNAPSHOT_FINISHED_SESSIONS = 20
 
-const alertView = (alert: Alert, session: Session | undefined, openCards: number) => ({
+export const alertView = (alert: Alert, session: Session | undefined, openCards: number): AlertView => ({
   id: alert.id,
-  channelId: alert.channelId,
-  channelName: alert.channelName,
-  ts: alert.ts,
+  channelLabel: channelLabel(alert),
   permalink: alert.permalink,
   title: alert.title,
   summary: alert.summary,
@@ -32,16 +35,18 @@ const alertView = (alert: Alert, session: Session | undefined, openCards: number
   triage: alert.triage,
   sessionId: alert.sessionId,
   feedback: alert.feedback,
-  claimedBy: alert.claimedBy,
   outcome: alertOutcome(alert, session, openCards),
 })
 
-const sessionView = (session: Session) => ({
+/** `alert` is the session's own, for where it came from; without it (gone from the store), its channel's name stands. */
+export const sessionView = (session: Session, alert: Alert | undefined): SessionView => ({
   id: session.id,
   alertId: session.alertId,
   title: session.title,
-  channelName: session.channelName,
+  channelLabel: alert === undefined ? `#${session.channelName}` : channelLabel(alert),
   status: session.status,
+  ...progressOf(session),
+  rootCauseFound: session.rootCauseFound,
   activity: session.activity,
   diagnosis: session.diagnosis,
   outcome: session.outcome,
@@ -51,20 +56,8 @@ const sessionView = (session: Session) => ({
   claudeSessionId: session.claudeSessionId,
   model: session.model,
   ciRounds: session.ciRounds,
-  critiqueRounds: session.critiqueRounds,
-  critique:
-    session.critique === null
-      ? null
-      : {
-          reviewer: session.critique.reviewer,
-          passed: critiquePassed(session.critique),
-          ...findingCounts(session.critique),
-        },
   costUsd: session.costUsd,
   slackThreadUrl: session.slackThreadUrl,
-  ...progressOf(session),
-  resolution: session.resolution,
-  rootCauseFound: session.rootCauseFound,
   acceptsMessages: acceptsMessages(session),
   revvUrl: session.prUrl === null ? null : revvLink(session.prUrl),
   reviewChannel: session.review?.posted === true ? session.review.channelName : null,
@@ -73,7 +66,7 @@ const sessionView = (session: Session) => ({
   updatedAt: session.updatedAt,
 })
 
-const actionView = (action: Action, session: Session | undefined, inFlight: ReadonlySet<string>) => ({
+export const actionView = (action: Action, session: Session | undefined, inFlight: ReadonlySet<string>): ActionView => ({
   id: action.id,
   kind: action.kind,
   title: action.title,
@@ -88,43 +81,86 @@ const actionView = (action: Action, session: Session | undefined, inFlight: Read
   createdAt: action.createdAt,
 })
 
-/** Sessions by id, from those already loaded plus any older ones `ids` refer to. */
-const sessionsById = (loaded: ReadonlyArray<Session>, ids: ReadonlyArray<string | null>) =>
+/** What a snapshot is built from: the store's rows (sessions and alerts by id include those the lists refer to) and the hub's state. */
+export interface SnapshotParts {
+  readonly status: HubStatus
+  readonly dryRun: boolean
+  readonly settings: Settings
+  readonly inFlight: ReadonlySet<string>
+  /** Active first, then the recent finished ones. */
+  readonly sessions: ReadonlyArray<Session>
+  readonly actions: ReadonlyArray<Action>
+  readonly alerts: ReadonlyArray<Alert>
+  readonly sessionsById: ReadonlyMap<string, Session>
+  readonly alertsById: ReadonlyMap<string, Alert>
+  readonly metrics: Metrics
+}
+
+export const snapshotView = (parts: SnapshotParts): Snapshot => {
+  const session = (id: string | null) => (id === null ? undefined : parts.sessionsById.get(id))
+  const openCards = (alertId: string) => parts.actions.filter((a) => a.alertId === alertId).length
+  return {
+    status: { ...parts.status, dryRun: parts.dryRun },
+    actions: parts.actions.map((action) => actionView(action, session(action.sessionId), parts.inFlight)),
+    sessions: parts.sessions.map((s) => sessionView(s, parts.alertsById.get(s.alertId))),
+    alerts: parts.alerts.map((alert) => alertView(alert, session(alert.sessionId), openCards(alert.id))),
+    metrics: parts.metrics,
+    settings: parts.settings,
+  }
+}
+
+/** `names`: the display names of the users `raw` mentions (`mentionedUsers`). */
+export const alertDetailView = (
+  alert: Alert,
+  session: Session | undefined,
+  actions: ReadonlyArray<Action>,
+  sessionsById: ReadonlyMap<string, Session>,
+  inFlight: ReadonlySet<string>,
+  names: ReadonlyMap<string, string>,
+): AlertDetail => ({
+  alert: alertView(alert, session, actions.length),
+  raw: fromMrkdwn(alert.raw, names),
+  // Alerts stored before history existed still say how they were triaged.
+  events: alert.events.length > 0 ? alert.events : [{ at: alert.receivedAt, text: triageEvent(alert.triage) }],
+  session: session === undefined ? null : sessionView(session, alert),
+  actions: actions.map((action) => actionView(action, action.sessionId === null ? undefined : sessionsById.get(action.sessionId), inFlight)),
+})
+
+/** Rows by id, from those already loaded plus any older ones `ids` refer to. */
+const byId = <A extends { readonly id: string }, E, R>(
+  loaded: ReadonlyArray<A>,
+  ids: ReadonlyArray<string | null>,
+  get: (id: string) => Effect.Effect<A | undefined, E, R>,
+) =>
   Effect.gen(function* () {
-    const store = yield* Store
-    const byId = new Map(loaded.map((session) => [session.id, session]))
+    const rows = new Map(loaded.map((row) => [row.id, row]))
     for (const id of ids) {
-      if (id === null || byId.has(id)) continue
-      const session = yield* store.getSession(id)
-      if (session !== undefined) byId.set(id, session)
+      if (id === null || rows.has(id)) continue
+      const row = yield* get(id)
+      if (row !== undefined) rows.set(id, row)
     }
-    return byId
+    return rows
   })
 
 export const snapshot = Effect.gen(function* () {
   const store = yield* Store
   const hub = yield* Hub
-  const status = yield* hub.status
-  const settings = yield* hub.settings
-  const dryRun = yield* hub.dryRun
-  const inFlight = yield* (yield* Actions).inFlight
-  const active = yield* store.activeSessions()
-  const finished = yield* store.recentSessions(SNAPSHOT_FINISHED_SESSIONS)
+  const sessions = [...(yield* store.activeSessions()), ...(yield* store.recentSessions(SNAPSHOT_FINISHED_SESSIONS))]
   const actions = yield* store.listActions()
   const alerts = yield* store.recentAlerts(SNAPSHOT_ALERTS)
-  const sessions = yield* sessionsById([...active, ...finished], [...alerts.map((a) => a.sessionId), ...actions.map((a) => a.sessionId)])
-  const of = (id: string | null) => (id === null ? undefined : sessions.get(id))
-  const openCards = (alertId: string) => actions.filter((a) => a.alertId === alertId).length
-
-  const metrics = metricsOf(new Date(), yield* store.sessionsUpdatedSince(windowStart(new Date()).toISOString()))
-  return {
-    status: { ...status, dryRun },
-    actions: actions.map((action) => actionView(action, of(action.sessionId), inFlight)),
-    sessions: [...active, ...finished].map(sessionView),
-    alerts: alerts.map((alert) => alertView(alert, of(alert.sessionId), openCards(alert.id))),
-    metrics,
-    settings,
-  }
+  const now = new Date()
+  return snapshotView({
+    status: yield* hub.status,
+    dryRun: yield* hub.dryRun,
+    settings: yield* hub.settings,
+    inFlight: yield* (yield* Actions).inFlight,
+    sessions,
+    actions,
+    alerts,
+    sessionsById: yield* byId(sessions, [...alerts.map((a) => a.sessionId), ...actions.map((a) => a.sessionId)], store.getSession),
+    alertsById: yield* byId(alerts, sessions.map((s) => s.alertId), store.getAlert),
+    metrics: metricsOf(now, yield* store.sessionsUpdatedSince(windowStart(now).toISOString())),
+  })
 })
 
 export const alertDetail = (id: string) =>
@@ -134,30 +170,45 @@ export const alertDetail = (id: string) =>
     if (alert === undefined) return undefined
     const session = alert.sessionId === null ? undefined : yield* store.getSession(alert.sessionId)
     const actions = (yield* store.listActions()).filter((a) => a.alertId === id)
-    const sessions = yield* sessionsById(session === undefined ? [] : [session], actions.map((a) => a.sessionId))
-    const inFlight = yield* (yield* Actions).inFlight
-    return {
-      alert: alertView(alert, session, actions.length),
-      raw: alert.raw,
-      // Alerts stored before history existed still say how they were triaged.
-      events: alert.events.length > 0 ? alert.events : [{ at: alert.receivedAt, text: triageEvent(alert.triage) }],
-      session: session === undefined ? null : sessionView(session),
-      actions: actions.map((action) => actionView(action, action.sessionId === null ? undefined : sessions.get(action.sessionId), inFlight)),
-    }
+    const sessions = yield* byId(session === undefined ? [] : [session], actions.map((a) => a.sessionId), store.getSession)
+    const me = yield* SlackMe
+    const names = yield* Effect.forEach(mentionedUsers(alert.raw), (user) => me.nameOf(user).pipe(Effect.map((name) => [user, name] as const)))
+    return alertDetailView(alert, session, actions, sessions, yield* (yield* Actions).inFlight, new Map(names))
   })
+
+/** A reading older than this is from a watcher that stopped (watching turned off): the board says nothing then. */
+const READING_TTL_MS = 20 * 60_000
+/** A board whose window ends this close to now shows how unusual its signals are now. */
+const ENDS_NOW_MS = 10 * 60_000
+
+/**
+ * The board with the prod watcher's last readings laid over its panels: their usual level and spike line on this
+ * board's steps, and on a board that ends now, how unusual each signal is (`Panel.spike`).
+ */
+export const boardView = (board: FetchedBoard, readings: ReadonlyMap<string, Reading>, now: Date): Board => {
+  const endsNow = Math.abs(Date.parse(board.to) - now.getTime()) < ENDS_NOW_MS
+  return {
+    ...board,
+    panels: board.panels.map((panel): Panel => {
+      const reading = readings.get(panel.id)
+      if (reading === undefined || panel.error !== null || now.getTime() - reading.at > READING_TTL_MS) return { ...panel, usual: null, spikeAbove: null, spike: null }
+      return { ...panel, ...readingOnBoard(reading, board.stepSeconds), spike: endsNow ? reading.spike : null }
+    }),
+  }
+}
 
 /**
  * `LogSweep`: the last sweep's patterns, most telling first, each with Jev's verdict, its finding and its lines in
  * Grafana. `blocked` says why no sweep runs (watching off, Grafana MCP down), and comes before a failed query.
  */
-export const sweepView = (record: SweepRecord | undefined, judged: Readonly<Record<string, Judged>>, now: Date, blocked: string | null) => ({
+export const sweepView = (record: SweepRecord | undefined, judged: Readonly<Record<string, Judged>>, now: Date, blocked: string | null): LogSweep => ({
   sweptAt: record?.at ?? null,
   link: errorsLink(now),
   error: blocked ?? (record === undefined || record.failures.length === 0 ? null : record.failures.join(" · ")),
   patterns: record === undefined ? [] : [...record.patterns].sort(byConcern).map((p) => patternView(p, judged[p.key], new Date(record.at), now)),
 })
 
-const patternView = (p: LogPattern, seen: Judged | undefined, sweptAt: Date, now: Date) => ({
+const patternView = (p: LogPattern, seen: Judged | undefined, sweptAt: Date, now: Date): LogPatternView => ({
   key: p.key,
   level: levelOf(p.sweep),
   behaviour: p.behaviour,

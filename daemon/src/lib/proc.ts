@@ -16,7 +16,18 @@ export interface RunOptions {
 
 const DEFAULT_TIMEOUT_MS = 60_000
 
-const operationOf = (command: ReadonlyArray<string>) => command.slice(0, 3).join(" ")
+/** "git worktree add": the command and its first words, past any `-c key=value` before them. */
+const operationOf = (command: ReadonlyArray<string>) => command.filter((arg, i) => arg !== "-c" && command[i - 1] !== "-c").slice(0, 3).join(" ")
+
+/**
+ * `git` as the daemon runs it in a repo an agent has written to: no hook it planted runs (`git worktree add` runs
+ * post-checkout, `git branch -D` reference-transaction), nor an fsmonitor command its config names. Diffs add
+ * `DIFF_FLAGS`, so no external diff or textconv driver runs either.
+ */
+export const git = (...args: ReadonlyArray<string>): ReadonlyArray<string> => ["git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", ...args]
+
+/** For `git diff`: the plain diff, never a driver from the repo's config. */
+export const DIFF_FLAGS = ["--no-ext-diff", "--no-textconv"] as const
 
 /** The child lives as long as the scope: closing it (done, timed out, interrupted) kills a child that is still running. */
 const spawn = (command: ReadonlyArray<string>, options: RunOptions) =>

@@ -1,13 +1,13 @@
 import SwiftUI
 
 /// A Grafana board as one grid, two cells a row, hairlines between; or, in a narrow
-/// column, as a lead and a list: the panel spiking hardest (or the first) large, the rest
-/// one line each. Counts are bars, gauges lines, spikes amber against a dashed rule at
-/// the window's median. Hovering one panel moves a shared crosshair across all of
+/// column, as a lead and a list: the panel the prod watcher finds the most unusual (or the
+/// first) large, the rest one line each. Counts are bars, gauges lines, the watcher's spikes
+/// amber against a dashed rule at its usual level. Hovering one panel moves a shared crosshair across all of
 /// them, as in Grafana, and each value rolls to that time. Deploys are dashed rules (red
 /// when they failed), the alert that opened the board is an amber rule. Clicking a panel
 /// opens it in place (in the grid it takes its row to itself), with a taller chart, its
-/// peak, usual level and low, each series, and a link to its dashboard in Grafana.
+/// peak, median and low, each series, and a link to its dashboard in Grafana.
 struct BoardView: View {
     let board: Board
     var maxDeploys = 3

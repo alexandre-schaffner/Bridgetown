@@ -50,16 +50,16 @@ export interface Env {
 /** The environment the daemon was launched with, for the services that need some of it. */
 export class Environment extends Context.Service<Environment, Env>()("Environment") {}
 
-/** The daemon's own settings from the process environment and argv, read once at launch: the only place that reads them. */
-export const readEnv = (secrets: Secrets = secretsFromEnv(process.env), argv: ReadonlyArray<string> = process.argv): Env => ({
-  port: Number(process.env.BRIDGETOWN_PORT ?? 47621),
-  home: process.env.BRIDGETOWN_HOME ?? join(homedir(), "Library", "Application Support", "Bridgetown"),
+/** The daemon's own settings from its environment and argv, read once at launch: the only place that reads them. */
+export const readEnv = (env: NodeJS.ProcessEnv = process.env, secrets: Secrets = secretsFromEnv(env), argv: ReadonlyArray<string> = process.argv): Env => ({
+  port: Number(env.BRIDGETOWN_PORT ?? 47621),
+  home: env.BRIDGETOWN_HOME ?? join(homedir(), "Library", "Application Support", "Bridgetown"),
   apiToken: secrets.apiToken,
   slackToken: secrets.slackToken,
   typesafeKey: secrets.typesafeKey,
-  forceDryRun: argv.includes("--dry-run") || process.env.BRIDGETOWN_DRY_RUN === "1",
-  jevModel: process.env.JEV_MODEL ?? "jev-1.13.0",
-  claudePath: process.env.BRIDGETOWN_CLAUDE_PATH,
-  claudeConfigDir: process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"),
-  codexPath: process.env.BRIDGETOWN_CODEX_PATH,
+  forceDryRun: argv.includes("--dry-run") || env.BRIDGETOWN_DRY_RUN === "1",
+  jevModel: env.JEV_MODEL ?? "jev-1.13.0",
+  claudePath: env.BRIDGETOWN_CLAUDE_PATH,
+  claudeConfigDir: env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"),
+  codexPath: env.BRIDGETOWN_CODEX_PATH,
 })

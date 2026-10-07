@@ -54,8 +54,9 @@ struct JobRow: View {
     /// "#alert-dev · Waiting on you · Asked: …": where it came from, the daemon's headline
     /// in its tone, then what the agent is doing if that adds anything.
     private var subtitle: Text {
-        let text = Text("\(Format.channel(session.channelName)) · ") + session.tone.headline(session.headline)
-        let detail = Markdown.plain(session.statusDetail)
+        let text = Text("\(session.channelLabel) · ") + session.tone.headline(session.headline)
+        // Once it has ended, its headline says how.
+        let detail = session.isActive ? Markdown.plain(session.activity) : ""
         if !detail.isEmpty, !session.headline.localizedCaseInsensitiveContains(detail) {
             return text + Text(" · \(detail)")
         }

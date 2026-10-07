@@ -51,7 +51,7 @@ import { type Judged, saveJudged } from "../../src/watch/sweep-store.ts"
 import { Watcher } from "../../src/watch/watcher.ts"
 import { noAgent } from "../../test/support/fakes.ts"
 import { makeAlert } from "../../test/support/records.ts"
-import { worldLayer } from "../../test/support/world.ts"
+import { worldLayer } from "../../test/support/world-layer.ts"
 import { scriptedAgent } from "./agent.ts"
 import { mockGitHub, mockJev, mockReviewer, mockSlack } from "./fakes.ts"
 import { buildFixtures, IN_FLIGHT_TAG, LOG_FINDING_FINGERPRINT, SESSION } from "./fixtures.ts"
@@ -248,6 +248,8 @@ const program = Effect.gen(function* () {
     // A fresh install has not swept yet.
     if (process.env.MOCK_GRAFANA !== "live" && world === "full") yield* saveJudged(store, mockVerdicts())
     if (staticWorld && world === "full") yield* watcher.sweepLogs
+    // What the boards judge their signals by. The live world's watch loop reads it on its own.
+    if (staticWorld) yield* watcher.observe
 
     // The release in flight: a real resolve through the gates, held up in the fake `gh release create`.
     const inFlight = fixtures.actions.find((a) => a.kind === "release" && a.sessionId === SESSION.inFlight)

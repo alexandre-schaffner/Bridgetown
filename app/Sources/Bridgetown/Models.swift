@@ -1,7 +1,9 @@
 import Foundation
 
-// Codable mirrors of docs/API.md. Every nullable field is always present on the wire,
-// so optionals here decode `null` and are never missing.
+// Codable mirrors of the daemon's wire types (daemon/src/api/wire.ts), field for field.
+// Every nullable field is always present on the wire, so optionals here decode `null` and
+// are never missing. The test fixtures are the daemon's own output
+// (daemon/test/api/contract.test.ts), so a model that drifts from it fails `make test-app`.
 //
 // String enums decode leniently: an unrecognised value maps to `.unknown` instead of
 // failing the whole Snapshot, so a newer daemon can't blank the app.
@@ -26,26 +28,20 @@ struct Snapshot: Codable, Sendable, Equatable {
     var actions: [Action]
     var sessions: [Session]
     var alerts: [AlertView]
-    /// Nil from a daemon older than the telemetry panel.
-    var metrics: Telemetry?
+    var metrics: Telemetry
     var settings: Settings
 }
 
 // MARK: - Telemetry
 
-/// The overview's numbers over the last day, counted by the daemon from its whole store.
+/// Sessions started in the last 24 hours, counted by the daemon over its whole store.
 struct Telemetry: Codable, Sendable, Equatable {
-    /// Sessions started in the window.
     struct Sessions: Codable, Sendable, Equatable {
         var started: Int
+        /// With a verified outcome.
         var resolved: Int
-        var failed: Int
-        /// Closed or stopped without a verified fix.
-        var closed: Int
-        var costUsd: Double
     }
 
-    var since: Date
     var sessions: Sessions
 }
 
@@ -59,8 +55,34 @@ struct Board: Codable, Sendable, Equatable {
 
         struct Series: Codable, Sendable, Equatable {
             var label: String
-            /// `[unix seconds, value]`, oldest first.
-            var points: [[Double]]
+            /// Oldest first.
+            var points: [Point]
+        }
+
+        /// `[unix seconds, value]` on the wire.
+        struct Point: Codable, Sendable, Equatable {
+            var t: Double
+            var v: Double
+
+            init(t: Double, v: Double) {
+                self.t = t
+                self.v = v
+            }
+
+            init(from decoder: Decoder) throws {
+                var pair = try decoder.unkeyedContainer()
+                guard pair.count == 2 else {
+                    throw DecodingError.dataCorruptedError(in: pair, debugDescription: "A point is [unix seconds, value]")
+                }
+                t = try pair.decode(Double.self)
+                v = try pair.decode(Double.self)
+            }
+
+            func encode(to encoder: Encoder) throws {
+                var pair = encoder.unkeyedContainer()
+                try pair.encode(t)
+                try pair.encode(v)
+            }
         }
 
         var id: String
@@ -73,6 +95,14 @@ struct Board: Codable, Sendable, Equatable {
         var link: String
         /// This panel's query failed; the others still show.
         var error: String?
+        /// The prod watcher's judgement, the only one there is: its usual level per step of
+        /// this board, and a step above `spikeAbove` is one its rule calls a spike. Nil for a
+        /// panel no rule watches, or before the watcher has measured it.
+        var usual: Double?
+        var spikeAbove: Double?
+        /// On a board that ends now: how many times its usual level the signal is, when the
+        /// watcher finds it unusual.
+        var spike: Double?
     }
 
     struct Deploy: Codable, Sendable, Equatable, Identifiable {
@@ -179,9 +209,8 @@ struct AlertView: Codable, Sendable, Equatable, Identifiable {
     enum Feedback: String, LenientStringEnum { case good, bad, unknown }
 
     var id: String
-    var channelId: String
-    var channelName: String
-    var ts: String
+    /// Where it came from, as written: "#alert-releases", "DM", "group DM", "Grafana".
+    var channelLabel: String
     var permalink: String?
     var title: String
     var summary: String
@@ -247,7 +276,7 @@ struct AlertDetail: Codable, Sendable, Equatable {
     }
 
     var alert: AlertView
-    /// The Slack message as mrkdwn, up to 4000 chars.
+    /// The Slack message as Markdown (the daemon translates its mrkdwn), up to 4000 chars.
     var raw: String
     /// Oldest first.
     var events: [Event]
@@ -268,22 +297,29 @@ struct Session: Codable, Sendable, Equatable, Identifiable {
 
     enum Outcome: String, LenientStringEnum { case fix_pr, recommendation, no_action, needs_human, unknown }
 
+    /// Who has its next move. agent: preparing or working · critic: the adversarial review
+    /// runs · you: a question, a merge, a release, a review request that didn't go out ·
+    /// reviewers: in review in an approvals channel · ci · deploy · queue: waiting for a slot.
+    enum Holder: String, LenientStringEnum { case agent, critic, you, reviewers, ci, deploy, queue, unknown }
+
     var id: String
     var alertId: String
     var title: String
-    var channelName: String
+    /// Where its alert came from, as written: "#alert-releases", "DM", "Grafana".
+    var channelLabel: String
     var status: State
     /// Always six, in order, computed by the daemon from evidence.
     var steps: [Step]
-    /// Status line, e.g. "Running", "Closed · root cause not found".
+    /// Status line, e.g. "Agent working"; once it has ended, how ("Closed · root cause not found").
     var headline: String
     var tone: Tone
+    /// Nil once it has ended. The tone can't say: "In review" is live, yet nobody works on it.
+    var holder: Holder?
     /// The review row, rendered as is: who reviews the agent's fixes, and where it stands.
-    /// Optional so an older daemon, which sends neither, still decodes; the row is left out.
-    var reviewerName: String?
-    var critiqueLine: String?
-    /// For finished sessions: the honest one-line outcome.
-    var resolution: String?
+    var reviewerName: String
+    var critiqueLine: String
+    /// The CI row: "Passed · 1 round", "Running", "Not needed", "Not run".
+    var ciLine: String
     var rootCauseFound: Bool?
     var activity: String
     var diagnosis: String?
@@ -320,6 +356,9 @@ struct Step: Codable, Sendable, Equatable {
     /// "Diagnose", "Fix", "PR", "Review", "CI", "Deploy", or the truth ("Root cause?", "No PR", "No review").
     var label: String
     var state: State
+    /// What there is to show for it, under its name: "Cause found", "#3340", the review's
+    /// line, CI's. Nil before it is reached.
+    var detail: String?
 }
 
 // MARK: - Actions
@@ -376,8 +415,9 @@ struct Settings: Codable, Sendable, Equatable {
         var end: String    // "08:00"
     }
 
-    /// The top-level fields, which are also the granularity of `POST /settings`
-    /// (`Partial<Settings>` is shallow: a nested object is always sent whole).
+    /// The top-level fields, which are also the granularity the app sends `POST /settings`
+    /// in: a changed nested object is sent whole, though the daemon would merge
+    /// `thresholds` and `quietHours` key by key.
     enum CodingKeys: String, CodingKey, CaseIterable, Sendable {
         case channels, thresholds, autoStart, inbox, maxConcurrent, dryRun, adversarialReview, watchProd, pollSeconds
         case monorepoPath, deploymentRepoPath, quietHours
@@ -392,8 +432,10 @@ struct Settings: Codable, Sendable, Equatable {
     var dryRun: Bool
     /// Another vendor's model reviews each pushed fix before the PR leaves draft.
     var adversarialReview: Bool
-    /// Watch prod signals in Grafana and suggest an investigation when one rises before any alert.
+    /// Watch prod signals in Grafana and investigate one that rises before any alert (one Jev
+    /// doubts is only suggested).
     var watchProd: Bool
+    /// Whole seconds, at least 10.
     var pollSeconds: Int
     var monorepoPath: String
     var deploymentRepoPath: String

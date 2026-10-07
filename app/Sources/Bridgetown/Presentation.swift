@@ -52,20 +52,8 @@ extension Tone {
 // MARK: - Sessions
 
 extension Session {
-    /// What it is doing now, or for a finished session the honest outcome.
-    var statusDetail: String {
-        isActive ? activity : (resolutionLine ?? "")
-    }
-
-    /// A finished session's resolution, unless its headline already says it
-    /// ("Closed · root cause not found" over "root cause not found").
-    var resolutionLine: String? {
-        guard let resolution, !resolution.isEmpty, !headline.localizedCaseInsensitiveContains(resolution) else { return nil }
-        return resolution
-    }
-
     /// What the agent is doing, under the session's headline in its detail. Nil once it has
-    /// ended (its resolution says how), and while it waits on you with its card shown under
+    /// ended (its headline says how), and while it waits on you with its card shown under
     /// it: the agent's last words ("Asked: …", "ready to merge") would repeat the card.
     func activityLine(besideCard: Bool) -> String? {
         guard isActive, !activity.isEmpty, !(besideCard && holder == .you) else { return nil }
@@ -84,48 +72,20 @@ extension Session {
             .joined(separator: " · ")
     }
 
-    /// What there is to show for a step, under its name in the stepper: "Cause found",
-    /// "#3340", the reviewer's result, "Running · 1 round". Only what the daemon has
-    /// evidence for; nil where it has none, and for steps not reached.
-    func evidence(for step: Step) -> String? {
-        guard step.state != .pending, step.state != .unknown else { return nil }
-        switch step.key {
-        case .diagnose:
-            return rootCauseFound.map { $0 ? "Cause found" : "No root cause" }
-        case .pr:
-            return prUrl.map(Format.prLabel).flatMap { $0.isEmpty ? nil : $0 }
-        case .critique:
-            return critiqueLine.flatMap { $0.isEmpty ? nil : $0 }
-        case .ci:
-            return ciRounds > 0 || step.state == .current ? ciText : nil
-        case .fix, .deploy, .unknown:
-            return nil
-        }
-    }
+    /// The step under `key`, for its line ("Passed · 1 round") and its state.
+    func step(_ key: Step.Key) -> Step? { steps.first { $0.key == key } }
+}
 
-    /// The CI line's colour, from the same step: green once it passed, blue while it
-    /// runs, red when it failed; grey otherwise.
-    var ciColor: Color? {
-        switch steps.first(where: { $0.key == .ci })?.state {
-        case .done?: Ink.green
-        case .current?: Ink.blue
-        case .failed?: Ink.red
+extension Step {
+    /// The colour of its line where it stands on its own (the detail's CI row): green once it
+    /// passed, blue while it runs, red when it failed; grey otherwise.
+    var lineColor: Color? {
+        switch state {
+        case .done: Ink.green
+        case .current: Ink.blue
+        case .failed: Ink.red
         default: nil
         }
-    }
-
-    /// From the daemon's CI step, never inferred from status.
-    var ciText: String {
-        let rounds = ciRounds == 1 ? "1 round" : "\(ciRounds) rounds"
-        let state: String
-        switch steps.first(where: { $0.key == .ci })?.state {
-        case .done?: state = "Passed"
-        case .current?: state = "Running"
-        case .failed?: state = "Failed"
-        case .skipped?: state = "Not needed"
-        default: state = ciRounds > 0 ? "Not passed" : "Not run"
-        }
-        return ciRounds > 0 ? "\(state) · \(rounds)" : state
     }
 }
 

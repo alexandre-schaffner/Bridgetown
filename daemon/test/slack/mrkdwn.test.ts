@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { recommendation } from "../../src/slack/messages.ts"
-import { isPerson, toMrkdwn, toThreadReplies } from "../../src/slack/mrkdwn.ts"
+import { fromMrkdwn, isPerson, mentionedUsers, toMrkdwn, toThreadReplies } from "../../src/slack/mrkdwn.ts"
 
 describe("toMrkdwn: agent Markdown as Slack mrkdwn", () => {
   test("emphasis and links", () => {
@@ -29,6 +29,46 @@ describe("toMrkdwn: agent Markdown as Slack mrkdwn", () => {
     expect(recommendation("**Flaky** runner", "Re-run `deploy`, then check [logs](https://l.io)")).toBe(
       "*Flaky* runner\nRecommendation: Re-run `deploy`, then check <https://l.io|logs>",
     )
+  })
+})
+
+describe("fromMrkdwn: a Slack message as Markdown, for the app's alert detail", () => {
+  test("links, channels, groups and people", () => {
+    expect(fromMrkdwn("<https://x.io|docs>")).toBe("[docs](<https://x.io>)")
+    expect(fromMrkdwn("<https://x.io>")).toBe("<https://x.io>")
+    expect(fromMrkdwn("<https://x.io|[RESOLVED] api>")).toBe("[\\[RESOLVED\\] api](<https://x.io>)")
+    expect(fromMrkdwn("<#C123|alert-dev> <#C123|#alert-dev>")).toBe("#alert-dev #alert-dev")
+    expect(fromMrkdwn("<!here> cc <!subteam^S0DEV|dev-product> <!subteam^S04|@engine-oncall>")).toBe("@here cc @dev-product @engine-oncall")
+    // A person by name when the directory knows them, else by id.
+    expect(fromMrkdwn("<@U123> and <@U456>", new Map([["U123", "Hugo"]]))).toBe("@Hugo and @U456")
+    expect(mentionedUsers("<@U1> <@U2|hugo> <@U1>")).toEqual(["U1"])
+  })
+
+  test("emphasis only at a word's edge, never inside code or a URL", () => {
+    expect(fromMrkdwn("*Deploy failed* in _prod_ ~maybe~")).toBe("**Deploy failed** in *prod* ~~maybe~~")
+    expect(fromMrkdwn("snake_case_name and 2*3*4")).toBe("snake_case_name and 2*3*4")
+    expect(fromMrkdwn("`*not bold*`")).toBe("`*not bold*`")
+    expect(fromMrkdwn("<https://x.io/_a_b_|_docs_>")).toBe("[_docs_](<https://x.io/_a_b_>)")
+    expect(fromMrkdwn("*see <https://x.io|docs>*")).toBe("**see [docs](<https://x.io>)**")
+  })
+
+  test("Slack has no escapes: a backslash, a bare `<` and an unclosed fence stay as written", () => {
+    expect(fromMrkdwn("C:\\temp\\*")).toBe("C:\\\\temp\\\\*")
+    expect(fromMrkdwn("p95 < 2s")).toBe("p95 \\< 2s")
+    expect(fromMrkdwn("see <https://x.io|docs> then <oops")).toBe("see [docs](<https://x.io>) then \\<oops")
+    expect(fromMrkdwn("a ``` b")).toBe("a \\`\\`\\` b")
+  })
+
+  test("entities are the Markdown parser's to decode, but code is read verbatim", () => {
+    expect(fromMrkdwn("a &lt; b &amp;&amp; c")).toBe("a &lt; b &amp;&amp; c")
+    expect(fromMrkdwn("`a &lt; b`")).toBe("`a < b`")
+    expect(fromMrkdwn("Error:```panic: &lt;nil&gt;\n  at main.go:12```&gt; quoted *bold*")).toBe("Error:\n```\npanic: <nil>\n  at main.go:12\n```\n>quoted **bold**")
+  })
+
+  test("known shortcodes become emoji, skin tones go, and the rest stays", () => {
+    expect(fromMrkdwn(":rotating_light: *TX Executor* :+1::skin-tone-3:")).toBe("🚨 **TX Executor** 👍")
+    expect(fromMrkdwn(":merkl-logo: at 10:42:07")).toBe(":merkl-logo: at 10:42:07")
+    expect(fromMrkdwn("`:fire:`")).toBe("`:fire:`")
   })
 })
 

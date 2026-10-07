@@ -70,11 +70,6 @@ enum Format {
         }
     }
 
-    /// "#alert-dev"; a direct message is named "DM" or "group DM" by the daemon and takes no `#`.
-    static func channel(_ name: String) -> String {
-        name == "DM" || name == "group DM" || name == "Grafana" ? name : "#\(name)"
-    }
-
     /// "now", "4m", "2h", "3d", then a short date. Each unit counts whole ones, as a clock
     /// does: 59m59s is "59m", not "60m".
     static func relative(_ date: Date, now: Date) -> String {

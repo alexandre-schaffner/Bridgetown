@@ -1,13 +1,13 @@
 {
   "status": {
     "paused": false,
-    "dryRun": false,
     "slack": "ok",
     "jev": "ok",
     "grafanaMcp": "down",
     "github": "blocked",
-    "lastPollAt": "2026-10-03T09:41:12.512Z",
-    "error": null
+    "lastPollAt": "2026-10-03T09:41:12.000Z",
+    "error": null,
+    "dryRun": false
   },
   "actions": [
     {
@@ -22,7 +22,7 @@
       "url": null,
       "inFlight": true,
       "dismissCloses": true,
-      "createdAt": "2026-10-03T09:30:00.000Z"
+      "createdAt": "2026-10-03T09:40:00.000Z"
     },
     {
       "id": "act_review_1",
@@ -32,11 +32,11 @@
       "primaryLabel": "Close session",
       "options": [],
       "sessionId": "ses_closed",
-      "alertId": "C0AUKD42N3U:1790930000.000100",
+      "alertId": "C0AUK4AUER0:1790930000.000100",
       "url": null,
       "inFlight": false,
-      "dismissCloses": true,
-      "createdAt": "2026-10-03T08:10:00Z"
+      "dismissCloses": false,
+      "createdAt": "2026-10-03T09:37:00.000Z"
     },
     {
       "id": "act_answer_1",
@@ -44,13 +44,16 @@
       "title": "Which environment should I check first?",
       "detail": "The alert fired for both staging and prod.",
       "primaryLabel": "Reply",
-      "options": ["prod", "staging"],
+      "options": [
+        "prod",
+        "staging"
+      ],
       "sessionId": "ses_running",
       "alertId": "C0AUKD42N3U:1790933006.433649",
       "url": null,
       "inFlight": false,
       "dismissCloses": false,
-      "createdAt": "2026-10-03T09:35:00Z"
+      "createdAt": "2026-10-03T09:35:00.000Z"
     },
     {
       "id": "act_escalate_1",
@@ -60,11 +63,11 @@
       "primaryLabel": "Open in Revv",
       "options": [],
       "sessionId": null,
-      "alertId": "D0INBOX:1790934000.000200",
+      "alertId": "D0HUGO:1790930400.000200",
       "url": "revv://pr?host=nocturlab.ghe.com&repo=Merkl%2Fmonorepo&number=3351",
       "inFlight": false,
       "dismissCloses": false,
-      "createdAt": "2026-10-03T09:40:00Z"
+      "createdAt": "2026-10-03T09:30:00.000Z"
     }
   ],
   "sessions": [
@@ -72,21 +75,52 @@
       "id": "ses_running",
       "alertId": "C0AUKD42N3U:1790933006.433649",
       "title": "merkl-admin v0.6.0 · Build failed",
-      "channelName": "alert-releases",
+      "channelLabel": "#alert-releases",
       "status": "awaiting_merge",
       "steps": [
-        { "key": "diagnose", "label": "Diagnose", "state": "done" },
-        { "key": "fix", "label": "Fix", "state": "done" },
-        { "key": "pr", "label": "PR", "state": "done" },
-        { "key": "critique", "label": "Review", "state": "done" },
-        { "key": "ci", "label": "CI", "state": "done" },
-        { "key": "deploy", "label": "Deploy", "state": "pending" }
+        {
+          "key": "diagnose",
+          "label": "Diagnose",
+          "state": "done",
+          "detail": "Cause found"
+        },
+        {
+          "key": "fix",
+          "label": "Fix",
+          "state": "done",
+          "detail": null
+        },
+        {
+          "key": "pr",
+          "label": "PR",
+          "state": "done",
+          "detail": "#3340"
+        },
+        {
+          "key": "critique",
+          "label": "Review",
+          "state": "done",
+          "detail": "Passed · 1 round of fixes · 2 dropped by Jev"
+        },
+        {
+          "key": "ci",
+          "label": "CI",
+          "state": "done",
+          "detail": "Passed · 1 round"
+        },
+        {
+          "key": "deploy",
+          "label": "Deploy",
+          "state": "pending",
+          "detail": null
+        }
       ],
       "headline": "Ready to merge",
       "tone": "waiting",
+      "holder": "you",
       "reviewerName": "Codex",
       "critiqueLine": "Passed · 1 round of fixes · 2 dropped by Jev",
-      "resolution": null,
+      "ciLine": "Passed · 1 round",
       "rootCauseFound": true,
       "activity": "Waiting for you to merge PR #3340",
       "diagnosis": "vite 6.4 dropped `build.cssTarget`; the admin build relies on it.",
@@ -95,71 +129,96 @@
       "branch": "fix-bt-admin-vite",
       "worktree": "/Users/alex/code/monorepo/.shared/worktrees/fix-bt-admin-vite",
       "claudeSessionId": "4f1c2e9a-0d1b-4c55-9a77-3f0b1e2d9c10",
-      "model": "Opus",
+      "model": "claude-opus-5-5",
       "ciRounds": 1,
-      "critiqueRounds": 1,
-      "critique": { "reviewer": "codex", "passed": true, "blocking": 0, "dropped": 2 },
       "costUsd": 1.42,
       "slackThreadUrl": "https://merkl.slack.com/archives/C0AUKD42N3U/p1790933006433649",
       "acceptsMessages": true,
       "revvUrl": "revv://pr?host=nocturlab.ghe.com&repo=Merkl%2Fmonorepo&number=3340",
       "reviewChannel": "product-approvals",
       "reviewUrl": "https://merkl.slack.com/archives/C0PRODAPP/p1790933900000100",
-      "startedAt": "2026-10-03T09:02:00Z",
-      "updatedAt": "2026-10-03T09:30:00Z"
+      "startedAt": "2026-10-03T09:02:00.000Z",
+      "updatedAt": "2026-10-03T09:30:00.000Z"
     },
     {
       "id": "ses_closed",
-      "alertId": "C0AUKD42N3U:1790930000.000100",
+      "alertId": "C0AUK4AUER0:1790930000.000100",
       "title": "keeper · RPC timeouts",
-      "channelName": "alert-engine",
+      "channelLabel": "#alert-engine",
       "status": "closed",
       "steps": [
-        { "key": "diagnose", "label": "Root cause?", "state": "failed" },
-        { "key": "fix", "label": "Fix", "state": "pending" },
-        { "key": "pr", "label": "No PR", "state": "pending" },
-        { "key": "critique", "label": "Review", "state": "pending" },
-        { "key": "ci", "label": "CI", "state": "pending" },
-        { "key": "deploy", "label": "Deploy", "state": "skipped" }
+        {
+          "key": "diagnose",
+          "label": "Root cause?",
+          "state": "failed",
+          "detail": "No root cause"
+        },
+        {
+          "key": "fix",
+          "label": "Fix",
+          "state": "pending",
+          "detail": null
+        },
+        {
+          "key": "pr",
+          "label": "PR",
+          "state": "pending",
+          "detail": null
+        },
+        {
+          "key": "critique",
+          "label": "Review",
+          "state": "pending",
+          "detail": null
+        },
+        {
+          "key": "ci",
+          "label": "CI",
+          "state": "pending",
+          "detail": null
+        },
+        {
+          "key": "deploy",
+          "label": "Deploy",
+          "state": "pending",
+          "detail": null
+        }
       ],
       "headline": "Closed · root cause not found",
       "tone": "neutral",
+      "holder": null,
       "reviewerName": "Codex",
       "critiqueLine": "Not run",
-      "resolution": "Closed by you without a fix",
+      "ciLine": "Not run",
       "rootCauseFound": false,
-      "activity": "Finished",
+      "activity": "Closed by you",
       "diagnosis": null,
       "outcome": "needs_human",
       "prUrl": null,
       "branch": null,
       "worktree": null,
       "claudeSessionId": null,
-      "model": "Sonnet",
+      "model": "claude-sonnet-5-5",
       "ciRounds": 0,
-      "critiqueRounds": 0,
-      "critique": null,
       "costUsd": 0.31,
       "slackThreadUrl": null,
       "acceptsMessages": false,
       "revvUrl": null,
       "reviewChannel": null,
       "reviewUrl": null,
-      "startedAt": "2026-10-03T08:00:00Z",
-      "updatedAt": "2026-10-03T08:12:00Z"
+      "startedAt": "2026-10-03T08:00:00.000Z",
+      "updatedAt": "2026-10-03T08:12:00.000Z"
     }
   ],
   "alerts": [
     {
       "id": "C0AUKD42N3U:1790933006.433649",
-      "channelId": "C0AUKD42N3U",
-      "channelName": "alert-releases",
-      "ts": "1790933006.433649",
+      "channelLabel": "#alert-releases",
       "permalink": "https://merkl.slack.com/archives/C0AUKD42N3U/p1790933006433649",
       "title": "merkl-admin v0.6.0 · Build failed",
       "summary": "vite build failed in the admin app",
       "source": "releases",
-      "receivedAt": "2026-10-03T09:01:00Z",
+      "receivedAt": "2026-10-03T09:01:00.000Z",
       "triage": {
         "decision": "auto",
         "reason": "Build failure an agent can fix without prod access",
@@ -175,48 +234,65 @@
       },
       "sessionId": "ses_running",
       "feedback": "good",
-      "outcome": { "kind": "session", "headline": "Ready to merge", "sentence": null, "tone": "waiting" }
+      "outcome": {
+        "kind": "session",
+        "headline": "Ready to merge",
+        "sentence": null,
+        "tone": "waiting"
+      }
     },
     {
-      "id": "C0AUKD42N3U:1790930000.000100",
-      "channelId": "C0AUKD42N3U",
-      "channelName": "alert-engine",
-      "ts": "1790930000.000100",
+      "id": "C0AUK4AUER0:1790930000.000100",
+      "channelLabel": "#alert-engine",
       "permalink": null,
       "title": "keeper · RPC timeouts",
       "summary": "Keeper RPC calls timing out on Arbitrum",
       "source": "engine",
-      "receivedAt": "2026-10-03T07:59:00Z",
-      "triage": { "decision": "auto", "reason": "Runtime error with logs available", "jev": null },
+      "receivedAt": "2026-10-03T07:59:00.000Z",
+      "triage": {
+        "decision": "auto",
+        "reason": "Runtime error with logs available",
+        "jev": null
+      },
       "sessionId": "ses_closed",
       "feedback": null,
-      "outcome": { "kind": "session", "headline": "Closed · root cause not found", "sentence": null, "tone": "neutral" }
+      "outcome": {
+        "kind": "session",
+        "headline": "Closed · root cause not found",
+        "sentence": null,
+        "tone": "neutral"
+      }
     },
     {
-      "id": "C0UPTIME:1790920000.000300",
-      "channelId": "C0UPTIME",
-      "channelName": "alert-uptime",
-      "ts": "1790920000.000300",
-      "permalink": "https://merkl.slack.com/archives/C0UPTIME/p1790920000000300",
+      "id": "C0B001L8UQ1:1790920000.000300",
+      "channelLabel": "#alert-uptime",
+      "permalink": "https://merkl.slack.com/archives/C0B001L8UQ1/p1790920000000300",
       "title": "api.merkl.xyz · Recovered",
       "summary": "Uptime check recovered",
       "source": "uptime",
-      "receivedAt": "2026-10-03T05:13:20Z",
-      "triage": { "decision": "filtered", "reason": "Recovery notice", "jev": null },
+      "receivedAt": "2026-10-03T05:13:00.000Z",
+      "triage": {
+        "decision": "filtered",
+        "reason": "Recovery notice",
+        "jev": null
+      },
       "sessionId": null,
       "feedback": null,
-      "outcome": { "kind": "filtered", "headline": "Filtered by a rule", "sentence": "Recovery notice", "tone": "neutral" }
+      "outcome": {
+        "kind": "filtered",
+        "headline": "Filtered by a rule",
+        "sentence": "No agent ran. A rule filtered it before triage.",
+        "tone": "neutral"
+      }
     },
     {
-      "id": "C0UPTIME:1790910000.000400",
-      "channelId": "C0UPTIME",
-      "channelName": "alert-uptime",
-      "ts": "1790910000.000400",
+      "id": "C0B001L8UQ1:1790910000.000400",
+      "channelLabel": "#alert-uptime",
       "permalink": null,
       "title": "status page · Slow response",
       "summary": "p95 above 2s for 5 minutes",
       "source": "uptime",
-      "receivedAt": "2026-10-03T02:26:40Z",
+      "receivedAt": "2026-10-03T02:27:00.000Z",
       "triage": {
         "decision": "suggest",
         "reason": "Might need an agent, not sure it's actionable",
@@ -227,7 +303,7 @@
           "kind": "uptime_incident",
           "kindConfidence": 0.7,
           "depth": "quick",
-          "urgency": 1.0
+          "urgency": 1
         }
       },
       "sessionId": null,
@@ -240,25 +316,46 @@
       }
     },
     {
-      "id": "D0INBOX:1790934000.000200",
-      "channelId": "D0INBOX",
-      "channelName": "hugo",
-      "ts": "1790934000.000200",
-      "permalink": "https://merkl.slack.com/archives/D0INBOX/p1790934000000200",
+      "id": "D0HUGO:1790930400.000200",
+      "channelLabel": "DM",
+      "permalink": "https://merkl.slack.com/archives/D0HUGO/p1790930400000200",
       "title": "Hugo: can you review the fee change?",
       "summary": "PR #3351",
       "source": "inbox",
-      "receivedAt": "2026-10-03T09:40:00Z",
-      "triage": { "decision": "escalate", "reason": "PR reviews always go to you", "jev": null },
+      "receivedAt": "2026-10-03T01:40:00.000Z",
+      "triage": {
+        "decision": "escalate",
+        "reason": "PR reviews always go to you",
+        "jev": null
+      },
       "sessionId": null,
       "feedback": null,
-      "outcome": { "kind": "waiting", "headline": "Waiting on you", "sentence": "Jev sent it to you personally. It's in Needs you.", "tone": "waiting" }
+      "outcome": {
+        "kind": "waiting",
+        "headline": "Waiting on you",
+        "sentence": "Jev sent it to you personally. It's in Needs you.",
+        "tone": "waiting"
+      }
     }
   ],
+  "metrics": {
+    "sessions": {
+      "started": 2,
+      "resolved": 0
+    }
+  },
   "settings": {
     "channels": [
-      { "id": "C0AUKD42N3U", "name": "alert-releases", "enabled": true },
-      { "id": "C0UPTIME", "name": "alert-uptime", "enabled": false }
+      {
+        "id": "C0AUKD42N3U",
+        "name": "alert-releases",
+        "enabled": true
+      },
+      {
+        "id": "C0B001L8UQ1",
+        "name": "alert-uptime",
+        "enabled": false
+      }
     ],
     "thresholds": {
       "autoActionable": 0.8,
@@ -279,6 +376,10 @@
     "pollSeconds": 30,
     "monorepoPath": "~/code/monorepo",
     "deploymentRepoPath": "~/code/deployment",
-    "quietHours": { "enabled": true, "start": "22:00", "end": "08:00" }
+    "quietHours": {
+      "enabled": true,
+      "start": "22:00",
+      "end": "08:00"
+    }
   }
 }

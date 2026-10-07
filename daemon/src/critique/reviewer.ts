@@ -6,7 +6,7 @@ import type { Depth } from "../domain/alert.ts"
 import { ReviewFinding, type ReviewerVendor } from "../domain/critique.ts"
 import { AdapterError, attempt, decodeOr } from "../domain/errors.ts"
 import type { Effort } from "../domain/session.ts"
-import { run, runOk } from "../lib/proc.ts"
+import { git, run, runOk } from "../lib/proc.ts"
 
 export interface ReviewerProfile {
   readonly vendor: ReviewerVendor
@@ -136,7 +136,7 @@ const codexReview = (request: ReviewRequest, codexPath: string | undefined): Eff
       return yield* new AdapterError({ adapter: "codex", operation: "exec", message: "codex is not installed (or set BRIDGETOWN_CODEX_PATH)", cause: null })
     }
     // Codex (and Jev's diff) read the worktree: a commit the agent never pushed would pass a head GitHub does not have.
-    const local = (yield* runOk(["git", "rev-parse", "HEAD"], { cwd: request.worktree, timeoutMs: 30_000 })).trim()
+    const local = (yield* runOk(git("rev-parse", "HEAD"), { cwd: request.worktree, timeoutMs: 30_000 })).trim()
     if (local !== request.head) {
       const message = `the worktree is at ${local.slice(0, 7)} but the PR head is ${request.head.slice(0, 7)}: the agent's last commit is not pushed`
       return yield* new AdapterError({ adapter: "codex", operation: "exec", message, cause: null })

@@ -74,9 +74,12 @@ export type WatchFields = typeof WatchFields.Type
 /** The channel of a watch finding: it comes from Grafana, not a Slack channel. The app shows it without a "#". */
 export const WATCH_CHANNEL = { id: "grafana", name: "Grafana" } as const
 
-/** Where an alert came from, as written in text: `#channel`, or "Grafana" for a watch finding. */
-export const channelLabel = (alert: { readonly source: AlertSource; readonly channelName: string }): string =>
-  alert.source === "watch" ? WATCH_CHANNEL.name : `#${alert.channelName}`
+/** Where an alert came from, as written: `#channel`, "DM" or "group DM" for an inbox message outside a channel, "Grafana" for a watch finding. */
+export const channelLabel = (alert: { readonly source: AlertSource; readonly channelName: string; readonly fields: AlertFields }): string => {
+  if (alert.source === "watch") return WATCH_CHANNEL.name
+  if (alert.fields._tag === "inbox" && alert.fields.channelKind !== "channel") return alert.fields.channelKind === "dm" ? "DM" : "group DM"
+  return `#${alert.channelName}`
+}
 
 export const AlertFields = Schema.Union([ReleaseFields, UptimeFields, EngineFields, InboxFields, GenericFields, WatchFields])
 export type AlertFields = typeof AlertFields.Type

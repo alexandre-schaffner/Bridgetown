@@ -1,21 +1,12 @@
 import { Context, Effect, Layer, PubSub, Ref, type Scope, Semaphore, Stream } from "effect"
+import type { Status as WireStatus } from "./api/wire.ts"
 import { Environment } from "./config.ts"
 import type { AdapterError } from "./domain/errors.ts"
 import { loadSettings, type Settings } from "./domain/settings.ts"
-import type { Reachability } from "./ship/github.ts"
 import { Store } from "./store/store.ts"
 
-export interface Status {
-  readonly paused: boolean
-  readonly slack: "ok" | "error" | "missing_token"
-  readonly jev: "ok" | "error" | "missing_key"
-  readonly grafanaMcp: "up" | "down"
-  /** GitHub Enterprise reachability. `blocked` is the Merkl org's IP allow list refusing this network. */
-  readonly github: Reachability
-  readonly lastPollAt: string | null
-  /** The latest problem still standing (`HubShape.problem`). */
-  readonly error: string | null
-}
+/** The wire's `Status` but `dryRun`, which the snapshot reads from the settings and the launch flag. `error` is `HubShape.problem`'s latest. */
+export type Status = Omit<WireStatus, "dryRun">
 
 /** What can go wrong, each reported by the part that saw it, and cleared by that part once it works again. */
 export type ProblemSource = "slack" | "poll" | "inbox" | "groups" | "post" | "jev" | "mcp" | "ci" | "setup"

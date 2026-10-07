@@ -1,48 +1,30 @@
 import SwiftUI
 
-// Who has a session's next move, and how that, the daemon's step states and the
-// session's tone draw its dot and each of its six steps. Kept apart from the views so
-// every state can be tested.
+// How who has a session's next move (the daemon's `holder`), its step states and its tone
+// draw its dot and each of its six steps. Kept apart from the views so every state can be
+// tested.
 
 // MARK: Who has the next move
 
+extension Session.Holder {
+    var label: String {
+        switch self {
+        case .agent: "working"
+        case .critic: "in adversarial review"
+        case .you: "on you"
+        case .reviewers: "in review"
+        case .ci: "on CI"
+        case .deploy: "deploying"
+        case .queue: "queued"
+        case .unknown: "in progress"
+        }
+    }
+
+    /// Something is progressing with no person involved: the agent, the adversarial review, CI or a deploy.
+    var isMoving: Bool { self == .agent || self == .critic || self == .ci || self == .deploy }
+}
+
 extension Session {
-    /// Who an active session is waiting on. The tone can't tell: "In review" is live
-    /// (in flight, not on you) yet no agent is working on it.
-    enum Holder {
-        case agent, critic, you, reviewers, ci, deploy, queue
-
-        var label: String {
-            switch self {
-            case .agent: "working"
-            case .critic: "in adversarial review"
-            case .you: "on you"
-            case .reviewers: "in review"
-            case .ci: "on CI"
-            case .deploy: "deploying"
-            case .queue: "queued"
-            }
-        }
-
-        /// Something is progressing with no person involved: the agent, the adversarial review, CI or a deploy.
-        var isMoving: Bool { self == .agent || self == .critic || self == .ci || self == .deploy }
-    }
-
-    /// Nil once the session is finished.
-    var holder: Holder? {
-        switch status {
-        case .preparing, .running: .agent
-        // Findings recorded and the agent's turn parked for a free slot: nobody is reviewing.
-        case .critiquing: tone == .neutral ? .queue : .critic
-        case .waiting, .awaiting_merge, .awaiting_release: .you
-        // CI green but the review request didn't go out: the daemon hands that to you.
-        case .ci: reviewChannel != nil ? .reviewers : tone == .waiting ? .you : .ci
-        case .deploying: .deploy
-        case .queued: .queue
-        case .resolved, .closed, .failed, .stopped, .unknown: nil
-        }
-    }
-
     /// How the session's dot is drawn, in its tone's colour, the same on its row and in its
     /// detail. Only motion pulses: the daemon's tone calls "In review" live, yet nobody
     /// is working on it.

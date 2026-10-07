@@ -59,7 +59,7 @@ struct AlertRow: View {
                 Text(alert.title)
                     .rowTitle()
                     .foregroundStyle(glyph.dimmed ? .secondary : .primary)
-                (Text("\(Format.channel(alert.channelName)) · ")
+                (Text("\(alert.channelLabel) · ")
                     + (glyph.dimmed ? Text(alert.outcome.headline) : alert.outcome.tone.headline(alert.outcome.headline)))
                     .font(Typo.body)
                     .foregroundStyle(glyph.dimmed ? .tertiary : .secondary)
