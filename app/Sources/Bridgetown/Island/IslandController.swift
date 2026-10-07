@@ -2,7 +2,8 @@ import AppKit
 import Observation
 import SwiftUI
 
-/// Bridgetown in the notch: the app's only way in, there is no menu bar item.
+/// Bridgetown in the notch: there is no menu bar item, so the island is always there to
+/// click, and opening the app again opens it too (`AppDelegate`).
 ///
 /// A transparent panel above the menu bar holds the island (`IslandView`). It lets the
 /// pointer through everywhere but the island itself, so it never blocks the menu bar or
@@ -24,6 +25,17 @@ final class IslandController {
     private var resignTask: Task<Void, Never>?
     private var hoverTask: Task<Void, Never>?
 
+    /// Pointer onto the island, then a click: the hover tap and the open tap within this
+    /// are one gesture (measured 260–370ms apart), so the open one is dropped.
+    private static let hoverToClick: TimeInterval = 0.8
+
+    #if DEBUG
+    /// Set before `start()` by an e2e run, which renders the island itself (`E2ESurfaces`):
+    /// no panel at the notch, so no event monitors, no observers, never key. The model is
+    /// still driven as usual: open, close, banners and the glance.
+    var offscreen = false
+    #endif
+
     // Springs: opening overshoots a touch, as if the notch were elastic; closing doesn't.
     // Under Reduce Motion everything is a short ease with no bounce.
     static var opening: Animation { motion(.spring(response: 0.5, dampingFraction: 0.74)) }
@@ -32,7 +44,7 @@ final class IslandController {
     static var settle: Animation { motion(.spring(response: 0.45, dampingFraction: 0.8)) }
 
     private static func motion(_ animation: Animation) -> Animation {
-        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? .easeInOut(duration: 0.2) : animation
+        Easing.reduceMotion ? .easeInOut(duration: 0.2) : animation
     }
 
     init(store: Store, daemon: DaemonProcess) {
@@ -43,11 +55,15 @@ final class IslandController {
 
     func start() {
         guard panel == nil else { return }
+        #if DEBUG
+        if offscreen { return observeGlance() }
+        #endif
         let panel = IslandPanel()
         panel.onCancel = { [weak self] in self?.close() }
         let root = IslandView(model: model) { [weak self] in self?.open() }
             .environment(store)
             .environment(daemon)
+            .environment(\.openURL, SystemActions.openLink)
         let host = FirstMouseHostingView(rootView: root)
         host.sizingOptions = []
         panel.contentView = host
@@ -85,7 +101,9 @@ final class IslandController {
             model.presentation = .open
             model.hovering = false
         }
-        Haptics.perform(.levelChange, "island.open")
+        // The hover tap plays 90ms after the pointer arrives; a click that follows it is
+        // the same reach for the island, so it doesn't tap again.
+        Haptics.perform(.levelChange, "island.open", gap: Self.hoverToClick)
         panel?.keyable = true
         panel?.makeKey()
         trackPointer()
@@ -96,14 +114,11 @@ final class IslandController {
         bannerTask?.cancel()
         withAnimation(Self.closing) {
             model.presentation = .resting
-            model.hovering = model.frame.contains(NSEvent.mouseLocation)
+            // Without a panel nothing is under the pointer, wherever it is on the screen.
+            model.hovering = panel != nil && model.frame.contains(NSEvent.mouseLocation)
         }
         trackPointer()
         resignKey()
-    }
-
-    func toggle() {
-        model.presentation == .open ? close() : open()
     }
 
     /// A new "Needs you" drops a banner, unless the island is open already.
@@ -143,18 +158,22 @@ final class IslandController {
 
     // MARK: Panel
 
-    /// Sizes the panel for the open island plus room for its whole shadow (it falls 14pt
-    /// and blurs 26pt, so it needs about 80 below and 60 aside; less cuts it off in a hard
-    /// line), hung from the top edge, centred on the notch.
+    /// The panel, hung from the top edge, centred on the notch.
     private func place() {
         model.geometry = .current()
         guard let panel else { return }
         let g = model.geometry
+        let size = Self.panelSize(g, glance: model.glance)
+        panel.setFrame(NSRect(x: g.centerX - size.width / 2, y: g.top - size.height, width: size.width, height: size.height), display: true)
+    }
+
+    /// The open island plus room for its whole shadow: it falls 14pt and blurs 26pt, so it
+    /// needs about 80 below and 60 aside; less cuts it off in a hard line.
+    static func panelSize(_ geometry: NotchGeometry, glance: Glance) -> CGSize {
         let side: CGFloat = 64
         let below: CGFloat = 88
-        let width = IslandModel.layout(.open, hovering: false, glance: model.glance, geometry: g).frameWidth + 2 * side
-        let height = g.notch.height + g.openHeight + below
-        panel.setFrame(NSRect(x: g.centerX - width / 2, y: g.top - height, width: width, height: height), display: true)
+        let width = IslandModel.layout(.open, hovering: false, glance: glance, geometry: geometry).frameWidth + 2 * side
+        return CGSize(width: width, height: geometry.notch.height + geometry.openHeight + below)
     }
 
     /// A key, non-activating panel keeps keyboard focus after it closes; ordering it out
@@ -201,7 +220,7 @@ final class IslandController {
     /// yet; opening from here makes the first click count either way.
     private func pressed(_ event: NSEvent) {
         let point = NSEvent.mouseLocation
-        if model.presentation != .open, event.type == .leftMouseDown, model.isTarget, hitFrame.contains(point) {
+        if model.presentation != .open, event.type == .leftMouseDown, hitFrame.contains(point) {
             open()
             return
         }
@@ -226,7 +245,7 @@ final class IslandController {
         guard let panel, panel.isVisible else { return }
         let point = NSEvent.mouseLocation
         // The pointer can sit on the screen's top row, a hair above the frame's open edge.
-        let inside = model.isTarget && hitFrame.contains(point)
+        let inside = hitFrame.contains(point)
         panel.ignoresMouseEvents = !inside
         guard model.presentation != .open else { return }
         guard inside else {
@@ -257,7 +276,7 @@ final class IslandController {
 
 #if DEBUG
 extension IslandController {
-    /// Design review (`--island-demo`): hovering without a pointer.
+    /// Hovering without a pointer: `--island-demo`, and the e2e run's hover shots.
     func previewHover(_ hovering: Bool) {
         if hovering { Haptics.perform(.alignment, "island.previewHover") }
         withAnimation(Self.swell) { model.hovering = hovering }

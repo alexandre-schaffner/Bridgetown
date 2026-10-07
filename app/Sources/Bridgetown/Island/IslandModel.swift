@@ -8,8 +8,6 @@ struct NotchGeometry: Equatable {
     var top: CGFloat
     var centerX: CGFloat
     var notch: CGSize
-    /// A real notch to hide behind. Without one the island fades out when it has nothing to say.
-    var hardware: Bool
     /// The open island: wide and shallow, under the notch.
     var openWidth: CGFloat
     /// Its height below the notch.
@@ -27,7 +25,7 @@ struct NotchGeometry: Equatable {
         let screen = screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main ?? screens.first
         guard let screen else {
             return NotchGeometry(
-                top: 900, centerX: 720, notch: CGSize(width: standInWidth, height: 32), hardware: false,
+                top: 900, centerX: 720, notch: CGSize(width: standInWidth, height: 32),
                 openWidth: maxOpenWidth, openHeight: maxOpenHeight
             )
         }
@@ -47,7 +45,6 @@ struct NotchGeometry: Equatable {
             top: frame.maxY,
             centerX: centerX,
             notch: notch,
-            hardware: inset > 0,
             openWidth: min(Self.maxOpenWidth, frame.width - 160),
             openHeight: min(Self.maxOpenHeight, frame.height - notch.height - 160)
         )
@@ -60,7 +57,7 @@ struct Glance: Equatable {
     var working = 0
     /// "Needs you" actions (right wing, first).
     var waiting = 0
-    /// Lost the daemon, or it can't start.
+    /// Lost the daemon, or it can't start (`DaemonHealth.isTrouble`).
     var trouble = false
 
     var isEmpty: Bool { working == 0 && waiting == 0 && !trouble }
@@ -73,11 +70,10 @@ struct Glance: Equatable {
 
     @MainActor
     init(store: Store, daemon: DaemonProcess) {
-        let connected = store.connection == .connected
-        working = connected ? store.activeSessions.count : 0
-        waiting = connected ? store.actions.count : 0
-        trouble = daemon.state == .missing || daemon.state == .portInUse || store.connection == .rejected
-            || (store.snapshot != nil && !connected)
+        let health = DaemonHealth(daemon: daemon, store: store)
+        working = health == .connected ? store.activeSessions.count : 0
+        waiting = health == .connected ? store.actions.count : 0
+        trouble = health.isTrouble
     }
 }
 
@@ -90,7 +86,6 @@ struct IslandLayout: Equatable {
     var corner: CGFloat
     /// Floating over the desktop, with a shadow and a lit edge, rather than flush with the notch.
     var lifted = false
-    var visible = true
 
     var frameWidth: CGFloat { width + 2 * shoulder }
 }
@@ -133,11 +128,9 @@ final class IslandModel {
             return IslandLayout(width: bannerWidth, height: notch.height + bannerHeight, shoulder: 10, corner: 24, lifted: true)
         case .resting:
             if glance.isEmpty && !hovering {
-                // Just inside the hardware notch, so nothing shows; it grows out from there.
-                return IslandLayout(
-                    width: notch.width - 12, height: notch.height - 4, shoulder: 0, corner: 8,
-                    visible: geometry.hardware
-                )
+                // Just inside a hardware notch, so nothing shows; it grows out from there.
+                // Without one it is a small notch of its own: the app has no other way in.
+                return IslandLayout(width: notch.width - 12, height: notch.height - 4, shoulder: 0, corner: 8)
             }
             let wing = glance.isEmpty ? wing * 0.75 : wing
             var layout = IslandLayout(width: notch.width + 2 * wing, height: notch.height, shoulder: 6, corner: 12)
@@ -149,12 +142,6 @@ final class IslandModel {
             }
             return layout
         }
-    }
-
-    /// Whether the pointer can reach the island. Resting with nothing to say on a screen
-    /// without a notch, it is hidden, and the menu bar under it keeps its clicks.
-    var isTarget: Bool {
-        presentation != .resting || !glance.isEmpty || geometry.hardware
     }
 
     /// The island's frame in global screen coordinates, for hit-testing the pointer.

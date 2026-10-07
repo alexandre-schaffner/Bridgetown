@@ -1,26 +1,33 @@
-import { Context, Effect, FiberMap, FiberSet, Layer, Queue, SynchronizedRef } from "effect"
+import { Context, Effect, Fiber, FiberMap, Layer, Option, Queue, SynchronizedRef } from "effect"
 import { ActionQueue } from "../actions/queue.ts"
+import { Agent } from "../agent/agent.ts"
+import type { TurnEnd } from "../agent/events.ts"
+import { Environment } from "../config.ts"
 import { MAX_CRITIQUE_ROUNDS } from "../critique/transitions.ts"
+import type { Alert } from "../domain/alert.ts"
 import { type AdapterError, Conflict, errorMessage, NotFound } from "../domain/errors.ts"
-import { newId, now } from "../domain/ids.ts"
-import { acceptsMessages, type Alert, holdsSlot, isActive, isFinished, type Session } from "../domain/model.ts"
+import { newId } from "../domain/ids.ts"
+import { sessionStartEvent } from "../domain/progress.ts"
+import { acceptsMessages, closedResolution, holdsSlot, isActive, isFinished, type Session, withPatch } from "../domain/session.ts"
 import { Hub } from "../hub.ts"
 import { GitHub } from "../ship/github.ts"
 import { SlackThread } from "../slack/thread.ts"
 import { Store } from "../store/store.ts"
 import { alertKind } from "../triage/kind.ts"
-import { Agent } from "./agent.ts"
 import { Asks } from "./asks.ts"
 import { makeFinish } from "./finish.ts"
-import { inboxPrompt, initialPrompt, RETRY_PROMPT, setupNotes } from "./prompts.ts"
-import { SessionRepo, withPatch } from "./repo.ts"
-import type { TurnEnd } from "./sdk-events.ts"
-import { makeTurnInput, makeTurns, type TurnInput, userMessage } from "./turn.ts"
 import { newSession } from "./new-session.ts"
-import { createWorktree } from "./worktree.ts"
+import { inboxPrompt, initialPrompt, RETRY_PROMPT, setupNotes } from "./prompts.ts"
+import { type ModifyOptions, SessionRepo } from "./repo.ts"
+import { makeTurnInput, makeTurns, type TurnInput, userMessage } from "./turn.ts"
+import { Worktrees } from "./worktree.ts"
 
-/** What Bridgetown may set along with a turn it asks for (CI round, review handled…). Status is the runner's. */
-export type TurnPatch = Partial<Pick<Session, "phase" | "activity" | "ciRounds" | "review">>
+/**
+ * What Bridgetown sets along with a turn it asks for: its phase and status line, its CI round, what it is sent back
+ * for. Written when a turn takes the text, so the result that answers it is the one that reads it. What the asker saw
+ * (a review handled, a deploy's stage) is its own record, written before it asks. Status is the runner's.
+ */
+export type TurnPatch = Partial<Pick<Session, "phase" | "activity" | "ciRounds" | "sentBack">>
 
 /**
  * What happened to a message or prompt: sent into the running turn (the agent
@@ -40,8 +47,10 @@ export interface SessionRunnerShape {
   /** Your message: answers a pending `ask`, else reaches the agent. `Conflict` unless the session `acceptsMessages`; may resume a handed-back session. */
   readonly message: (sessionId: string, text: string) => Effect.Effect<void, AdapterError | NotFound | Conflict>
   readonly stop: (sessionId: string) => Effect.Effect<void, AdapterError | NotFound>
-  /** Re-queues a failed session; it resumes its agent conversation if it had one. */
-  readonly retry: (sessionId: string) => Effect.Effect<void, AdapterError>
+  /** Closes it without a verified outcome (never as resolved), turn and all; a session already over (bar a failed one) is left as it is. */
+  readonly close: (sessionId: string) => Effect.Effect<void, AdapterError>
+  /** Re-queues a failed session; it resumes its agent conversation if it had one. `Conflict` while its last turn is still winding down. */
+  readonly retry: (sessionId: string) => Effect.Effect<void, AdapterError | Conflict>
   /** Hands the user's reply to a blocked `ask` call. False when nobody is waiting on that action. */
   readonly answer: (actionId: string, text: string) => Effect.Effect<boolean, AdapterError>
   /** A turn is running or parked for a slot: the ship loop leaves the session alone. */
@@ -52,6 +61,7 @@ export class SessionRunner extends Context.Service<SessionRunner, SessionRunnerS
 
 interface FollowUp {
   readonly text: string
+  readonly patch: TurnPatch
   readonly reopen: boolean
 }
 
@@ -118,12 +128,22 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
     const asks = yield* Asks
     const agent = yield* Agent
     const github = yield* GitHub
+    const worktrees = yield* Worktrees
+    const env = yield* Environment
 
     const turns = yield* SynchronizedRef.make<Turns>({ live: new Map(), parked: new Map() })
     /** One fiber per session (preparing its worktree, or driving its turns), interrupted by a stop or when the layer shuts down. */
     const fibers = yield* FiberMap.make<string>()
-    /** The SDK tool callbacks' Promise boundary; what it runs is interrupted with the layer too. */
-    const runPromise = yield* FiberSet.makeRuntimePromise()
+    // Parked turns and queued follow-ups only live here: when the daemon stops, the transcript says they went undelivered.
+    yield* Effect.addFinalizer(() =>
+      Effect.gen(function* () {
+        const state = yield* SynchronizedRef.get(turns)
+        for (const id of state.parked.keys()) yield* repo.log(id, "status", "Not delivered: Bridgetown quit while it waited for an agent slot")
+        for (const [id, live] of state.live) {
+          if ((yield* Queue.size(live.followUps)) > 0) yield* repo.log(id, "status", "Not delivered: Bridgetown quit before the current turn ended")
+        }
+      }).pipe(Effect.ignore),
+    )
 
     const freeSlots = (state: Turns) =>
       Effect.gen(function* () {
@@ -132,7 +152,7 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
         return settings.maxConcurrent - (yield* store.activeSessions()).filter((s) => holdsSlot(s, live)).length
       })
 
-    const { finishFailed, finalize } = makeFinish({ store, thread, repo, queue, github, hub, sendBack: (id, prompt) => deliver(id, prompt, {}, false) })
+    const { finish, finishFailed } = makeFinish({ store, thread, repo, queue, github, hub, sendBack: (id, prompt) => deliver(id, prompt, {}, false) })
 
     const { runTurn } = makeTurns({
       store,
@@ -141,9 +161,10 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
       repo,
       asks,
       agent,
-      runPromise,
-      onEnd: (id) => (end: TurnEnd) => (end._tag === "Failed" ? finishFailed(id, end.reason) : finalize(id, end.result)),
+      onEnd: (id) => (end: TurnEnd) => (end._tag === "Failed" ? finishFailed(id, end.reason) : finish(id, end.result)),
       onFailure: (id, reason) => finishFailed(id, reason).pipe(Effect.ignore),
+      daemonPort: env.port,
+      home: env.home,
     })
 
     /**
@@ -167,6 +188,8 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
           },
           { evenIfFinished: options.reopen === true },
         )
+        // Now running, the session's hand-off, re-run and gate cards are gone (`cardStands`, applied by the repo): the
+        // turn supersedes them, and a gate it comes back to offers its card again.
         if (session === undefined) return [undefined, state] as const
         const input = yield* makeTurnInput(prompt)
         const followUps = state.live.get(id)?.followUps ?? (yield* Queue.unbounded<FollowUp>())
@@ -189,7 +212,8 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
           const waiting = yield* Queue.clear(followUps)
           if (waiting.length === 0) return [undefined, dropLive(state, id, followUps)] as const
           const reopen = waiting.some((f) => f.reopen)
-          const [next, after] = yield* claim(state, id, waiting.map((f) => f.text).join("\n\n"), { resume: true, reopen })
+          const patch = waiting.reduce<TurnPatch>((merged, f) => ({ ...merged, ...f.patch }), {})
+          const [next, after] = yield* claim(state, id, waiting.map((f) => f.text).join("\n\n"), { resume: true, patch, reopen })
           if (next !== undefined) return [next, after] as const
           yield* repo.log(id, "status", "Follow-up not delivered: the session has ended")
           return [undefined, dropLive(state, id, followUps)] as const
@@ -222,11 +246,10 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
       Effect.gen(function* () {
         const id = claimed.id
         yield* repo.log(id, "status", `Fetching origin/main and creating worktree on ${claimed.branch ?? "?"} (then bun install)…`)
-        const { path: worktree, warnings } = yield* createWorktree(claimed.repoPath, claimed.branch ?? "")
+        const { path: worktree, warnings, bunMismatch } = yield* worktrees.create(claimed.repoPath, claimed.branch ?? "")
         yield* repo.log(id, "status", `Worktree ready: ${worktree}`)
         for (const warning of warnings) yield* repo.log(id, "error", `Setup: ${warning}`)
-        const upgrade = warnings.find((w) => w.includes("bun upgrade"))
-        if (upgrade !== undefined) yield* hub.patchStatus({ error: upgrade })
+        yield* hub.problem("setup", bunMismatch)
         const ready = yield* repo.modify(id, (current) => (current.status === "preparing" ? { ...current, worktree } : undefined))
         if (ready === undefined) return
         const prompt = yield* firstPrompt(ready, warnings)
@@ -262,7 +285,6 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
                 nearby,
                 deploymentRepoPath: (yield* hub.settings).deploymentRepoPath,
               })
-        if ((yield* repo.get(ready.id))?.status !== "preparing") return undefined
         return { text: `${prompt}${setupNotes(warnings)}`, resume: false }
       })
 
@@ -279,8 +301,11 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
           if (session === undefined) return ["refused", state] as const
           const live = state.live.get(id)
           if (live !== undefined) {
-            if (yield* Queue.offer(live.input, userMessage(text, "next"))) return ["sent", state] as const
-            yield* Queue.offer(live.followUps, { text, reopen })
+            // Only plain text joins a running turn. Text that comes with a patch (a send-back, a review round) asks for
+            // a result of its own, and the running turn's may already be out: it waits for the next turn, whose claim
+            // writes the patch, so only the result that answers it reads (and clears) `sentBack`.
+            if (Object.keys(patch).length === 0 && (yield* Queue.offer(live.input, userMessage(text, "next")))) return ["sent", state] as const
+            yield* Queue.offer(live.followUps, { text, patch, reopen })
             yield* repo.log(id, "status", "Queued for after the current turn")
             return ["queued", state] as const
           }
@@ -299,6 +324,25 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
         }),
       )
 
+    /**
+     * Ends the session from outside its turns, under the lock so no delivery starts a turn in between: the write
+     * first, which every later claim of Bridgetown's respects, then nothing live or parked, and the fiber of whatever
+     * turn did start. A write `f` refuses ends nothing.
+     */
+    const end = (sessionId: string, f: (current: Session) => Session | undefined, options?: ModifyOptions) =>
+      Effect.gen(function* () {
+        const fiber = yield* SynchronizedRef.modifyEffect(turns, (state) =>
+          Effect.gen(function* () {
+            if ((yield* repo.modify(sessionId, f, options)) === undefined) return [Option.none(), state] as const
+            const running = yield* FiberMap.get(fibers, sessionId)
+            return [running, withParked(withLive(state, sessionId, undefined), sessionId, undefined)] as const
+          }),
+        )
+        // Outside the lock, which the turn's own cleanup takes. Interrupting aborts its query (the CLI exits, an
+        // open ask goes with it) or its worktree setup.
+        if (Option.isSome(fiber)) yield* Fiber.interrupt(fiber.value)
+      })
+
     /** Parked turns first (they were waiting already), as far as the free slots go. */
     const startParked = SynchronizedRef.modifyEffect(turns, (initial) =>
       Effect.gen(function* () {
@@ -312,6 +356,7 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
           )
           state = after
           if (started) free -= 1
+          else yield* repo.log(id, "status", "Not delivered: the session no longer takes messages").pipe(Effect.ignore)
         }
         return [free, state] as const
       }),
@@ -323,10 +368,7 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
         const id = newId("s")
         const session = newSession(alert, id, settings.monorepoPath)
         yield* repo.create(session)
-        yield* store.modifyAlert(alert.id, (current) => {
-          const base = current ?? alert
-          return { ...base, sessionId: id, events: [...base.events, { at: now(), text: `Agent session started (${session.model}, ${session.effort})` }] }
-        })
+        yield* store.appendAlertEvent(alert.id, sessionStartEvent(session), { sessionId: id })
         yield* hub.notify
         return session
       }),
@@ -362,7 +404,8 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
       }),
 
       retry: Effect.fn("SessionRunner.retry")(function* (sessionId: string) {
-        if ((yield* SynchronizedRef.get(turns)).live.has(sessionId)) return
+        // The failed turn has not let go of the session yet; the retry card stays for a second click.
+        if ((yield* SynchronizedRef.get(turns)).live.has(sessionId)) return yield* new Conflict({ message: "The agent is still winding down; retry in a moment" })
         const retried = yield* repo.modify(
           sessionId,
           (current) => (current.status === "failed" ? { ...current, status: "queued", activity: "Retrying…", resolution: null } : undefined),
@@ -375,13 +418,19 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
         const session = yield* repo.get(sessionId)
         if (session === undefined) return yield* new NotFound({ message: "unknown session" })
         if (!isActive(session)) return
-        // Interrupting the session's fiber aborts its query (the CLI exits) or its worktree setup.
-        yield* FiberMap.remove(fibers, sessionId)
-        yield* SynchronizedRef.update(turns, (state) => withParked(withLive(state, sessionId, undefined), sessionId, undefined))
-        yield* asks.cancelFor(sessionId)
-        yield* repo.patch(sessionId, { status: "stopped", activity: "Stopped by you", resolution: "stopped by you" })
+        yield* end(sessionId, (current) => withPatch(current, { status: "stopped", activity: "Stopped by you", resolution: "stopped by you" }))
         yield* queue.removeWhere((action) => action.sessionId === sessionId)
       }),
+
+      close: (sessionId) =>
+        end(
+          sessionId,
+          (current) =>
+            isFinished(current) && current.status !== "failed"
+              ? undefined
+              : { ...current, status: "closed", activity: "Closed by you", resolution: closedResolution(current) },
+          { evenIfFinished: true },
+        ),
 
       answer: asks.answer,
 

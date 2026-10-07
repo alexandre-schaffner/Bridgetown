@@ -1,18 +1,17 @@
 import { randomUUID } from "node:crypto"
-import type { McpServerConfig, Options, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
-import type { AgentShape } from "../../src/sessions/agent.ts"
-import type { SessionResult } from "../../src/sessions/output.ts"
-import { TOOL_SERVER } from "../../src/sessions/tools.ts"
-import * as Sdk from "./sdk.ts"
+import { basename } from "node:path"
+import type { Options, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
+import type { AgentShape } from "../../src/agent/agent.ts"
+import type { SessionResult } from "../../src/agent/result.ts"
+import { TOOL_SERVER } from "../../src/agent/tools.ts"
+import * as Sdk from "../../test/support/sdk.ts"
 
 /**
  * A scripted stand-in for the Claude CLI. The real runner drives it exactly as
  * it drives the CLI: one query per turn, your messages arrive on its streaming
  * input, `report` and `ask` go through Bridgetown's real in-process MCP tools
  * (so an ask puts up a real answer card and blocks until you reply), and its
- * `result` is finalized by the real `decideOutcome`.
+ * `result` goes through the real `decideOutcome`.
  */
 
 export type Step =
@@ -71,37 +70,25 @@ const readInput = (prompt: AsyncIterable<SDKUserMessage>) => {
   return { prompted, pending }
 }
 
-/** Bridgetown's tool server as the CLI would reach it: an MCP client over an in-memory transport. */
-const toolClient = (servers: Options["mcpServers"]) => {
-  let client: Promise<Client> | undefined
-  const connect = async (config: McpServerConfig | undefined) => {
-    if (config?.type !== "sdk" || !("instance" in config)) throw new Error("no Bridgetown tool server in the query options")
-    const [clientSide, serverSide] = InMemoryTransport.createLinkedPair()
-    await config.instance.connect(serverSide)
-    const connected = new Client({ name: "bridgetown-mock-agent", version: "0" })
-    await connected.connect(clientSide)
-    return connected
-  }
-  return async (name: string, args: Record<string, unknown>): Promise<string> => {
-    client ??= connect(servers?.[TOOL_SERVER])
-    // An ask waits for you for up to 30 minutes; MCP's own request timeout is a minute.
-    const reply = await (await client).callTool({ name, arguments: args }, undefined, { timeout: 31 * 60_000 })
-    const content = Array.isArray(reply.content) ? reply.content : []
-    return content.map((block: unknown) => (typeof block === "object" && block !== null && "text" in block ? String(block.text) : "")).join("")
-  }
+/** Bridgetown's tool server, connected on the turn's first call. */
+const toolClient = (options: Options) => {
+  let tools: ReturnType<typeof Sdk.connectTools> | undefined
+  // An ask waits for you for up to 30 minutes; MCP's own request timeout is a minute.
+  return async (name: string, args: Record<string, unknown>): Promise<string> => (await (tools ??= Sdk.connectTools(options, "bridgetown-mock-agent")))(name, args, 31 * 60_000)
 }
 
 /** What the agent says when one of your messages reaches it mid-turn. */
 const acknowledge = (text: string) => `Got your message — "${text}". Taking that into account.`
 
-export const scriptedAgent = (scriptFor: (turn: Turn) => Script): AgentShape => ({
+/** `opened` hears of each PR a turn reports, and the branch it is on (the worktree's). */
+export const scriptedAgent = (scriptFor: (turn: Turn) => Script, opened: (prUrl: string, branch: string) => void): AgentShape => ({
   query: ({ prompt, options }) => {
     const sessionId = options.env?.BRIDGETOWN_SESSION ?? "unknown"
     const conversation = options.resume ?? randomUUID()
     const signal = options.abortController?.signal
     const aborted = () => signal?.aborted === true
     const input = readInput(prompt)
-    const callTool = toolClient(options.mcpServers)
+    const callTool = toolClient(options)
 
     async function* run(): AsyncGenerator<SDKMessage> {
       const first = await input.prompted
@@ -136,6 +123,7 @@ export const scriptedAgent = (scriptFor: (turn: Turn) => Script): AgentShape => 
             break
           }
           case "result":
+            if (step.output.prUrl !== null) opened(step.output.prUrl, basename(options.cwd ?? ""))
             yield Sdk.result(conversation, step.output, step.costUsd)
             return
         }

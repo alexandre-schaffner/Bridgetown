@@ -1,0 +1,145 @@
+{
+  "title": "Incidents",
+  "from": "2026-10-03T06:42:00.000Z",
+  "to": "2026-10-03T09:42:00.000Z",
+  "stepSeconds": 1800,
+  "marker": null,
+  "fetchedAt": "2026-10-03T09:41:30.000Z",
+  "error": null,
+  "deploys": [
+    {
+      "at": "2026-10-03T08:07:00.000Z",
+      "image": "merkl-api",
+      "version": "v1.35.11",
+      "stage": "engine",
+      "status": "deployed"
+    }
+  ],
+  "panels": [
+    {
+      "id": "api_5xx",
+      "title": "API 5xx",
+      "unit": "count",
+      "series": [
+        {
+          "label": "API 5xx",
+          "points": [
+            [
+              1791009720,
+              230
+            ],
+            [
+              1791011520,
+              250
+            ],
+            [
+              1791013320,
+              210
+            ],
+            [
+              1791015120,
+              260
+            ],
+            [
+              1791016920,
+              240
+            ],
+            [
+              1791018720,
+              2400
+            ]
+          ]
+        }
+      ],
+      "latest": 2400,
+      "link": "https://grafana.internal.merkl.xyz/d/pihjbxm",
+      "error": null,
+      "usual": 264,
+      "spikeAbove": 1056,
+      "spike": 9.090909090909092
+    },
+    {
+      "id": "api_p99",
+      "title": "API p99 latency",
+      "unit": "ms",
+      "series": [],
+      "latest": null,
+      "link": "https://grafana.internal.merkl.xyz/d/pihjbxm",
+      "error": "timed out",
+      "usual": null,
+      "spikeAbove": null,
+      "spike": null
+    },
+    {
+      "id": "pods",
+      "title": "Pods by version",
+      "unit": "count",
+      "link": "https://grafana.internal.merkl.xyz/d/k8s",
+      "error": null,
+      "latest": 6,
+      "series": [
+        {
+          "label": "v1.35.10",
+          "points": [
+            [
+              1791009720,
+              4
+            ],
+            [
+              1791011520,
+              4
+            ],
+            [
+              1791013320,
+              4
+            ],
+            [
+              1791015120,
+              1
+            ],
+            [
+              1791016920,
+              0
+            ],
+            [
+              1791018720,
+              0
+            ]
+          ]
+        },
+        {
+          "label": "v1.35.11",
+          "points": [
+            [
+              1791009720,
+              0
+            ],
+            [
+              1791011520,
+              0
+            ],
+            [
+              1791013320,
+              0
+            ],
+            [
+              1791015120,
+              3
+            ],
+            [
+              1791016920,
+              6
+            ],
+            [
+              1791018720,
+              6
+            ]
+          ]
+        }
+      ],
+      "usual": null,
+      "spikeAbove": null,
+      "spike": null
+    }
+  ]
+}

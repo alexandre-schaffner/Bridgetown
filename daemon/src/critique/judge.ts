@@ -1,5 +1,5 @@
 import { noul } from "@typesafe-ai/sdk"
-import { type ReviewFinding, reviewFindingOf } from "../domain/model.ts"
+import { type ReviewFinding, reviewFindingOf } from "../domain/critique.ts"
 
 /** Jev's side of the adversarial review: the questions it answers about one finding, and what it reads. */
 

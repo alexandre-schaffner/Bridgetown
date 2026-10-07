@@ -1,7 +1,30 @@
-import type { ParsedAlert } from "../domain/alert.ts"
-import { WATCH_CHANNEL } from "../domain/model.ts"
-import type { Deploy, Panel } from "../grafana/board.ts"
-import { type PanelSpec, type Unit, WATCH_HOURS } from "../grafana/boards.ts"
+import { type ParsedAlert, WATCH_CHANNEL } from "../domain/alert.ts"
+import type { Deploy } from "../api/wire.ts"
+import type { FetchedPanel } from "../grafana/board.ts"
+import { type BoardSpec, HOUR, type OverviewView, overviewPanels, type PanelSpec, type Unit } from "../grafana/boards.ts"
+import { clock } from "../lib/text.ts"
+
+/** How far back the prod watcher looks: the last 15 minutes against the 3 hours before. */
+const WATCH_HOURS = 3
+const WATCH_STEP_SECONDS = 300
+/** The overview views the prod watcher sweeps: the database board has no rules of its own yet. */
+const WATCHED_VIEWS: ReadonlyArray<OverviewView> = ["incidents", "infra"]
+
+/** The watched overview panels over the watch window. */
+export const watchBoard = (now: Date): BoardSpec => {
+  const from = new Date(now.getTime() - WATCH_HOURS * HOUR)
+  return {
+    key: "watch",
+    title: "Prod watch",
+    from,
+    to: now,
+    stepSeconds: WATCH_STEP_SECONDS,
+    marker: null,
+    panels: WATCHED_VIEWS.flatMap(overviewPanels),
+    deployImage: null,
+    deploysFrom: new Date(from.getTime() - HOUR),
+  }
+}
 
 /**
  * Two kinds of anomaly, each against the 90th percentile of the steps before the last three (15 minutes):
@@ -21,7 +44,7 @@ export interface Rule {
   readonly perStep: boolean
 }
 
-export const RULES: Readonly<Record<string, Rule>> = {
+const RULES: Readonly<Record<string, Rule>> = {
   api_5xx: { floor: 50, factor: 3, spike: { floor: 100, factor: 4 }, perStep: true },
   api_p99: { floor: 1_500, factor: 2, spike: { floor: 3_000, factor: 3 }, perStep: false },
   engine_errors: { floor: 1_500, factor: 3, spike: { floor: 1_500, factor: 3 }, perStep: true },
@@ -34,11 +57,11 @@ export const RULES: Readonly<Record<string, Rule>> = {
 
 export const RECENT_STEPS = 3
 /** Two hours before the recent steps; with less there is no baseline to compare to. */
-export const MIN_BASELINE_STEPS = 24
+const MIN_BASELINE_STEPS = 24
 
 /** Where a ruled signal stands: its recent level against its usual one. */
 export interface Measure {
-  readonly panel: Panel
+  readonly panel: FetchedPanel
   /** The panel's rule. */
   readonly rule: Rule
   /** Median of the recent steps. */
@@ -67,7 +90,7 @@ const quantile = (values: ReadonlyArray<number>, q: number): number => {
  * Every series of the panel summed per step, oldest first, keyed by the start of the step. A log bucket at `t`
  * counts `[t, t+step)`, so the last one is still filling; a Prometheus point at `t` already covers `(t-step, t]`.
  */
-const completeTotals = (panel: Panel, stepSeconds: number, now: Date, source: PanelSpec["source"]): ReadonlyArray<readonly [number, number]> => {
+const completeTotals = (panel: FetchedPanel, stepSeconds: number, now: Date, source: PanelSpec["source"]): ReadonlyArray<readonly [number, number]> => {
   const shift = source === "prom" ? stepSeconds : 0
   const totals = new Map<number, number>()
   for (const series of panel.series) for (const [t, v] of series.points) totals.set(t - shift, (totals.get(t - shift) ?? 0) + v)
@@ -75,7 +98,7 @@ const completeTotals = (panel: Panel, stepSeconds: number, now: Date, source: Pa
 }
 
 /** The panel's level against its usual one, or null when it has no rule, failed or has too little history. */
-export const measure = (panel: Panel, stepSeconds: number, now: Date, source: PanelSpec["source"] = "logs"): Measure | null => {
+export const measure = (panel: FetchedPanel, stepSeconds: number, now: Date, source: PanelSpec["source"] = "logs"): Measure | null => {
   const rule = RULES[panel.id]
   if (rule === undefined || panel.error !== null) return null
   const points = completeTotals(panel, stepSeconds, now, source)
@@ -98,9 +121,41 @@ export const anomalyOf = (m: Measure): Anomaly | null => {
 }
 
 /** `measure` then `anomalyOf`, in one step (for tests and replays; the watcher keeps the measure to settle on). */
-export const detect = (panel: Panel, stepSeconds: number, now: Date, source: PanelSpec["source"] = "logs"): Anomaly | null => {
+export const detect = (panel: FetchedPanel, stepSeconds: number, now: Date, source: PanelSpec["source"] = "logs"): Anomaly | null => {
   const m = measure(panel, stepSeconds, now, source)
   return m === null ? null : anomalyOf(m)
+}
+
+/**
+ * What the watcher last read of a signal, per watch step: the boards' only judge of what is unusual (views.ts
+ * `boardView`), so a chart never calls a spike what the watcher, which is calibrated, would not.
+ */
+export interface Reading {
+  /** When it was measured, epoch ms. */
+  readonly at: number
+  readonly usual: number
+  /** A step above this is one the rule calls a spike. */
+  readonly spikeAbove: number
+  /** When the rule broke (a rise or a spike): how many times its usual level the signal is, a usual under 1 counting as 1. */
+  readonly spike: number | null
+  readonly perStep: boolean
+}
+
+export const readingOf = (m: Measure, at: Date): Reading => {
+  const anomaly = anomalyOf(m)
+  return {
+    at: at.getTime(),
+    usual: m.usual,
+    spikeAbove: Math.max(m.rule.spike.floor, m.rule.spike.factor * m.usual),
+    spike: anomaly === null ? null : anomaly.level / Math.max(m.usual, 1),
+    perStep: m.rule.perStep,
+  }
+}
+
+/** A reading's levels on a board of `stepSeconds` steps: a count per step scales with the step, a level does not. */
+export const readingOnBoard = (reading: Reading, stepSeconds: number): { readonly usual: number; readonly spikeAbove: number } => {
+  const scale = reading.perStep ? stepSeconds / WATCH_STEP_SECONDS : 1
+  return { usual: reading.usual * scale, spikeAbove: reading.spikeAbove * scale }
 }
 
 /** Within a cooldown, a rise gets a new finding only once it reaches this many times the last finding's level. */
@@ -132,8 +187,6 @@ export const formatValue = (value: number, unit: Unit): string => {
       return round(value)
   }
 }
-
-export const clock = (date: Date) => `${date.toISOString().slice(11, 16)} UTC`
 
 const span = (minutes: number): string =>
   minutes < 60 ? `${minutes} minutes` : minutes % 60 === 0 ? `${minutes / 60} hours` : `${Math.floor(minutes / 60)} h ${minutes % 60} min`
@@ -167,6 +220,5 @@ export const findingOf = (anomaly: Anomaly, spec: PanelSpec, stepSeconds: number
     fingerprint: watchFingerprint(panel.id),
     fields: { _tag: "watch", signal: panel.id, query, datasource: spec.source, level, usual, since: since.toISOString(), shape },
     mentionsMe: false,
-    fromHuman: false,
   }
 }

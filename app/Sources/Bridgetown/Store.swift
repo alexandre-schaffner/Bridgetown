@@ -14,7 +14,7 @@ final class Store {
         case rejected
     }
 
-    /// What the popover shows. Back always returns to the overview, so "Back" from a
+    /// What the open island shows. Back always returns to the overview, so "Back" from a
     /// session opened via an alert doesn't land on the alert.
     enum Route: Equatable {
         case overview
@@ -29,48 +29,55 @@ final class Store {
     private(set) var busy: Set<String> = []
     /// Last failed user action, shown briefly in the header.
     private(set) var flash: String?
-    /// Why the first connection hasn't succeeded yet (while still `.connecting`).
+    /// Why this connection hasn't succeeded yet (while still `.connecting`).
     private(set) var lastConnectError: String?
 
-    /// Called with (previous, next) on every snapshot change. Used for notifications.
-    @ObservationIgnored var onSnapshot: ((Snapshot?, Snapshot) -> Void)?
+    /// Called on every snapshot change. Used for notifications.
+    @ObservationIgnored var onSnapshot: ((Snapshot) -> Void)?
 
     @ObservationIgnored private var client: DaemonClient?
     @ObservationIgnored private var streamTask: Task<Void, Never>?
     @ObservationIgnored private var flashTask: Task<Void, Never>?
 
-    @ObservationIgnored private var settingsTask: Task<Void, Never>?
+    /// The last snapshot as the daemon sent it. `snapshot` is this with the edits the
+    /// daemon hasn't answered yet shown over it (`withLocalEdits`).
+    @ObservationIgnored private var server: Snapshot?
+    @ObservationIgnored private var settingsDebounce: Task<Void, Never>?
     @ObservationIgnored private var pendingSettings = PendingSettings()
-    /// The settings as the daemon last sent them.
-    @ObservationIgnored private var serverSettings: Settings?
+    /// A pause or resume sent and not answered yet.
+    @ObservationIgnored private var pausing: Bool?
 
     // MARK: Connection
 
+    /// Starts over on `endpoint`: at launch, and each time the app launches its daemon again.
     func connect(to endpoint: DaemonEndpoint) {
         streamTask?.cancel()
         let client = DaemonClient(endpoint: endpoint)
         self.client = client
         connection = .connecting
-        streamTask = Task { [weak self] in
+        lastConnectError = nil
+        // The store lives as long as the app, so the loop holds it.
+        streamTask = Task {
             var attempt = 0
+            var reached = false
             while !Task.isCancelled {
-                guard let self else { return }
                 do {
                     try await client.streamSnapshots { snap in
                         attempt = 0
-                        self.apply(snap)
-                        if self.connection != .connected { self.connection = .connected }
+                        reached = true
+                        apply(snap)
+                        if connection != .connected { connection = .connected }
                     }
                     // Clean close: the daemon went away or restarted.
-                    self.markDisconnected("Daemon closed the connection")
+                    markDisconnected("Daemon closed the connection", reached: reached)
                 } catch is CancellationError {
                     return
                 } catch {
                     if Task.isCancelled { return }
                     if case DaemonError.http(401, _) = error {
-                        self.connection = .rejected
+                        connection = .rejected
                     } else {
-                        self.markDisconnected(error.userMessage)
+                        markDisconnected(error.userMessage, reached: reached)
                     }
                 }
                 attempt += 1
@@ -81,23 +88,44 @@ final class Store {
         }
     }
 
-    private func markDisconnected(_ reason: String) {
-        // Stay "connecting" until we've ever had a snapshot, so launch doesn't flash an error.
-        connection = snapshot == nil ? .connecting : .disconnected(reason)
-        if snapshot == nil { lastConnectError = reason }
+    /// Until this connection has worked once, a failed try is part of connecting, so a
+    /// daemon that is still starting doesn't flash an error.
+    private func markDisconnected(_ reason: String, reached: Bool) {
+        if reached {
+            connection = .disconnected(reason)
+        } else {
+            connection = .connecting
+            lastConnectError = reason
+        }
     }
 
     private func apply(_ next: Snapshot) {
-        serverSettings = next.settings
-        let shown = withLocalSettings(next)
-        let previous = snapshot
-        guard previous != shown else { return }
+        server = next
+        let shown = withLocalEdits(next)
+        guard shown != snapshot else { return }
         snapshot = shown
-        onSnapshot?(previous, shown)
+        onSnapshot?(shown)
         if case let .session(id) = route, shown.session(id: id) == nil { back() }
     }
 
-    var isConnected: Bool { connection == .connected }
+    /// `snap` with every edit the daemon hasn't answered: settings fields, and a pause. An
+    /// SSE echo of an older state never undoes one, and once answered either way the
+    /// daemon's word stands.
+    private func withLocalEdits(_ snap: Snapshot) -> Snapshot {
+        var shown = snap
+        if pendingSettings.isPending {
+            shown.settings = pendingSettings.shown(over: snap.settings)
+            // The status line's "Dry run" is the setting.
+            shown.status.dryRun = shown.settings.dryRun
+        }
+        if let pausing { shown.status.paused = pausing }
+        return shown
+    }
+
+    /// After an edit is made or answered: the daemon's last snapshot with what is still pending.
+    private func showLocalEdits() {
+        if let server { snapshot = withLocalEdits(server) }
+    }
 
     // MARK: Navigation
 
@@ -162,9 +190,16 @@ final class Store {
         perform(Self.messageKey(session), onSuccess: onSuccess) { try await $0.message(sessionId: session.id, text: text) }
     }
 
+    /// Shown at once and held until the daemon answers; then the toggle says what the daemon
+    /// last said, so a refused one goes back even if no snapshot comes to correct it.
     func setPaused(_ paused: Bool) {
-        if var snap = snapshot { snap.status.paused = paused; snapshot = snap }  // optimistic
-        perform("pause") { try await $0.setPaused(paused) }
+        let answered = { [weak self] in
+            self?.pausing = nil
+            self?.showLocalEdits()
+        }
+        guard perform("pause", onSuccess: answered, onFailure: answered, { try await $0.setPaused(paused) }) else { return }
+        pausing = paused
+        showLocalEdits()
     }
 
     // MARK: Settings
@@ -176,83 +211,67 @@ final class Store {
         var next = snap.settings
         edit(&next)
         guard pendingSettings.record(from: snap.settings, to: next) else { return }
-        snapshot = withLocalSettings(snap)
+        showLocalEdits()
 
-        settingsTask?.cancel()
-        settingsTask = Task { [weak self] in
-            if debounce { try? await Task.sleep(for: .milliseconds(400)) }
-            guard !Task.isCancelled, let self else { return }
-            await self.sendSettings()
+        // A later edit calls off the wait, never a request under way: that one would fail
+        // as "cancelled" and take back the fields it carried.
+        settingsDebounce?.cancel()
+        guard debounce else { return sendSettings() }
+        settingsDebounce = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            self?.sendSettings()
         }
     }
 
-    private func sendSettings() async {
-        guard let client, let send = pendingSettings.beginSend() else { return }
-        let result: Result<Snapshot, Error>
-        do {
-            result = .success(try await client.updateSettings(body: send.body))
-        } catch {
-            result = .failure(error)
-        }
-        pendingSettings.endSend(send.keys)
-        switch result {
-        case let .success(next):
-            apply(next)
-        case let .failure(error):
-            show(error.userMessage)
-            // Back to what the daemon last sent for these fields.
-            if let snap = snapshot, let server = serverSettings {
-                snapshot = withLocalSettings(snap.with(settings: server))
+    /// POSTs the unsent fields, unless a request is out: then they go once it is answered.
+    private func sendSettings() {
+        guard let client, let body = pendingSettings.beginSend() else { return }
+        Task {
+            let result: Result<Snapshot, Error>
+            do {
+                result = .success(try await client.updateSettings(body: body))
+            } catch {
+                result = .failure(error)
             }
+            pendingSettings.endSend()
+            switch result {
+            case let .success(next):
+                apply(next)
+            case let .failure(error):
+                report(error.userMessage)
+                // Back to what the daemon last sent for these fields.
+                showLocalEdits()
+            }
+            sendSettings()
         }
-    }
-
-    /// `snap` with every settings edit the daemon hasn't confirmed shown as edited.
-    private func withLocalSettings(_ snap: Snapshot) -> Snapshot {
-        guard pendingSettings.isPending else { return snap }
-        return snap.with(settings: pendingSettings.shown(over: snap.settings))
     }
 
     // MARK: Fetches
 
-    func alertDetail(id: String) async throws -> AlertDetail {
+    /// A read the views load and poll themselves: a board, an alert's detail, a transcript.
+    func fetch<T: Sendable>(_ read: @Sendable (DaemonClient) async throws -> T) async throws -> T {
         guard let client else { throw DaemonError.notConnected }
-        return try await client.alertDetail(id: id)
-    }
-
-    func board(view: String) async throws -> Board {
-        guard let client else { throw DaemonError.notConnected }
-        return try await client.board(view: view)
-    }
-
-    func alertBoard(alertId: String) async throws -> Board? {
-        guard let client else { throw DaemonError.notConnected }
-        return try await client.alertBoard(id: alertId)
-    }
-
-    func logSweep() async throws -> LogSweep {
-        guard let client else { throw DaemonError.notConnected }
-        return try await client.logs()
-    }
-
-    func transcript(for session: Session) async throws -> [TranscriptEntry] {
-        guard let client else { throw DaemonError.notConnected }
-        return try await client.transcript(sessionId: session.id)
+        return try await read(client)
     }
 
     // MARK: Plumbing
 
     /// Runs `call`, applies the Snapshot it returns, and flashes the error unless
-    /// `stillWorking` says the daemon is still on it.
+    /// `stillWorking` says the daemon is still on it. A key already in flight is a second
+    /// click on the same thing, so it sends nothing. False when nothing was sent.
+    @discardableResult
     private func perform(
         _ key: String,
         stillWorking: ((Error) -> Bool)? = nil,
         onSuccess: (() -> Void)? = nil,
+        onFailure: (() -> Void)? = nil,
         _ call: @escaping @Sendable (DaemonClient) async throws -> Snapshot
-    ) {
+    ) -> Bool {
+        guard !busy.contains(key) else { return false }
         guard let client else {
-            show(DaemonError.notConnected.userMessage)
-            return
+            report(DaemonError.notConnected.userMessage)
+            return false
         }
         busy.insert(key)
         Task {
@@ -262,12 +281,15 @@ final class Store {
                 onSuccess?()
             } catch {
                 if stillWorking?(error) == true { return }
-                show(error.userMessage)
+                onFailure?()
+                report(error.userMessage)
             }
         }
+        return true
     }
 
-    func show(_ message: String) {
+    /// Flashes `message` in the header for a few seconds: a user action that failed.
+    func report(_ message: String) {
         flash = message
         flashTask?.cancel()
         flashTask = Task { [weak self] in
@@ -278,25 +300,19 @@ final class Store {
     }
 }
 
-private extension Snapshot {
-    func with(settings: Settings) -> Snapshot {
-        var s = self
-        s.settings = settings
-        s.status.dryRun = settings.dryRun
-        return s
-    }
-}
-
 /// Settings edits the daemon hasn't confirmed. An edited field keeps its local value over
 /// any snapshot until the request carrying it has been answered, so an SSE echo of an
 /// older state never undoes a keystroke or a half-typed path.
+///
+/// One request at a time: edits made while one is out wait for its answer, so answers
+/// come back in the order they were sent and an older one never has the last word.
 struct PendingSettings {
     /// The settings as the user last edited them.
     private(set) var local: Settings?
     /// Edited fields not POSTed yet.
     private(set) var unsent: Set<Settings.CodingKeys> = []
-    /// Fields POSTed and not answered yet, with the number of requests carrying each.
-    private var sending: [Settings.CodingKeys: Int] = [:]
+    /// The fields of the request that is out, not answered yet.
+    private var sending: Set<Settings.CodingKeys> = []
 
     var isPending: Bool { !unsent.isEmpty || !sending.isEmpty }
 
@@ -310,26 +326,23 @@ struct PendingSettings {
         return true
     }
 
-    /// Takes the unsent fields for one request: their keys and the `POST /settings` body.
-    mutating func beginSend() -> (keys: Set<Settings.CodingKeys>, body: Data)? {
-        guard let local, !unsent.isEmpty, let body = try? local.patchBody(unsent) else { return nil }
-        let keys = unsent
+    /// Takes the unsent fields for the next request, as its `POST /settings` body. Nil
+    /// while a request is out: `endSend` makes way for the next.
+    mutating func beginSend() -> Data? {
+        guard sending.isEmpty, let local, !unsent.isEmpty, let body = try? local.patchBody(unsent) else { return nil }
+        sending = unsent
         unsent = []
-        for key in keys { sending[key, default: 0] += 1 }
-        return (keys, body)
+        return body
     }
 
-    /// The request carrying `keys` was answered (or failed).
-    mutating func endSend(_ keys: Set<Settings.CodingKeys>) {
-        for key in keys {
-            let left = (sending[key] ?? 1) - 1
-            sending[key] = left > 0 ? left : nil
-        }
+    /// The request that was out was answered (or failed).
+    mutating func endSend() {
+        sending = []
     }
 
     /// `server` with every unconfirmed field taken from the local edit.
     func shown(over server: Settings) -> Settings {
         guard let local else { return server }
-        return server.overlaid(unsent.union(sending.keys), from: local)
+        return server.overlaid(unsent.union(sending), from: local)
     }
 }

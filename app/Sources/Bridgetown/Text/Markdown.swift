@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// The Markdown agents write (diagnoses, recommendations, transcripts), and Slack mrkdwn once
-/// `Mrkdwn.markdown` has translated it. Blocks are parsed here, line by line; inline syntax
-/// (`code`, **bold**, *italic*, ~~strike~~, links) is Foundation's.
+/// The Markdown agents write (diagnoses, recommendations, transcripts), and Slack messages,
+/// which the daemon translates from mrkdwn (`AlertDetail.raw`). Blocks are parsed here, line
+/// by line; inline syntax (`code`, **bold**, *italic*, ~~strike~~, links) is Foundation's.
 enum Markdown {
     struct ListItem: Equatable {
         /// "•" or the number as written ("1.").

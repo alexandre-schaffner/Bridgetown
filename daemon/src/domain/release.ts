@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import type { Stage } from "./model.ts"
+import type { Stage } from "./alert.ts"
 
 /**
  * Where a release tracker says a deploy is, read once from its stages. The

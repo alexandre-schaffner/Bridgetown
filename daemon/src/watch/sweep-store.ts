@@ -1,6 +1,4 @@
 import { Effect, Option, Schema, SchemaGetter } from "effect"
-import { GRAFANA_DOWN } from "../grafana/board.ts"
-import type { HubShape } from "../hub.ts"
 import type { StoreShape } from "../store/store.ts"
 import { LogPatternVerdict } from "./judge.ts"
 import { LogPattern } from "./logs.ts"
@@ -61,11 +59,3 @@ export const loadSweep = (store: StoreShape) =>
   store.getKv(SWEEP_KEY).pipe(Effect.map((raw) => (raw === undefined ? undefined : Option.getOrUndefined(Schema.decodeUnknownOption(SweepJson)(raw)))))
 
 export const saveSweep = (store: StoreShape, record: SweepRecord) => store.setKv(SWEEP_KEY, Schema.encodeSync(SweepJson)(record))
-
-/** Why the prod watcher is not running, or null when it is: watching off in Settings, or the Grafana MCP down. */
-export const watchBlocked = (hub: HubShape) =>
-  Effect.gen(function* () {
-    if (!(yield* hub.settings).watchProd) return "Prod watching is off in Settings → Behaviour."
-    if ((yield* hub.status).grafanaMcp === "down") return GRAFANA_DOWN
-    return null
-  })

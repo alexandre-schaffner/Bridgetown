@@ -1,7 +1,6 @@
-import CoreText
 import SwiftUI
 
-// The popover's identity: black, structure drawn with 1pt borders instead of fills,
+// The app's identity: black, structure drawn with 1pt borders instead of fills,
 // Geist for words and Geist Mono only for machine text (branches, logs), white for
 // the one primary action, and colour only on small status marks (PRODUCT.md): blue
 // for live work, amber for "needs you", green for verified outcomes, red for failure.
@@ -14,10 +13,13 @@ enum Ink {
     /// Hover on a row, the selected tab.
     static let hover = Color.white.opacity(0.045)
     static let selected = Color.white.opacity(0.09)
-    /// A row picked for a bulk action: the accent, faintly, as macOS shows a selection.
-    static let picked = blue.opacity(0.13)
+    /// A row picked for a bulk action: firmer than hover, monochrome like every control.
+    static let picked = Color.white.opacity(0.075)
     /// `hover` over the stage, opaque: for something laid over a hovered row's text.
     static let hoverSolid = Color(white: 0.045)
+    /// A band set apart inside a table, fainter than hover: a group's header, an opened
+    /// card, a notice, machine text (the transcript, a raw message).
+    static let band = Color.white.opacity(0.025)
     /// Panel outlines and the dividers between rows.
     static let hairline = Color.white.opacity(0.17)
     /// Control outlines (secondary buttons, inputs, the tab switch): one step stronger.
@@ -25,9 +27,9 @@ enum Ink {
     static let track = Color.white.opacity(0.08)
     /// Data marks: neutral, a step below the text.
     static let mark = Color.white.opacity(0.62)
-    /// Finished steps: further down (4.3:1), so the colour of the step in play is the
-    /// brightest thing in the stepper.
-    static let settled = Color.white.opacity(0.44)
+    /// The same grey, opaque: a status mark with no colour of its own (a step stopped, or
+    /// held in the queue), which fills and glows are tinted from.
+    static let neutral = Color(white: 0.62)
 
     /// Text levels on black: 16:1, 7.6:1, 5.5:1 (all AA).
     static let text = Color(white: 0.93)
@@ -50,107 +52,126 @@ enum Ink {
 // MARK: Motion
 
 /// The app's timings: quick for feedback under the pointer (a press, a hover), state for
-/// something that changed (a tab, a list, a card), both easing out without a bounce.
-/// Under Reduce Motion each becomes a short fade-length ease, and nothing scales or slides.
+/// something that changed (a tab, a list, a card), pane for one pane taking another's
+/// place, all easing out without a bounce. Under Reduce Motion each becomes a short
+/// fade-length ease; the transitions that would slide or scale (a detail coming in, the
+/// island's content unfolding) are plain fades there, chosen where each is declared from
+/// the environment's `accessibilityReduceMotion`, the same setting this reads.
 enum Easing {
-    static var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    #if DEBUG
+    /// Set once by the harness before any view reads the timings.
+    nonisolated(unsafe) static var reduceMotionOverride: Bool?
+    #endif
+
+    static var reduceMotion: Bool {
+        #if DEBUG
+        if let reduceMotionOverride { return reduceMotionOverride }
+        #endif
+        return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
 
     static var quick: Animation { reduceMotion ? .easeOut(duration: 0.08) : .easeOut(duration: 0.12) }
     static var state: Animation { reduceMotion ? .easeOut(duration: 0.12) : .smooth(duration: 0.24) }
+    static var pane: Animation { reduceMotion ? .easeOut(duration: 0.12) : .smooth(duration: 0.32) }
 }
 
 // MARK: Type
 
-/// Geist, bundled under `app/Fonts` and registered at launch. Until it is (or if it
-/// can't be), `Font.custom` falls back to the system font at the same size.
-enum Geist {
-    /// Registers from the bytes, not the URLs: a URL-registered face is read lazily, so
-    /// once the bundle is replaced or deleted under a running app (a rebuild, a removed
-    /// worktree) any face not yet drawn renders as missing-glyph boxes.
-    static func register() {
-        for dir in fontDirectories {
-            guard let urls = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { continue }
-            let fonts = urls.filter { $0.pathExtension == "ttf" }.compactMap { try? Data(contentsOf: $0) }
-            guard !fonts.isEmpty else { continue }
-            for data in fonts {
-                guard let provider = CGDataProvider(data: data as CFData), let font = CGFont(provider) else { continue }
-                CTFontManagerRegisterGraphicsFont(font, nil)
-            }
-            return
-        }
-    }
-
-    /// `Contents/Resources/Fonts` in the app bundle (see the Makefile); in a debug build
-    /// run from the package, the source tree's `app/Fonts`.
-    private static var fontDirectories: [URL] {
-        var dirs: [URL] = []
-        if let resources = Bundle.main.resourceURL { dirs.append(resources.appendingPathComponent("Fonts")) }
-        #if DEBUG
-        dirs.append(URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../Fonts").standardizedFileURL)
-        #endif
-        return dirs
-    }
-
-    static func postScriptName(_ weight: Font.Weight, mono: Bool) -> String {
-        let suffix: String
-        switch weight {
-        case .bold, .heavy, .black: suffix = mono ? "SemiBold" : "Bold"
-        case .semibold: suffix = "SemiBold"
-        case .medium: suffix = "Medium"
-        default: suffix = "Regular"
-        }
-        return (mono ? "GeistMono-" : "Geist-") + suffix
-    }
-}
-
-extension Font {
-    static func geist(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        .custom(Geist.postScriptName(weight, mono: false), fixedSize: size)
-    }
-
-    static func geistMono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        .custom(Geist.postScriptName(weight, mono: true), fixedSize: size)
-    }
-}
-
+/// The type scale: the sizes the stage is set in, named for what they set, so a screen
+/// keeps to a few steps. A size not here is a glyph's (an icon, a mark) or a one-off
+/// headline.
 enum Typo {
+    /// A detail pane's title.
+    static let paneTitle = Font.geist(15, .semibold)
     /// Section titles.
     static let title = Font.geist(13, .semibold)
     static let titleTracking: CGFloat = -0.25
-    /// Field labels inside a section.
+    /// A detail pane's prose: what the agent is doing, how it ended, the message field.
+    static let lead = Font.geist(13)
+    /// The default: prose, a row's line of detail.
+    static let body = Font.geist(12)
+    /// A detail pane's facts, a half step over body: a section's subtitle, the pull
+    /// request's keys and values, Jev's scores.
+    static let fact = Font.geist(12.5)
+    /// A body line that leads its block: Jev's decision, a chart's title.
+    static let strong = Font.geist(12, .medium)
+    /// Footers, links in text, secondary lines.
+    static let small = Font.geist(11.5)
+    /// Controls and field labels: buttons, tabs, text links.
     static let label = Font.geist(11.5, .medium)
+    /// Notes and captions under something larger.
+    static let caption = Font.geist(11)
+    /// Times, durations and ages: tabular, so a column of them lines up.
+    static let time = Font.geist(11.5).monospacedDigit()
     /// A number that is the point of its tile: tabular, so it doesn't jitter as it updates.
     static func figure(_ size: CGFloat) -> Font { .geist(size, .medium).monospacedDigit() }
-    /// Times, durations and ages in rows.
-    static let time = Font.geist(11).monospacedDigit()
 
-    /// The overview's rows, sized to read at a glance: a title, a line of detail a step
-    /// below it, and its time. Long titles wrap to a second line rather than cut off.
+    /// The overview's rows, sized to read at a glance: a title over a line of detail
+    /// (`body`) and its time. Long titles wrap to a second line rather than cut off.
     static let rowTitle = Font.geist(13.5, .medium)
     /// A touch tight, so titles set firm rather than loose.
     static let rowTitleTracking: CGFloat = -0.15
-    static let rowDetail = Font.geist(12)
-    static let rowTime = Font.geist(11.5).monospacedDigit()
     static let rowLineSpacing: CGFloat = 2.5
+    /// How far above a row title's baseline the middle of its first line sits: where a
+    /// row's leading mark is centred.
+    static let rowTitleMidline: CGFloat = 5
 }
 
-// MARK: Stage
+extension Text {
+    /// A section's title, the same wherever a section starts.
+    func sectionTitle() -> some View {
+        font(Typo.title)
+            .tracking(Typo.titleTracking)
+            .foregroundStyle(.primary)
+    }
 
-/// Paints the stage and pins the popover to its palette: always dark, with the
-/// hierarchical text styles (`.secondary`, `.tertiary`) remapped to readable greys.
-struct StageBackground: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .font(.geist(12))
-            .foregroundStyle(Ink.text, Ink.dim, Ink.faint)
-            .tint(Ink.blue)
-            .background { Ink.stage.ignoresSafeArea() }
-            .environment(\.colorScheme, .dark)
+    /// A row's title: up to two lines, then cut at the end; whole with `lines: nil`.
+    func rowTitle(lines: Int? = 2) -> some View {
+        font(Typo.rowTitle)
+            .tracking(Typo.rowTitleTracking)
+            .lineSpacing(Typo.rowLineSpacing)
+            .lineLimit(lines)
+            .truncationMode(.tail)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// The line of detail under a row's title, a step quieter (two steps when `quiet`): up
+    /// to two lines.
+    func rowDetail(quiet: Bool = false) -> some View {
+        font(Typo.body)
+            .lineSpacing(Typo.rowLineSpacing)
+            .foregroundStyle(quiet ? .tertiary : .secondary)
+            .lineLimit(2)
+            .truncationMode(.tail)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
 extension View {
-    func stage() -> some View { modifier(StageBackground()) }
+    /// A row's leading mark (its glyph, the selection mark) centred on the first line of
+    /// the title beside it, in an `HStack` aligned on first baselines.
+    func centeredOnRowTitle() -> some View {
+        alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + Typo.rowTitleMidline }
+    }
+}
+
+// MARK: Stage
+
+extension View {
+    /// The island's palette: always dark, Geist at body size, with the hierarchical text
+    /// styles (`.secondary`, `.tertiary`) remapped to readable greys. The tint is the text's
+    /// own: a link in prose is underlined, not blue, since blue means live work.
+    func stagePalette() -> some View {
+        font(Typo.body)
+            .foregroundStyle(Ink.text, Ink.dim, Ink.faint)
+            .tint(Ink.text)
+            .environment(\.colorScheme, .dark)
+    }
+
+    /// The palette on the black stage.
+    func stage() -> some View {
+        stagePalette().background { Ink.stage.ignoresSafeArea() }
+    }
 
     /// A text field's frame: outlined, on the surface.
     func inputField() -> some View {
@@ -177,24 +198,6 @@ extension Ink {
     )
 }
 
-// MARK: Live
-
-/// A status dot with a 1pt halo of its colour, like the step bars; live, it breathes
-/// (static under Reduce Motion).
-struct LiveDot: View {
-    let color: Color
-    var live = false
-    var size: CGFloat = 6
-
-    var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: size, height: size)
-            .shadow(color: color.opacity(0.5), radius: 1)
-            .modifier(Pulse(active: live))
-    }
-}
-
 // MARK: Pixel stroke
 
 /// A rounded outline exactly one device pixel wide: 0.5pt on Retina, 1pt elsewhere.
@@ -209,90 +212,33 @@ struct PixelStroke<S: ShapeStyle>: View {
     }
 }
 
-// MARK: Brand mark
-
-/// Bridgetown's mark: the app icon's arch, flat, in the text colour.
-struct BrandMark: View {
-    /// The height of the line it sits on; the arch takes 70% of it.
-    var size: CGFloat = 20
-
-    var body: some View {
-        let height = size * 0.7
-        ArchShape(joint: max(1, size * 0.06))
-            .fill(.primary)
-            .frame(width: height * ArchMark.aspect, height: height)
-            .frame(height: size)
-            .accessibilityHidden(true)
-    }
-}
-
-// MARK: Section label
-
-/// The title of a field inside a section.
-struct SectionLabel: View {
-    let text: String
-    var color: Color?
-
-    init(_ text: String, color: Color? = nil) {
-        self.text = text
-        self.color = color
-    }
-
-    var body: some View {
-        Text(text)
-            .font(Typo.label)
-            .foregroundStyle(color.map(AnyShapeStyle.init) ?? AnyShapeStyle(.secondary))
-            .lineLimit(1)
-    }
-}
-
-// MARK: Badge
-
-/// A count or short tag: outlined grey, or tinted when it carries a state.
-struct Badge: View {
-    let text: String
-    var tint: Color?
-
-    var body: some View {
-        Text(text)
-            .font(.geist(10.5, .medium).monospacedDigit())
-            .foregroundStyle(tint.map(AnyShapeStyle.init) ?? AnyShapeStyle(.secondary))
-            .padding(.horizontal, 6)
-            .frame(height: 18)
-            .background((tint ?? .white).opacity(tint == nil ? 0.06 : 0.14), in: RoundedRectangle(cornerRadius: Ink.tagRadius))
-            .contentTransition(.numericText())
-    }
-}
-
 // MARK: Buttons
 
 /// Three buttons, as in Geist: white primary (the one next step), outlined secondary,
-/// red for destructive confirmations.
+/// red for destructive confirmations. One size: the island's rows and bars are dense.
 struct StageButtonStyle: ButtonStyle {
     enum Kind { case primary, secondary, danger }
     var kind: Kind = .secondary
-    var compact = false
 
     func makeBody(configuration: Configuration) -> some View {
-        StageButtonLabel(configuration: configuration, kind: kind, compact: compact)
+        StageButtonLabel(configuration: configuration, kind: kind)
     }
 
     private struct StageButtonLabel: View {
         let configuration: Configuration
         let kind: Kind
-        let compact: Bool
         @Environment(\.isEnabled) private var isEnabled
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @ViewState private var hovering = false
 
         var body: some View {
             configuration.label
-                .font(.geist(compact ? 11.5 : 12, .medium))
+                .font(Typo.label)
                 .labelStyle(.titleAndIcon)
                 .lineLimit(1)
                 .foregroundStyle(foreground)
-                .padding(.horizontal, compact ? 8 : 10)
-                .frame(height: compact ? 24 : 28)
+                .padding(.horizontal, 8)
+                .frame(height: 24)
                 .background(background, in: RoundedRectangle(cornerRadius: Ink.controlRadius, style: .continuous))
                 .overlay {
                     if kind == .secondary {
@@ -328,23 +274,19 @@ struct StageButtonStyle: ButtonStyle {
 }
 
 extension ButtonStyle where Self == StageButtonStyle {
-    static var primary: StageButtonStyle { StageButtonStyle(kind: .primary) }
-    static var secondary: StageButtonStyle { StageButtonStyle(kind: .secondary) }
-    static var danger: StageButtonStyle { StageButtonStyle(kind: .danger) }
-    static func stage(_ kind: StageButtonStyle.Kind, compact: Bool = false) -> StageButtonStyle {
-        StageButtonStyle(kind: kind, compact: compact)
-    }
+    static func stage(_ kind: StageButtonStyle.Kind) -> StageButtonStyle { StageButtonStyle(kind: kind) }
 }
 
 // MARK: Tab switch
 
 /// A small outlined segmented control: the selected option on a raised fill that slides
-/// to the option you pick.
+/// to the option you pick; under Reduce Motion it is simply there.
 struct TabSwitch<Option: Hashable & Identifiable>: View {
     let options: [Option]
     @Binding var selection: Option
     let title: (Option) -> String
     @Namespace private var fill
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 2) {
@@ -356,7 +298,7 @@ struct TabSwitch<Option: Hashable & Identifiable>: View {
                     selection = option
                 } label: {
                     Text(title(option))
-                        .font(.geist(11.5, .medium))
+                        .font(Typo.label)
                         .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                         .padding(.horizontal, 9)
                         .frame(height: 20)
@@ -375,6 +317,6 @@ struct TabSwitch<Option: Hashable & Identifiable>: View {
         }
         .padding(2)
         .overlay(PixelStroke(radius: Ink.controlRadius, style: Ink.outline))
-        .animation(Easing.state, value: selection)
+        .animation(reduceMotion ? nil : Easing.state, value: selection)
     }
 }

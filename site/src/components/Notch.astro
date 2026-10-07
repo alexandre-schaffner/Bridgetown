@@ -34,7 +34,7 @@ const steps = [
 
     <div class="copy">
       <h2 id="notch-title" class="display">It lives in the notch.</h2>
-      <ol class="steps" data-notch-steps>
+      <ol class="steps">
         {
           steps.map((s, i) => (
             <li data-step={s.id} class:list={[i === 0 && "on"]}>
@@ -51,6 +51,56 @@ const steps = [
     </div>
   </div>
 </section>
+
+<script>
+  import { gsap } from "gsap";
+  import { $, $$ } from "../lib/dom";
+  import { clamp } from "../lib/math";
+  import { createIsland } from "../scripts/island";
+  import { reduced, ScrollTrigger } from "../scripts/scroll";
+
+  const notch = $("[data-notch]");
+  if (notch) {
+    const island = createIsland(notch, { reducedMotion: reduced });
+    const tryIt = $("[data-try]", notch);
+    if (tryIt) tryIt.hidden = false;
+    const steps = $$("[data-step]", notch);
+    const cuts = [0, 0.22, 0.46, 0.7, 1];
+    ScrollTrigger.create({
+      trigger: notch,
+      start: "top 60%",
+      // The last screen of the pin is the next chapter sliding over it.
+      end: () => `bottom-=${innerHeight} bottom`,
+      onToggle: (s) => island.setVisible(s.isActive),
+      onUpdate: (s) => {
+        // Pinning starts at "top top"; the first stretch before it is the approach.
+        const pinStart = innerHeight * 0.6;
+        const total = notch.offsetHeight - 2 * innerHeight + pinStart;
+        const p = clamp((s.progress * total - pinStart) / (total - pinStart));
+        const step = cuts.findIndex((c, i) => p >= c && p < (cuts[i + 1] ?? 2));
+        island.setStep(Math.max(0, step));
+        steps.forEach((el, i) => el.style.setProperty("--fill", clamp((p - cuts[i]!) / (cuts[i + 1]! - cuts[i]!)).toFixed(3)));
+      },
+    });
+    island.setVisible(true);
+
+    // The machine rises into place as the day arrives.
+    if (!reduced) {
+      gsap.fromTo(
+        $("[data-mac]", notch),
+        { y: 120, scale: 0.9, rotateX: 22, transformPerspective: 1400, transformOrigin: "50% 0%", opacity: 0.4 },
+        {
+          y: 0,
+          scale: 1,
+          rotateX: 0,
+          opacity: 1,
+          ease: "none",
+          scrollTrigger: { trigger: notch, start: "top bottom", end: "top top", scrub: true },
+        },
+      );
+    }
+  }
+</script>
 
 <style>
   .notch {
@@ -150,10 +200,13 @@ const steps = [
     padding: 0;
   }
 
+  /* The machine's row gives up height before the words do: on a short phone (320x568) they
+     would run out of the pin's foot. */
   :global(html.js) .pin {
     position: sticky;
     top: 0;
     height: 100svh;
+    grid-template-rows: minmax(0, auto) auto;
     align-content: safe center;
     padding-top: 3.5rem;
     overflow: hidden;
@@ -198,8 +251,12 @@ const steps = [
     }
   }
 
-  /* A phone, pinned: the four steps in a row, and only the playing one's words beneath. */
+  /* A phone, pinned: the four steps in a row, and only the playing one's words beneath, which
+     keep clear of the screen's foot. */
   @media (max-width: 600px), (max-height: 560px) and (orientation: landscape) {
+    :global(html.js) .pin {
+      padding-bottom: 1rem;
+    }
     :global(html.js) .steps {
       position: relative;
       grid-template-columns: repeat(4, auto);

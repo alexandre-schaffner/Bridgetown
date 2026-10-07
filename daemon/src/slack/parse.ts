@@ -1,16 +1,8 @@
-import type { ParsedAlert } from "../domain/alert.ts"
-import type {
-  AlertSource,
-  EngineFields,
-  ReleaseFields,
-  Stage,
-  StageStatus,
-  UptimeFields,
-  UptimeState,
-} from "../domain/model.ts"
+import type { AlertSource, EngineFields, ParsedAlert, ReleaseFields, Stage, StageStatus, UptimeFields, UptimeState } from "../domain/alert.ts"
 import { releaseHeadline, releaseState } from "../domain/release.ts"
+import { firstLine, truncate } from "../lib/text.ts"
 import type { SlackMessage } from "./client.ts"
-import { clean, firstLine, flattenMessage, plain, stripEmoji, truncate } from "./text.ts"
+import { clean, flattenMessage, plain, stripEmoji } from "./mrkdwn.ts"
 
 /** Raw text handed to Jev and to agents. Engine alerts embed whole XDR envelopes. */
 const RAW_LIMIT = 4_000
@@ -152,10 +144,6 @@ const sourceFor = (channelName: string): AlertSource => {
   return "generic"
 }
 
-/** Written by a person: no bot, no subtype (joins, edits, bot posts all carry one). */
-export const isHumanMessage = (message: SlackMessage): boolean =>
-  message.bot_id === undefined && message.user !== undefined && message.subtype === undefined
-
 export interface ParseContext {
   readonly channelId: string
   readonly channelName: string
@@ -172,7 +160,6 @@ export const parseMessage = (message: SlackMessage, ctx: ParseContext): ParsedAl
     ts: message.ts,
     raw,
     mentionsMe: ctx.myUserId !== undefined && (text.includes(`<@${ctx.myUserId}>`) || text.includes(`<@${ctx.myUserId}|`)),
-    fromHuman: isHumanMessage(message),
   }
   const source = sourceFor(ctx.channelName)
 

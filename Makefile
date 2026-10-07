@@ -8,12 +8,28 @@ SIGN_IDENTITY ?= Bridgetown Local Signing
 # CFBundleVersion stamped into the bundle; CI passes its run number. Unset keeps Info.plist's.
 BUILD_NUMBER ?=
 
-.PHONY: all app dmg daemon icon dev-app test-app mock clean
+.PHONY: all app dmg daemon icon dev dev-app test-app check e2e e2e-site mock clean
 
-all: daemon app
+all: app
 
-# Compiled daemon binary (bun --compile), bundled into the app when present.
-daemon:
+# Dependencies, installed again only when package.json or the lockfile changed. The daemon's
+# `prepare` also fetches Effect's sources for agents to read (scripts/prepare-effect.sh).
+DAEMON_DEPS := daemon/node_modules/.make-installed
+SITE_DEPS   := site/node_modules/.make-installed
+
+$(DAEMON_DEPS): daemon/package.json daemon/bun.lock
+	cd daemon && bun install --frozen-lockfile
+	touch $@
+
+$(SITE_DEPS): site/package.json site/bun.lock
+	cd site && bun install --frozen-lockfile
+	touch $@
+
+# Compiled daemon binary (bun --compile), rebuilt whenever a source or a dependency changed,
+# so the app never bundles a stale one.
+daemon: $(DAEMON)
+
+$(DAEMON): $(DAEMON_DEPS) $(shell find daemon/src -name '*.ts') daemon/package.json daemon/bun.lock
 	cd daemon && bun run build
 
 # The app icon, drawn in code (scripts/app-icon.swift); redrawn only when the script changes.
@@ -23,8 +39,10 @@ $(ICON): scripts/app-icon.swift
 	mkdir -p $(@D)
 	swift scripts/app-icon.swift $@
 
-# Release build assembled into an ad-hoc signed, menu-bar-only .app.
-app: $(ICON)
+# Release build assembled into a .app with no Dock icon (LSUIElement: the notch island is
+# the app) and its daemon, signed with SIGN_IDENTITY when that certificate is there, ad hoc
+# otherwise.
+app: $(ICON) $(DAEMON)
 	swift build -c release --package-path app
 	rm -rf $(APP)
 	mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
@@ -35,12 +53,7 @@ app: $(ICON)
 	fi
 	cp -R app/Fonts $(APP)/Contents/Resources/Fonts
 	cp $(ICON) $(APP)/Contents/Resources/AppIcon.icns
-	@if [ -f $(DAEMON) ]; then \
-		cp $(DAEMON) $(APP)/Contents/Resources/bridgetown-daemon; \
-		echo "bundled $(DAEMON)"; \
-	else \
-		echo "note: $(DAEMON) not found; run 'make daemon' to bundle it"; \
-	fi
+	cp $(DAEMON) $(APP)/Contents/Resources/bridgetown-daemon
 	@if security find-identity -v -p codesigning | grep -q "$(SIGN_IDENTITY)"; then \
 		codesign --force --deep -s "$(SIGN_IDENTITY)" $(APP) && echo "signed with $(SIGN_IDENTITY)"; \
 	else \
@@ -63,8 +76,14 @@ dmg:
 	rm -rf build/dmg
 	@echo "built $(DMG)"
 
+# Debug app running the daemon from source the way the release app runs its own: the
+# Keychain's tokens on the daemon's stdin, never in an environment, and the daemon gone
+# when the app quits. Pass extra app flags with ARGS.
+dev:
+	BRIDGETOWN_DAEMON_CMD='bun "$(CURDIR)/daemon/src/main.ts"' swift run --package-path app Bridgetown $(ARGS)
+
 # Debug app attached to an already-running daemon (e.g. `make mock` in another shell).
-# Pass extra flags with ARGS, e.g. make dev-app ARGS=--preview-window
+# Pass extra flags with ARGS, e.g. make dev-app ARGS=--island-demo
 dev-app:
 	BRIDGETOWN_ATTACH=1 BRIDGETOWN_API_TOKEN=$${BRIDGETOWN_API_TOKEN:-dev} \
 		swift run --package-path app Bridgetown $(ARGS)
@@ -76,11 +95,32 @@ TESTING_PLUGINS := $(shell d="$$(dirname "$$(xcrun --find swift 2>/dev/null)")/.
 test-app:
 	swift test --package-path app $(if $(TESTING_PLUGINS),-Xswiftc -plugin-path -Xswiftc "$(TESTING_PLUGINS)")
 
+# What CI checks, here: the daemon's types and tests, the app's tests, the site's build and
+# tests. (CI also bundles the app: make all.)
+check: $(DAEMON_DEPS) $(SITE_DEPS)
+	cd daemon && bun run check && bun test
+	$(MAKE) test-app
+	cd site && bun run build && bun run test
+
+# The debug app on the static mock daemon, every screen in app/E2E/suite.json drawn off
+# screen and layout-linted, into .context/e2e/<run>/ (index.md, report.json, shots/,
+# issues/). ONLY='<glob>' picks shots, SUITE= another suite, BASELINE= the run to diff
+# against, SERVE=1 then stays up for an agent (scripts/e2e.sh).
+e2e:
+	scripts/e2e.sh
+
 # The real daemon on a throwaway store with Slack, Jev, the agent and GitHub faked
 # (daemon/scripts/mock/). 127.0.0.1:47621, token "dev"; BRIDGETOWN_PORT, MOCK_EXTRA=1,
 # MOCK_GITHUB=blocked override. `kill -USR1 <pid>` toggles "GitHub blocked".
-mock:
-	cd daemon && bun scripts/mock/main.ts
+mock: $(DAEMON_DEPS)
+	cd daemon && bun run mock
+
+# The landing page end to end: builds it if stale, serves dist/, screenshots and lints each page
+# at six viewports, four walks at a time, and runs its checks, into .context/e2e/<run>/site
+# (open index.md). ARGS="--quick" for one stop per section, ARGS="--only 375x812" for one walk,
+# ARGS="--jobs 1" for a serial comparison, ARGS="--gpu" for WebGL on this Mac’s GPU.
+e2e-site:
+	cd site && bun scripts/e2e.ts $(ARGS)
 
 clean:
-	rm -rf build app/.build
+	rm -rf build app/.build daemon/dist

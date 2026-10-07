@@ -10,7 +10,7 @@ import Security
 /// signs with the Makefile's `SIGN_IDENTITY` when that certificate is in your keychain, and
 /// ad hoc otherwise (a new signature every build, so the Keychain asks again).
 enum Keychain {
-    enum Account: String, CaseIterable, Codable {
+    enum Account: String {
         case slackUserToken = "slack-user-token"
         case typesafeAPIKey = "typesafe-api-key"
     }
@@ -20,18 +20,31 @@ enum Keychain {
 
     @MainActor private static var cache: [String: String]?
 
+    /// The secrets saved, or nil when the Keychain refused to say (access denied, or
+    /// locked). A refusal isn't remembered: the next call asks again.
     @MainActor
-    static func read(_ account: Account) -> String? {
-        let value = credentials()[account.rawValue]
-        return value?.isEmpty == false ? value : nil
+    static func secrets() -> [Account: String]? {
+        guard let stored = credentials() else { return nil }
+        return stored.reduce(into: [:]) { out, entry in
+            if let account = Account(rawValue: entry.key), !entry.value.isEmpty { out[account] = entry.value }
+        }
     }
 
-    /// Saves `value`, or removes it when `value` is empty.
-    @MainActor @discardableResult
-    static func write(_ value: String, for account: Account) -> Bool {
-        var next = credentials()
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        next[account.rawValue] = trimmed.isEmpty ? nil : trimmed
+    /// Saves every secret at once, in one write; an empty value removes that one. Refuses
+    /// while the saved ones can't be read, rather than write over what it couldn't see.
+    @MainActor
+    static func save(_ values: [Account: String]) -> Bool {
+        guard var next = credentials() else { return false }
+        for (account, value) in values {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            next[account.rawValue] = trimmed.isEmpty ? nil : trimmed
+        }
+        #if DEBUG
+        if inMemory != nil {
+            inMemory = next
+            return true
+        }
+        #endif
         guard store(next) else { return false }
         cache = next
         return true
@@ -40,73 +53,54 @@ enum Keychain {
     // MARK: Storage
 
     #if DEBUG
-    /// Snapshot runs (PreviewHarness) attach to a mock daemon and never need the tokens. A
-    /// rebuilt debug binary is a new signature, so reading would put up a Keychain prompt.
-    @MainActor static var disabledForSnapshots = false
+    /// Stands in for the Keychain item while set: an e2e run (`E2EHarness`) never reads or
+    /// writes the real tokens, and a rebuilt debug binary, a new signature, would put up a
+    /// Keychain prompt that blocks it.
+    @MainActor static var inMemory: [String: String]?
     #endif
 
+    /// The saved secrets: empty when there is no item yet, nil when the Keychain refused.
     @MainActor
-    private static func credentials() -> [String: String] {
+    private static func credentials() -> [String: String]? {
         #if DEBUG
-        if disabledForSnapshots { return [:] }
+        if let inMemory { return inMemory }
         #endif
         if let cache { return cache }
-        let loaded = loadCombined() ?? migrateLegacyItems()
-        cache = loaded
-        return loaded
+        var query = baseQuery
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        cache = stored(status, item as? Data)
+        return cache
     }
 
-    private static func loadCombined() -> [String: String]? {
-        guard let data = readData(account: credentialsAccount) else { return nil }
-        return (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
-    }
-
-    /// Earlier builds kept one item per secret. Read them once, fold them into the
-    /// combined item, and delete them so they never prompt again.
-    @MainActor
-    private static func migrateLegacyItems() -> [String: String] {
-        var merged: [String: String] = [:]
-        for account in Account.allCases {
-            if let data = readData(account: account.rawValue), let value = String(data: data, encoding: .utf8), !value.isEmpty {
-                merged[account.rawValue] = value
-            }
+    /// What a read of the item found: its secrets, none when there is no item yet, and nil
+    /// for any other status, which must not pass for "nothing saved".
+    static func stored(_ status: OSStatus, _ data: Data?) -> [String: String]? {
+        switch status {
+        case errSecSuccess: data.flatMap { try? JSONDecoder().decode([String: String].self, from: $0) } ?? [:]
+        case errSecItemNotFound: [:]
+        default: nil
         }
-        if !merged.isEmpty, store(merged) {
-            for account in Account.allCases { deleteItem(account: account.rawValue) }
-        }
-        return merged
     }
 
     private static func store(_ values: [String: String]) -> Bool {
         guard let data = try? JSONEncoder().encode(values) else { return false }
-        let query = baseQuery(account: credentialsAccount)
-        let status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        let status = SecItemUpdate(baseQuery as CFDictionary, [kSecValueData as String: data] as CFDictionary)
         if status != errSecItemNotFound { return status == errSecSuccess }
-        var add = query
+        var add = baseQuery
         add[kSecValueData as String] = data
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
         add[kSecAttrLabel as String] = "Bridgetown credentials"
         return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
     }
 
-    private static func readData(account: String) -> Data? {
-        var query = baseQuery(account: account)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess else { return nil }
-        return item as? Data
-    }
-
-    private static func deleteItem(account: String) {
-        SecItemDelete(baseQuery(account: account) as CFDictionary)
-    }
-
-    private static func baseQuery(account: String) -> [String: Any] {
+    private static var baseQuery: [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
+            kSecAttrAccount as String: credentialsAccount,
         ]
     }
 }

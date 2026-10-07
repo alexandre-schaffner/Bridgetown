@@ -1,18 +1,20 @@
 import { Context, Effect, FiberMap, Layer } from "effect"
 import { ActionQueue } from "../actions/queue.ts"
+import type { Alert } from "../domain/alert.ts"
+import { type Critique, critiquePassed, type Finding, findingsUnanswered, passedAt, REVIEWER_NAMES, reviewFindingOf } from "../domain/critique.ts"
 import { type AdapterError, errorMessage } from "../domain/errors.ts"
-import { type Alert, type Critique, critiquePassed, type Finding, findingsUnanswered, passedAt, REVIEWER_NAMES, reviewFindingOf, type Session } from "../domain/model.ts"
+import type { HandOff, Session } from "../domain/session.ts"
 import { Hub } from "../hub.ts"
-import { run } from "../proc.ts"
-import { cannotResume, type HandOff, makeHandOff } from "../sessions/hand-off.ts"
+import { Jev } from "../jev.ts"
+import { DIFF_FLAGS, git, run } from "../lib/proc.ts"
+import { cannotResume, makeHandOff } from "../sessions/hand-off.ts"
 import { SessionRepo } from "../sessions/repo.ts"
 import { SessionRunner } from "../sessions/runner.ts"
 import { GitHub } from "../ship/github.ts"
 import { Store } from "../store/store.ts"
-import { Jev } from "../triage/jev.ts"
-import { decideFinding, reviewerFor } from "../triage/policy.ts"
+import { decideFinding } from "../triage/policy.ts"
 import { critiqueFailedPrompt, critiquePrompt } from "./prompts.ts"
-import { Reviewer, type Verdict } from "./reviewer.ts"
+import { REVIEWERS, Reviewer, type Verdict } from "./reviewer.ts"
 import { critiqueStep, findingLine, fixingActivity, MAX_CRITIQUE_ROUNDS, reviewErrorStep } from "./transitions.ts"
 
 /** The adversarial review between a pushed fix and CI: another vendor's model reviews, Jev drops the nitpicks, the agent fixes the rest. */
@@ -39,7 +41,7 @@ export const CriticLive = Layer.effect(Critic)(
 
     /** One review per session at a time; interrupted with the layer. */
     const reviews = yield* FiberMap.make<string>()
-    /** Reviews in a row that could not run, per session. A restart starts the count again. */
+    /** Reviews in a row that could not run, per session in review. Leaving review, or a restart, starts the count again. */
     const errors = new Map<string, number>()
 
     /**
@@ -93,7 +95,7 @@ export const CriticLive = Layer.effect(Critic)(
           findings,
           (finding) =>
             Effect.gen(function* () {
-              const diff = yield* run(["git", "diff", "origin/main...HEAD", "--", finding.file], { cwd: worktree, timeoutMs: 30_000 }).pipe(
+              const diff = yield* run(git("diff", ...DIFF_FLAGS, "origin/main...HEAD", "--", finding.file), { cwd: worktree, timeoutMs: 30_000 }).pipe(
                 Effect.map((result) => result.stdout),
                 Effect.orElseSucceed(() => ""),
               )
@@ -114,7 +116,7 @@ export const CriticLive = Layer.effect(Critic)(
         const session = yield* repo.get(id)
         if (session === undefined || session.status !== "critiquing" || session.worktree === null || session.prUrl === null) return
         const prUrl = session.prUrl
-        const head = yield* github.prHead(prUrl)
+        const head = (yield* github.prHead(prUrl))?.sha ?? null
         if (head === null) return yield* onError(id, `GitHub reports no head commit for ${prUrl}`)
         if (session.critique !== null && passedAt(session.critique, head)) return yield* ready(session, session.critique)
         // This head's findings were recorded but never reached the agent (its turn was parked for a slot when the
@@ -124,7 +126,7 @@ export const CriticLive = Layer.effect(Critic)(
         }
 
         const alert: Alert | undefined = yield* store.getAlert(session.alertId)
-        const profile = reviewerFor(alert?.triage.jev?.depth ?? "standard")
+        const profile = REVIEWERS[alert?.triage.jev?.depth ?? "standard"]
         const round = session.critiqueRounds + 1
         const previous = session.critique !== null && !critiquePassed(session.critique) ? session.critique : null
         const name = REVIEWER_NAMES[profile.vendor]
@@ -150,7 +152,7 @@ export const CriticLive = Layer.effect(Critic)(
         errors.delete(id)
 
         // The agent may have pushed again while the reviewer read the old head: that head gets its own review.
-        if ((yield* github.prHead(prUrl)) !== head) {
+        if ((yield* github.prHead(prUrl))?.sha !== head) {
           return yield* repo.log(id, "status", "The branch moved during the review; its result is dropped")
         }
         const critique: Critique = { reviewer: profile.vendor, sha: head, findings, response: null }
@@ -161,7 +163,7 @@ export const CriticLive = Layer.effect(Critic)(
           case "HandOff":
             return yield* handOff(id, critique, step, session)
           case "SendBack": {
-            // Recorded before the turn: a message delivered into a running turn carries no patch.
+            // What the review saw is its own record, written before the turn it asks for (as the shipper's send-backs do).
             if ((yield* stillReviewing(id, (current) => ({ ...current, critique, critiqueRounds: step.round }), session)) === undefined) return
             return yield* deliverFindings(id, critique, step.round)
           }
@@ -201,8 +203,9 @@ export const CriticLive = Layer.effect(Critic)(
         const sessions = yield* store.activeSessions()
         const reviewing = new Set<string>()
         for (const session of sessions) if (session.status === "critiquing" && !(yield* runner.busy(session.id))) reviewing.add(session.id)
-        // A session that left review (stopped, closed, your message) no longer needs its codex run.
+        // A session that left review (stopped, closed, your message) no longer needs its codex run, nor its error count.
         for (const [id] of Array.from(reviews)) if (!reviewing.has(id)) yield* FiberMap.remove(reviews, id)
+        for (const id of [...errors.keys()]) if (!reviewing.has(id)) errors.delete(id)
         if ((yield* hub.status).github === "blocked") return
         const settings = yield* hub.settings
         for (const session of sessions) {

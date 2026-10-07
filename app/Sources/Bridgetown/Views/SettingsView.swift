@@ -129,17 +129,29 @@ private struct AccountsTab: View {
         .onAppear(perform: load)
     }
 
+    /// Fields left empty when the Keychain refuses would read as "nothing saved".
     private func load() {
-        savedSlack = Keychain.read(.slackUserToken) ?? ""
-        savedTypesafe = Keychain.read(.typesafeAPIKey) ?? ""
+        guard let saved = Keychain.secrets() else {
+            savedNote = "Couldn't read the Keychain"
+            return
+        }
+        savedSlack = saved[.slackUserToken] ?? ""
+        savedTypesafe = saved[.typesafeAPIKey] ?? ""
         slackToken = savedSlack
         typesafeKey = savedTypesafe
     }
 
+    /// Only the fields you edited: one left empty because the Keychain refused to read
+    /// would otherwise remove its secret once the Keychain allows the save.
     private func save() {
-        let ok = Keychain.write(slackToken, for: .slackUserToken) && Keychain.write(typesafeKey, for: .typesafeAPIKey)
+        var edits: [Keychain.Account: String] = [:]
+        if slackToken != savedSlack { edits[.slackUserToken] = slackToken }
+        if typesafeKey != savedTypesafe { edits[.typesafeAPIKey] = typesafeKey }
+        guard Keychain.save(edits) else {
+            savedNote = "Couldn't save to the Keychain"
+            return
+        }
         load()
-        guard ok else { savedNote = "Couldn't write to the Keychain"; return }
         if daemon.mode.canManage {
             daemon.restart()
             savedNote = "Saved. Daemon restarting."

@@ -1,6 +1,6 @@
-import { type Alert, type Claimant, claimHeadline, type Session } from "../domain/model.ts"
-import type { ParsedAlert } from "../domain/alert.ts"
+import { type Alert, type Claimant, claimHeadline, type ParsedAlert } from "../domain/alert.ts"
 import { releaseState } from "../domain/release.ts"
+import type { Session } from "../domain/session.ts"
 
 export type RuleOutcome =
   | { readonly _tag: "Filtered"; readonly reason: string }
@@ -21,16 +21,15 @@ const filtered = (reason: string): RuleOutcome => ({ _tag: "Filtered", reason })
 /**
  * Decisions that need no judgment: success notices, recoveries, pipelines that
  * are still moving, repeats of something a session already owns, and alerts a
- * teammate is on. Everything else goes to Jev.
+ * teammate is on. Everything else goes to Jev. A person's message never gets
+ * here: it is the inbox's (`isAlertMessage`).
  */
 export const applyRules = (alert: ParsedAlert, ctx: RuleContext): RuleOutcome => {
-  if (alert.fromHuman) return filtered("Posted by a person, not an alert")
-
   const owner = ctx.activeSessions.find((session) =>
     ctx.sameFingerprint.some((earlier) => earlier.sessionId === session.id),
   )
   if (owner !== undefined) {
-    return { _tag: "Attach", sessionId: owner.id, reason: "Same alert as a running session" }
+    return { _tag: "Attach", sessionId: owner.id, reason: `Same ${alert.source === "watch" ? "signal" : "alert"} as a running session` }
   }
 
   const claimed = claimHeadline(ctx.claimedBy)

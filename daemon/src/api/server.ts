@@ -3,24 +3,27 @@ import { Cause, Data, Effect, Stream } from "effect"
 import { Actions } from "../actions/actions.ts"
 import { VERSION } from "../config.ts"
 import { type DaemonError, errorMessage, NotFound, statusOf } from "../domain/errors.ts"
+import { mergeSettings, SettingsPatch } from "../domain/settings.ts"
 import { Boards } from "../grafana/board.ts"
-import { alertBoard, OVERVIEW_VIEWS, type OverviewView, overviewBoard } from "../grafana/boards.ts"
+import { alertBoard, type BoardSpec, OVERVIEW_VIEWS, type OverviewView, overviewBoard } from "../grafana/boards.ts"
 import { Hub } from "../hub.ts"
-import { AlertPipeline } from "../pipeline/alerts.ts"
+import { Intake } from "../intake/intake.ts"
 import { SessionRunner } from "../sessions/runner.ts"
+import { SlackMe } from "../slack/me.ts"
 import { Store } from "../store/store.ts"
-import { FeedbackBody, mergeSettings, MessageBody, pathId, PauseBody, readBody, ResolveBody, SettingsPatch } from "./requests.ts"
+import { Watcher } from "../watch/watcher.ts"
+import { FeedbackBody, MessageBody, pathId, PauseBody, readBody, ResolveBody } from "./requests.ts"
 import { snapshotEvents, SSE_TIMING, type SseTiming } from "./sse.ts"
-import { alertDetail, logSweep, snapshot } from "./views.ts"
+import { alertDetail, boardView, logSweep, snapshot } from "./views.ts"
 
-type Services = Store | Hub | Actions | AlertPipeline | SessionRunner | Boards
+type Services = Store | Hub | Actions | Intake | SessionRunner | Boards | SlackMe | Watcher
 
 const isOverviewView = (value: string): value is OverviewView => OVERVIEW_VIEWS.some((view) => view === value)
 
 const TRANSCRIPT_LIMIT = 200
 
 /** Exit status when the port is taken; the app shows it instead of restarting. */
-export const PORT_IN_USE_EXIT = 98
+const PORT_IN_USE_EXIT = 98
 
 /** Refused before any service runs: a foreign Host or any Origin (403), a bad token (401), a method no route takes (405). */
 class Refused extends Data.TaggedError("Refused")<{ readonly status: 401 | 403 | 405; readonly message: string }> {}
@@ -78,6 +81,13 @@ const gate = (request: Request, token: string) =>
     if (!authorized(request.headers.get("authorization"), token)) return yield* new Refused({ status: 401, message: "unauthorized" })
   })
 
+/** The board fetched (or cached) for `spec`, with the prod watcher's judgement of its signals. */
+const board = (spec: BoardSpec) =>
+  Effect.gen(function* () {
+    const fetched = yield* (yield* Boards).build(spec)
+    return boardView(fetched, yield* (yield* Watcher).readings, new Date())
+  })
+
 /** Runs a mutation, then answers with the fresh snapshot. */
 const thenSnapshot = <E, R>(effect: Effect.Effect<unknown, E, R>) => effect.pipe(Effect.andThen(snapshot), Effect.map((body) => json(body)))
 
@@ -102,14 +112,14 @@ const getRoute = (path: string, options: ServerOptions) =>
     const overview = /^\/boards\/([a-z]+)$/.exec(path)?.[1]
     if (overview !== undefined) {
       if (!isOverviewView(overview)) return yield* new NotFound({ message: "unknown board" })
-      return json(yield* (yield* Boards).build(overviewBoard(overview, new Date())))
+      return json(yield* board(overviewBoard(overview, new Date())))
     }
-    const board = /^\/alerts\/([^/]+)\/board$/.exec(path)
-    if (board !== null) {
-      const alert = yield* (yield* Store).getAlert(yield* pathId(board[1]))
+    const alertBoardId = /^\/alerts\/([^/]+)\/board$/.exec(path)?.[1]
+    if (alertBoardId !== undefined) {
+      const alert = yield* (yield* Store).getAlert(yield* pathId(alertBoardId))
       if (alert === undefined) return yield* new NotFound({ message: "unknown alert" })
       const spec = alertBoard(alert, new Date())
-      return json(spec === null ? null : yield* (yield* Boards).build(spec))
+      return json(spec === null ? null : yield* board(spec))
     }
     const transcript = /^\/sessions\/([^/]+)\/transcript$/.exec(path)
     if (transcript !== null) {
@@ -133,11 +143,11 @@ const postRoute = (path: string, request: Request) =>
     }
     const alert = /^\/alerts\/([^/]+)\/(investigate|feedback)$/.exec(path)
     if (alert !== null) {
-      const alerts = yield* AlertPipeline
       const id = yield* pathId(alert[1])
-      if (alert[2] === "investigate") return yield* thenSnapshot(alerts.investigate(id))
+      const intake = yield* Intake
+      if (alert[2] === "investigate") return yield* thenSnapshot(intake.investigate(id))
       const body = yield* readBody(request, FeedbackBody)
-      return yield* thenSnapshot(alerts.feedback(id, body.label))
+      return yield* thenSnapshot(intake.feedback(id, body.label))
     }
     const session = /^\/sessions\/([^/]+)\/(stop|message)$/.exec(path)
     if (session !== null) {
@@ -150,13 +160,12 @@ const postRoute = (path: string, request: Request) =>
     const hub = yield* Hub
     if (path === "/settings") {
       const patch = yield* readBody(request, SettingsPatch)
-      return yield* thenSnapshot(mergeSettings(yield* hub.settings, patch).pipe(Effect.flatMap(hub.updateSettings)))
+      return yield* thenSnapshot(hub.modifySettings((current) => mergeSettings(current, patch)))
     }
     if (path === "/pause") {
       const body = yield* readBody(request, PauseBody)
       return yield* thenSnapshot(hub.patchStatus({ paused: body.paused }))
     }
-    if (path === "/poll") return yield* thenSnapshot((yield* AlertPipeline).pollOnce)
     return yield* new NotFound({ message: "not found" })
   })
 

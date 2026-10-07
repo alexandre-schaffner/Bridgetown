@@ -1,10 +1,11 @@
-import CoreGraphics
+import AppKit
+import SwiftUI
 import Testing
 @testable import Bridgetown
 
 @MainActor @Suite struct IslandLayoutTests {
     private let notched = NotchGeometry(
-        top: 982, centerX: 756, notch: CGSize(width: 185, height: 32), hardware: true, openWidth: 1100, openHeight: 480
+        top: 982, centerX: 756, notch: CGSize(width: 185, height: 32), openWidth: 1100, openHeight: 480
     )
 
     private func layout(
@@ -17,15 +18,7 @@ import Testing
         let idle = layout(.resting)
         #expect(idle.frameWidth < notched.notch.width)
         #expect(idle.height < notched.notch.height)
-        #expect(idle.visible)
         #expect(!idle.lifted)
-    }
-
-    @Test func withoutANotchIdleIsInvisible() {
-        var flat = notched
-        flat.hardware = false
-        #expect(!layout(.resting, geometry: flat).visible)
-        #expect(layout(.resting, glance: Glance(working: 1), geometry: flat).visible)
     }
 
     @Test func wingsFlankTheNotchAtMenuBarHeight() {
@@ -52,14 +45,24 @@ import Testing
         #expect(open.lifted)
     }
 
-    @Test func withoutANotchIdleLeavesTheMenuBarItsClicks() {
-        var flat = notched
-        flat.hardware = false
+    /// Without a notch nothing hides it: the idle island is the app's only way in, so it
+    /// keeps a frame under the top edge to point at and press.
+    @Test func idleWithoutANotchStaysWhereThePointerCanReachIt() {
+        let flat = NotchGeometry(top: 900, centerX: 720, notch: CGSize(width: NotchGeometry.standInWidth, height: 24), openWidth: 1100, openHeight: 480)
         let model = IslandModel(geometry: flat)
-        #expect(!model.isTarget)
-        model.glance = Glance(waiting: 1)
-        #expect(model.isTarget)
-        #expect(IslandModel(geometry: notched).isTarget)
+        #expect(model.glance.isEmpty && model.presentation == .resting)
+        #expect(model.frame.width > 100 && model.frame.height > 10)
+        #expect(model.frame.maxY == flat.top)
+        #expect(model.frame.contains(CGPoint(x: flat.centerX, y: flat.top - 2)))
+    }
+
+    /// The wings are centred on the notch only while both take their width; the idle
+    /// island, narrower than the notch, then shows neither.
+    @Test func emptyWingsKeepTheirWidth() {
+        for glance in [Glance(), Glance(working: 1), Glance(trouble: true)] {
+            let wings = NSHostingView(rootView: GlanceWings(glance: glance, notch: notched.notch, hovering: false))
+            #expect(wings.fittingSize.width == notched.notch.width + 2 * IslandModel.wing)
+        }
     }
 
     @Test func troubleShowsEvenWithNothingRunning() {

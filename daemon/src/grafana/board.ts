@@ -1,55 +1,30 @@
 import { Context, Deferred, Effect, Layer } from "effect"
+import type { Board, Deploy, Panel } from "../api/wire.ts"
 import { errorMessage } from "../domain/errors.ts"
 import { now as nowIso } from "../domain/ids.ts"
 import { Hub } from "../hub.ts"
-import { type BoardSpec, dashboardLink, OVERVIEW_VIEWS, overviewBoard, type PanelSpec, type Unit } from "./boards.ts"
+import { type BoardSpec, dashboardLink, OVERVIEW_VIEWS, overviewBoard, type PanelSpec } from "./boards.ts"
 import { Grafana, type Series } from "./client.ts"
 
-/** The wire shape of a board (docs/API.md `Board`). */
-export interface Board {
-  readonly title: string
-  readonly from: string
-  readonly to: string
-  readonly stepSeconds: number
-  readonly marker: string | null
-  readonly panels: ReadonlyArray<Panel>
-  readonly deploys: ReadonlyArray<Deploy>
-  readonly fetchedAt: string
-  /** Why there's nothing to show at all (Grafana MCP down); panels are then empty. */
-  readonly error: string | null
-}
+/** A panel as Grafana gave it: the wire's `Panel` before the prod watcher's judgement is laid over it (views.ts `boardView`). */
+export type FetchedPanel = Omit<Panel, "usual" | "spikeAbove" | "spike">
 
-export interface Panel {
-  readonly id: string
-  readonly title: string
-  readonly unit: Unit
-  readonly series: ReadonlyArray<{ readonly label: string; readonly points: ReadonlyArray<readonly [number, number]> }>
-  /** The sum of every series' last point (one series: its last value), or null with no data. */
-  readonly latest: number | null
-  readonly link: string
-  readonly error: string | null
-}
-
-/** A prod deploy (`engine` / `front-production` succeeded) or a deploy that failed at some stage. */
-export interface Deploy {
-  readonly at: string
-  readonly image: string
-  readonly version: string
-  readonly stage: string
-  readonly status: "deployed" | "failed"
+/** A board as fetched and cached, and as the watcher measures it; views.ts `boardView` makes it the wire's `Board`. */
+export interface FetchedBoard extends Omit<Board, "panels"> {
+  readonly panels: ReadonlyArray<FetchedPanel>
 }
 
 export interface BoardsShape {
   /**
    * The board. Fresh from the cache when under a minute old; an older one comes back at
    * once while a new one is fetched; with none, waits for the fetch. One fetch per board
-   * at a time, and it outlives the request that started it, so closing the popover
+   * at a time, and it outlives the request that started it, so closing the app
    * mid-fetch still leaves the board cached for the next open.
    */
-  readonly build: (spec: BoardSpec) => Effect.Effect<Board>
+  readonly build: (spec: BoardSpec) => Effect.Effect<FetchedBoard>
   /** The board fetched now (or by the fetch already running), never from the cache; it is cached for `build`. */
-  readonly latest: (spec: BoardSpec) => Effect.Effect<Board>
-  /** Rebuilds the overview boards, so opening the popover never waits on a day of logs. */
+  readonly latest: (spec: BoardSpec) => Effect.Effect<FetchedBoard>
+  /** Rebuilds the overview boards, so opening the app never waits on a day of logs. */
   readonly warm: Effect.Effect<void>
 }
 
@@ -57,6 +32,8 @@ export class Boards extends Context.Service<Boards, BoardsShape>()("Boards") {}
 
 /** The overview covers an hour, so a minute-old board is as stale as it should get. */
 const CACHE_MS = 60_000
+/** A board nobody opened or warmed for this long (an alert's, opened once) is dropped instead of kept for the daemon's life. */
+const EVICT_MS = 10 * CACHE_MS
 const DEPLOY_LIMIT = 40
 export const GRAFANA_DOWN = "Grafana MCP is down. Run `bun grafana:mcp` in the monorepo to see prod charts."
 
@@ -105,20 +82,20 @@ export const BoardsLive = Layer.effect(Boards)(
   Effect.gen(function* () {
     const grafana = yield* Grafana
     const hub = yield* Hub
-    const cache = new Map<string, { readonly at: number; readonly board: Board }>()
+    const cache = new Map<string, { readonly at: number; readonly board: FetchedBoard }>()
 
-    const panel = (spec: PanelSpec, board: BoardSpec): Effect.Effect<Panel> => {
+    const panel = (spec: PanelSpec, board: BoardSpec): Effect.Effect<FetchedPanel> => {
       const range = { start: board.from, end: board.to, stepSeconds: board.stepSeconds }
       const query = spec.query(board.stepSeconds)
       const run = spec.source === "prom" ? grafana.prom(query, range) : grafana.logStats(query, range)
       const base = { id: spec.id, title: spec.title, unit: spec.unit, link: dashboardLink(spec.dashboard, board.from, board.to) }
       return run.pipe(
-        Effect.map((series): Panel => {
+        Effect.map((series): FetchedPanel => {
           const shaped = seriesOf(spec, series, board)
           const lasts = shaped.flatMap((s) => s.points.at(-1)?.[1] ?? [])
           return { ...base, series: shaped, latest: lasts.length === 0 ? null : lasts.reduce((a, b) => a + b, 0), error: null }
         }),
-        Effect.catch((error) => Effect.succeed<Panel>({ ...base, series: [], latest: null, error: errorMessage(error) })),
+        Effect.catch((error) => Effect.succeed<FetchedPanel>({ ...base, series: [], latest: null, error: errorMessage(error) })),
       )
     }
 
@@ -148,19 +125,22 @@ export const BoardsLive = Layer.effect(Boards)(
         return { ...envelope, panels: allFailed ? [] : panels, deploys: deployList, error: allFailed ? (panels[0]?.error ?? GRAFANA_DOWN) : null }
       })
 
-    const inflight = new Map<string, Deferred.Deferred<Board>>()
+    const inflight = new Map<string, Deferred.Deferred<FetchedBoard>>()
 
-    const refresh = (spec: BoardSpec): Effect.Effect<Board> =>
+    const refresh = (spec: BoardSpec): Effect.Effect<FetchedBoard> =>
       Effect.gen(function* () {
         const running = inflight.get(spec.key)
         if (running !== undefined) return yield* Deferred.await(running)
-        const done = yield* Deferred.make<Board>()
+        const done = yield* Deferred.make<FetchedBoard>()
         inflight.set(spec.key, done)
         yield* fresh(spec).pipe(
           Effect.tap((board) =>
             Effect.sync(() => {
               // A failure is not cached, so the next open tries again.
-              if (board.error === null) cache.set(spec.key, { at: Date.now(), board })
+              if (board.error !== null) return
+              const at = Date.now()
+              cache.set(spec.key, { at, board })
+              for (const [key, entry] of cache) if (at - entry.at > EVICT_MS) cache.delete(key)
             }),
           ),
           Effect.exit,

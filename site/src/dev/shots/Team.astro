@@ -1,0 +1,92 @@
+---
+// One owner per alert: the first claim in the thread wins.
+---
+
+<section class="shot" data-shot="team">
+  <div class="cam team">
+    <div class="team-copy">
+      <h2 class="hl-m">One owner per alert. <span class="dim">Across the team.</span></h2>
+      <p class="sub">The first claim in the thread wins. No alert gets two agents.</p>
+    </div>
+    <div class="thread">
+      <div class="slack-msg" data-tm>
+        <span class="avatar bot">M</span>
+        <div><p><b>Monitor</b> <span class="faint mono">#alert-api · 10:02</span></p><p>5xx rate 3.1% on /v4/orders over 5 minutes</p></div>
+      </div>
+      <div class="slack-msg reply" data-tm>
+        <span class="avatar maya">M</span>
+        <div><p><b>Maya</b> <span class="faint">via Bridgetown · 10:02</span></p><p>🤖 Investigating with Bridgetown…</p></div>
+      </div>
+      <div class="slack-msg reply late" data-tm data-late>
+        <span class="avatar">A</span>
+        <div><p><b>Alex</b> <span class="faint">via Bridgetown · 10:02</span></p><p>🤖 Investigating with Bridgetown…</p></div>
+      </div>
+      <p class="withdrawn mono" data-withdrawn>Later claim withdrawn · no second agent</p>
+      <div class="yours-notch" data-tm>
+        <span class="faint">In your notch</span>
+        <span class="pill-dark"><i class="dot dot-blue live"></i> Maya’s agent is on it</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .avatar.bot {
+    background: var(--hi);
+    color: #000;
+  }
+
+  .avatar.maya {
+    background: oklch(0.5 0.1 160);
+  }
+
+  .team {
+    display: grid;
+    grid-template-columns: 760px 820px;
+    gap: 120px;
+    justify-content: center;
+    align-content: center;
+    align-items: center;
+  }
+
+  .thread {
+    padding: 44px;
+    font-size: 26px;
+    border-radius: 28px;
+    background: var(--card);
+    box-shadow: inset 0 0 0 1px var(--hair);
+  }
+
+  .reply {
+    margin-left: 70px;
+  }
+
+  .withdrawn {
+    margin: 12px 0 0 140px;
+    font-size: 17px;
+    color: var(--lo);
+    opacity: 0;
+  }
+
+  .yours-notch {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 34px;
+    padding-top: 26px;
+    border-top: 1px solid var(--hair);
+    font-size: 20px;
+  }
+
+  .pill-dark {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 22px;
+    border-radius: 999px;
+    background: #000;
+    box-shadow: inset 0 0 0 1px var(--hair-strong);
+    color: var(--hi);
+    font-size: 21px;
+  }
+</style>

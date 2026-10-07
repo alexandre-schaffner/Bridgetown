@@ -6,50 +6,43 @@ struct AlertRow: View {
     @Environment(Store.self) private var store
     let alert: AlertView
     let session: Session?
-    let now: Date
-    var pick: RowPick?
-    @ViewState private var hovering = false
+    let pick: RowPick
+    @Environment(\.now) private var now
 
     /// The time column: "now", "59m", "23h", "Oct 12" right-aligned, so the times read down.
-    static let timeWidth: CGFloat = 40
+    private static let timeWidth: CGFloat = 40
     /// Less than the column's inset: the times' right edge, not their left, lines up.
-    static let leading: CGFloat = 4
+    private static let leading: CGFloat = 4
+    /// Where the glyphs start, past the time column: a fold row's words line up with them.
+    static let glyphColumn = leading + timeWidth + 10
 
     /// Jev's call can be labelled right here, as in the detail: the thumbs take the rating's
     /// place while the pointer is on the row. Rule decisions had no call to judge.
     private var offersFeedback: Bool { alert.triage.jev != nil }
 
     var body: some View {
-        Button {
-            if pick?.click() == true { return }
-            store.show(.alert(alert.id))
-        } label: {
-            content
-        }
-        .buttonStyle(RowButtonStyle(selected: pick?.selected == true))
-        .overlay(alignment: .trailing) {
+        TableRow(pick: pick, open: { store.show(.alert(alert.id)) }) { hovering in
+            content(hovering)
+        } overlay: { hovering in
             if offersFeedback && hovering {
                 FeedbackThumbs(alert: alert)
                     .padding(.trailing, Metrics.inset - 4)
                     .transition(.opacity)
             }
+        } menu: {
+            menu
         }
-        .onHover { hovering = $0 }
-        .animation(Easing.quick, value: hovering)
         .help(tooltip)
-        .accessibilityElement(children: .combine)
         .accessibilityHint("Shows how this alert was triaged and how it ended")
-        .accessibilityAddTraits(pick?.selected == true ? .isSelected : [])
-        .contextMenu { menu }
-        .opacity(store.isBusy(alert.id) ? 0.5 : 1)
-        .animation(Easing.quick, value: store.isBusy(alert.id))
+        .accessibilityIdentifier("recent.row.\(alert.id)")
+        .busy(store.isBusy(alert.id))
     }
 
-    private var content: some View {
+    private func content(_ hovering: Bool) -> some View {
         let glyph = OutcomeGlyph(alert.outcome, session: session)
         return HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text(Format.relative(alert.receivedAt, now: now))
-                .font(Typo.rowTime)
+                .font(Typo.time)
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -60,20 +53,15 @@ struct AlertRow: View {
                     .font(.geist(13, .medium))
                     .foregroundStyle(glyph.style)
             }
-            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
+            .centeredOnRowTitle()
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(alert.title)
-                    .font(Typo.rowTitle)
-                    .tracking(Typo.rowTitleTracking)
-                    .lineSpacing(Typo.rowLineSpacing)
+                    .rowTitle()
                     .foregroundStyle(glyph.dimmed ? .secondary : .primary)
-                    .lineLimit(2)
-                    .truncationMode(.tail)
-                    .fixedSize(horizontal: false, vertical: true)
-                (Text("\(Format.channel(alert.channelName)) · ")
+                (Text("\(alert.channelLabel) · ")
                     + (glyph.dimmed ? Text(alert.outcome.headline) : alert.outcome.tone.headline(alert.outcome.headline)))
-                    .font(Typo.rowDetail)
+                    .font(Typo.body)
                     .foregroundStyle(glyph.dimmed ? .tertiary : .secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -96,37 +84,37 @@ struct AlertRow: View {
         .padding(.leading, Self.leading)
         .padding(.trailing, Metrics.inset)
         .padding(.vertical, 15)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
     }
 
+    /// A request for the alert in flight closes what would send another: a second
+    /// "Investigate" could start a second agent before the first session exists.
     @ViewBuilder
     private var menu: some View {
+        let busy = store.isBusy(alert.id)
         Button("Show details") { store.show(.alert(alert.id)) }
         if let id = alert.sessionId, store.snapshot?.session(id: id) != nil {
             Button("Show session") { store.show(.session(id)) }
         }
         Divider()
         Button("Investigate anyway") { store.investigate(alert) }
-            .disabled(session?.isActive == true)
+            .disabled(session?.isActive == true || busy)
         Divider()
-        Button {
-            store.feedback(alert, .good)
-        } label: {
-            Label("Good call", systemImage: alert.feedback == .good ? "checkmark" : "hand.thumbsup")
+        Group {
+            Button {
+                store.feedback(alert, .good)
+            } label: {
+                Label("Good call", systemImage: alert.feedback == .good ? "checkmark" : "hand.thumbsup")
+            }
+            Button {
+                store.feedback(alert, .bad)
+            } label: {
+                Label("Bad call", systemImage: alert.feedback == .bad ? "checkmark" : "hand.thumbsdown")
+            }
         }
-        Button {
-            store.feedback(alert, .bad)
-        } label: {
-            Label("Bad call", systemImage: alert.feedback == .bad ? "checkmark" : "hand.thumbsdown")
-        }
+        .disabled(busy)
         Divider()
         Button(alert.permalinkLabel) { SystemActions.open(alert.permalink) }
             .disabled(alert.permalink == nil)
-        if let pick {
-            Divider()
-            Button(pick.selected ? "Deselect" : "Select", action: pick.toggle)
-        }
     }
 
     private var tooltip: String {

@@ -1,24 +1,24 @@
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Ref } from "effect"
 import { ActionQueue } from "../actions/queue.ts"
-import { alertFromParsed, type ParsedAlert } from "../domain/alert.ts"
+import type { Alert, AlertKind, ParsedAlert, Triage } from "../domain/alert.ts"
 import type { AdapterError } from "../domain/errors.ts"
 import { daysAgo, now as nowIso } from "../domain/ids.ts"
-import { type Alert, type AlertKind, type Triage, triageEvent } from "../domain/model.ts"
-import { type Board, Boards } from "../grafana/board.ts"
-import { alertBoard, type PanelSpec, watchBoard } from "../grafana/boards.ts"
+import { Boards, type FetchedBoard, GRAFANA_DOWN } from "../grafana/board.ts"
+import { alertBoard, type PanelSpec } from "../grafana/boards.ts"
 import { Grafana } from "../grafana/client.ts"
-import { Hub } from "../hub.ts"
-import { AlertPipeline } from "../pipeline/alerts.ts"
+import { Hub, type HubShape } from "../hub.ts"
+import { Intake, routeOf } from "../intake/intake.ts"
+import { Jev } from "../jev.ts"
+import { clock } from "../lib/text.ts"
 import { Store } from "../store/store.ts"
-import { Jev } from "../triage/jev.ts"
 import { alertKind } from "../triage/kind.ts"
 import { decideAnomaly } from "../triage/policy.ts"
 import { applyRules } from "../triage/rules.ts"
 import { reportJev, triageWith } from "../triage/verdict.ts"
+import { type Anomaly, anomalyOf, backToUsual, findingOf, formatValue, measure, type Measure, type Reading, readingOf, watchBoard, watchFingerprint, WORSE_FACTOR } from "./detect.ts"
 import type { LogPatternVerdict } from "./judge.ts"
-import { type Anomaly, anomalyOf, backToUsual, clock, findingOf, formatValue, type Measure, measure, WORSE_FACTOR, watchFingerprint } from "./detect.ts"
 import { candidates, judgeInput, type LogPattern, logFinding, logTriage, mergeRows, type PatternRow, patternLink, rowOf, SWEEPS, type Sweep, sweepQuery } from "./logs.ts"
-import { type Judged, loadJudged, saveJudged, saveSweep, watchBlocked } from "./sweep-store.ts"
+import { type Judged, loadJudged, saveJudged, saveSweep } from "./sweep-store.ts"
 
 /**
  * Bridgetown's own eyes on prod: every few minutes it reads the overview
@@ -29,7 +29,12 @@ import { type Judged, loadJudged, saveJudged, saveSweep, watchBlocked } from "./
  * Jev unavailable, is only suggested (`decideAnomaly`).
  */
 export interface WatcherShape {
+  /** `observe`, then a finding for each signal that rose or spiked, and the cards of those back to normal withdrawn. */
   readonly tick: Effect.Effect<void, AdapterError>
+  /** Measures the watched signals and keeps what it read for `readings`, raising nothing. */
+  readonly observe: Effect.Effect<void>
+  /** By panel id, what the last look read of each watched signal: the boards' only judge of what is unusual. Empty while watching is blocked. */
+  readonly readings: Effect.Effect<ReadonlyMap<string, Reading>>
   /**
    * Sweeps prod's error and warning logs for patterns that are new, surging or
    * name a risk, asks Jev about the new candidates in one batch, and starts
@@ -37,6 +42,14 @@ export interface WatcherShape {
    */
   readonly sweepLogs: Effect.Effect<void, AdapterError>
 }
+
+/** Why the prod watcher is not running, or null when it is: watching off in Settings, or the Grafana MCP down. */
+export const watchBlocked = (hub: HubShape) =>
+  Effect.gen(function* () {
+    if (!(yield* hub.settings).watchProd) return "Prod watching is off in Settings → Behaviour."
+    if ((yield* hub.status).grafanaMcp === "down") return GRAFANA_DOWN
+    return null
+  })
 
 export class Watcher extends Context.Service<Watcher, WatcherShape>()("Watcher") {}
 
@@ -54,7 +67,6 @@ interface SweepResult {
 /** Investigations one log sweep may start; the rest of its findings are suggested. */
 const MAX_LOG_STARTS = 2
 
-
 /** Kinds whose board leads with a general signal (API 5xx for any runtime error), not one the alert is about. */
 const VAGUE_KINDS: ReadonlySet<AlertKind> = new Set(["runtime_error", "informational", "build_failure"])
 
@@ -70,12 +82,10 @@ const signalOf = (alert: Alert, now: Date): string | undefined => {
   return VAGUE_KINDS.has(alertKind(alert)) ? undefined : primary
 }
 
-/** A recent Slack alert someone is acting on (suggested, escalated or handed to an agent) about this signal. */
-export const coveredBySlack = (signal: string, alerts: ReadonlyArray<Alert>, now: Date): Alert | undefined =>
-  alerts.find(
+/** Of the Slack alerts of the last `COVERED_HOURS`, one someone is acting on (suggested, escalated or handed to an agent) about this signal. */
+export const coveredBySlack = (signal: string, recent: ReadonlyArray<Alert>, now: Date): Alert | undefined =>
+  recent.find(
     (alert) =>
-      alert.source !== "watch" &&
-      Date.parse(alert.receivedAt) >= now.getTime() - COVERED_HOURS * 3_600_000 &&
       (alert.sessionId !== null || alert.triage.decision === "auto" || alert.triage.decision === "suggest" || alert.triage.decision === "escalate") &&
       signalOf(alert, now) === signal,
   )
@@ -86,7 +96,7 @@ export const WatcherLive = Layer.effect(Watcher)(
     const store = yield* Store
     const boards = yield* Boards
     const jev = yield* Jev
-    const pipeline = yield* AlertPipeline
+    const intake = yield* Intake
     const grafana = yield* Grafana
     const queue = yield* ActionQueue
 
@@ -94,39 +104,16 @@ export const WatcherLive = Layer.effect(Watcher)(
      * A finding filed: to the session already on its signal if one is running (an earlier finding's), else triaged
      * by `judge` and acted on like a Slack alert. True when it was acted on.
      */
-    const file = (
-      finding: ParsedAlert,
-      permalink: string,
-      seen: ReadonlyArray<string>,
-      history: ReadonlyArray<Alert>,
-      judge: Effect.Effect<Triage, AdapterError>,
-    ) =>
+    const file = (finding: ParsedAlert, permalink: string, seen: ReadonlyArray<string>, history: ReadonlyArray<Alert>, judge: Effect.Effect<Triage, AdapterError>) =>
       Effect.gen(function* () {
         const rule = applyRules(finding, { activeSessions: yield* store.activeSessions(), sameFingerprint: history, claimedBy: [] })
-        const attachTo = rule._tag === "Attach" ? rule.sessionId : null
-        const verdict: Triage = attachTo === null ? yield* judge : { decision: "filtered", reason: "Same signal as a running session", jev: null }
-        const alert = alertFromParsed(finding, {
-          permalink,
-          receivedAt: nowIso(),
-          triage: verdict,
-          sessionId: attachTo,
-          events: [
-            ...seen.map((text) => ({ at: nowIso(), text })),
-            { at: nowIso(), text: attachTo === null ? triageEvent(verdict) : `Attached to a running session: ${verdict.reason}` },
-          ],
-        })
-        yield* store.putAlert(alert)
-        yield* hub.notify
-        if (attachTo !== null) {
-          yield* store.appendTranscript(attachTo, { at: nowIso(), kind: "status", text: `Signal rose again: ${finding.title}` })
-          return false
-        }
-        yield* pipeline.act(alert)
-        return true
+        const route = routeOf(rule, `Signal rose again: ${finding.title}`, judge)
+        yield* intake.file(finding, { permalink, receivedAt: nowIso(), seen }, route)
+        return route._tag === "Judge"
       })
 
     /** One risen signal: skipped while cooling down or covered, else filed. */
-    const raise = (anomaly: Anomaly, spec: PanelSpec, board: Board, stepSeconds: number, recent: ReadonlyArray<Alert>, now: Date) =>
+    const raise = (anomaly: Anomaly, spec: PanelSpec, board: FetchedBoard, stepSeconds: number, recent: ReadonlyArray<Alert>, now: Date) =>
       Effect.gen(function* () {
         const history = yield* store.alertsByFingerprint(watchFingerprint(anomaly.panel.id), daysAgo(7))
         // Cooling down after a finding, unless the signal has since got much worse.
@@ -158,7 +145,7 @@ export const WatcherLive = Layer.effect(Watcher)(
     const settle = (measured: Measure, now: Date) =>
       Effect.gen(function* () {
         const fingerprint = watchFingerprint(measured.panel.id)
-        for (const card of (yield* queue.list).filter((a) => a.kind === "investigate" && a.payload === fingerprint)) {
+        for (const card of (yield* queue.list).filter((a) => a.kind === "investigate" && a.fingerprint === fingerprint)) {
           const finding = card.alertId === null ? undefined : yield* store.getAlert(card.alertId)
           // A spike was over when it was raised: what it needs is an explanation, not a signal back to normal.
           if (finding === undefined || finding.sessionId !== null || finding.fields._tag !== "watch" || finding.fields.shape === "spike") continue
@@ -167,24 +154,40 @@ export const WatcherLive = Layer.effect(Watcher)(
           yield* store.appendAlertEvent(
             finding.id,
             `Back to its usual level at ${clock(now)} (${formatValue(measured.level, measured.panel.unit)}); the suggestion was withdrawn`,
-            "withdrawn",
+            { disposition: "withdrawn" },
           )
           yield* hub.notify
         }
       })
 
-    const tick = Effect.gen(function* () {
-      if ((yield* watchBlocked(hub)) !== null) return
+    const readings = yield* Ref.make<ReadonlyMap<string, Reading>>(new Map())
+
+    /** The watched panels measured now, and what they read kept for `readings`; undefined while watching is blocked or Grafana failed. */
+    const look = Effect.gen(function* () {
+      if ((yield* watchBlocked(hub)) !== null) {
+        yield* Ref.set(readings, new Map())
+        return undefined
+      }
       const now = new Date()
       const spec = watchBoard(now)
       const board = yield* boards.latest(spec)
-      if (board.error !== null) return
+      if (board.error !== null) return undefined
       const measured = spec.panels.flatMap((panelSpec) => {
         const panel = board.panels.find((p) => p.id === panelSpec.id)
         const m = panel === undefined ? null : measure(panel, spec.stepSeconds, now, panelSpec.source)
         return m === null ? [] : [{ m, panelSpec }]
       })
-      const recent = measured.some(({ m }) => anomalyOf(m) !== null) ? yield* store.recentAlerts(200) : []
+      yield* Ref.set(readings, new Map(measured.map(({ m }) => [m.panel.id, readingOf(m, now)])))
+      return { now, spec, board, measured }
+    })
+
+    const tick = Effect.gen(function* () {
+      const looked = yield* look
+      if (looked === undefined) return
+      const { now, spec, board, measured } = looked
+      const recent = measured.some(({ m }) => anomalyOf(m) !== null)
+        ? yield* store.slackAlertsSince(new Date(now.getTime() - COVERED_HOURS * 3_600_000).toISOString())
+        : []
       // One signal that cannot be raised or settled (a store or Jev hiccup) leaves the others to this tick.
       for (const { m, panelSpec } of measured) {
         const anomaly = anomalyOf(m)
@@ -258,6 +261,6 @@ export const WatcherLive = Layer.effect(Watcher)(
       yield* saveSweep(store, { at: now.toISOString(), patterns, failures })
     })
 
-    return { tick, sweepLogs }
+    return { tick, observe: Effect.asVoid(look), readings: Ref.get(readings), sweepLogs }
   }),
 )

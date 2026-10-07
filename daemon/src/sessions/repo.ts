@@ -1,11 +1,12 @@
 import { Context, Effect, Layer } from "effect"
+import { cardStands } from "../domain/action.ts"
 import type { AdapterError } from "../domain/errors.ts"
 import { now } from "../domain/ids.ts"
-import { isFinished, type Session, type TranscriptKind } from "../domain/model.ts"
-import { progressOf } from "../domain/progress.ts"
+import { SESSION_RESUMED_EVENT, sessionEndEvent } from "../domain/progress.ts"
+import { isFinished, type Session, type TranscriptKind, withPatch } from "../domain/session.ts"
 import { Hub } from "../hub.ts"
-import { truncate } from "../slack/text.ts"
-import { makeKeyedLock } from "../store/keyed-lock.ts"
+import { makeKeyedLock } from "../lib/keyed-lock.ts"
+import { firstLine, truncate } from "../lib/text.ts"
 import { Store } from "../store/store.ts"
 
 export interface ModifyOptions {
@@ -17,6 +18,11 @@ export interface ModifyOptions {
    * finished session, which is how a stop always wins.
    */
   readonly evenIfFinished?: boolean
+  /**
+   * Whether the write counts as activity (the default): it bumps `updatedAt`. Housekeeping's don't, so
+   * reclaiming a worktree neither reorders the recent sessions nor restarts a retention clock.
+   */
+  readonly touch?: boolean
 }
 
 export interface SessionRepoShape {
@@ -26,7 +32,10 @@ export interface SessionRepoShape {
    * The one way a session changes. Serialized per id; `f` gets the row as it is
    * now, so nothing writes back a snapshot from before a slow call. `undefined`
    * from `f` (or a refused finished session) writes nothing and returns
-   * `undefined`; otherwise the written row.
+   * `undefined`; otherwise the written row. A write that changes the status takes
+   * the session's cards its new state no longer offers (`cardStands`) with it:
+   * whatever moved it (a gate, a turn starting, the session ending), a dead card
+   * is never left to act.
    */
   readonly modify: (
     id: string,
@@ -41,18 +50,6 @@ export interface SessionRepoShape {
 
 export class SessionRepo extends Context.Service<SessionRepo, SessionRepoShape>()("SessionRepo") {}
 
-/** The alert history line for a session that just ended, e.g. "Agent session ended · Closed · root cause not found". */
-export const sessionEndEvent = (session: Session): string => `Agent session ended · ${progressOf(session).headline}`
-
-export const SESSION_RESUMED_EVENT = "Agent session resumed"
-
-/** A patch applied to a session; `milestones` merge instead of replacing. */
-export const withPatch = (session: Session, patch: Partial<Session>): Session => ({
-  ...session,
-  ...patch,
-  milestones: { ...session.milestones, ...patch.milestones },
-})
-
 export const SessionRepoLive = Layer.effect(SessionRepo)(
   Effect.gen(function* () {
     const store = yield* Store
@@ -66,8 +63,9 @@ export const SessionRepoLive = Layer.effect(SessionRepo)(
         if (isFinished(current) && options.evenIfFinished !== true) return undefined
         const changed = f(current)
         if (changed === undefined) return undefined
-        const next: Session = { ...changed, id: current.id, updatedAt: now() }
+        const next: Session = { ...changed, id: current.id, updatedAt: options.touch === false ? current.updatedAt : now() }
         yield* store.putSession(next)
+        if (current.status !== next.status) yield* store.deleteActionsWhere((action) => action.sessionId === next.id && !cardStands(action, next))
         // The alert's history says when its session ended (and if it came back), so the app never has to infer it.
         if (!isFinished(current) && isFinished(next)) yield* store.appendAlertEvent(next.alertId, sessionEndEvent(next))
         if (isFinished(current) && !isFinished(next)) yield* store.appendAlertEvent(next.alertId, SESSION_RESUMED_EVENT)
@@ -85,7 +83,7 @@ export const SessionRepoLive = Layer.effect(SessionRepo)(
       log: (id, kind, text, options) =>
         Effect.gen(function* () {
           yield* store.appendTranscript(id, { at: now(), kind, text: truncate(text, 4_000) })
-          if (options?.activity === true) yield* patch(id, { activity: truncate(text.split("\n")[0] ?? text, 140) })
+          if (options?.activity === true) yield* patch(id, { activity: truncate(firstLine(text), 140) })
         }),
     }
   }),

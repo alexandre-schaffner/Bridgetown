@@ -1,0 +1,343 @@
+// What the e2e (scripts/e2e.ts) finds wrong in what the page drew at a scroll stop: sideways
+// scroll, text or media spilling past the screen, text cut off, ellipsised or grown out of its
+// box, text drawn over other text, broken images and videos. And what it lets pass, and why.
+
+export type Rule =
+  | "sideways-scroll"
+  | "spill"
+  | "clipped-text"
+  | "text-overflow"
+  | "ellipsis"
+  | "text-overlap"
+  | "broken-media"
+  | "console-error"
+  | "page-error"
+  | "failed-request";
+export type Severity = "error" | "warning";
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+export interface Issue {
+  rule: Rule;
+  severity: Severity;
+  /** What it is about: the text, the element, the request. */
+  text: string;
+  /** A short CSS path to the element. */
+  selector?: string;
+  /** Where on the screenshot, in CSS pixels. */
+  rect?: Rect;
+  /** Set when an allowlist entry covers it: why it is fine. */
+  allowed?: string;
+  crop?: string;
+}
+
+/**
+ * Issues that are the design, not a glitch. Each names its rule, the element it is about (an
+ * ancestor selector, matched with closest()), and why it is fine. `with` is the other element
+ * of an overlap; `by` is the box that cuts clipped text off, so text an inner box cuts still
+ * counts; `media` holds an entry to the screens where the design does this (a media query, as
+ * the CSS that lays it out has it), so the same issue anywhere else still counts.
+ */
+export interface Allow {
+  rule: Rule | Rule[];
+  within: string;
+  with?: string;
+  by?: string;
+  media?: string;
+  why: string;
+}
+export const ALLOW: Allow[] = [
+  {
+    rule: "clipped-text",
+    within: "[data-track] .frame",
+    // Where the frames sit in a row (Journey.astro); stacked on a narrow screen, nothing in them may be cut.
+    media: "(min-width: 981px)",
+    why: "The journey reel runs sideways: the frames either side of the middle one pass the screen's edges.",
+  },
+  {
+    rule: "clipped-text",
+    within: "[data-screen] .menubar, [data-screen] .window, [data-screen] [data-island]",
+    by: "[data-mac] .bezel",
+    // island.ts zooms while the screen inside the bezel is under 900px: the Mac is the page less
+    // two 4vw gutters (MacScreen.astro), so up to a 1008px window.
+    media: "(max-width: 1008px)",
+    why: "Narrow screens zoom the drawn Mac in on its notch (island.ts, fit): its menu bar, terminal and island wings or columns pass the bezel, and a phone sees only the open island's middle column.",
+  },
+  {
+    rule: "text-overlap",
+    within: "[data-island]",
+    with: "[data-screen] .window",
+    why: "The open island covers the terminal window behind it, as it does on a real screen.",
+  },
+  {
+    rule: "ellipsis",
+    within: "[data-island] .d",
+    why: "An island row's detail is one line and truncates, as the app's does; its title and the banner's never should.",
+  },
+  {
+    rule: "clipped-text",
+    within: "h1 .w",
+    by: "h1 .w",
+    why: "The hero's headline rises word by word, each inside a mask as tall as its line (Hero.astro): the font's box reaches past it, the glyphs don't.",
+  },
+  {
+    rule: "clipped-text",
+    within: "[data-board-wrap]",
+    by: "[data-hero] .stage",
+    why: "The hero's board waits at the foot of the screen, cut by its edge, until scrolling raises it (scripts/main.ts).",
+  },
+  {
+    rule: "ellipsis",
+    within: "[data-board-rows] .what",
+    why: "A board row's message and its source are a line each and truncate, as the app's rows do.",
+  },
+];
+
+/**
+ * Runs in the page, so it is self-contained. Text is linted as the boxes of its text nodes
+ * (a Range's client rects, a line each), clipped by every ancestor whose overflow clips it.
+ */
+export function lintPage({ allow }: { allow: Allow[] }): Issue[] {
+  const vw = innerWidth;
+  const vh = innerHeight;
+  const issues: Issue[] = [];
+  const style = (el: Element) => getComputedStyle(el);
+  const toRect = (r: DOMRect | { left: number; top: number; right: number; bottom: number }): Rect => ({
+    x: Math.round(r.left),
+    y: Math.round(r.top),
+    w: Math.round(r.right - r.left),
+    h: Math.round(r.bottom - r.top),
+  });
+  const path = (el: Element) => {
+    const parts: string[] = [];
+    for (let e: Element | null = el; e && e !== document.body && parts.length < 4; e = e.parentElement) {
+      const id = e.id ? `#${e.id}` : "";
+      const cls = [...e.classList].filter((c) => !c.startsWith("astro-")).slice(0, 2).map((c) => `.${c}`).join("");
+      parts.unshift(`${e.tagName.toLowerCase()}${id}${cls}`);
+      if (id) break;
+    }
+    return parts.join(" > ");
+  };
+  /** `other` is the other element of an overlap, `cutter` the box that clips text off. */
+  const allowedFor = (rule: Rule, el: Element | null, other?: Element, cutter?: Element) => {
+    if (!el) return undefined;
+    const covers = (a: Allow, el: Element, other?: Element) =>
+      el.closest(a.within) && (!a.with || (other && other.closest(a.with)));
+    return allow.find(
+      (a) =>
+        (Array.isArray(a.rule) ? a.rule.includes(rule) : a.rule === rule) &&
+        (!a.media || matchMedia(a.media).matches) &&
+        (!a.by || cutter?.matches(a.by)) &&
+        (covers(a, el, other) || (other && covers(a, other, el))),
+    )?.why;
+  };
+  const add = (rule: Rule, severity: Severity, el: Element | null, text: string, rect?: Rect, cutter?: Element) =>
+    issues.push({
+      rule,
+      severity,
+      text: text.replace(/\s+/g, " ").trim().slice(0, 140),
+      selector: el ? path(el) : undefined,
+      rect,
+      allowed: allowedFor(rule, el, undefined, cutter),
+    });
+
+  // How see-through an element is, all its ancestors included.
+  const opacities = new Map<Element, number>();
+  const opacity = (el: Element | null): number => {
+    if (!el || el === document.documentElement) return 1;
+    let o = opacities.get(el);
+    if (o === undefined) {
+      o = Number(style(el).opacity) * opacity(el.parentElement);
+      opacities.set(el, o);
+    }
+    return o;
+  };
+  const shown = (el: Element) => style(el).visibility === "visible" && opacity(el) >= 0.15;
+
+  // Chapters slide in over the one before (the page's data-sheet), each painted over the ones
+  // before it: what a later chapter covers with a background of its own is out of sight,
+  // however opaque it is itself.
+  const alpha = (color: string) => {
+    if (color === "transparent") return 0;
+    const a = /\/\s*([\d.]+)(%?)\s*\)$/.exec(color) ?? /^rgba\(.*,\s*([\d.]+)()\)$/.exec(color);
+    return a ? Number(a[1]) / (a[2] ? 100 : 1) : 1;
+  };
+  const chapters = [...document.querySelectorAll("main > *")].map((el) => ({
+    el,
+    rect: el.getBoundingClientRect(),
+    solid: alpha(style(el).backgroundColor) > 0.99,
+  }));
+  const covered = (el: Element, r: { left: number; top: number; right: number; bottom: number }) => {
+    const own = chapters.findIndex((c) => c.el.contains(el));
+    if (own < 0) return false;
+    const x = (r.left + r.right) / 2;
+    const y = (r.top + r.bottom) / 2;
+    return chapters.some((c, i) => i > own && c.solid && x >= c.rect.left && x <= c.rect.right && y >= c.rect.top && y <= c.rect.bottom);
+  };
+
+  // The boxes that clip an element's content: its own if it clips, then each ancestor's whose
+  // overflow applies to it (an absolute or fixed box escapes those outside its containing block).
+  interface Clip {
+    el: Element;
+    rect: DOMRect;
+    /** Per axis: clipped for good, or scrollable. */
+    x: "clip" | "scroll" | null;
+    y: "clip" | "scroll" | null;
+  }
+  const kind = (v: string) => (v === "hidden" || v === "clip" ? "clip" : v === "auto" || v === "scroll" ? "scroll" : null);
+  const containsFixed = (s: CSSStyleDeclaration) =>
+    s.transform !== "none" || s.translate !== "none" || s.scale !== "none" || s.filter !== "none" || s.perspective !== "none" || /paint|layout|strict|content/.test(s.contain);
+  const clips = new Map<Element, Clip[]>();
+  const clipsOf = (start: Element): Clip[] => {
+    const cached = clips.get(start);
+    if (cached) return cached;
+    const out: Clip[] = [];
+    let el: Element | null = start;
+    let s = style(el);
+    for (;;) {
+      const x = kind(s.overflowX);
+      const y = kind(s.overflowY);
+      if ((x || y) && el !== document.body) out.push({ el, rect: el.getBoundingClientRect(), x, y });
+      const position = s.position;
+      let a: Element | null = el.parentElement;
+      while (a && a !== document.documentElement) {
+        const as = style(a);
+        if (position === "fixed" ? containsFixed(as) : position === "absolute" ? as.position !== "static" || containsFixed(as) : true) break;
+        a = a.parentElement;
+      }
+      if (!a || a === document.documentElement || a === document.body) break;
+      el = a;
+      s = style(a);
+    }
+    clips.set(start, out);
+    return out;
+  };
+  /** `r` cut down by every clip that applies, and the innermost clip that cut it on each axis. */
+  const clipRect = (r: DOMRect, cl: Clip[]) => {
+    let { left, top, right, bottom } = r;
+    let cutX: Clip | null = null;
+    let cutY: Clip | null = null;
+    for (const c of cl) {
+      if (c.x) {
+        if (c.rect.left > left + 2 || c.rect.right < right - 2) cutX ??= c;
+        left = Math.max(left, c.rect.left);
+        right = Math.min(right, c.rect.right);
+      }
+      if (c.y) {
+        if (c.rect.top > top + 2 || c.rect.bottom < bottom - 2) cutY ??= c;
+        top = Math.max(top, c.rect.top);
+        bottom = Math.min(bottom, c.rect.bottom);
+      }
+    }
+    return { left, top, right, bottom, cutX, cutY };
+  };
+  const onScreen = (v: { left: number; top: number; right: number; bottom: number }) =>
+    v.right - v.left > 1 && v.bottom - v.top > 1 && v.right > 0 && v.left < vw && v.bottom > 0 && v.top < vh;
+
+  // Sideways scroll, or a phone that zoomed out to fit something too wide.
+  const doc = document.documentElement;
+  const wide = Math.max(doc.scrollWidth, document.body.scrollWidth);
+  if (wide > vw + 1) add("sideways-scroll", "error", null, `The page is ${wide}px wide on a ${vw}px screen`);
+  if (visualViewport && Math.abs(visualViewport.scale - 1) > 0.01) {
+    add("sideways-scroll", "error", null, `The page zoomed to ${visualViewport.scale.toFixed(2)}× to fit`);
+  }
+
+  // Text.
+  interface Fragment {
+    node: Text;
+    el: Element;
+    rect: { left: number; top: number; right: number; bottom: number };
+  }
+  const fragments: Fragment[] = [];
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const range = document.createRange();
+  for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
+    const el = n.parentElement;
+    if (!el || !n.data.trim() || el.closest("script, style, noscript, title") || !shown(el)) continue;
+    range.selectNodeContents(n);
+    const cl = clipsOf(el);
+    for (const r of range.getClientRects()) {
+      if (r.width < 1 || r.height < 1) continue;
+      const v = clipRect(r, cl);
+      if (!onScreen(v) || covered(el, v)) continue;
+      fragments.push({ node: n, el, rect: v });
+      const what = n.data;
+      // Text that has outgrown its own box (a wrapped label in a fixed-height pill, say): past
+      // its edges by more than a line's glyphs reach past it when the line is set tight.
+      let box: Element = el;
+      while (box.parentElement && /^(inline|contents)$/.test(style(box).display)) box = box.parentElement;
+      const b = box.getBoundingClientRect();
+      const line = parseFloat(style(el).lineHeight) || r.height;
+      const slack = 2 + Math.max(0, (r.height - line) / 2);
+      const out = Math.max(b.top - r.top, r.bottom - b.bottom, b.left - r.left, r.right - b.right);
+      if (out > slack && !clipsOf(box).some((c) => c.el === box)) {
+        add("text-overflow", "error", el, `“${what}” runs ${Math.round(out)}px out of ${path(box)}`, toRect(r));
+      }
+      if (v.cutX || v.cutY) {
+        const cutter = (v.cutX ?? v.cutY)!.el;
+        const scrolls = (v.cutX ? v.cutX.x : v.cutY!.y) === "scroll";
+        if (scrolls) continue;
+        if (style(cutter).textOverflow === "ellipsis") add("ellipsis", "warning", el, `“${what}” is ellipsised by ${path(cutter)}`, toRect(r), cutter);
+        else add("clipped-text", "error", el, `“${what}” is cut off by ${path(cutter)}`, toRect(r), cutter);
+      } else if (v.left < -1 || v.right > vw + 1) {
+        add("spill", "error", el, `“${what}” runs past the ${v.left < -1 ? "left" : "right"} edge`, toRect(r));
+      }
+    }
+  }
+
+  // Text over text: two text nodes whose glyphs overlap (each line's box is trimmed to roughly
+  // its glyphs, so tight line-height isn't counted).
+  const core = (r: Fragment["rect"]) => {
+    const inset = (r.bottom - r.top) * 0.18;
+    return { left: r.left + 1, right: r.right - 1, top: r.top + inset, bottom: r.bottom - inset };
+  };
+  const cores = fragments.map((f) => core(f.rect));
+  const reported = new Set<string>();
+  for (let i = 0; i < fragments.length; i++) {
+    for (let j = i + 1; j < fragments.length; j++) {
+      const a = fragments[i]!;
+      const b = fragments[j]!;
+      if (a.node === b.node) continue;
+      const p = cores[i]!;
+      const q = cores[j]!;
+      const w = Math.min(p.right, q.right) - Math.max(p.left, q.left);
+      const h = Math.min(p.bottom, q.bottom) - Math.max(p.top, q.top);
+      if (w <= 2 || h <= 2) continue;
+      const smaller = Math.min((p.right - p.left) * (p.bottom - p.top), (q.right - q.left) * (q.bottom - q.top));
+      if (w * h < smaller * 0.1) continue;
+      const key = [path(a.el), path(b.el)].sort().join("|");
+      if (reported.has(key)) continue;
+      reported.add(key);
+      const box = { left: Math.min(a.rect.left, b.rect.left), top: Math.min(a.rect.top, b.rect.top), right: Math.max(a.rect.right, b.rect.right), bottom: Math.max(a.rect.bottom, b.rect.bottom) };
+      const covered = allowedFor("text-overlap", a.el, b.el);
+      issues.push({
+        rule: "text-overlap",
+        severity: "error",
+        text: `“${a.node.data.trim().slice(0, 50)}” and “${b.node.data.trim().slice(0, 50)}” overlap`,
+        selector: `${path(a.el)} / ${path(b.el)}`,
+        rect: toRect(box),
+        allowed: covered,
+      });
+    }
+  }
+
+  // Media and controls that reach past the screen, and media that didn't load.
+  for (const el of document.querySelectorAll("img, video, canvas, svg, iframe, button, input, select, textarea, pre, table")) {
+    if (el instanceof SVGElement && el.ownerSVGElement) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1 || !shown(el)) continue;
+    const v = clipRect(r, el.parentElement ? clipsOf(el.parentElement) : []);
+    if (!onScreen(v)) continue;
+    if (v.left < -1 || v.right > vw + 1) add("spill", "error", el, `<${el.tagName.toLowerCase()}> reaches past the ${v.left < -1 ? "left" : "right"} edge`, toRect(r));
+    if (el instanceof HTMLImageElement && el.complete && el.currentSrc && el.naturalWidth === 0) {
+      add("broken-media", "error", el, `${el.currentSrc} did not load`, toRect(r));
+    }
+    if (el instanceof HTMLVideoElement && (el.currentSrc || el.querySelector("source")) && (el.error || el.networkState === HTMLMediaElement.NETWORK_NO_SOURCE)) {
+      add("broken-media", "error", el, `${el.currentSrc || "its source"} did not load${el.error ? ` (${el.error.message || el.error.code})` : ""}`, toRect(r));
+    }
+  }
+  return issues;
+}

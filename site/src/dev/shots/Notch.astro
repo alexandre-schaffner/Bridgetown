@@ -1,0 +1,55 @@
+---
+// The notch, in daylight: the site's own Mac screen, its island driven by scripts/island.ts.
+import MacScreen from "../../components/MacScreen.astro";
+---
+
+<section class="shot day-shot notch" data-shot="notch">
+  <h2 class="day-title">It lives in the notch.</h2>
+  <div class="mac-wrap" data-island-root><MacScreen class="film-mac" /></div>
+  <p class="caption" data-caption></p>
+  <div class="dusk" data-dusk></div>
+</section>
+
+<style>
+  .dusk {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .day-shot {
+    background: var(--day);
+    color: var(--ink);
+  }
+
+  .notch {
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: 44px;
+  }
+
+  .day-title {
+    font-size: 80px;
+    font-weight: 620;
+    letter-spacing: -0.045em;
+  }
+
+  .mac-wrap {
+    width: 1640px;
+  }
+
+  .mac-wrap :global(.film-mac) {
+    width: 100%;
+  }
+
+  .caption {
+    min-height: 1.4em;
+    font-size: 28px;
+    color: var(--ink-dim);
+    letter-spacing: -0.01em;
+  }
+</style>

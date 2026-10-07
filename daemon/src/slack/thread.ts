@@ -1,18 +1,31 @@
 import { Context, Effect, Layer } from "effect"
-import { type Alert, threadTsOf } from "../domain/model.ts"
+import { type Alert, type ThreadReply, threadTsOf } from "../domain/alert.ts"
 import { Hub } from "../hub.ts"
-import { SlackClient } from "./client.ts"
-import { BOT_PREFIX, flattenMessage, plain } from "./text.ts"
+import { clock } from "../lib/text.ts"
+import { SlackClient, type SlackMessage } from "./client.ts"
+import { SlackMe } from "./me.ts"
+import { BOT_PREFIX, flattenMessage, plain, toThreadReplies } from "./mrkdwn.ts"
 
 export interface SlackThreadShape {
   /** Posts `🤖 <text>` in the alert's thread as the user. Never fails; a no-op in dry-run. Says whether it went out. */
   readonly post: (alert: Alert, text: string) => Effect.Effect<ThreadPost>
+  /**
+   * `post` for Bridgetown's own updates (investigating, merged, released, deployed…), which nobody approved one by
+   * one. An inbox item's thread is a teammate's conversation (often a DM): only a reply you sent goes there, so
+   * updates are not posted in it.
+   */
+  readonly postUpdate: (alert: Alert, text: string) => Effect.Effect<ThreadPost>
   /** Posts `🤖 <text>` at the top of a channel; returns the message permalink. `null` in dry-run or on failure. */
   readonly postChannel: (channelId: string, text: string) => Effect.Effect<ChannelPost>
   /** Other channel messages within ±`minutes` of the alert, oldest first, readable. Best effort. */
   readonly nearby: (alert: Alert, minutes: number) => Effect.Effect<ReadonlyArray<string>>
-  /** Readable thread replies, best effort. */
-  readonly replies: (alert: Alert) => Effect.Effect<ReadonlyArray<string>>
+  /**
+   * The messages of the thread an alert (or an item about to be one) lives in (`threadTsOf`), oldest first, as Slack
+   * has them. None for a watch finding, which has no Slack thread, or when Slack cannot say.
+   */
+  readonly messages: (where: Pick<Alert, "channelId" | "ts" | "fields" | "source">) => Effect.Effect<ReadonlyArray<SlackMessage>>
+  /** The alert's thread as an agent reads it: each message readable, with who wrote it. Best effort. */
+  readonly replies: (alert: Alert) => Effect.Effect<ReadonlyArray<ThreadReply>>
 }
 
 export class SlackThread extends Context.Service<SlackThread, SlackThreadShape>()("SlackThread") {}
@@ -27,42 +40,45 @@ export const SlackThreadLive = Layer.effect(SlackThread)(
   Effect.gen(function* () {
     const slack = yield* SlackClient
     const hub = yield* Hub
+    const me = yield* SlackMe
+    /**
+     * `🤖 <text>` as the user, in `channel` (under `threadTs`). Every post goes through here, so Slack posts' problem
+     * is set by a failed one and cleared by one that went out, or by dry run: nothing goes out then, so none is failing.
+     */
+    const send = (channel: string, threadTs: string | undefined, where: string, text: string) =>
+      Effect.gen(function* () {
+        if (yield* hub.dryRun) {
+          yield* Effect.logInfo(`[dry-run] would post in ${where}: ${text}`)
+          yield* hub.problem("post", null)
+          return { _tag: "NotPosted", reason: "dry_run" } as const
+        }
+        const ts = yield* slack.post(channel, threadTs, `${BOT_PREFIX} ${text}`)
+        yield* hub.problem("post", null)
+        return { _tag: "Posted", ts } as const
+      }).pipe(
+        Effect.catch((error) => hub.problem("post", `Slack post failed: ${error.message}`).pipe(Effect.as({ _tag: "NotPosted", reason: "error" } as const))),
+      )
+    const messages = (where: Pick<Alert, "channelId" | "ts" | "fields" | "source">): Effect.Effect<ReadonlyArray<SlackMessage>> =>
+      where.source === "watch" ? Effect.succeed([]) : slack.replies(where.channelId, threadTsOf(where)).pipe(Effect.orElseSucceed(() => []))
+    const post = (alert: Alert, text: string): Effect.Effect<ThreadPost> =>
+      // The prod watcher's findings have no Slack message to reply under.
+      alert.source === "watch"
+        ? Effect.succeed({ _tag: "NotPosted", reason: "no_thread" })
+        : send(alert.channelId, threadTsOf(alert), `${alert.channelName}/${alert.ts}`, text)
     return {
-      post: (alert, text) =>
-        Effect.gen(function* () {
-          // The prod watcher's findings have no Slack message to reply under.
-          if (alert.source === "watch") return { _tag: "NotPosted", reason: "no_thread" } satisfies ThreadPost
-          if (yield* hub.dryRun) {
-            yield* Effect.logInfo(`[dry-run] would post in ${alert.channelName}/${alert.ts}: ${text}`)
-            const skipped: ThreadPost = { _tag: "NotPosted", reason: "dry_run" }
-            return skipped
-          }
-          const ts = yield* slack.post(alert.channelId, threadTsOf(alert), `${BOT_PREFIX} ${text}`)
-          const posted: ThreadPost = { _tag: "Posted", ts }
-          return posted
-        }).pipe(
-          Effect.catch((error) =>
-            hub.patchStatus({ error: `Slack post failed: ${error.message}` }).pipe(
-              Effect.as<ThreadPost>({ _tag: "NotPosted", reason: "error" }),
-            ),
-          ),
-        ),
+      post,
+      postUpdate: (alert, text) =>
+        alert.fields._tag === "inbox" ? Effect.succeed<ThreadPost>({ _tag: "NotPosted", reason: "no_thread" }) : post(alert, text),
       postChannel: (channelId, text) =>
-        Effect.gen(function* () {
-          if (yield* hub.dryRun) {
-            yield* Effect.logInfo(`[dry-run] would post in ${channelId}: ${text}`)
-            const skipped: ChannelPost = { _tag: "NotPosted", reason: "dry_run" }
-            return skipped
-          }
-          const ts = yield* slack.post(channelId, undefined, `${BOT_PREFIX} ${text}`)
-          const permalink = yield* slack.permalink(channelId, ts).pipe(Effect.orElseSucceed(() => null))
-          const posted: ChannelPost = { _tag: "Posted", permalink }
-          return posted
-        }).pipe(
-          Effect.catch((error) =>
-            hub.patchStatus({ error: `Slack post failed: ${error.message}` }).pipe(
-              Effect.as<ChannelPost>({ _tag: "NotPosted", reason: "error" }),
-            ),
+        send(channelId, undefined, channelId, text).pipe(
+          Effect.flatMap(
+            (sent): Effect.Effect<ChannelPost> =>
+              sent._tag === "NotPosted"
+                ? Effect.succeed(sent)
+                : slack.permalink(channelId, sent.ts).pipe(
+                    Effect.orElseSucceed(() => null),
+                    Effect.map((permalink) => ({ _tag: "Posted", permalink })),
+                  ),
           ),
         ),
       nearby: (alert, minutes) => {
@@ -73,21 +89,16 @@ export const SlackThreadLive = Layer.effect(SlackThread)(
             [...messages]
               .filter((m) => m.ts !== alert.ts)
               .reverse()
-              .map((m) => {
-                const when = new Date(Number(m.ts) * 1000).toISOString().slice(11, 16)
-                return `[${when} UTC] ${plain(flattenMessage(m)).slice(0, 1_500)}`
-              }),
+              .map((m) => `[${clock(new Date(Number(m.ts) * 1000))}] ${plain(flattenMessage(m)).slice(0, 1_500)}`),
           ),
           Effect.orElseSucceed((): ReadonlyArray<string> => []),
         )
       },
+      messages,
       replies: (alert) =>
-        alert.source === "watch"
-          ? Effect.succeed([])
-          : slack.replies(alert.channelId, threadTsOf(alert)).pipe(
-              Effect.map((messages) => messages.map((m) => plain(flattenMessage(m)))),
-              Effect.orElseSucceed((): ReadonlyArray<string> => []),
-            ),
+        Effect.gen(function* () {
+          return toThreadReplies(yield* messages(alert), (yield* me.known)?.user_id)
+        }),
     }
   }),
 )

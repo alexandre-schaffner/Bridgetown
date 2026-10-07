@@ -13,9 +13,13 @@ export interface IslandLayout {
 /** Handle length as a share of the radius: longer than a circle's 0.55, like Apple's corners. */
 const EASE = 0.64;
 
+/** A layout's whole width, its shoulders included. */
+export const frameWidth = ({ width, shoulder }: IslandLayout) => width + 2 * shoulder;
+
 /** The shape as an SVG path, its frame's left edge at `x`. */
-export function notchPath({ width, height, shoulder, corner }: IslandLayout, x = 0): string {
-  const frame = width + 2 * shoulder;
+export function notchPath(layout: IslandLayout, x = 0): string {
+  const { height, shoulder, corner } = layout;
+  const frame = frameWidth(layout);
   const s = Math.max(0, Math.min(shoulder, frame / 4, height / 2));
   const c = Math.max(0, Math.min(corner, (frame - 2 * s) / 2, height - s));
   const k = EASE;
@@ -37,7 +41,9 @@ export function notchPath({ width, height, shoulder, corner }: IslandLayout, x =
   ].join("");
 }
 
-/** The notch of the drawn screen, in its 1440-point coordinates. */
+/** The drawn screen's width in points (components/MacScreen.astro), which it is scaled from. */
+export const SCREEN_W = 1440;
+/** The notch of the drawn screen, in its points; the menu bar is as tall. */
 export const NOTCH = { width: 190, height: 32 };
 export const WING = 38;
 
@@ -58,3 +64,6 @@ export function layoutFor(p: Presentation, hovering = false): IslandLayout {
       return { width: NOTCH.width - 12, height: NOTCH.height - 4, shoulder: 0, corner: 8 };
   }
 }
+
+/** The island's box, centred under the notch: as wide as the island gets, open. */
+export const BOX_W = frameWidth(layoutFor("open"));

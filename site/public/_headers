@@ -1,11 +1,23 @@
+# Every response: no type sniffing, never framed, only the origin as referrer elsewhere, HTTPS
+# from the first visit on (this host only: other hosts under the domain are not ours to bind),
+# and none of the devices the page never uses.
+#
+# The page loads nothing from anywhere else, so its policy is this site alone: its own scripts,
+# styles, fonts, images and films, plus the one inline script (index.astro's theme, by hash:
+# `bun run build` fails until a changed script's new hash is here) and style attributes, which
+# carry the drawn Mac's measurements.
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=31536000
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-fGCkwnf/LGc55IT34H4Cursq1wI9xP1MjdrPckGJ/2s='; style-src 'self'; style-src-attr 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'
+
 # Hashed build output never changes under the same name.
 /_astro/*
   Cache-Control: public, max-age=31536000, immutable
 
 # Films and posters: long-lived, but they can be replaced in place.
 /media/*
-  Cache-Control: public, max-age=604800
-
-# The hero's pre-rendered frames and loops: fixed for a given render.
-/hero/*
   Cache-Control: public, max-age=604800

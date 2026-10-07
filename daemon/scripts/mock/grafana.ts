@@ -106,7 +106,7 @@ export const SWEEP_ROWS: ReadonlyArray<SweepRow> = [
 ]
 
 /** A sweep row in VictoriaLogs' shape: every value a string, `sample` and `versions` JSON-encoded. */
-export const victoriaRow = (row: SweepRow): Record<string, string> => ({
+const victoriaRow = (row: SweepRow): Record<string, string> => ({
   ...row.fields,
   recent: String(row.recent),
   total: String(row.total),
@@ -120,8 +120,9 @@ const sweepRows = (query: string) => {
   return sweep === undefined ? undefined : SWEEP_ROWS.filter((row) => row.sweep === sweep).map(victoriaRow)
 }
 
-export const fakeGrafana = (): GrafanaShape => {
+export const mockGrafana = (): GrafanaShape => {
   return {
+    reachable: Effect.succeed(true),
     prom: (expr, range) => checkRange(range).pipe(Effect.as(series(expr, range))),
     logStats: (query, range) => checkRange(range).pipe(Effect.as(series(query, range))),
     logRows: (query, range) =>

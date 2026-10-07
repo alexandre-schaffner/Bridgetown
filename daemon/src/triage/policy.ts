@@ -1,6 +1,7 @@
-import type { Decision, Depth, FindingVerdict, JevVerdict, ReviewerVendor, Thresholds } from "../domain/model.ts"
-
-const pct = (value: number): string => `${Math.round(value * 100)}%`
+import type { Decision, JevVerdict } from "../domain/alert.ts"
+import type { FindingVerdict } from "../domain/critique.ts"
+import type { Thresholds } from "../domain/settings.ts"
+import { pct } from "../lib/text.ts"
 
 /**
  * Thresholds turn Jev's independent judgments into one decision. `human_on_it`
@@ -60,33 +61,3 @@ export const decideFinding = (jev: FindingVerdict, t: Thresholds): { readonly bl
   if (jev.rebutted !== null && jev.rebutted >= t.findingRebutted) return { blocks: false, reason: `Answered by the agent (${scores})` }
   return { blocks: true, reason: `Blocking (${scores})` }
 }
-
-export interface LaunchProfile {
-  readonly model: string
-  readonly effort: "low" | "medium" | "high" | "xhigh" | "max"
-}
-
-/** Jev answers an abstract tier; only this table names models, so the API can never pick one. */
-export const PROFILES: Readonly<Record<Depth, LaunchProfile>> = {
-  quick: { model: "claude-sonnet-5-5", effort: "medium" },
-  standard: { model: "claude-opus-5-5", effort: "high" },
-  deep: { model: "claude-opus-5-5", effort: "max" },
-}
-
-export interface ReviewerProfile {
-  readonly vendor: ReviewerVendor
-  readonly model: string
-  readonly effort: "low" | "medium" | "high" | "xhigh"
-}
-
-/**
- * The adversarial reviewer per triage depth, like `PROFILES` for the coder. Never the coder's vendor (every
- * profile above is Claude): a different model has different blind spots.
- */
-export const REVIEWERS: Readonly<Record<Depth, ReviewerProfile>> = {
-  quick: { vendor: "codex", model: "gpt-5.6-sol", effort: "medium" },
-  standard: { vendor: "codex", model: "gpt-5.6-sol", effort: "high" },
-  deep: { vendor: "codex", model: "gpt-5.6-sol", effort: "xhigh" },
-}
-
-export const reviewerFor = (depth: Depth): ReviewerProfile => REVIEWERS[depth]

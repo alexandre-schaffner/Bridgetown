@@ -8,8 +8,10 @@ import Testing
 
     init() throws { server = try Fixture.snapshot().settings }
 
-    private func take(_ pending: inout PendingSettings) -> (keys: Set<Settings.CodingKeys>, body: Data)? {
-        pending.beginSend()
+    /// The fields a `POST /settings` body carries, and their values.
+    private func fields(_ body: Data?) throws -> [String: Any] {
+        let data = try #require(body)
+        return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
     private func edited(_ edit: (inout Settings) -> Void) -> Settings {
@@ -36,13 +38,11 @@ import Testing
         var pending = PendingSettings()
         let typed = edited { $0.monorepoPath = "~/code/mono" }
         _ = pending.record(from: server, to: typed)
-        let send = try #require(take(&pending))
-        #expect(send.keys == [.monorepoPath])
-        let body = try #require(JSONSerialization.jsonObject(with: send.body) as? [String: String])
-        #expect(body == ["monorepoPath": "~/code/mono"])
+        let body = try fields(pending.beginSend())
+        #expect(body as? [String: String] == ["monorepoPath": "~/code/mono"])
 
         #expect(pending.shown(over: server).monorepoPath == "~/code/mono")
-        pending.endSend(send.keys)
+        pending.endSend()
         #expect(!pending.isPending)
         #expect(pending.shown(over: server).monorepoPath == server.monorepoPath)
     }
@@ -51,7 +51,7 @@ import Testing
         var pending = PendingSettings()
         let first = edited { $0.monorepoPath = "~/code/m" }
         _ = pending.record(from: server, to: first)
-        let send = try #require(take(&pending))
+        #expect(pending.beginSend() != nil)
 
         // More typing while the first request is out.
         var second = first
@@ -61,26 +61,35 @@ import Testing
         // The first request's answer echoes the half-typed path.
         var answer = server
         answer.monorepoPath = "~/code/m"
-        pending.endSend(send.keys)
+        pending.endSend()
         #expect(pending.shown(over: answer).monorepoPath == "~/code/mono")
-        let next = pending.beginSend()
-        #expect(next?.keys == [.monorepoPath])
+        let next = try fields(pending.beginSend())
+        #expect(next as? [String: String] == ["monorepoPath": "~/code/mono"])
     }
 
-    @Test func overlappingRequestsHoldTheFieldUntilTheLastOneAnswers() throws {
+    /// Two requests out at once could be answered out of order, the older answer last; and
+    /// a request was never safe to call off. So the next edit waits for the answer.
+    @Test func theNextRequestWaitsForTheAnswer() throws {
         var pending = PendingSettings()
         let a = edited { $0.thresholds.autoActionable = 0.6 }
         _ = pending.record(from: server, to: a)
-        let first = try #require(take(&pending))
+        #expect(pending.beginSend() != nil)
         var b = a
         b.thresholds.autoActionable = 0.7
+        b.autoStart.toggle()
         _ = pending.record(from: a, to: b)
-        let second = try #require(take(&pending))
-
-        pending.endSend(first.keys)
+        let early = pending.beginSend()
+        #expect(early == nil)
         #expect(pending.shown(over: server).thresholds.autoActionable == 0.7)
-        pending.endSend(second.keys)
-        #expect(pending.shown(over: server).thresholds.autoActionable == server.thresholds.autoActionable)
+
+        var answer = server
+        answer.thresholds.autoActionable = 0.6
+        pending.endSend()
+        #expect(pending.shown(over: answer).thresholds.autoActionable == 0.7)
+        let next = try fields(pending.beginSend())
+        #expect(Set(next.keys) == ["thresholds", "autoStart"])
+        pending.endSend()
+        #expect(!pending.isPending)
     }
 
     @Test func noChangeRecordsNothing() {

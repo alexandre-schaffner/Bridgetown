@@ -5,10 +5,12 @@
   "name": "bridgetown",
   "main": "./worker/index.ts",
   "compatibility_date": "2026-10-01",
+  // Every deploy builds first, which also measures the videos for the Worker (worker/media.json).
+  "build": { "command": "bun run build" },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "404-page",
-    "run_worker_first": ["/media/*", "/hero/*/loop.mp4"],
+    "run_worker_first": ["/media/*"],
   },
 }

@@ -1,7 +1,8 @@
 import Foundation
 @testable import Bridgetown
 
-/// JSON in Fixtures/, written to match docs/API.md field for field.
+/// JSON in Fixtures/: the daemon's own output, written by its contract test
+/// (`UPDATE_FIXTURES=1 bun test test/api/contract.test.ts` in daemon/), never by hand.
 enum Fixture {
     static func data(_ name: String) throws -> Data {
         guard let url = Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Fixtures") else {

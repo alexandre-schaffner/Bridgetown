@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 /// Prod → Logs: the daemon's last sweep of prod's logs, its lines grouped into patterns
@@ -7,12 +6,11 @@ import SwiftUI
 /// steady errors behind a button. Clicking a pattern opens its lines in Grafana Explore.
 struct LogSweepView: View {
     @Environment(Store.self) private var store
-    let now: Date
 
     var body: some View {
-        PollingLoader(key: "logs", fetch: { try await store.logSweep() }) { loaded in
+        PollingLoader(key: "logs", fetch: { try await store.fetch { try await $0.logs() } }) { loaded in
             if let sweep = loaded.value {
-                SweepContent(sweep: sweep, now: now)
+                SweepContent(sweep: sweep)
             } else if let error = loaded.error {
                 BoardMessage(symbol: "exclamationmark.triangle", text: "Couldn't load the log sweep · \(error)")
             } else {
@@ -20,9 +18,9 @@ struct LogSweepView: View {
                     ProgressView().controlSize(.mini)
                     Text("Reading the last sweep…")
                 }
-                .font(.geist(11))
+                .font(Typo.caption)
                 .foregroundStyle(.tertiary)
-                .bleedInset()
+                .padding(.horizontal, Metrics.inset)
             }
         }
     }
@@ -30,44 +28,60 @@ struct LogSweepView: View {
 
 private struct SweepContent: View {
     let sweep: LogSweep
-    let now: Date
+    @Environment(\.now) private var now
     @ViewState private var showSteady = false
+
+    /// A line of the table: a pattern, or the fold the steady ones sit behind.
+    private enum Row: Identifiable {
+        case pattern(LogSweep.Pattern)
+        case steady(count: Int)
+
+        var id: String {
+            switch self {
+            case let .pattern(pattern): pattern.key
+            case .steady: "fold.steady"
+            }
+        }
+    }
 
     var body: some View {
         let suspicious = sweep.patterns.filter(\.suspicious)
         let steady = sweep.patterns.filter { !$0.suspicious }
+        let rows = suspicious.map(Row.pattern)
+            + (steady.isEmpty ? [] : [Row.steady(count: steady.count)])
+            + (showSteady ? steady.map(Row.pattern) : [])
         VStack(alignment: .leading, spacing: 10) {
             if let error = sweep.error {
                 BoardMessage(symbol: "exclamationmark.triangle", text: error)
             }
-            if sweep.sweptAt == nil {
-                if sweep.error == nil {
+            // A failed query says so above: "not swept" or "nothing suspicious" would then
+            // claim more than was read.
+            if sweep.error == nil {
+                if sweep.sweptAt == nil {
                     BoardMessage(
                         symbol: "text.magnifyingglass",
                         text: "Not swept yet. Every 10 minutes Bridgetown groups prod's error and warning lines into patterns; the first sweep runs a few minutes after it starts."
                     )
-                }
-            } else if suspicious.isEmpty {
-                // A failed query says so above; "nothing suspicious" would claim more than was read.
-                if sweep.error == nil {
+                } else if suspicious.isEmpty {
                     BoardMessage(symbol: "checkmark", text: "Nothing suspicious in the last sweep: no new or surging error, no risky warning.")
                 }
-            } else {
-                RowList(data: suspicious) { PatternRow(pattern: $0) }
             }
-            if !steady.isEmpty {
-                if showSteady {
-                    RowList(data: steady) { PatternRow(pattern: $0) }
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+            if !rows.isEmpty {
+                RowList(data: rows) { row in
+                    switch row {
+                    case let .pattern(pattern):
+                        PatternRow(pattern: pattern)
+                    case let .steady(count):
+                        FoldRow(title: count == 1 ? "1 steady error" : "\(count) steady errors", open: showSteady, leading: PatternRow.textColumn) {
+                            withAnimation(Easing.state) { showSteady.toggle() }
+                        }
+                        .accessibilityLabel(showSteady ? "Hide \(count) steady errors" : "Show \(count) steady errors")
+                        .accessibilityIdentifier("logs.showSteady")
+                    }
                 }
-                Button(showSteady ? "Hide steady errors" : "Show \(steady.count) steady error\(steady.count == 1 ? "" : "s")") {
-                    withAnimation(Easing.state) { showSteady.toggle() }
-                }
-                .buttonStyle(.stage(.secondary, compact: true))
-                .frame(maxWidth: .infinity)
             }
             footer
-                .bleedInset()
+                .padding(.horizontal, Metrics.inset)
         }
     }
 
@@ -78,15 +92,10 @@ private struct SweepContent: View {
                 Text("· swept \(Format.ago(sweptAt, now: now))")
             }
             Spacer(minLength: 0)
-            Button {
-                SystemActions.open(sweep.link)
-            } label: {
-                NudgeLabel(title: "Open in Grafana", symbol: "arrow.up.right", nudge: CGSize(width: 1.5, height: -1.5))
-            }
-            .buttonStyle(.plain)
-            .help("Prod's error lines over the last 3 hours, in Grafana Explore")
+            TextLink("Open in Grafana", opening: sweep.link)
+                .help("Prod's error lines over the last 3 hours, in Grafana Explore")
         }
-        .font(.geist(11.5).monospacedDigit())
+        .font(Typo.time)
         .foregroundStyle(.tertiary)
         .lineLimit(1)
     }
@@ -98,16 +107,31 @@ private struct PatternRow: View {
     @Environment(Store.self) private var store
     let pattern: LogSweep.Pattern
 
+    /// Where the words start, past the level's glyph: a fold row's line up with them.
+    static let textColumn = Metrics.inset + 16 + 10
+
     /// Jev called it a problem and the daemon raised a finding for it.
     private var problem: Bool { pattern.alertId != nil }
 
     var body: some View {
+        TableRow(open: { SystemActions.open(pattern.link) }) { _ in
+            content
+        } menu: {
+            menu
+        }
+        .help(tooltip)
+        .accessibilityIdentifier("logs.pattern.\(pattern.key)")
+        .accessibilityAddTraits(.isLink)
+        .accessibilityHint("Opens its lines in Grafana")
+    }
+
+    private var content: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: pattern.level == .warning ? "exclamationmark.triangle" : "xmark.octagon")
                 .font(.geist(12.5, .medium))
                 .foregroundStyle(problem ? AnyShapeStyle(Ink.red) : AnyShapeStyle(.tertiary))
                 .frame(width: 16)
-                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
+                .centeredOnRowTitle()
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
@@ -117,13 +141,13 @@ private struct PatternRow: View {
                         .foregroundStyle(pattern.suspicious ? AnyShapeStyle(Ink.amber) : AnyShapeStyle(.secondary))
                         .fixedSize()
                     Text("· \(pattern.sourcesLabel)")
-                        .font(Typo.rowDetail)
+                        .font(Typo.body)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer(minLength: 4)
                     Text("\(Format.count(pattern.recent)) in 15m")
-                        .font(Typo.rowTime)
+                        .font(Typo.time)
                         .foregroundStyle(.tertiary)
                         .fixedSize()
                 }
@@ -137,18 +161,13 @@ private struct PatternRow: View {
                 if let verdict = pattern.verdictLine {
                     HStack(spacing: 6) {
                         Text(verdict)
-                            .font(.geist(11.5).monospacedDigit())
+                            .font(Typo.time)
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
                         if let alertId = pattern.alertId {
-                            Button {
-                                store.show(.alert(alertId))
-                            } label: {
-                                NudgeLabel(title: "Finding", symbol: "chevron.right", nudge: CGSize(width: 2, height: 0))
-                            }
-                            .buttonStyle(.plain)
-                            .font(.geist(11.5, .medium))
-                            .help("Show the finding Bridgetown raised for this pattern")
+                            TextLink("Finding", direction: .inward) { store.show(.alert(alertId)) }
+                                .font(Typo.label)
+                                .help("Show the finding Bridgetown raised for this pattern")
                         }
                     }
                 }
@@ -156,14 +175,6 @@ private struct PatternRow: View {
         }
         .padding(.horizontal, Metrics.inset)
         .padding(.vertical, 14)
-        .contentShape(Rectangle())
-        .rowHighlight()
-        .onTapGesture { SystemActions.open(pattern.link) }
-        .help(tooltip)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isLink)
-        .accessibilityHint("Opens its lines in Grafana")
-        .contextMenu { menu }
     }
 
     @ViewBuilder
@@ -173,13 +184,8 @@ private struct PatternRow: View {
             Button("Show finding") { store.show(.alert(alertId)) }
         }
         Divider()
-        Button("Copy example line") { copy(pattern.example) }
-        Button("Copy pattern") { copy(pattern.message) }
-    }
-
-    private func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        Button("Copy example line") { SystemActions.copy(pattern.example) }
+        Button("Copy pattern") { SystemActions.copy(pattern.message) }
     }
 
     private var tooltip: String {
@@ -187,27 +193,5 @@ private struct PatternRow: View {
         if !pattern.versions.isEmpty { lines.append("Versions \(pattern.versions.joined(separator: ", "))") }
         lines.append("Click to open its lines in Grafana")
         return lines.joined(separator: "\n")
-    }
-}
-
-/// A text link whose trailing glyph leans the way it goes on hover: right for into the
-/// app, up and out for the browser. The text brightens with it.
-struct NudgeLabel: View {
-    let title: String
-    let symbol: String
-    let nudge: CGSize
-    @ViewState private var hovering = false
-
-    var body: some View {
-        HStack(spacing: 3) {
-            Text(title)
-            Image(systemName: symbol)
-                .font(.geist(8.5, .semibold))
-                .offset(hovering ? nudge : .zero)
-        }
-        .foregroundStyle(hovering ? .primary : .secondary)
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .animation(Easing.quick, value: hovering)
     }
 }

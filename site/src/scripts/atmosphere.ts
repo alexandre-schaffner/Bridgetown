@@ -4,8 +4,8 @@
 
 import * as THREE from "three";
 
-/** Value-noise fbm, shared by the mist and the haze; `octaves` trades detail for speed. */
-const noise = (octaves: number) => /* glsl */ `
+/** Value-noise fbm, shared by the mist and the haze. */
+const NOISE = /* glsl */ `
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float noise(vec2 p) {
     vec2 i = floor(p), f = fract(p);
@@ -15,7 +15,7 @@ const noise = (octaves: number) => /* glsl */ `
   float fbm(vec2 p) {
     float v = 0.0, a = 0.5;
     mat2 r = mat2(0.8, -0.6, 0.6, 0.8);
-    for (int i = 0; i < ${octaves}; i++) { v += a * noise(p); p = r * p * 2.03 + 11.7; a *= 0.5; }
+    for (int i = 0; i < 4; i++) { v += a * noise(p); p = r * p * 2.03 + 11.7; a *= 0.5; }
     return v;
   }
 `;
@@ -26,17 +26,14 @@ export interface Atmosphere {
   update(time: number, color: THREE.Color, level: number, camera: THREE.Camera): void;
 }
 
-export function createAtmosphere({ floor, small, ultra = false }: { floor: number; small: boolean; ultra?: boolean }): Atmosphere {
+export function createAtmosphere({ floor, small }: { floor: number; small: boolean }): Atmosphere {
   const group = new THREE.Group();
-  const NOISE = noise(ultra ? 6 : 4);
   const shared = {
     uTime: { value: 0 },
     uColor: { value: new THREE.Color() },
     uLevel: { value: 1 },
     uCamera: { value: new THREE.Vector3() },
     uFloor: { value: floor },
-    // More cards when ultra, each a little thinner, so the fog is finer but no denser.
-    uDensity: { value: ultra ? 0.6 : 1 },
   };
 
   // MARK: Mist
@@ -59,7 +56,7 @@ export function createAtmosphere({ floor, small, ultra = false }: { floor: numbe
       }
     `,
     fragmentShader: /* glsl */ `
-      uniform float uTime, uLevel, uFloor, uDensity;
+      uniform float uTime, uLevel, uFloor;
       uniform vec3 uColor, uCamera;
       varying vec3 vWorld;
       varying vec2 vUv;
@@ -78,15 +75,11 @@ export function createAtmosphere({ floor, small, ultra = false }: { floor: numbe
         float lit = exp(-dot(toLight.xz, toLight.xz) * 0.06) * (0.6 + 0.4 * exp(-h * 0.8));
         float near = smoothstep(0.6, 3.2, distance(vWorld, uCamera));
         vec3 col = mix(vec3(0.5, 0.58, 0.7) * 0.012, uColor * 0.36, lit * lit) * uLevel;
-        gl_FragColor = vec4(col * n * ground * sides * near * uDensity, 1.0);
+        gl_FragColor = vec4(col * n * ground * sides * near, 1.0);
       }
     `,
   });
-  const cards = ultra
-    ? [-6.5, -5.2, -4, -2.9, -1.6, 1.3, 2.2, 3.1, 4.2]
-    : small
-      ? [-4.6, -1.8, 2]
-      : [-6, -3.6, -1.6, 1.5, 3.4];
+  const cards = small ? [-4.6, -1.8, 2] : [-6, -3.6, -1.6, 1.5, 3.4];
   for (const z of cards) {
     const card = new THREE.Mesh(new THREE.PlaneGeometry(26, 3.2), mistMaterial);
     card.position.set((z * 1.7) % 3, floor + 1.45, z);
@@ -132,7 +125,7 @@ export function createAtmosphere({ floor, small, ultra = false }: { floor: numbe
   // MARK: Motes
 
   // Specks rising and turning in the air, each its own size and twinkle, brightest in the beam.
-  const count = ultra ? 1800 : small ? 450 : 1100;
+  const count = small ? 450 : 1100;
   const base = new Float32Array(count * 3);
   const seed = new Float32Array(count * 2);
   let s = 0x2545f491;

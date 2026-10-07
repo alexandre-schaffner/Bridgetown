@@ -1,13 +1,15 @@
 import { Effect } from "effect"
+import type { Decision, JevVerdict, Triage } from "../domain/alert.ts"
 import type { AdapterError, MissingCredential } from "../domain/errors.ts"
-import type { Decision, JevVerdict, Thresholds, Triage } from "../domain/model.ts"
+import type { Thresholds } from "../domain/settings.ts"
 import type { HubShape } from "../hub.ts"
 
-/** The Jev status after a call: ok, or why it failed (no key, an error). */
+/** The Jev status after a call: ok (and its last problem gone), or why it failed (no key, an error). */
 export const reportJev = (hub: HubShape, failure: MissingCredential | AdapterError | null): Effect.Effect<void> =>
-  failure === null
-    ? hub.patchStatus({ jev: "ok" })
-    : hub.patchStatus({ jev: failure._tag === "MissingCredential" ? "missing_key" : "error", error: `Jev: ${failure.message}` })
+  Effect.andThen(
+    hub.patchStatus({ jev: failure === null ? "ok" : failure._tag === "MissingCredential" ? "missing_key" : "error" }),
+    hub.problem("jev", failure === null ? null : `Jev: ${failure.message}`),
+  )
 
 /**
  * Jev's verdict through `decide`, and the Jev status that goes with it. Without Jev (no key, an error) the

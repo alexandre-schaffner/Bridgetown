@@ -13,6 +13,7 @@ import { Reflector } from "three/addons/objects/Reflector.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { ARCH } from "../lib/arch";
 import { createAtmosphere, ShaftsShader } from "./atmosphere";
+import { restView, type View } from "./view";
 
 /** The arch in scene units: one unit is 100 of the icon's. */
 const U = 1 / 100;
@@ -24,11 +25,11 @@ const KEY_DROP = ARCH.keyDrop * U;
 const JOINT = 0.085;
 const DEPTH = 1.15;
 const VOUSSOIRS = 9;
-export const FLOOR = -PIER;
+const FLOOR = -PIER;
 
 const NIGHT = new THREE.Color("#050608");
 
-export type LightName = "rest" | "working" | "needs-you" | "needs-you-working" | "paused" | "out";
+export type LightName = "rest" | "working" | "needs-you" | "paused" | "out";
 
 interface Lamp {
   /** Along the ring, 0 at the left springing, 1 at the right. */
@@ -61,21 +62,9 @@ const LIGHTS: Record<LightName, Light> = {
     ],
   },
   "needs-you": { color: AMBER, level: 1.15, lamps: [off, off, off] },
-  "needs-you-working": {
-    color: AMBER,
-    level: 1.05,
-    lamps: [
-      { at: 0.5, level: 1 },
-      { at: 0.3, level: 0 },
-      { at: 0.82, level: 0 },
-    ],
-  },
   paused: { color: GLOW.clone().lerp(WHITE, 0.5), level: 0.4, lamps: [off, off, off] },
   out: { color: GLOW, level: 0.05, lamps: [off, off, off] },
 };
-
-import { restView, type View } from "./view";
-export { restView, type View };
 
 // MARK: Geometry
 
@@ -266,7 +255,7 @@ export interface ArchScene {
   /** The camera the page wants; the scene eases toward it. */
   view: View;
   setLight(name: LightName, seconds?: number): void;
-  /** Draw only while a night chapter is on screen. */
+  /** Draw only while a night chapter is on screen: the frame loop runs only while active. */
   setActive(active: boolean): void;
   /** Pointer in -1…1, for a little parallax. */
   setPointer(x: number, y: number): void;
@@ -274,14 +263,11 @@ export interface ArchScene {
   snap(): void;
   /** The colour the hero floods to: the page's day, which the theme can change. */
   setDay(day: THREE.Color): void;
-  /** One exact frame, for pre-rendering: this camera, this moment, this light, no easing. */
-  still(view: View, time: number, light: LightName): void;
   /**
    * Compiles every shader and draws one frame unseen, so the first visible frame doesn't stall
    * the page. `beat` resolves when the page is free to take a short hitch.
    */
   prepare(beat: () => Promise<void>): Promise<void>;
-  dispose(): void;
 }
 
 export function createArchScene(
@@ -290,24 +276,17 @@ export function createArchScene(
     day,
     reducedMotion,
     onFirstFrame,
-    ultra = false,
   }: {
     day: THREE.Color;
     reducedMotion: boolean;
     onFirstFrame?: () => void;
-    /**
-     * Offline quality for pre-rendered frames (scripts/render.ts): drawn at twice the size,
-     * more fog and motes, twice the shaft samples, full-size mirror and light pass, no
-     * baked grain (the page lays its own over the frames), and no frame loop.
-     */
-    ultra?: boolean;
   },
 ): ArchScene {
-  const small = !ultra && Math.min(window.innerWidth, window.innerHeight) < 700;
+  const small = Math.min(window.innerWidth, window.innerHeight) < 700;
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
   // Resolution is budgeted, not taken from the screen: a 5K display would otherwise ask for
   // fifteen million pixels a frame. Grain and bloom hide the upscale. See resize() and fit().
-  const budget = ultra ? Infinity : small ? 1.6e6 : 4.2e6;
+  const budget = small ? 1.6e6 : 4.2e6;
   let quality = 1;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
@@ -350,8 +329,8 @@ export function createArchScene(
 
   // Polished black stone underfoot: a mirror, darkened.
   const mirror = new Reflector(new THREE.PlaneGeometry(60, 60), {
-    textureWidth: ultra ? window.innerWidth * 2 : Math.round(Math.min(window.innerWidth, 1600) * (small ? 0.4 : 0.6)),
-    textureHeight: ultra ? window.innerHeight * 2 : Math.round(Math.min(window.innerHeight, 1000) * (small ? 0.4 : 0.6)),
+    textureWidth: Math.round(Math.min(window.innerWidth, 1600) * (small ? 0.4 : 0.6)),
+    textureHeight: Math.round(Math.min(window.innerHeight, 1000) * (small ? 0.4 : 0.6)),
     color: new THREE.Color("#7a808a"),
     clipBias: 0.003,
   });
@@ -464,7 +443,7 @@ export function createArchScene(
   };
 
   // The air: mist, a far haze, motes in the beam.
-  const air = createAtmosphere({ floor: FLOOR, small, ultra });
+  const air = createAtmosphere({ floor: FLOOR, small });
   scene.add(air.group);
 
   // The mirror shows the stone and the light, not the air: reflecting the mist and motes
@@ -480,8 +459,8 @@ export function createArchScene(
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
   const shafts = new ShaderPass(ShaftsShader);
-  shafts.uniforms.uSamples!.value = ultra ? 80 : small ? 28 : 40;
-  // The light alone, the arch black in front of it, at half size: what the shafts scatter.
+  shafts.uniforms.uSamples!.value = small ? 28 : 40;
+  // The light alone, the arch black in front of it, at 0.4 of the size: what the shafts scatter.
   const lightTarget = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
   shafts.uniforms.tLight!.value = lightTarget.texture;
   const silhouette = new THREE.MeshBasicMaterial({ color: 0x000000 });
@@ -534,7 +513,6 @@ export function createArchScene(
   const grade = new ShaderPass(GradeShader);
   const { r: dr, g: dg, b: db } = day.getRGB({ r: 1, g: 1, b: 1 }, THREE.SRGBColorSpace);
   grade.uniforms.uDay!.value = new THREE.Vector3(dr, dg, db);
-  if (ultra) grade.uniforms.uGrain!.value = 0;
   composer.addPass(grade);
 
   // State.
@@ -558,13 +536,12 @@ export function createArchScene(
     const w = canvas.clientWidth || window.innerWidth;
     const h = canvas.clientHeight || window.innerHeight;
     // The screen's density, held under the pixel budget, then scaled by how the frames are going.
-    const ratio = ultra ? 2 : Math.min(window.devicePixelRatio, 2, Math.sqrt(budget / (w * h))) * quality;
+    const ratio = Math.min(window.devicePixelRatio, 2, Math.sqrt(budget / (w * h))) * quality;
     renderer.setPixelRatio(ratio);
     composer.setPixelRatio(ratio);
     renderer.setSize(w, h, false);
     composer.setSize(w, h);
-    const lightScale = ultra ? 0.75 : 0.4;
-    lightTarget.setSize(Math.round(w * ratio * lightScale), Math.round(h * ratio * lightScale));
+    lightTarget.setSize(Math.round(w * ratio * 0.4), Math.round(h * ratio * 0.4));
     bloom.resolution.set(w * ratio, h * ratio);
     camera.aspect = w / h;
     // Narrow screens: widen the lens so the arch keeps its margins.
@@ -661,11 +638,19 @@ export function createArchScene(
     }
   }
 
+  /** Whether the light has arrived at its target, so that frames under Reduce Motion stop changing. */
+  const lit = () =>
+    Math.abs(light.level - target.level) < 1e-3 &&
+    Math.abs(light.color.r - target.color.r) + Math.abs(light.color.g - target.color.g) + Math.abs(light.color.b - target.color.b) < 1e-3 &&
+    light.lamps.every((l, i) => Math.abs(l.level - target.lamps[i]!.level) < 1e-3);
+  // Under Reduce Motion nothing in the scene moves on its own (no sway, no breath, still air),
+  // so a frame that would draw what the last one did is skipped.
+  let drawn = "";
+
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
-    if (!active) return;
     const dt = Math.min(0.05, (now - last) / 1000);
-    fit((now - last) / 1000);
+    const elapsed = (now - last) / 1000;
     last = now;
 
     // Ease the camera toward where the page wants it; Lenis already smooths the scroll.
@@ -673,14 +658,22 @@ export function createArchScene(
     for (const key of Object.keys(view) as (keyof View)[]) eased[key] += (view[key] - eased[key]) * k;
     pointer.ex += (pointer.x - pointer.ex) * (1 - Math.exp(-dt * 2.5));
     pointer.ey += (pointer.y - pointer.ey) * (1 - Math.exp(-dt * 2.5));
+    if (reducedMotion) {
+      const still = Object.values(eased).join();
+      if (still === drawn && lit()) return;
+      drawn = still;
+    }
+    fit(elapsed);
     draw(now / 1000, dt, reducedMotion ? 0 : 1 - eased.flare);
   }
 
   resize();
   applyLight(0);
-  const onResize = () => resize();
-  window.addEventListener("resize", onResize);
-  if (!ultra) raf = requestAnimationFrame(frame);
+  window.addEventListener("resize", () => {
+    resize();
+    drawn = "";
+  });
+  raf = requestAnimationFrame(frame);
 
   return {
     view,
@@ -689,8 +682,12 @@ export function createArchScene(
       lightSpeed = 1 / Math.max(0.05, seconds);
     },
     setActive(next) {
-      if (next && !active) last = performance.now();
+      if (next === active) return;
       active = next;
+      cancelAnimationFrame(raf);
+      if (!next) return;
+      last = performance.now();
+      raf = requestAnimationFrame(frame);
     },
     setPointer(x, y) {
       pointer.x = x;
@@ -698,15 +695,6 @@ export function createArchScene(
     },
     snap() {
       Object.assign(eased, view);
-    },
-    still(v, time, name) {
-      Object.assign(view, v);
-      Object.assign(eased, v);
-      target = LIGHTS[name];
-      light.color.copy(target.color);
-      light.level = target.level;
-      light.lamps.forEach((lamp, i) => Object.assign(lamp, target.lamps[i]));
-      draw(time, 1 / 60, 0);
     },
     async prepare(beat) {
       // The stones and the floor compile off the main thread where the browser can; the
@@ -722,11 +710,7 @@ export function createArchScene(
     setDay(next) {
       const { r, g, b } = next.getRGB({ r: 1, g: 1, b: 1 }, THREE.SRGBColorSpace);
       (grade.uniforms.uDay!.value as THREE.Vector3).set(r, g, b);
-    },
-    dispose() {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("resize", onResize);
-      renderer.dispose();
+      drawn = "";
     },
   };
 }

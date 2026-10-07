@@ -1,15 +1,15 @@
 import { Effect } from "effect"
 import type { ActionQueueShape } from "../actions/queue.ts"
+import type { SessionResult } from "../agent/result.ts"
 import type { AdapterError } from "../domain/errors.ts"
-import { isFinished, type Session } from "../domain/model.ts"
+import { isFinished, type Session, withPatch } from "../domain/session.ts"
 import type { HubShape } from "../hub.ts"
+import { firstLine, truncate } from "../lib/text.ts"
 import type { GitHubShape } from "../ship/github.ts"
 import type { SlackThreadShape } from "../slack/thread.ts"
-import { truncate } from "../slack/text.ts"
 import type { StoreShape } from "../store/store.ts"
-import { decideOutcome, type Finalized } from "./finalize.ts"
-import type { SessionResult } from "./output.ts"
-import { type SessionRepoShape, withPatch } from "./repo.ts"
+import { decideOutcome, type TurnOutcome } from "./outcome.ts"
+import type { SessionRepoShape } from "./repo.ts"
 
 export interface FinishDeps {
   readonly store: StoreShape
@@ -27,19 +27,19 @@ export const makeFinish = ({ store, thread, repo, queue, github, hub, sendBack }
   /** Evidence that the agent pushed its branch: the ref exists on origin. */
   const branchPushed = (session: Session) =>
     session.branch === null ? Effect.succeed(false) : github.branchHead(session.repoPath, session.branch).pipe(Effect.map((sha) => sha !== null))
-  /** The PR's head commit, whichever branch it is on (a follow-up PR after a failed deploy is on `<branch>-2`). */
+  /** Where the PR's head is, `null` with no PR or no answer. */
   const prHead = (prUrl: string | null) => (prUrl === null ? Effect.succeed(null) : github.prHead(prUrl).pipe(Effect.orElseSucceed(() => null)))
 
   /** Fails the session with a retry card. A stopped or already finished session is left as it is. */
   const finishFailed = (id: string, reason: string) =>
     Effect.gen(function* () {
       yield* repo.log(id, "error", reason).pipe(Effect.ignore)
-      const headline = reason.split("\n")[0] ?? reason
+      const headline = firstLine(reason)
       const failed = yield* repo.patch(id, { status: "failed", activity: headline, resolution: truncate(headline, 80) })
       if (failed !== undefined) yield* queue.retryCard(failed, "Agent failed", reason)
     })
 
-  const applyCards = (session: Session, decision: Finalized) =>
+  const applyCards = (session: Session, decision: TurnOutcome) =>
     Effect.gen(function* () {
       for (const card of decision.cards) {
         if (card._tag === "HandOff") {
@@ -52,7 +52,8 @@ export const makeFinish = ({ store, thread, repo, queue, github, hub, sendBack }
       }
     })
 
-  const finalize = (id: string, result: SessionResult) =>
+  /** Applies the agent's result as `decideOutcome` decides it. A stopped or already finished session is left as it is. */
+  const finish = (id: string, result: SessionResult) =>
     Effect.gen(function* () {
       const before = yield* repo.get(id)
       if (before === undefined || isFinished(before)) return
@@ -61,11 +62,12 @@ export const makeFinish = ({ store, thread, repo, queue, github, hub, sendBack }
       const head = yield* prHead(result.prUrl ?? before.prUrl)
       const { adversarialReview } = yield* hub.settings
       // Decided on the row as it is when written, not on the one read before the slow `git ls-remote`.
-      const decided: { value?: Finalized } = {}
+      const decided: { value?: TurnOutcome } = {}
       const session = yield* repo.modify(id, (current) => {
         const decision = decideOutcome({ session: current, result, alert, pushed, head, adversarialReview })
         decided.value = decision
-        return withPatch(current, decision.patch)
+        // This turn answered whatever it was sent back for; one that fails is retried with the same question.
+        return withPatch(current, decision.fail === null ? { ...decision.patch, sentBack: null } : decision.patch)
       })
       const decision = decided.value
       if (session === undefined || decision === undefined) return
@@ -78,8 +80,8 @@ export const makeFinish = ({ store, thread, repo, queue, github, hub, sendBack }
         )
       }
       if (decision.sendBack !== null) yield* sendBack(id, decision.sendBack)
-      if (decision.post !== null && alert !== undefined) yield* thread.post(alert, decision.post)
+      if (decision.post !== null && alert !== undefined) yield* thread.postUpdate(alert, decision.post)
     })
 
-  return { finishFailed, finalize }
+  return { finish, finishFailed }
 }

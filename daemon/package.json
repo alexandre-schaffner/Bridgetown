@@ -5,8 +5,6 @@
   "type": "module",
   "scripts": {
     "prepare": "../scripts/prepare-effect.sh",
-    "dev": "bun --watch src/main.ts",
-    "start": "bun src/main.ts",
     "replay": "bun scripts/replay.ts",
     "mock": "bun scripts/mock/main.ts",
     "check": "tsc --noEmit",
@@ -22,6 +20,7 @@
     "zod": "^4"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.31.0",
     "@types/bun": "^1.4.2",
     "typescript": "^7.0.2"
   }

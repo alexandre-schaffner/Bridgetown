@@ -1,14 +1,13 @@
 import { Context, Effect, Layer } from "effect"
+import type { Action } from "../domain/action.ts"
 import { type AdapterError, NotFound } from "../domain/errors.ts"
 import { newId, now } from "../domain/ids.ts"
-import type { Action, Session } from "../domain/model.ts"
+import type { Session } from "../domain/session.ts"
 import { Hub } from "../hub.ts"
 import { Store } from "../store/store.ts"
 
-/** Marks the review card a failed session gets; resolving it re-queues the same session. */
-export const RETRY = "retry"
-
-export type NewAction = Omit<Action, "id" | "createdAt" | "url"> & { readonly url?: string | null }
+/** A card to put up; what only some kinds carry defaults to nothing. */
+export type NewAction = Omit<Action, "id" | "createdAt" | "url" | "fingerprint" | "retry"> & Partial<Pick<Action, "url" | "fingerprint" | "retry">>
 
 /** "Needs you": every card goes in and out through here, so each kind is shaped (and deduped) the same way. */
 export interface ActionQueueShape {
@@ -37,11 +36,14 @@ export const ActionQueueLive = Layer.effect(ActionQueue)(
 
     const put = (action: NewAction) =>
       Effect.gen(function* () {
-        const stored: Action = { ...action, url: action.url ?? null, id: newId("a"), createdAt: now() }
+        const stored: Action = { ...action, url: action.url ?? null, fingerprint: action.fingerprint ?? null, retry: action.retry ?? false, id: newId("a"), createdAt: now() }
         yield* store.putAction(stored)
         yield* hub.notify
         return stored
       })
+
+    const removeWhere = (predicate: (action: Action) => boolean) =>
+      store.deleteActionsWhere(predicate).pipe(Effect.flatMap((count) => (count > 0 ? hub.notify : Effect.void)))
 
     const reviewCards = (sessionId: string) =>
       store.listActions().pipe(Effect.map((actions) => actions.filter((a) => a.sessionId === sessionId && a.kind === "review")))
@@ -50,7 +52,7 @@ export const ActionQueueLive = Layer.effect(ActionQueue)(
       list: store.listActions(),
       find: (id) =>
         Effect.gen(function* () {
-          const action = (yield* store.listActions()).find((a) => a.id === id)
+          const action = yield* store.getAction(id)
           if (action === undefined) return yield* new NotFound({ message: "unknown action" })
           return action
         }),
@@ -69,12 +71,11 @@ export const ActionQueueLive = Layer.effect(ActionQueue)(
             options: [],
             sessionId: session.id,
             alertId: session.alertId,
-            payload: null,
           })
         }),
       retryCard: (session, title, detail) =>
         Effect.gen(function* () {
-          if ((yield* reviewCards(session.id)).some((a) => a.payload === RETRY)) return
+          if ((yield* reviewCards(session.id)).some((a) => a.retry)) return
           yield* put({
             kind: "review",
             title: `${title} · ${session.title}`,
@@ -83,12 +84,11 @@ export const ActionQueueLive = Layer.effect(ActionQueue)(
             options: [],
             sessionId: session.id,
             alertId: session.alertId,
-            payload: RETRY,
+            retry: true,
           })
         }),
       remove: (id) => store.deleteAction(id).pipe(Effect.andThen(hub.notify)),
-      removeWhere: (predicate) =>
-        store.deleteActionsWhere(predicate).pipe(Effect.flatMap((count) => (count > 0 ? hub.notify : Effect.void))),
+      removeWhere,
     }
   }),
 )

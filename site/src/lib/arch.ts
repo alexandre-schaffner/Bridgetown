@@ -1,6 +1,7 @@
-// Bridgetown's arch, as drawn by the app (app/Sources/Bridgetown/Views/ArchMark.swift and
-// Icon/IconArt.swift): a ring of voussoirs whose keystone stands proud, on two piers.
-// Measures are the icon's, in its 1024-unit canvas, around the centre of the ring.
+// Bridgetown's arch, as drawn by the app (app/Sources/Bridgetown/Views/ArchMark.swift) and its
+// icon (scripts/app-icon.swift): a ring of voussoirs whose keystone stands proud, on two piers.
+// A port: the measures are the icon's, in its 1024-unit canvas around the centre of the ring,
+// and change with it.
 
 export const ARCH = {
   outer: 258,
@@ -17,7 +18,7 @@ type Pt = [number, number];
 const f = (n: number) => +n.toFixed(2);
 
 /**
- * The menu-bar mark as an SVG path in a `archWidth × archHeight` viewBox (y down): three
+ * The app's arch mark as an SVG path in an `archWidth × archHeight` viewBox (y down): three
  * ring stones (keystone in the middle, a little wider than on the icon so it reads small)
  * and two piers, with `joint` units cut between them.
  */

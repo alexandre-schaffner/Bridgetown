@@ -9,7 +9,7 @@ struct VerdictBar: View {
     var body: some View {
         HStack(spacing: 10) {
             Text(label)
-                .font(.geist(12.5))
+                .font(Typo.fact)
                 .foregroundStyle(.secondary)
                 .frame(width: 124, alignment: .leading)
             GeometryReader { geo in

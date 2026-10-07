@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Schema, Semaphore } from "effect"
+import { Context, Data, Effect, Layer, Schema, Semaphore } from "effect"
 import { AdapterError, attempt, decodeOr, errorMessage } from "../domain/errors.ts"
 
 /**
@@ -13,8 +13,8 @@ import { AdapterError, attempt, decodeOr, errorMessage } from "../domain/errors.
  * gives for logs, since mcp-grafana's log tools speak Loki).
  */
 
-export const GRAFANA_MCP_URL = "http://localhost:8000/mcp"
-export const METRICS_DATASOURCE = "P4169E866C3094E38"
+const GRAFANA_MCP_URL = "http://localhost:8000/mcp"
+const METRICS_DATASOURCE = "P4169E866C3094E38"
 export const LOGS_DATASOURCE = "PD775F2863313E6C7"
 
 const LOGSQL_PREFIX = `/api/datasources/proxy/uid/${LOGS_DATASOURCE}/select/logsql/`
@@ -36,6 +36,8 @@ export interface Series {
 }
 
 export interface GrafanaShape {
+  /** Whether the MCP server answers at all (its container is up), within 2 seconds. */
+  readonly reachable: Effect.Effect<boolean>
   /** A PromQL range query against VictoriaMetrics. */
   readonly prom: (expr: string, range: Range) => Effect.Effect<ReadonlyArray<Series>, AdapterError>
   /** A LogsQL `stats` query over time against VictoriaLogs (`stats_query_range`). */
@@ -96,7 +98,13 @@ export const rowsOf = (data: unknown): ReadonlyArray<unknown> => {
   return typeof data === "object" && data !== null ? [data] : []
 }
 
-export const GrafanaLive = Layer.effect(Grafana)(
+/** The server no longer knows our MCP session (the container restarted): the one failure a fresh session fixes. */
+class SessionLost extends Data.TaggedError("SessionLost")<{ readonly method: string }> {}
+
+const LOST = Symbol("session lost")
+
+/** The client of the MCP server at `url`; `GrafanaLive` is the shared container's. */
+export const makeGrafana = (url: string) =>
   Effect.gen(function* () {
     /** The MCP session id from `initialize`; dropped when the server forgets it. */
     let session: string | undefined
@@ -107,16 +115,19 @@ export const GrafanaLive = Layer.effect(Grafana)(
     const rpc = (method: string, params: Record<string, unknown>, notification = false) =>
       attempt("grafana", method, async (): Promise<unknown> => {
         const id = nextId++
-        const response = await fetch(GRAFANA_MCP_URL, {
+        const sent = session
+        const response = await fetch(url, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Accept: "application/json, text/event-stream",
-            ...(session === undefined ? {} : { "Mcp-Session-Id": session }),
+            ...(sent === undefined ? {} : { "Mcp-Session-Id": sent }),
           },
           body: JSON.stringify(notification ? { jsonrpc: "2.0", method, params } : { jsonrpc: "2.0", id, method, params }),
           signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
         })
+        // A session the server no longer has is answered 404 (MCP), or 400 by some servers.
+        if (sent !== undefined && (response.status === 404 || response.status === 400)) return LOST
         if (!response.ok) throw new Error(`MCP ${method} answered HTTP ${response.status}`)
         session = response.headers.get("Mcp-Session-Id") ?? session
         if (notification) return null
@@ -132,7 +143,7 @@ export const GrafanaLive = Layer.effect(Grafana)(
           }
         }
         throw new Error(`MCP ${method}: no answer`)
-      })
+      }).pipe(Effect.flatMap((answer) => (answer === LOST ? Effect.fail(new SessionLost({ method })) : Effect.succeed(answer))))
 
     const connect = Effect.gen(function* () {
       session = undefined
@@ -153,14 +164,18 @@ export const GrafanaLive = Layer.effect(Grafana)(
         return yield* Effect.try({ try: (): unknown => JSON.parse(text), catch: (cause) => failure(name, errorMessage(cause)) })
       })
 
-    /** One retry on a fresh MCP session: the container may have restarted and forgotten ours. */
+    /**
+     * One retry on a fresh MCP session, only when the server lost ours (the container restarted). A timeout or a
+     * tool's own error fails at once: a heavy LogsQL query is never run twice on the shared VictoriaLogs.
+     */
     const call = (name: string, args: Record<string, unknown>) => {
       if (!ALLOWED_TOOLS.has(name)) return Effect.fail(failure(name, `${name} is not an allowed Grafana tool`))
       return callOnce(name, args).pipe(
-        Effect.catch(() => {
+        Effect.catchTag("SessionLost", () => {
           session = undefined
           return callOnce(name, args)
         }),
+        Effect.catchTag("SessionLost", (lost) => Effect.fail(failure(name, `MCP ${lost.method}: the server lost the session again`))),
         inFlight.withPermits(1),
       )
     }
@@ -178,6 +193,9 @@ export const GrafanaLive = Layer.effect(Grafana)(
     const seconds = (date: Date) => String(Math.floor(date.getTime() / 1000))
 
     return {
+      reachable: Effect.tryPromise(() => fetch(url, { method: "GET", signal: AbortSignal.timeout(2_000) })).pipe(
+        Effect.match({ onFailure: () => false, onSuccess: () => true }),
+      ),
       prom: (expr, range) =>
         checkRange(range).pipe(
           Effect.andThen(
@@ -206,6 +224,7 @@ export const GrafanaLive = Layer.effect(Grafana)(
           ),
           Effect.flatMap((rows) => Effect.forEach(rows, decodeOr("grafana", "logsql rows", Row))),
         ),
-    }
-  }),
-)
+    } satisfies GrafanaShape
+  })
+
+export const GrafanaLive = Layer.effect(Grafana)(makeGrafana(GRAFANA_MCP_URL))

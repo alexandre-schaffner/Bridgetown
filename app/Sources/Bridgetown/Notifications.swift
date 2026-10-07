@@ -1,42 +1,82 @@
 import AppKit
 import UserNotifications
 
-/// Posts a user notification for each new "Needs you" action (`NewActions`).
-///
-/// UNUserNotificationCenter traps when the process has no bundle identifier (e.g. under
-/// `swift run`), so everything is gated on `isAvailable`.
+/// Posts a user notification for each new "Needs you" action (`NewActions`), and takes it
+/// back once the action is gone.
 @MainActor
 final class Notifier: NSObject {
-    static var isAvailable: Bool { Bundle.main.bundleIdentifier != nil }
-
-    private var authorized = false
+    /// Set by `start`, or by a test. UNUserNotificationCenter traps when the process has no
+    /// bundle identifier (e.g. under `swift run`), and an e2e run never starts it.
+    private var center: (any NotificationShelf)?
+    /// The actions standing at the last snapshot; their notifications stay.
+    private var standing: Set<String>?
     /// Clicking a notification opens the island.
     var onOpen: (() -> Void)?
 
+    init(center: (any NotificationShelf)? = nil) {
+        self.center = center
+    }
+
     func start() {
-        guard Self.isAvailable else { return }
+        guard Bundle.main.bundleIdentifier != nil else { return }
         let center = UNUserNotificationCenter.current()
         center.delegate = self
-        Task {
-            authorized = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
-        }
+        self.center = center
+        // Posting doesn't wait on the answer: allowed later in System Settings, it works
+        // from then on, and until then the system drops what we post.
+        Task { _ = try? await center.requestAuthorization(options: [.alert, .sound]) }
     }
 
     func post(_ actions: [Action]) {
-        guard Self.isAvailable, authorized else { return }
-        for action in actions.prefix(3) { post(action) }
+        guard let center else { return }
+        for action in actions.prefix(3) {
+            let content = UNMutableNotificationContent()
+            content.title = action.title
+            content.body = action.detail
+            content.sound = .default
+            content.threadIdentifier = "actions"
+            center.post(UNNotificationRequest(identifier: Self.identifier(action.id), content: content, trigger: nil))
+        }
     }
 
-    private func post(_ action: Action) {
-        let content = UNMutableNotificationContent()
-        content.title = action.title
-        content.body = action.detail
-        content.sound = .default
-        content.threadIdentifier = "actions"
-        content.userInfo = ["actionId": action.id, "sessionId": action.sessionId ?? ""]
-        let request = UNNotificationRequest(identifier: "action-\(action.id)", content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request)
+    /// Takes back every delivered notification whose action is gone: answered here or in
+    /// Slack, or before a relaunch. Clicking one would open the island onto nothing.
+    /// Nothing to do while the same actions stand.
+    func withdraw(allBut current: Set<String>) {
+        guard current != standing else { return }
+        standing = current
+        guard let center else { return }
+        Task {
+            let delivered = await center.delivered()
+            // Kept: the actions standing once the answer is in, not when it was asked. One
+            // that came up in between has just been posted, and stays.
+            let keep = Set((standing ?? []).map(Self.identifier))
+            let stale = delivered.filter { !keep.contains($0) }
+            if !stale.isEmpty { center.remove(stale) }
+        }
     }
+
+    private static func identifier(_ actionId: String) -> String { "action-\(actionId)" }
+}
+
+/// Notification Center as `Notifier` uses it: the system's, or a test's that holds its
+/// answers back.
+@MainActor
+protocol NotificationShelf: AnyObject {
+    func post(_ request: UNNotificationRequest)
+    /// The identifiers of the notifications still shown.
+    func delivered() async -> [String]
+    func remove(_ identifiers: [String])
+}
+
+extension UNUserNotificationCenter: NotificationShelf {
+    func post(_ request: UNNotificationRequest) { add(request) }
+
+    func delivered() async -> [String] {
+        await deliveredNotifications().map(\.request.identifier)
+    }
+
+    func remove(_ identifiers: [String]) { removeDeliveredNotifications(withIdentifiers: identifiers) }
 }
 
 extension Notifier: UNUserNotificationCenterDelegate {
@@ -58,12 +98,14 @@ extension Notifier: UNUserNotificationCenterDelegate {
 /// New "Needs you" actions, snapshot to snapshot, diffed on ids. The first snapshot is the
 /// baseline, so a relaunch doesn't replay everything already waiting.
 struct NewActions {
-    private var seen: Set<String>?
+    /// The last snapshot's ids. Only those: an action id is never used again, so forgetting
+    /// the ones that are gone can't announce anything twice.
+    private(set) var seen: Set<String>?
 
     /// The actions not seen before, in "Needs you" order; none during quiet hours.
-    mutating func update(_ snap: Snapshot, now: Date = .now) -> [Action] {
+    mutating func update(_ snap: Snapshot, now: Date = AppClock.now) -> [Action] {
         let ids = Set(snap.actions.map(\.id))
-        defer { seen = (seen ?? []).union(ids) }
+        defer { seen = ids }
         guard let seen, !QuietHours.isActive(snap.settings.quietHours, at: now) else { return [] }
         return snap.sortedActions.filter { !seen.contains($0.id) }
     }
@@ -71,7 +113,7 @@ struct NewActions {
 
 enum QuietHours {
     /// `start`/`end` are "HH:mm"; the window may wrap midnight ("22:00"–"08:00").
-    static func isActive(_ q: Settings.QuietHours, at date: Date = .now, calendar: Calendar = .current) -> Bool {
+    static func isActive(_ q: Settings.QuietHours, at date: Date = AppClock.now, calendar: Calendar = .current) -> Bool {
         guard q.enabled, let start = minutes(q.start), let end = minutes(q.end), start != end else { return false }
         let c = calendar.dateComponents([.hour, .minute], from: date)
         let now = (c.hour ?? 0) * 60 + (c.minute ?? 0)

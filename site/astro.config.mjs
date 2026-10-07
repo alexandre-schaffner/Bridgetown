@@ -1,7 +1,26 @@
 import { defineConfig } from "astro/config";
 
+/**
+ * The rigs the films are made with (src/dev/): pages in `astro dev`, and nowhere in the
+ * build, so none of their code or styles ship.
+ */
+const devRigs = {
+  name: "dev-rigs",
+  hooks: {
+    "astro:config:setup": ({ command, injectRoute }) => {
+      if (command !== "dev") return;
+      for (const rig of ["film", "launch"]) {
+        injectRoute({ pattern: `/${rig}`, entrypoint: `./src/dev/${rig}.astro` });
+      }
+    },
+  },
+};
+
 export default defineConfig({
   devToolbar: { enabled: false },
+  integrations: [devRigs],
+  // Styles stay in files, which the Content-Security-Policy (public/_headers) allows as the site's own.
+  build: { inlineStylesheets: "never" },
   vite: {
     // three.js is one ~740 kB chunk on its own, loaded after the page is interactive.
     build: { chunkSizeWarningLimit: 800 },
