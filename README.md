@@ -118,6 +118,7 @@ Run these from the repository root:
 | `make all` | Compile the daemon and assemble `build/Bridgetown.app` |
 | `make dmg` | Package the built app as `build/Bridgetown.dmg` |
 | `make test-app` | Run Swift tests |
+| `make check` | Run CI's checks: the daemon's types and tests, the Swift tests, and the landing page's build and tests (CI also builds the DMG) |
 | `make e2e` | Draw and lint every screen off screen against a static mock, into `.context/e2e/` |
 | `bun test --cwd daemon` | Run daemon tests |
 | `bun run --cwd daemon check` | Type-check the daemon |
@@ -126,7 +127,7 @@ Run these from the repository root:
 | `bun run --cwd site test` | Run the landing page's tests |
 | `make e2e-site` | Build the landing page if stale, then screenshot, lint and check it at six screen sizes, into `.context/e2e/`. Needs Chromium once: `bunx playwright-core install chromium` in `site/` |
 
-Daemon tests mirror `src/` as `daemon/test/<folder>/<module>.test.ts`; the shared fakes, records, and test world live in `daemon/test/support/`, which the mock is built on too. `bun scripts/session-smoke.ts` in `daemon/` runs one real agent session against a throwaway repo (it costs money) and exits 1 unless it reaches a result.
+Daemon tests mirror `src/` as `daemon/test/<folder>/<module>.test.ts`; the shared fakes, records, and test world live in `daemon/test/support/`, which the mock is built on too. What the daemon sends the app is declared once, in `daemon/src/api/wire.ts`, and pinned to the app's test fixtures ([the contract](docs/API.md#the-contract)). `bun scripts/session-smoke.ts` in `daemon/` runs one real agent session against a throwaway repo (it costs money) and exits 1 unless it reaches a result.
 
 <details>
 <summary><b>The mock daemon</b></summary>
