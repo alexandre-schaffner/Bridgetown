@@ -7,7 +7,6 @@ import Notch from "../components/Notch.astro";
 import Film from "../components/Film.astro";
 import Triage from "../components/Triage.astro";
 import Journey from "../components/Journey.astro";
-import Light from "../components/Light.astro";
 import Outcomes from "../components/Outcomes.astro";
 import Watch from "../components/Watch.astro";
 import Safety from "../components/Safety.astro";
@@ -52,7 +51,7 @@ const title = "Bridgetown: your alerts, handled before you look";
     <Nav />
 
     <div class="scene" aria-hidden="true">
-      <!-- The live arch, for the light and the closing chapters (scripts/scene.ts). -->
+      <!-- The live arch, for the closing chapter (scripts/scene.ts). -->
       <canvas data-scene></canvas>
       <!-- The hero's dawn: one shader (scripts/dawn.ts). Without WebGL, a still glow stands in
            and the flood to day is a plain gradient. -->
@@ -68,7 +67,6 @@ const title = "Bridgetown: your alerts, handled before you look";
       <Notch />
       <Triage />
       <Journey />
-      <Light />
       <Outcomes />
       <Watch />
       <Safety />
