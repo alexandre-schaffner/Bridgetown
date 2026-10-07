@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Deferred, Effect } from "effect"
 import { Critic } from "../../src/critique/critic.ts"
-import type { ReviewerShape, Verdict } from "../../src/critique/reviewer.ts"
+import type { ReviewerProfile, ReviewerShape, Verdict } from "../../src/critique/reviewer.ts"
 import { AdapterError } from "../../src/domain/errors.ts"
 import { NO_MILESTONES, type Session } from "../../src/domain/session.ts"
 import { Hub } from "../../src/hub.ts"
@@ -50,7 +50,7 @@ const jev = fakeJev({
 
 const reviewing = (overrides: Partial<Session> = {}): Session =>
   makeSession("critiquing", {
-    id: "s_crit", alertId: "C1:crit", prUrl: PR, worktree: "/w", claudeSessionId: "c", phase: "critique",
+    id: "s_crit", alertId: "C1:crit", prUrl: PR, worktree: "/w", agentSessionId: "c", phase: "critique",
     milestones: { ...NO_MILESTONES, diagnosed: true, fixed: true, prOpened: true }, ...overrides,
   })
 
@@ -73,6 +73,36 @@ const transcript = Effect.gen(function* () {
 })
 
 describe("the adversarial review", () => {
+  test("a new review uses the reviewing role and keeps it while settings change", async () => {
+    const started = await Effect.runPromise(Deferred.make<void>())
+    const finish = await Effect.runPromise(Deferred.make<void>())
+    const profiles: Array<ReviewerProfile> = []
+    const reviewer: ReviewerShape = { review: (request) => Effect.gen(function* () {
+      profiles.push(request.profile)
+      yield* Deferred.succeed(started, undefined)
+      yield* Deferred.await(finish)
+      return { summary: "sound", findings: [] }
+    }) }
+    const { github } = criticGitHub()
+    const world = makeWorld({ github, reviewer, jev })
+    try {
+      await world.runPromise(Effect.gen(function* () {
+        const hub = yield* Hub
+        yield* hub.updateSettings({ ...(yield* hub.settings), models: {
+          monitoring: { mode: "manual", provider: "codex", model: "investigator", effort: "high" },
+          reviewing: { mode: "manual", provider: "claude", model: "reviewer", effort: "max" },
+        } })
+        yield* seed(reviewing({ provider: "codex", model: "investigator" }))
+        yield* (yield* Critic).tick
+        yield* Deferred.await(started)
+        yield* hub.updateSettings({ ...(yield* hub.settings), models: { monitoring: { mode: "automatic" }, reviewing: { mode: "automatic" } } })
+        yield* Deferred.succeed(finish, undefined)
+      }))
+      const session = await world.runPromise(eventually(Store.use((s) => s.getSession("s_crit")), (s) => s?.status === "ci" ? s : undefined))
+      expect(profiles).toEqual([{ vendor: "claude", model: "reviewer", effort: "max" }])
+      expect(session).toMatchObject({ provider: "codex", reviewProfile: profiles[0], critique: { reviewer: "claude" } })
+    } finally { await world.dispose() }
+  })
   test("a blocking finding goes back to the agent; Jev's nitpick does not", async () => {
     const { agent, received } = recordingAgent()
     const { github, state } = criticGitHub()

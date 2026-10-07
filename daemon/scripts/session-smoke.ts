@@ -73,7 +73,7 @@ const program = Effect.gen(function* () {
     if (line !== last) console.log(line)
     last = line
     if (!["queued", "preparing", "running"].includes(current.status)) {
-      console.log(JSON.stringify({ outcome: current.outcome, diagnosis: current.diagnosis, prUrl: current.prUrl, branch: current.branch, costUsd: current.costUsd, claudeSessionId: current.claudeSessionId }, null, 2))
+      console.log(JSON.stringify({ outcome: current.outcome, diagnosis: current.diagnosis, prUrl: current.prUrl, branch: current.branch, costUsd: current.costUsd, agentSessionId: current.agentSessionId }, null, 2))
       console.log("actions:", JSON.stringify(yield* store.listActions(), null, 2))
       console.log("transcript:")
       for (const entry of yield* store.transcript(session.id, 60)) console.log(`  [${entry.kind}] ${entry.text.split("\n")[0]}`)

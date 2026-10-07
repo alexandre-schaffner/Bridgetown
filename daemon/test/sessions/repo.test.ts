@@ -48,7 +48,7 @@ describe("SessionRepo: the finished guard", () => {
       Effect.gen(function* () {
         const repo = yield* SessionRepo
         yield* seed(makeSession("failed", { id: "s_retry", alertId: "C1:retry", costUsd: 1 }))
-        const cost = yield* repo.modify("s_retry", (s) => ({ ...s, costUsd: s.costUsd + 2 }), { evenIfFinished: true })
+        const cost = yield* repo.modify("s_retry", (s) => ({ ...s, costUsd: (s.costUsd ?? 0) + 2 }), { evenIfFinished: true })
         return { cost: cost?.costUsd, retried: (yield* repo.patch("s_retry", { status: "queued" }, { evenIfFinished: true }))?.status }
       }),
     )

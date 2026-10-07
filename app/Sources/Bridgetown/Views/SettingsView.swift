@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct SettingsView: View {
-    enum Tab: String { case accounts, channels, triage, repos, behaviour }
+    enum Tab: String { case accounts, channels, triage, models, repos, behaviour }
 
     @ViewState private var tab: Tab
 
@@ -21,6 +21,9 @@ struct SettingsView: View {
             DaemonSettings { TriageTab(settings: $0) }
                 .tabItem { Label("Triage", systemImage: "slider.horizontal.3") }
                 .tag(Tab.triage)
+            DaemonSettings { ModelsTab(settings: $0) }
+                .tabItem { Label("Models", systemImage: "cpu") }
+                .tag(Tab.models)
             DaemonSettings { ReposTab(settings: $0) }
                 .tabItem { Label("Repos", systemImage: "folder") }
                 .tag(Tab.repos)
@@ -55,7 +58,7 @@ private struct DaemonSettings<Content: View>: View {
 
 /// The settings as shown (rebuilt on every snapshot), and bindings into them by key path.
 @MainActor
-private struct SettingsBinding {
+struct SettingsBinding {
     let store: Store
     let value: Settings
 
@@ -321,7 +324,7 @@ private struct BehaviourTab: View {
             Section {
                 Toggle("Adversarial review", isOn: settings.binding(\.adversarialReview))
             } footer: {
-                Text("Codex reviews every fix an agent pushes, and the agent fixes what it finds, before the PR leaves draft. Off: PRs go straight to CI.")
+                Text("Your configured review model reviews every fix an agent pushes, and the agent fixes what it finds, before the PR leaves draft. Off: PRs go straight to CI.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 

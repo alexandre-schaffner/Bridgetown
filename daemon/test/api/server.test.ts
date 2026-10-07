@@ -1,13 +1,16 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { Effect, ManagedRuntime, Schema } from "effect"
 import { authorized, bind, type BoundServer, serve } from "../../src/api/server.ts"
+import { Models } from "../../src/agent/models.ts"
 import { AdapterError, Conflict, GheBlocked, InvalidInput, MissingCredential, NotFound, SlackApiError, statusOf } from "../../src/domain/errors.ts"
 import { Settings } from "../../src/domain/settings.ts"
+import type { ModelSelection } from "../../src/domain/models.ts"
 import { appLayer } from "../../src/layers.ts"
 import { newSession } from "../../src/sessions/new-session.ts"
 import { Store } from "../../src/store/store.ts"
 import { makeAlert } from "../support/records.ts"
 import { scratchDir } from "../support/tmp.ts"
+import { fakeModels, MODEL_CATALOG } from "../support/models.ts"
 import { testEnv } from "../support/world.ts"
 
 const TOKEN = "test-token"
@@ -37,7 +40,7 @@ beforeAll(async () => {
         id: "a_review", kind: "review", title: "Root cause not found · t", detail: "", primaryLabel: "Close session", options: [],
         sessionId: null, alertId: alert.id, fingerprint: null, retry: false, url: "file:///etc/passwd", createdAt: "2026-10-01T00:00:00.000Z",
       })
-      yield* serve(server, { token: TOKEN, sse: { coalesce: "10 millis", ping: "200 millis" } })
+      yield* serve(server, { token: TOKEN, sse: { coalesce: "10 millis", ping: "200 millis" } }).pipe(Effect.provideService(Models, fakeModels()))
     }),
   )
 })
@@ -65,6 +68,7 @@ describe("auth", () => {
     expect((await call("/health", { token: null })).status).toBe(200)
     expect((await call("/state", { token: null })).status).toBe(401)
     expect((await call("/state", { token: "wrong" })).status).toBe(401)
+    expect((await call("/models", { token: null })).status).toBe(401)
     expect((await call("/state")).status).toBe(200)
   })
   test("a foreign Host or any Origin is refused before the token is looked at", async () => {
@@ -94,6 +98,9 @@ describe("auth", () => {
 })
 
 describe("contract shape", () => {
+  test("model discovery is a separate authenticated read, with provider capabilities", async () => {
+    expect(await (await call("/models?refresh=true")).json()).toEqual(MODEL_CATALOG)
+  })
   test("snapshot: outcome on alerts, acceptsMessages and no phase on sessions, inFlight/dismissCloses on actions", async () => {
     const text = await (await call("/state")).text()
     expect(JSON.parse(text)).toMatchObject({
@@ -127,6 +134,18 @@ describe("feedback on Jev's call", () => {
 })
 
 describe("status codes", () => {
+  test("role selections save independently; null clears effort; invalid capabilities change nothing", async () => {
+    const manual: ModelSelection = { mode: "manual", provider: "codex", model: "gpt-5.6-sol", effort: "high" }
+    expect((await post("/settings", { models: { monitoring: manual } })).status).toBe(200)
+    expect((await settingsOf(call("/state"))).models).toEqual({ monitoring: manual, reviewing: { mode: "automatic" } })
+    expect((await post("/settings", { models: { monitoring: { ...manual, effort: "ultra" } } })).status).toBe(400)
+    expect((await settingsOf(call("/state"))).models.monitoring).toEqual(manual)
+    const custom: ModelSelection = { mode: "manual", provider: "claude", model: "custom-claude", effort: null }
+    expect((await post("/settings", { models: { monitoring: { ...manual, effort: null }, reviewing: custom } })).status).toBe(200)
+    expect((await settingsOf(call("/state"))).models).toEqual({ monitoring: { ...manual, effort: null }, reviewing: custom })
+    expect((await post("/settings", { models: { monitoring: { mode: "automatic" } } })).status).toBe(200)
+    expect((await settingsOf(call("/state"))).models).toEqual({ monitoring: { mode: "automatic" }, reviewing: custom })
+  })
   test("404 for unknown ids", async () => {
     expect((await call("/alerts/C9%3A1")).status).toBe(404)
     expect((await call("/sessions/s_nope/transcript")).status).toBe(404)

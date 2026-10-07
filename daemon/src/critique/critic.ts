@@ -14,7 +14,7 @@ import { GitHub } from "../ship/github.ts"
 import { Store } from "../store/store.ts"
 import { decideFinding } from "../triage/policy.ts"
 import { critiqueFailedPrompt, critiquePrompt } from "./prompts.ts"
-import { REVIEWERS, Reviewer, type Verdict } from "./reviewer.ts"
+import { reviewerProfile, Reviewer, type Verdict } from "./reviewer.ts"
 import { critiqueStep, findingLine, fixingActivity, MAX_CRITIQUE_ROUNDS, reviewErrorStep } from "./transitions.ts"
 
 /** The adversarial review between a pushed fix and CI: another vendor's model reviews, Jev drops the nitpicks, the agent fixes the rest. */
@@ -126,10 +126,11 @@ export const CriticLive = Layer.effect(Critic)(
         }
 
         const alert: Alert | undefined = yield* store.getAlert(session.alertId)
-        const profile = REVIEWERS[alert?.triage.jev?.depth ?? "standard"]
+        const profile = reviewerProfile((yield* hub.settings).models.reviewing, alert?.triage.jev?.depth ?? "standard")
         const round = session.critiqueRounds + 1
         const previous = session.critique !== null && !critiquePassed(session.critique) ? session.critique : null
         const name = REVIEWER_NAMES[profile.vendor]
+        if ((yield* stillReviewing(id, (current) => ({ ...current, reviewProfile: profile }), session)) === undefined) return
         yield* repo.log(id, "status", `${name} reviewing ${head.slice(0, 7)} (round ${round})…`, { activity: true })
         const verdict = yield* reviewer.review({
           worktree: session.worktree,

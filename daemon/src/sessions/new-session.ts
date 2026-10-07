@@ -1,6 +1,7 @@
 import type { Alert, Depth } from "../domain/alert.ts"
 import { now } from "../domain/ids.ts"
 import { type Effort, NO_MILESTONES, type Session } from "../domain/session.ts"
+import { AUTOMATIC, type ModelSelection, type AgentProvider } from "../domain/models.ts"
 import { slug } from "./worktree.ts"
 
 export interface LaunchProfile {
@@ -8,7 +9,7 @@ export interface LaunchProfile {
   readonly effort: Effort
 }
 
-/** Jev answers an abstract tier; only this table names models, so the API can never pick one. */
+/** Automatic monitoring maps Jev's abstract depth to the existing launch profiles. */
 export const PROFILES: Readonly<Record<Depth, LaunchProfile>> = {
   quick: { model: "claude-sonnet-5-5", effort: "medium" },
   standard: { model: "claude-opus-5-5", effort: "high" },
@@ -21,9 +22,9 @@ export const branchFor = (alert: Alert, id: string): string => {
   return `fix-bt-${slug(base)}-${id.slice(-4)}`
 }
 
-/** A queued session for the alert. Jev's depth picks the model and effort; nothing has happened yet. */
-export const newSession = (alert: Alert, id: string, repoPath: string): Session => {
-  const profile = PROFILES[alert.triage.jev?.depth ?? "standard"]
+/** Snapshot the model choice at enqueue so retries and follow-ups retain it. */
+export const newSession = (alert: Alert, id: string, repoPath: string, selection: ModelSelection = AUTOMATIC): Session => {
+  const profile: { provider: AgentProvider; model: string; effort: string | null } = selection.mode === "automatic" ? { provider: "claude", ...PROFILES[alert.triage.jev?.depth ?? "standard"] } : selection
   return {
     id,
     alertId: alert.id,
@@ -39,11 +40,13 @@ export const newSession = (alert: Alert, id: string, repoPath: string): Session 
     branch: branchFor(alert, id),
     worktree: null,
     repoPath,
-    claudeSessionId: null,
+    agentSessionId: null,
+    agentConfigDir: null,
+    provider: profile.provider,
     model: profile.model,
     effort: profile.effort,
     ciRounds: 0,
-    costUsd: 0,
+    costUsd: profile.provider === "claude" ? 0 : null,
     // A watch finding's permalink is its Grafana dashboard: there is no Slack thread.
     slackThreadUrl: alert.source === "watch" ? null : alert.permalink,
     milestones: NO_MILESTONES,
@@ -54,6 +57,7 @@ export const newSession = (alert: Alert, id: string, repoPath: string): Session 
     review: null,
     critiqueRounds: 0,
     critique: null,
+    reviewProfile: null,
     mergeRequestedAt: null,
     releaseTag: null,
     deployStage: null,

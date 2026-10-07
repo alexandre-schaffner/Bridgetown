@@ -67,7 +67,7 @@ extension Session {
 
     /// "Opus · 12m · $1.40".
     func meta(now: Date) -> String {
-        [model, elapsed(now: now), Format.cost(costUsd)]
+        [model, elapsed(now: now), costUsd.map(Format.cost) ?? ""]
             .filter { !$0.isEmpty }
             .joined(separator: " · ")
     }

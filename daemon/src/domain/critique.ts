@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { AgentProvider, PROVIDER_NAMES } from "./models.ts"
 
 /** What the adversarial reviewer reports: where, what, and how it fails. */
 export const ReviewFinding = Schema.Struct({
@@ -29,11 +30,11 @@ export const Finding = Schema.Struct({
 })
 export type Finding = typeof Finding.Type
 
-export const ReviewerVendor = Schema.Literals(["codex"])
+export const ReviewerVendor = AgentProvider
 export type ReviewerVendor = typeof ReviewerVendor.Type
 
 /** How the reviewer is named in the transcript and status line. */
-export const REVIEWER_NAMES: Readonly<Record<ReviewerVendor, string>> = { codex: "Codex" }
+export const REVIEWER_NAMES: Readonly<Record<ReviewerVendor, string>> = PROVIDER_NAMES
 
 export const Critique = Schema.Struct({
   reviewer: ReviewerVendor,

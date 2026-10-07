@@ -70,9 +70,9 @@ enum SystemActions {
 
     /// `takeOverCommand` in a new Terminal window. Returns an error message on failure.
     static func takeOver(_ session: Session) async -> String? {
-        guard let id = session.claudeSessionId else { return "No Claude session to resume yet" }
-        let shell = takeOverCommand(worktree: session.worktree, claudeSessionId: id,
-                                    home: FileManager.default.homeDirectoryForCurrentUser.path)
+        guard let id = session.agentSessionId else { return "No agent session to resume yet" }
+        let shell = takeOverCommand(worktree: session.worktree, agentSessionId: id,
+                                    home: FileManager.default.homeDirectoryForCurrentUser.path, provider: session.provider, sessionId: session.id, agentConfigDir: session.agentConfigDir)
         #if DEBUG
         if let sink {
             sink(.takeOver, shell)
@@ -91,8 +91,14 @@ enum SystemActions {
     /// over, it is yours, and the daemon's housekeeping never deletes a locked worktree (nor its
     /// branch), whatever you changed there. `git worktree unlock` hands it back. Plain `;` and
     /// `&&`, so it reads the same in bash, zsh and fish.
-    nonisolated static func takeOverCommand(worktree: String?, claudeSessionId id: String, home: String) -> String {
-        let resume = "claude --resume \(shellQuote(id))"
+    nonisolated static func takeOverCommand(worktree: String?, agentSessionId id: String, home: String, provider: AgentProvider = .claude, sessionId: String = "", agentConfigDir: String? = nil) -> String {
+        let resume: String
+        switch provider {
+        case .claude: resume = "claude --resume \(shellQuote(id))"
+        case .codex:
+            let runtimeHome = agentConfigDir ?? URL(fileURLWithPath: home).appending(path: "Library/Application Support/Bridgetown/codex").appending(path: sessionId).path
+            resume = "CODEX_HOME=\(shellQuote(runtimeHome)) codex resume \(shellQuote(id))"
+        }
         guard let worktree else { return "cd \(shellQuote(home)) && \(resume)" }
         let dir = shellQuote(worktree)
         return "git -C \(dir) worktree lock --reason 'Taken over from Bridgetown' . 2>/dev/null; cd \(dir) && \(resume)"

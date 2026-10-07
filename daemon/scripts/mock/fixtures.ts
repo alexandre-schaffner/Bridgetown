@@ -172,7 +172,7 @@ export const buildFixtures = (options: WorldOptions) => {
       status,
       activity: "",
       worktree: worktree(base.branch),
-      claudeSessionId: uuidFor(base.id),
+      agentSessionId: uuidFor(base.id),
       startedAt: ago(minutes.started),
       updatedAt: ago(minutes.updated),
       ...overrides,
@@ -306,7 +306,7 @@ export const buildFixtures = (options: WorldOptions) => {
       releasePrefix: "states-exporter", milestones: shipped({}), resolution: "agent stopped: error_max_turns",
     }),
     failedSetup: session(A.failedSetup, "failed", { started: 139.6, updated: 139 }, {
-      activity: "Could not start: git fetch: The requested URL returned error: 403", worktree: null, claudeSessionId: null, costUsd: 0,
+      activity: "Could not start: git fetch: The requested URL returned error: 403", worktree: null, agentSessionId: null, costUsd: 0,
       resolution: "Could not start: git fetch: The requested URL returned error: 403",
     }),
     stopped: session(A.stopped, "stopped", { started: 248, updated: 236 }, {
@@ -336,7 +336,7 @@ export const buildFixtures = (options: WorldOptions) => {
   }
   const STILL_S = {
     queued: { ...newSession(STILL_A.queued, STILL_SESSION.queued, options.repoPath), startedAt: ago(0.4), updatedAt: ago(0.4) },
-    preparing: session(STILL_A.preparing, "preparing", { started: 1, updated: 0.8 }, { activity: "Creating worktree…", claudeSessionId: null }),
+    preparing: session(STILL_A.preparing, "preparing", { started: 1, updated: 0.8 }, { activity: "Creating worktree…", agentSessionId: null }),
   } satisfies Record<keyof typeof STILL_SESSION, Session>
 
   const card = (spec: Omit<Action, "id" | "createdAt" | "url" | "options" | "fingerprint" | "retry"> & Partial<Pick<Action, "url" | "options" | "fingerprint" | "retry">> & { readonly minutesAgo: number }): Action => {

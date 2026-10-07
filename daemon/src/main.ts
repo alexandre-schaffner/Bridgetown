@@ -6,6 +6,13 @@
 if (process.argv[2] === "--guard-exec") {
   const { guardExecMain } = await import("./guard/exec.ts")
   guardExecMain(process.argv.slice(3))
+} else if (process.argv[2] === "--guard-codex") {
+  const { codexHookVerdict } = await import("./guard/codex.ts")
+  const { readScript } = await import("./guard/bash.ts")
+  const [port = "0", branch = "", worktree = ""] = process.argv.slice(3)
+  let raw: unknown
+  try { raw = JSON.parse(await new Response(Bun.stdin.stream()).text()) } catch { raw = null }
+  process.stdout.write(JSON.stringify(codexHookVerdict(raw, { daemonPort: Number(port), branch, cwd: worktree, worktree, readFile: readScript })))
 } else {
   await import("./daemon.ts")
 }

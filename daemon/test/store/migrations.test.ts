@@ -34,6 +34,8 @@ describe("a store the first daemon wrote", () => {
       rootCauseFound: null, resolution: null, pushbacks: 0, mergeRequestedAt: null, releaseTag: null, deployStage: null,
     })
     expect(out.ci).toMatchObject({ mergeRequestedAt: null, releaseTag: null, deployStage: null, releasePrefix: "api" })
+    expect(out.ci).toMatchObject({ provider: "claude", agentSessionId: OLD_SESSIONS.ci.claudeSessionId, agentConfigDir: null, model: OLD_SESSIONS.ci.model, effort: OLD_SESSIONS.ci.effort })
+    expect(out.stopped).toMatchObject({ provider: "claude", agentSessionId: null })
     expect(out.stopped?.releasePrefix).toBeNull()
     expect(out.actions).toEqual([expect.objectContaining({ id: "a_old_review", url: null, fingerprint: null, retry: false })])
     expect(out.transcript).toHaveLength(1)
@@ -104,6 +106,7 @@ describe("a store the first daemon wrote", () => {
         { migration_id: 6, name: "release_prefix" },
         { migration_id: 7, name: "tracker_version" },
         { migration_id: 8, name: "action_fields" },
+        { migration_id: 9, name: "agent_provider" },
       ])
       expect(db.query("SELECT status FROM sessions WHERE id = ?").get(OLD_SESSIONS.closedAsResolved.id)).toEqual({ status: "closed" })
       expect(db.query("SELECT key FROM kv ORDER BY key").all()).toEqual([{ key: "paused" }])

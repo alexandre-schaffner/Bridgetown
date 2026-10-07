@@ -35,10 +35,8 @@ Decision policy, session boundaries, what Bridgetown keeps, and what it posts to
   they are never claimed.
 - **Policy** (`daemon/src/triage/policy.ts`) turns probabilities into a decision: auto, suggest, escalate, ignore or filtered. You can tune the
   thresholds in Settings. Each verdict is stored with its numbers, and 👍/👎 in the app labels it for calibration.
-- **Depth picks the model.** `quick` runs Sonnet at medium effort, `standard` runs Opus at high, `deep` runs Opus at max. Only that local table
-  (`PROFILES` in `daemon/src/sessions/new-session.ts`) names models.
-- **Another vendor reviews every fix.** Agents open PRs as drafts. Before a pushed fix goes to CI, Codex (never the coder's own vendor:
-  `REVIEWERS` in `daemon/src/critique/reviewer.ts`) reviews the diff adversarially in a read-only sandbox (`daemon/src/critique/`). Jev
+- **Models are configured per role.** Settings → Models selects Codex or Claude Code, model and effort independently for monitoring (investigation) and reviewing. Automatic monitoring keeps `quick` Sonnet/medium, `standard` Opus/high and `deep` Opus/max; Automatic reviewing keeps Codex at medium/high/xhigh. New sessions snapshot their monitoring choice; retries and follow-ups retain it. Each new review reads the current reviewing choice, and an in-flight review retains its profile. Jev still chooses depth and judges findings.
+- **A reviewer checks every fix.** Agents open PRs as drafts. Before a pushed fix goes to CI, the selected model reviews the diff adversarially without write tools (`daemon/src/critique/`). Codex uses its read-only sandbox; Claude Code gets only Read, Glob and Grep, with no shell, MCP or subagents. The same provider may investigate and review. Jev
   judges each finding (`real_defect`, `blocking`, and from round 2 whether the agent's reply already `rebutted` it) and the policy
   drops the nitpicks. Blocking findings go back to the same agent conversation; it fixes them or rebuts them with evidence, and the
   new head is reviewed again, up to 4 rounds before it is handed to you. Once a review passes, Bridgetown takes the PR out of draft
@@ -157,11 +155,11 @@ Housekeeping (`daemon/src/housekeeping/`) runs 2 minutes after the daemon starts
   preparing goes at the next round. The session's local `fix-bt-*` branch and its `-N` follow-ups go with the
   worktree, except a failed session's, which stays for Retry until the session itself goes. Branches on GitHub are
   left alone. A locked worktree is yours and stays, with its branch and whatever you changed there: **Take over in
-  Terminal** runs `git worktree lock` before `claude --resume`, and `git worktree unlock` hands it back.
+  Terminal** runs `git worktree lock` before resuming the saved provider conversation, and `git worktree unlock` hands it back.
 - **Rows.** After 30 days: alerts, finished sessions with their transcripts, and cards, unless the card's session is
   still active. Kept however old: the newest 30 alerts and the newest 20 finished sessions (what the app shows),
   anything a card still names, a session whose worktree is still there, and an active session's alerts. A session
-  goes only with its alert, and its agent conversation goes with it.
+  goes only with its alert, and its agent conversation goes with it. Codex investigations keep their isolated configuration and conversation under `<daemon home>/codex/<session id>`; Take over uses that saved directory. Unavailable Codex costs are omitted from the UI.
 - **The database.** Freed pages go back to the disk (incremental auto-vacuum, switched on once for a database made
   before it), and the write-ahead log is emptied every round and shrinks back to 8 MB after any other checkpoint.
 - **Review scratch.** A Codex review works in a `bt-review-*` temporary directory; one a killed daemon left behind

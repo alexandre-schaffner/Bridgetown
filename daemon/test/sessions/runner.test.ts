@@ -13,7 +13,7 @@ import { eventually } from "../support/wait.ts"
 import { makeWorld } from "../support/world.ts"
 
 /** Handed back with its worktree and agent conversation: it takes messages, and one starts a resumed turn. */
-const handedBack = (id: string): Session => makeSession("waiting", { id, alertId: `C1:${id}`, worktree: "/w", claudeSessionId: "c" })
+const handedBack = (id: string): Session => makeSession("waiting", { id, alertId: `C1:${id}`, worktree: "/w", agentSessionId: "c" })
 
 const seed = (session: Session) =>
   Effect.gen(function* () {
@@ -79,6 +79,26 @@ describe("your message", () => {
 })
 
 describe("a new turn", () => {
+  test("enqueue snapshots monitoring; changing settings does not change a queued session or its retry", async () => {
+    const world = makeWorld()
+    try {
+      const result = await world.runPromise(Effect.gen(function* () {
+        const hub = yield* Hub
+        const runner = yield* SessionRunner
+        const store = yield* Store
+        const choice = { mode: "manual", provider: "codex", model: "custom-codex", effort: "ultra" } as const
+        yield* hub.updateSettings({ ...(yield* hub.settings), models: { monitoring: choice, reviewing: { mode: "automatic" } } })
+        const alert = makeAlert()
+        yield* store.putAlert(alert, "h")
+        const queued = yield* runner.enqueue(alert)
+        yield* hub.updateSettings({ ...(yield* hub.settings), models: { monitoring: { mode: "automatic" }, reviewing: { mode: "automatic" } } })
+        yield* store.putSession({ ...queued, status: "failed" })
+        yield* runner.retry(queued.id)
+        return yield* store.getSession(queued.id)
+      }))
+      expect(result).toMatchObject({ status: "queued", provider: "codex", model: "custom-codex", effort: "ultra" })
+    } finally { await world.dispose() }
+  })
   test("takes down the hand-off it supersedes, which would otherwise close the session mid-turn", async () => {
     const { agent, received } = recordingAgent()
     const world = makeWorld({ agent })

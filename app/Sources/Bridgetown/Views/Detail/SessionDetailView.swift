@@ -242,8 +242,8 @@ struct SessionDetailView: View {
             Label("Take over in Terminal", systemImage: "terminal")
         }
         .buttonStyle(.stage(.secondary))
-        .disabled(session.claudeSessionId == nil)
-        .help(session.claudeSessionId == nil ? "No Claude session yet" : "claude --resume in the worktree")
+        .disabled(session.agentSessionId == nil)
+        .help(session.agentSessionId == nil ? "No agent session yet" : "Resume \(session.provider.name) in the worktree")
 
         Spacer(minLength: 0)
 

@@ -177,4 +177,9 @@ export const migrations = SqliteMigrator.fromRecord({
     yield* rewrite("sessions", (session) => legacyTracker(session, (id) => hashes.get(id)))
   }),
   "008_action_fields": rewrite("actions", legacyPayload),
+  "009_agent_provider": rewrite("sessions", (session) => {
+    if (!("claudeSessionId" in session)) return undefined
+    const { claudeSessionId, ...rest } = session
+    return { ...rest, provider: "claude", agentSessionId: claudeSessionId }
+  }),
 })
