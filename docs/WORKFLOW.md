@@ -2,15 +2,19 @@
 
 [← Back to the README](../README.md)
 
-Decision policy, session boundaries, and what Bridgetown posts to Slack.
+Decision policy, session boundaries, what Bridgetown keeps, and what it posts to Slack.
 
 ## How decisions are made
 
 - **Alerts are bot posts.** In the `#alert-*` channels only top-level bot messages are alerts. What people write there (a teammate
   pinging you in an alert's thread, or at the top level) is an inbox item; a follow-up in a thread an agent is handling goes to that agent.
+- **Nothing is lost to an outage** (`daemon/src/intake/`). Each channel is read back to just before its last good read,
+  never more than 3 hours (a weekend asleep doesn't replay Friday's alerts), and a burst of more than 15 posts is paged
+  back that far. The inbox's place moves only when every search worked. A release tracker a session is following is
+  read on its own every poll, however far down the channel it has gone.
 - **Rules come first** (`daemon/src/triage/rules.ts`). Successful deploys, releases waiting for approval, recoveries, `[RESOLVED]` and
   `:white_check_mark:` notices are filtered with no model call. A repeat of an alert a session already owns gets attached to that session.
-- **Jev on alerts** (`daemon/src/triage/jev.ts`). One `systemOne` call asks several things:
+- **Jev on alerts** (`daemon/src/triage/judge.ts`, asked through `daemon/src/jev.ts`). One `systemOne` call asks several things:
   - `actionable`: does this need action now?
   - `agent_resolvable`: can an agent fix it without prod writes?
   - `human_on_it`: is a teammate already on it?
@@ -31,9 +35,10 @@ Decision policy, session boundaries, and what Bridgetown posts to Slack.
   they are never claimed.
 - **Policy** (`daemon/src/triage/policy.ts`) turns probabilities into a decision: auto, suggest, escalate, ignore or filtered. You can tune the
   thresholds in Settings. Each verdict is stored with its numbers, and 👍/👎 in the app labels it for calibration.
-- **Depth picks the model.** `quick` runs Sonnet at medium effort, `standard` runs Opus at high, `deep` runs Opus at max. Only that local table names models.
+- **Depth picks the model.** `quick` runs Sonnet at medium effort, `standard` runs Opus at high, `deep` runs Opus at max. Only that local table
+  (`PROFILES` in `daemon/src/sessions/new-session.ts`) names models.
 - **Another vendor reviews every fix.** Agents open PRs as drafts. Before a pushed fix goes to CI, Codex (never the coder's own vendor:
-  `REVIEWER_FOR` in `daemon/src/triage/policy.ts`) reviews the diff adversarially in a read-only sandbox (`daemon/src/critique/`). Jev
+  `REVIEWERS` in `daemon/src/critique/reviewer.ts`) reviews the diff adversarially in a read-only sandbox (`daemon/src/critique/`). Jev
   judges each finding (`real_defect`, `blocking`, and from round 2 whether the agent's reply already `rebutted` it) and the policy
   drops the nitpicks. Blocking findings go back to the same agent conversation; it fixes them or rebuts them with evidence, and the
   new head is reviewed again, up to 4 rounds before it is handed to you. Once a review passes, Bridgetown takes the PR out of draft
@@ -64,34 +69,112 @@ Decision policy, session boundaries, and what Bridgetown posts to Slack.
 
 Sessions are headless, so `monorepo/AGENTS.md`'s prod-safety hard rule applies in full:
 
-- **No secrets in reach.** The app hands the daemon its tokens over stdin (see [API.md](API.md)), and every process the
-  daemon spawns, sessions included, gets an environment without `BRIDGETOWN_*`, `SLACK_*` or `TYPESAFE_*`.
-- **Bash guard.** A `PreToolUse` hook plus `canUseTool` (`daemon/src/sessions/guard.ts`) parses each command
-  (`sessions/shell.ts`: lists, pipes, subshells, `$(…)`, backticks, heredocs) and checks every command it would run,
-  through wrappers (`env`, `time`, `xargs`, `timeout`, `nice`, `bash -c`, `eval`, `find -exec`…), path prefixes and
-  `git -C/-c` options. A script run with `bash`, `sh`, `source` or `./` is checked by its content. It refuses all of the
-  following and tells the agent what to do instead:
-  - `gh pr merge`, `gh run rerun` and `gh run cancel`, `gh workflow run`, `gh release`, GitHub API writes, `gh`/`git` aliases
-  - creating or pushing tags, force pushes, pushes to any branch except the session's own `fix-bt-*`
-  - kubectl, helm, gcloud and `op`, keychain reads, `sudo`
-  - migrations, `cast send`, and network calls to `*.internal.merkl.xyz`, Slack, or the daemon's own port
-  - piping into a shell, and commands named through a variable or a glob, which it cannot check
-- **Writes stay in the worktree.** Edit, Write, MultiEdit and NotebookEdit are refused outside the session's worktree
-  (symlinks resolved, `..` refused). Reads stay open.
-- **What the guard cannot see.** Code run by an interpreter (`bun x.ts`, `node -e`, `python`), aliases from your own
-  shell config, and files written by Bash commands. The real backstops are the missing credentials and GitHub's
-  branch protection and `production` environment approval.
-- **MCP servers.** Only `merkl` and `grafana` load from the repo's `.mcp.json`, plus Bridgetown's in-process `report` and `ask` tools.
+- **No secrets in reach.** The daemon takes its tokens only on its stdin, from the app or `make dev` (see
+  [API.md](API.md#launch)), never from the environment, where any process of yours could read them back. Every process
+  it spawns, sessions included, gets an environment without `BRIDGETOWN_*`, `SLACK_*` or `TYPESAFE_*`.
+- **Named tools only.** Sessions get an explicit list of built-in tools (Bash, Read, Glob, Grep, Edit, Write, NotebookEdit,
+  WebSearch, WebFetch, TodoWrite) rather than the CLI's preset, and `Task` is taken away, so a newer tool that runs
+  commands or reaches the network (subagents, Monitor, Cron, RemoteTrigger, Workflow) is never offered
+  (`daemon/src/agent/options.ts`).
+- **One gate over every tool call.** A matcher-less `PreToolUse` hook, with `canUseTool` behind it
+  (`daemon/src/guard/hook.ts`), checks each call: a tool that runs a command goes through the command policy, a write
+  tool through the worktree boundary, WebFetch's URL through the same host rules as a network command. A call it
+  cannot check is refused.
+- **The command policy** (`daemon/src/guard/bash.ts`, `guard/vcs.ts`) parses each command (`guard/shell.ts`: lists,
+  pipes, subshells, `$(…)`, backticks, heredocs, function and `coproc` bodies, bash 5.3 `${ …; }`) and checks every
+  command it would run, through wrappers (`env`, `time`, `xargs`, `timeout`, `nice`, `bash -c`, `eval`, `find -exec`,
+  `trap`, `mapfile -C`…), path prefixes and `git -C/-c` options. A script run with `bash`, `sh`, `source` or `./` is
+  checked by its content, and a `package.json` script run by bun, npm, pnpm or yarn (`run <name>` or bare) by its
+  body, with its `pre` and `post` scripts, from the nearest `package.json`. It refuses all of the following and tells
+  the agent what to do instead:
+  - `gh` beyond an allowlist: read-only `pr`, `run`, `workflow`, `issue`, `repo` and `search` commands, `gh api` GETs
+    and GraphQL queries written inline, and the PR writes a fix needs (opening one as a draft, commenting, editing one
+    without touching its base or reviewers). So `gh pr merge`, watching checks, re-running or cancelling runs,
+    `gh workflow run`, releases, API writes and mutations are out, and so is a computed word where a flag could hide.
+  - tags (`git tag` creating or deleting one however its flags are written, `mktag`, `update-ref refs/tags/*`,
+    pushing tags), force pushes, deleting remote branches, and pushes anywhere but `origin` and the session's own
+    `fix-bt-*` branch (or its `-N` follow-ups)
+  - git commands that run another command (`rebase --exec`, `submodule foreach`, `filter-branch`, `difftool -x`,
+    `bisect run`), git config judged by its value (a pager, editor, ssh command, credential helper or hooks path that
+    runs something, `push.followTags`, an alias; `-c core.pager=` is fine), and `git credential`
+  - kubectl, helm, argocd, kargo, gcloud, gsutil, bq and `op`, Keychain reads with `security`, `sudo`, `su` and
+    `doas`, and reading a process's environment (`ps -E`, `ps eww`, `/proc/*/environ`)
+  - migrations, `cast send`, network calls to `*.internal.merkl.xyz`, Slack or the daemon's own port, and `curl`/`wget`
+    writes to the GitHub API
+  - variables that change what a later program runs, set as a prefix, through `env`, `export` or `declare`:
+    `BASH_ENV`, `ZDOTDIR`, `CDPATH`, `NODE_OPTIONS`, `BUN_OPTIONS`, `GIT_EXEC_PATH`, `LD_PRELOAD`, exported bash
+    functions, Bridgetown's own, and pagers, editors, ssh and askpass commands unless they run nothing
+    (`GIT_EDITOR=true`, `PAGER=cat`)
+  - interactive shells, commands handed to `at`, `crontab`, `launchctl`, `systemd-run`, `tmux` or `screen`, alias
+    definitions, piping into a shell, and commands named through a variable, a substitution or a glob, which it cannot
+    check
+- **Exec-time guard.** Every session's PATH starts with read-only shims for gh, git, kubectl, helm, argocd, kargo,
+  gcloud, gsutil, bq, op, sudo, su, doas, cast, curl and wget (`daemon/src/guard/exec.ts`, put back before every turn).
+  Each runs the same policy on the real, fully expanded argv through the daemon's `--guard-exec`, and refuses with
+  exit 126 and the reason. That catches what the command line doesn't show: Makefile and package recipes, commands a
+  program spawns (`bun x.ts`, `node -e`), a command held in a variable, the gh a git hook runs, an alias from your own
+  shell config. `security` has no shim, since the Claude CLI keeps its own login with `security -i`. Every Bash call
+  starts in the worktree, whatever the last one `cd`'d to.
+- **Writes stay in the worktree.** Edit, Write, MultiEdit and NotebookEdit are refused outside the session's worktree.
+  The path is read as the CLI reads it (trimmed, `~` expanded, relative to the worktree), then followed through every
+  symlink, dangling ones included; `..` and NUL bytes are refused. Reads stay open.
+- **What the guard cannot see.** A program that runs a binary by its absolute path, or with a PATH of its own, goes
+  around the shims, and so does the git that git runs for a hook or credential helper (git puts its own directory
+  first on its children's PATH). The exec-time guard takes the session's branch from its environment, so an
+  interpreter that changes it before running git can move the push check. What has no shim (`nc`, `socat`, `security`,
+  `prisma`, a read of `/proc`) is checked only on the command line, so not when a runner the guard doesn't know
+  (`flock`, `ionice`, `ssh`, a quoted `parallel` string) or interpreted code runs it. Files written by Bash commands
+  aren't confined. The real backstops are the missing credentials (a session has no daemon, Slack or TypeSafe token to
+  use or dump) and GitHub's branch protection and `production` environment approval.
+- **MCP servers.** Only `merkl` and `grafana` load from the repo's `.mcp.json`, plus Bridgetown's in-process `report`,
+  `ask` and `slack_context` tools.
 - **Human gates.** Merging, cutting releases, re-running approved pipelines and sending replies to teammates are always your click. GitHub's
   `production` environment approval stays with the reviewer team.
-- **Slack text is untrusted.** Jev's criteria and the agent prompts mark it as data, not instructions.
-- **Isolation.** Each session works in its own worktree under `monorepo/.shared/worktrees/fix-bt-*`, per the repo's worktree convention.
-- **Dry run.** `--dry-run` (or the Settings toggle) stops every Slack post.
+- **Slack text is untrusted.** Jev's criteria and the agent prompts fence it off as data, not instructions, and label
+  each thread message `[the user]`, `[a teammate]` or `[a bot or Bridgetown]`.
+- **Isolation.** Each session works in its own worktree under `monorepo/.shared/worktrees/fix-bt-*`, per the repo's
+  worktree convention. Housekeeping removes it, and the branch, once the session is over (below).
+- **Dry run.** `--dry-run`, `BRIDGETOWN_DRY_RUN=1` or the Settings toggle stops every Slack post.
+
+## Storage and retention
+
+Everything stays on your Mac:
+
+- **The store:** `~/Library/Application Support/Bridgetown/bridgetown.db` (SQLite, moved by `BRIDGETOWN_HOME`): alerts,
+  sessions with their transcripts, cards and settings. The exec-time guard's shims live beside it, in
+  `guard-bin/<port>/`.
+- **Worktrees:** `monorepo/.shared/worktrees/fix-bt-*`, or `<home>/worktrees/<repo>/` for a repo without `.shared/`.
+- **Agent conversations:** where the Claude CLI keeps them, `~/.claude/projects/` (or under `CLAUDE_CONFIG_DIR`).
+- **Logs:** `~/Library/Logs/Bridgetown/daemon.log`, the daemon's output and the app's notes about it. Past 10 MB it
+  becomes `daemon.log.1`, replacing the one before, so the two stay within about 20 MB. Deleting it is fine: **Open
+  logs** creates it again. A daemon that stops on its own soon after starting, twice in a row, shows as a problem with
+  an **Open logs** button.
+
+Housekeeping (`daemon/src/housekeeping/`) runs 2 minutes after the daemon starts, then every hour:
+
+- **Worktrees.** A resolved session's worktree goes at the next round. A closed, stopped or failed session keeps its
+  worktree for 24 hours, so your message can reopen it, or Retry rebuild it; what setup left of one stopped while
+  preparing goes at the next round. The session's local `fix-bt-*` branch and its `-N` follow-ups go with the
+  worktree, except a failed session's, which stays for Retry until the session itself goes. Branches on GitHub are
+  left alone.
+- **Rows.** After 30 days: alerts, finished sessions with their transcripts, and cards, unless the card's session is
+  still active. Kept however old: the newest 30 alerts and the newest 20 finished sessions (what the app shows),
+  anything a card still names, a session whose worktree is still there, and an active session's alerts. A session
+  goes only with its alert, and its agent conversation goes with it.
+- **The database.** Freed pages go back to the disk (incremental auto-vacuum, switched on once for a database made
+  before it), and the write-ahead log is emptied every round and shrinks back to 8 MB after any other checkpoint.
+- **Review scratch.** A Codex review works in a `bt-review-*` temporary directory; one a killed daemon left behind
+  goes after a day.
 
 ## What gets posted as you (🤖-prefixed)
 
-- **In the alert thread:** "Investigating…" (also your claim on the alert, see above), the PR link, a recommendation if there is one, "Released vX", and "Deployed vX ✓".
-- **In the approvals channel:** once CI is green, a review request. Product apps go to `#product-approvals` and ping `@dev-product`;
-  everything else goes to `#general-approvals` with the owning team. The request includes the PR link and the Revv walkthrough deep link
+- **In the alert thread:** "Investigating with Bridgetown…" (also your claim on the alert, see above), the fix PR, a
+  recommendation or "No action needed" with the agent's summary, "Review requested in #…", "Merged …", "Released vX;
+  watching the deploy.", "Re-ran the failed jobs…" and "Deployed vX ✓". A Bridgetown finding has no thread, so nothing
+  is posted for it.
+- **In the approvals channel:** once CI is green, a review request, unless the PR is already approved. Product apps go to
+  `#product-approvals` and ping `@dev-product`; everything else goes to `#general-approvals` with the owning team. The
+  request includes the PR link and the Revv walkthrough deep link
   (`revv://pr?host=nocturlab.ghe.com&repo=Merkl%2Fmonorepo&number=N`).
-- **In a teammate's thread:** a delegated agent's reply, only after you press **Send**.
+- **In a teammate's thread:** a delegated agent's reply, only after you press **Send reply**. An inbox item's thread
+  (often a DM) gets nothing else: no claim, and none of the updates above.
