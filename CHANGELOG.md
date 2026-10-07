@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.2](https://github.com/alexandre-schaffner/Bridgetown/compare/v1.0.1...v1.0.2) (2026-10-07)
+
+
+### Fixes
+
+* **site:** remove Read the light section ([#12](https://github.com/alexandre-schaffner/Bridgetown/issues/12)) ([08ac9e4](https://github.com/alexandre-schaffner/Bridgetown/commit/08ac9e452bad10ee5575aabd4163e84791cde98d))
+
+
+### Dependencies
+
+* bump @anthropic-ai/claude-agent-sdk ([#10](https://github.com/alexandre-schaffner/Bridgetown/issues/10)) ([82f466c](https://github.com/alexandre-schaffner/Bridgetown/commit/82f466c8e4d4cfd5f3b4e6ad5722afe0fd038a3a))
+
 ## [1.0.1](https://github.com/alexandre-schaffner/Bridgetown/compare/v1.0.0...v1.0.1) (2026-10-07)
 
 
