@@ -1,6 +1,6 @@
 # Daemon API
 
-The menu bar app talks to the daemon over HTTP on `127.0.0.1:<port>`. The default port is `47621`, and the `BRIDGETOWN_PORT` env var overrides it.
+The app talks to the daemon over HTTP on `127.0.0.1:<port>`. The default port is `47621`, and the `BRIDGETOWN_PORT` env var overrides it.
 Every request but `/health` carries `Authorization: Bearer <token>`. The daemon refuses to start without a token.
 
 ## Launch
@@ -11,10 +11,23 @@ The app starts the daemon with `BRIDGETOWN_SECRETS=stdin` and writes one JSON li
 { "apiToken": "<random>", "slackUserToken": "xoxp-…", "typesafeApiKey": "…" }
 ```
 
-An empty string counts as missing: an empty `apiToken` stops the daemon (exit 1), an empty Slack token or TypeSafe key
-shows as `missing_token` / `missing_key`. Secrets never travel in the environment, so agent sessions and their
-subprocesses cannot read them. The daemon exits when its stdin closes, so it never outlives the app. For development, `BRIDGETOWN_API_TOKEN`, `SLACK_USER_TOKEN` and
-`TYPESAFE_API_KEY` are still read from the environment; the daemon removes them from `process.env` at startup either way.
+This line is the only way in for secrets. Without `BRIDGETOWN_SECRETS=stdin`, or without an `apiToken` on the line, the
+daemon exits 1 before it binds the port. An empty Slack token or TypeSafe key shows as `missing_token` / `missing_key`.
+Secrets never travel in the environment, where the kernel keeps a copy any of the user's processes can read: the app
+strips `BRIDGETOWN_API_TOKEN`, `SLACK_USER_TOKEN` and `TYPESAFE_API_KEY` from the daemon's environment, and the daemon
+strips every `BRIDGETOWN_*`, `SLACK_*` and `TYPESAFE_*` variable from what it spawns. The daemon ignores later lines on
+stdin (the mock reads them as control lines) and exits when stdin closes, so it never outlives the app.
+
+The app picks what to run in this order:
+
+1. `BRIDGETOWN_DAEMON_CMD`: a command it runs as `/bin/sh -c "exec <cmd>"`, so one command
+   (`bun /abs/path/daemon/src/main.ts`), not a list. `make dev` runs the daemon from source this way.
+2. `BRIDGETOWN_ATTACH=1`: no child; it attaches to a daemon already running, with `BRIDGETOWN_API_TOKEN`. `make dev-app`
+   attaches to `make mock`, which answers the token `dev` when started by hand (or `BRIDGETOWN_API_TOKEN`).
+3. `bridgetown-daemon` in the app bundle.
+
+With none of them it says no daemon is bundled. The daemon's output goes to `daemon.log` in
+`~/Library/Logs/Bridgetown`, or in `BRIDGETOWN_LOG_DIR`, which only the app reads.
 
 The daemon binds the port before touching the store. If the port is taken it exits with status 98 and prints
 `port <n> in use` on stderr, so a second daemon never runs recovery on a store another daemon owns.
@@ -32,19 +45,46 @@ All timestamps are ISO-8601 strings. Every nullable field is always present, set
 | GET | `/logs` | | `LogSweep`: the last sweep of prod's logs (every 10 minutes, with `watchProd`), its patterns most telling first. Read from the store: never queries Grafana. |
 | GET | `/alerts/:id/board` | | `Board` picked from what the alert is about (an API route, a release image, a chain, its kind), 6h either side of it; `null` when nothing in Grafana tracks it (a DM). |
 | GET | `/alerts/:id` | | `AlertDetail` — the full message, its history, its session (if any) and open actions. `:id` is URL-encoded (`C0AUKD42N3U%3A1790933006.433649`). |
-| POST | `/actions/:id/resolve` | `{ "response": string \| null }` | `Snapshot`. `409` while the same action is already being resolved (`inFlight`). Merge and release are idempotent per session: a repeat never merges or tags twice. |
-| POST | `/actions/:id/dismiss` | `{}` | `Snapshot`. When `dismissCloses` is true, the session is recorded as closed. |
+| POST | `/actions/:id/resolve` | `{ "response": string \| null }` | `Snapshot`. `409` while the same card is being resolved or dismissed (`inFlight`), or, for merge and release, while another card of the same session's gate is. `409` for a card whose session has moved on (see [Cards](#cards)): it acts on nothing and goes. `409` for a Retry while the failed agent is still winding down; the card stays for a second click. A reply: `400` when the text is empty, `404` when the message it answers is gone; the card stays and nothing is recorded. Merge and release are idempotent per session: a repeat never merges or tags twice. |
+| POST | `/actions/:id/dismiss` | `{}` | `Snapshot`. `409` while the card is being resolved; a dismiss under way holds off a resolve of it the same way. When `dismissCloses` is true, the session is recorded as closed. Dismissing a question tells the agent you dismissed it. |
 | POST | `/alerts/:id/investigate` | `{}` | `Snapshot`. Starts a session even if Jev said ignore. |
 | POST | `/alerts/:id/feedback` | `{ "label": "good" \| "bad" }` | `Snapshot` |
-| POST | `/sessions/:id/stop` | `{}` | `Snapshot` |
-| POST | `/sessions/:id/message` | `{ "text": string }` | `Snapshot`. `409` unless `acceptsMessages`. The text is in the transcript at once (`text`, "You: …"). If the agent is blocked on a question (an `answer` card), it answers it and the card goes. Otherwise a running agent reads it at its next step (`activity` "Read your message"); a session between turns resumes with it. |
+| POST | `/sessions/:id/stop` | `{}` | `Snapshot`. Its cards go. |
+| POST | `/sessions/:id/message` | `{ "text": string }` | `Snapshot`. `409` unless `acceptsMessages`. The text is in the transcript at once (`text`, "You: …"). If the agent is blocked on a question (an `answer` card), it answers it and the card goes. Otherwise a running agent reads it at its next step (`activity` "Read your message"); a session between turns resumes with it. A session whose review rounds are spent gets a fresh budget. |
 | POST | `/settings` | `Partial<Settings>` | `Snapshot` |
 | POST | `/pause` | `{ "paused": boolean }` | `Snapshot`. While paused, alerts are still triaged but nothing auto-starts. |
 | POST | `/poll` | `{}` | `Snapshot`. Polls Slack now. Serialized with the poll loop, never concurrent with it. |
 
 Errors return `{ "error": string }`: `400` for a malformed body, `401` for a bad token, `404` for an unknown id, `409`
 for a request the current state does not allow, `405` for a method no route takes, `500` for anything else (Slack refusing a reply, GitHub Enterprise unreachable, a store error). Between binding the port and finishing startup
-(recovery) every request, `/health` included, gets `503`. A non-loopback `Host` or any `Origin` header gets `403`.
+(recovery) every request, `/health` included, gets `503`. Any other request with a non-loopback `Host` or any `Origin` header gets `403`.
+
+## Cards
+
+A card stands only while its session is at the stage it was offered for: a merge card while the session waits to
+merge, a release card while it waits for its release, a re-run or a hand-off while it waits on you, a Retry while it
+has failed, a question while the agent is still asking it. The write that moves the session on (a gate passed, the PR
+going red, a turn starting, the session ending) takes its dead cards with it, and a gate the session comes back to
+offers a fresh card. Investigate, escalate and reply cards have no stage to leave (a reply can still be sent once its
+session has ended); an investigate card goes when an agent or a teammate takes its alert on, when its alert is triaged
+again to nothing to do (a failed build re-run green) or is a rise that is back to normal, or when a newer
+alert of the same problem replaces it.
+
+- **Merge** asks GitHub first and records nothing when the call fails, so the next click tries again. A merge GitHub
+  queues instead of doing (a merge queue) is GitHub's to finish; the Merge card comes back only if it hasn't merged
+  within an hour. A session waiting to merge goes back to CI, and its Merge card goes, when the PR's checks go red or
+  run again, or it gets changes requested or needs a review again. A PR closed on GitHub closes its session
+  (`Closed · PR closed without merging`).
+- **Hand-offs** are `review` cards titled `<why> · <session title>`, whose button closes the session. An agent that
+  finishes without a fix hands off this way (`Recommendation`, `Root cause not found`, `Needs you`, `Unverified`). Red
+  CI, requested changes and a failed deploy go back to the agent, up to 3 rounds between them, then to you (`CI still
+  red`, `Changes requested`, `Deploy keeps failing`). A send-back the agent answers without a fix comes to you too:
+  `CI still red`, `Changes requested` or `Deploy failed` (after a failed deploy, a fix with no new PR counts as none).
+  So do a release nobody approved for 24 hours (`Release not approved`) and a deploy the tracker hasn't moved for 3
+  hours (`Deploy stalled`).
+- **Questions** (`answer`) last only as long as the agent's call: an answer, your message, 30 minutes without one, a
+  stop or a crash ends it and the card goes. A daemon that restarts while an agent works or asks brings the session
+  back failed, with an `Interrupted` Retry card that resumes the agent's conversation.
 
 ## Types
 
@@ -134,11 +174,12 @@ type Status = {
   grafanaMcp: "up" | "down"
   github: "ok" | "blocked" | "unknown"   // blocked = GHE IP allow list refuses this network; sessions stay queued. Not repeated in `error`
   lastPollAt: string | null
-  error: string | null   // last error worth surfacing, one line
+  error: string | null   // the latest problem still standing, one line. Each part (Slack, the alert poll, the inbox, user groups,
+                         // posts, Jev, MCP, CI, session setup) clears its own once it works again
 }
 
 type AlertView = {
-  id: string             // "<channelId>:<ts>", or "watch:<signal>:<since>" for a prod finding
+  id: string             // "<channelId>:<ts>", or "watch:<signal>:<since>" / "watch:log:<pattern>:<at>" for a prod finding
   channelId: string
   channelName: string    // e.g. "alert-releases"
   ts: string             // Slack message ts; for a watch finding, the start of the rise in unix seconds
@@ -163,10 +204,10 @@ type Claimant = {
 }
 
 type AlertOutcome = {
-  kind: "pending" | "filtered" | "ignored" | "suggested" | "escalated" | "waiting" | "dismissed" | "opened" | "withdrawn" | "teammate" | "session"
+  kind: "filtered" | "ignored" | "suggested" | "escalated" | "waiting" | "dismissed" | "opened" | "withdrawn" | "teammate" | "session"
   // waiting   = an open card for this alert is in "Needs you"
   // dismissed = you dismissed its card and no agent ran · opened = you opened it in Slack/Revv from an escalation
-  // withdrawn = a Bridgetown finding whose signal went back to normal before anyone acted; its card was withdrawn
+  // withdrawn = its card was withdrawn before anyone acted: a Bridgetown finding whose signal went back to normal ("Back to normal")
   // teammate  = no session of yours, and a teammate is on it (`claimedBy`): "Julien's agent is on it", "Baptiste is on it (+1)"
   // session   = an agent session owns it; headline and tone are the session's own
   headline: string       // "Filtered by a rule", "Ignored by Jev", "Waiting on you", "Dismissed by you", "Resolved · deployed admin-v0.6.1"
@@ -186,7 +227,7 @@ type AlertDetail = {
 }
 
 type Triage = {
-  decision: "pending" | "filtered" | "ignore" | "suggest" | "auto" | "escalate"   // escalate = Jev says this needs you personally
+  decision: "filtered" | "ignore" | "suggest" | "auto" | "escalate"   // escalate = Jev says this needs you personally
   reason: string         // human-readable, one line
   jev: Jev | null        // null when a cheap rule decided, or Jev was unavailable
 }
@@ -212,7 +253,7 @@ type Session = {
   // closed   = the user closed it without a fix. Never rendered as success.
   // critiquing = another vendor's model is reviewing the pushed fix; the PR is a draft until it passes.
   steps: Step[]            // always 6, in order; computed from evidence by the daemon. Render these, never infer.
-  headline: string         // status line, e.g. "Running", "Waiting on you", "Resolved · deployed admin-v0.6.1", "Closed · root cause not found"
+  headline: string         // status line, e.g. "Agent working", "Waiting on you", "Resolved · deployed admin-v0.6.1", "Closed · root cause not found", "Closed · PR closed without merging"
   tone: "live" | "waiting" | "success" | "neutral" | "failure"   // color of the status dot and headline. success only for verified outcomes
   reviewerName: string     // who reviews the agent's fixes, e.g. "Codex"
   critiqueLine: string     // where the adversarial review stands: "Reviewing · round 2", "Passed · 1 round of fixes · 2 dropped by Jev", "1 blocking finding · agent fixing", "Not run"
@@ -221,7 +262,7 @@ type Session = {
   activity: string         // latest one-line activity ("Reading failed job logs…")
   diagnosis: string | null
   outcome: "fix_pr" | "recommendation" | "no_action" | "needs_human" | null
-  prUrl: string | null
+  prUrl: string | null     // only from the agent's structured result, and only a PR on Merkl/monorepo (a link into one is stored as the PR's own URL)
   branch: string | null
   worktree: string | null
   claudeSessionId: string | null
@@ -236,7 +277,8 @@ type Session = {
   } | null
   costUsd: number
   slackThreadUrl: string | null
-  acceptsMessages: boolean // POST /sessions/:id/message is allowed: live, or finished and handed back with its worktree intact
+  acceptsMessages: boolean // POST /sessions/:id/message is allowed: live, or finished and handed back with its worktree still there
+                           // (closed, stopped or failed within the last 24h). Never queued, preparing or resolved
   revvUrl: string | null     // revv://pr?host=…&repo=…&number=… — opens the PR walkthrough in Revv
   reviewChannel: string | null  // "product-approvals" once a review was requested there
   reviewUrl: string | null   // permalink of that review request
@@ -246,7 +288,7 @@ type Session = {
 
 type Step = {
   key: "diagnose" | "fix" | "pr" | "critique" | "ci" | "deploy"
-  label: string            // "Diagnose", "Fix", "PR", "Review", "CI", "Deploy" (may read "Root cause?", "No PR", "No review", "Merged" when that is the truth)
+  label: string            // "Diagnose", "Fix", "PR", "Review", "CI", "Deploy" (may read "Root cause?", "No PR", "No review", "No deploy", "Deployed" when that is the truth)
   state: "done" | "current" | "pending" | "failed" | "skipped"
   // done = evidence it happened · current = in progress now · pending = not reached (hollow)
   // failed = this is where it stopped or broke · skipped = not applicable (e.g. no release needed)
@@ -254,20 +296,21 @@ type Step = {
 
 type Action = {
   id: string
-  kind: "investigate" | "merge" | "release" | "rerun" | "answer" | "grafana" | "review" | "reply" | "escalate"
-  // review: the agent finished without a fix (or failed). primaryLabel is "Retry" (re-runs the agent) or "Close session"
+  kind: "investigate" | "merge" | "release" | "rerun" | "answer" | "review" | "reply" | "escalate"
+  // review: the session is handed to you (the agent finished without a fix, a send-back came back without one, the ship flow
+  //         stalled: see Cards) or it failed. primaryLabel is "Retry" (re-runs the agent) or "Close session"
   //         (records it as closed, not fixed). Show the agent's detail; offer "Reply to agent" by opening the session.
   // reply: the agent drafted a reply to a teammate; `detail` is the draft. Resolve with { response: editedText } to send it in the thread.
   // escalate: a message that needs you personally. Primary button opens `url` (Slack permalink or revv:// link), then resolves.
   title: string            // "Merge fix(app-admin): pin vite to 6.3"
   detail: string           // one or two lines
-  primaryLabel: string     // button text: "Investigate", "Merge", "Cut admin-v0.6.1", "Re-run", "Reply", "Retry", "Send", "Open in Slack", "Open in Revv"
+  primaryLabel: string     // button text: "Investigate", "Merge", "Cut admin-v0.6.1", "Re-run failed jobs", "Reply", "Retry", "Close session", "Send reply", "Open in Slack", "Open in Revv"
   options: string[]        // for kind=answer: quick replies (may be empty → free text)
   sessionId: string | null
   alertId: string | null
   url: string | null       // when set, the app opens it on the primary button (before resolving). Only https:, slack: and revv: URLs.
   inFlight: boolean        // a resolve is running (merging, tagging a release…); show progress, don't offer the button
-  dismissCloses: boolean   // dismissing records the session as closed, not fixed; the app confirms and says so
+  dismissCloses: boolean   // dismissing records the session as closed, not fixed; the app confirms and says so. False for a card whose session moved on
   createdAt: string
 }
 
