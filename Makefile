@@ -116,8 +116,9 @@ mock: $(DAEMON_DEPS)
 	cd daemon && bun run mock
 
 # The landing page end to end: builds it if stale, serves dist/, screenshots and lints each page
-# at six viewports and runs its checks, into .context/e2e/<run>/site (open index.md).
-# ARGS="--quick" for one stop per section, ARGS="--only 375x812" for one walk.
+# at six viewports, four walks at a time, and runs its checks, into .context/e2e/<run>/site
+# (open index.md). ARGS="--quick" for one stop per section, ARGS="--only 375x812" for one walk,
+# ARGS="--jobs 1" for a serial comparison, ARGS="--gpu" for WebGL on this Mac’s GPU.
 e2e-site:
 	cd site && bun scripts/e2e.ts $(ARGS)
 
