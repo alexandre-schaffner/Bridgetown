@@ -12,16 +12,16 @@ import { band, clamp, inOut, lerp, smooth } from "../lib/math";
 import { createBoard } from "./board";
 import { createDawn, type Dawn } from "./dawn";
 import { createReel } from "./reel";
-import type { ArchScene, LightName } from "./scene";
+import type { ArchScene } from "./scene";
 import { finePointer, reduced, ScrollTrigger, sinceScroll } from "./scroll";
 import { restView, type View } from "./view";
 
 // MARK: Scene
 
 // The hero draws its own dawn; the live scene (and three.js, in its own chunk) is only needed
-// for the light and the closing chapters. Setting it up costs the main thread real time
+// for the closing chapter. Setting it up costs the main thread real time
 // (parsing, the environment map, shader compiles), so it happens in steps, each one in a moment
-// when you have stopped scrolling, well before those chapters; only if you get close first
+// when you have stopped scrolling, well before that chapter; only if you get close first
 // does it stop waiting.
 let scene: ArchScene | null = null;
 let dayColor: (rgb: [number, number, number]) => Color = () => {
@@ -56,15 +56,14 @@ async function loadScene() {
       reducedMotion: reduced,
       onFirstFrame: () => document.documentElement.classList.add("scene-ready"),
     });
-    const first = lightView(lightP);
-    aside(first);
+    const first = finaleView(finaleP);
     Object.assign(s.view, first);
     s.snap();
     s.setActive(false);
     scene = s;
     await s.prepare(atRest);
   } catch {
-    // No WebGL: those chapters keep the plain night behind them.
+    // No WebGL: the closing chapter keeps the plain night behind it.
     scene = null;
   }
 }
@@ -83,8 +82,8 @@ const watchFor = (ids: string[], rootMargin: string, then: () => void) => {
   }
 };
 // Start once you are into the page; insist once a night chapter is a screen or so away.
-watchFor(["#notch", "#light", "#download"], "100% 0px", () => void loadScene());
-watchFor(["#light", "#download"], "150% 0px", () => {
+watchFor(["#notch", "#download"], "100% 0px", () => void loadScene());
+watchFor(["#download"], "150% 0px", () => {
   urgent = true;
   void loadScene();
 });
@@ -303,78 +302,6 @@ if (journey) {
   $$(".frame", journey).forEach((f) => io.observe(f));
 }
 
-// MARK: Light
-
-const lightSection = $("[data-light]");
-let lightP = 0;
-/** What the light chapter shows: the state scrolling has reached, or the one you picked. */
-let stageLight: LightName = "rest";
-if (lightSection) {
-  const ORDER: LightName[] = ["rest", "working", "needs-you", "paused"];
-  const items = $$("[data-light-state]", lightSection);
-  let reached = 0;
-  let picked: { name: LightName; at: number } | null = null;
-  const show = (name: LightName) => {
-    stageLight = name;
-    items.forEach((el) => {
-      const on = el.dataset.lightState === name;
-      el.classList.toggle("on", on);
-      el.querySelector("button")?.setAttribute("aria-pressed", String(on));
-    });
-  };
-  // A picked light holds until scrolling moves on to the next state.
-  for (const b of $$<HTMLButtonElement>("[data-light-pick]", lightSection)) {
-    b.addEventListener("click", () => {
-      picked = { name: b.dataset.lightPick as LightName, at: reached };
-      show(picked.name);
-    });
-  }
-  // The section runs up and down through 70svh of dusk either side of its pinned stage.
-  ScrollTrigger.create({
-    trigger: lightSection,
-    start: () => `top+=${innerHeight * 0.7} top`,
-    end: () => `bottom-=${innerHeight * 0.7} bottom`,
-    onUpdate: (s) => {
-      lightP = s.progress;
-      reached = Math.min(ORDER.length - 1, Math.floor(s.progress * ORDER.length));
-      if (picked && reached !== picked.at) picked = null;
-      show(picked?.name ?? ORDER[reached]!);
-    },
-  });
-}
-
-function lightView(p: number): View {
-  const v = restView();
-  // A phone stands back and looks up a little, so the arch sits under the words, not on them.
-  const tall = 1 - smooth(0.6, 0.9, innerWidth / innerHeight);
-  const a = lerp(-0.42, 0.42, inOut(p));
-  const r = lerp(15.5, 12.5, inOut(p)) * (1 + 0.14 * tall);
-  v.x = Math.sin(a) * r;
-  v.z = Math.cos(a) * r;
-  v.y = -1.2;
-  v.lookY = 0.45 + 1.3 * tall;
-  return v;
-}
-
-/**
- * Wide screens keep the arch to the right of the words, wherever the camera has walked: the
- * camera and its target slide left of the shot by a share of the distance between them.
- */
-function aside(v: View) {
-  const fx = v.lookX - v.x;
-  const fz = v.lookZ - v.z;
-  const n = Math.hypot(fx, fz) || 1;
-  const d = n * 0.17 * smooth(1.1, 1.45, innerWidth / innerHeight);
-  if (d <= 0) return;
-  // The camera's right, on the ground.
-  const rx = -fz / n;
-  const rz = fx / n;
-  v.x -= rx * d;
-  v.z -= rz * d;
-  v.lookX -= rx * d;
-  v.lookZ -= rz * d;
-}
-
 // MARK: Finale
 
 const finale = $("[data-finale]");
@@ -505,7 +432,6 @@ if (outcomes[0]) {
   );
 }
 
-let lastLight: LightName | null = null;
 let lastHeroP = -1;
 let lastIntro = -1;
 let dawnTime = 9;
@@ -513,7 +439,6 @@ let dawnShown = false;
 gsap.ticker.add(() => {
   // Reads first, all of them, so no write below forces a layout in between.
   const h = onScreen(hero);
-  const l = onScreen(lightSection);
   const f = onScreen(finale);
   if (!reduced) for (const s of sheets) s.r = clamp(1 - s.sheet.getBoundingClientRect().top / innerHeight);
   const lit = outcomesNear
@@ -535,7 +460,7 @@ gsap.ticker.add(() => {
   playChapters();
 
   // The hero: the dawn, and at the end of it the flood to day.
-  const heroLeads = h > 0 && h >= l && h >= f;
+  const heroLeads = h > 0 && h >= f;
   document.documentElement.classList.toggle("hero-away", !heroLeads);
   if (heroLeads) {
     const dt = Math.min(0.05, gsap.ticker.deltaRatio(60) / 60);
@@ -570,18 +495,10 @@ gsap.ticker.add(() => {
   }
 
   if (!scene) return;
-  scene.setActive(!heroLeads && l + f > 0);
-  if (heroLeads || l + f === 0) return;
+  scene.setActive(!heroLeads && f > 0);
+  if (heroLeads || f === 0) return;
 
-  let view: View;
-  let light: LightName;
-  if (l >= f) {
-    view = lightView(lightP);
-    light = stageLight;
-  } else {
-    view = finaleView(finaleP);
-    light = "rest";
-  }
+  const view = finaleView(finaleP);
   // Your drag turns the camera around the arch; it drifts back when you let go.
   if (!dragging) orbit.angle *= 0.94;
   if (Math.abs(orbit.angle) > 0.0005) {
@@ -592,12 +509,7 @@ gsap.ticker.add(() => {
     view.x = view.lookX + dx * c - z * sn;
     view.z = dx * sn + z * c;
   }
-  if (l >= f) aside(view);
   Object.assign(scene.view, view);
-  if (light !== lastLight) {
-    scene.setLight(light, 1.1);
-    lastLight = light;
-  }
 });
 
 // MARK: Buttons

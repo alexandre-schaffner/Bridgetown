@@ -55,19 +55,19 @@ export const CHECKS: Check[] = [
     },
   },
   {
-    name: "Under Reduce Motion, a nav link lands on the light's stage and focuses it",
+    name: "Under Reduce Motion, a nav link lands on Safety and focuses it",
     viewport: LAPTOP,
     motion: "reduce",
     async run(page) {
-      await page.click('nav a[href="#light"]');
+      await page.click('nav a[href="#safety"]');
       await page.waitForTimeout(300);
       const { y, stage, focused } = await page.evaluate(() => {
-        const light = document.querySelector<HTMLElement>("#light")!;
-        const stage = light.getBoundingClientRect().top + scrollY + parseFloat(getComputedStyle(light).paddingTop);
-        return { y: scrollY, stage, focused: document.activeElement === light };
+        const safety = document.querySelector<HTMLElement>("#safety")!;
+        const stage = safety.getBoundingClientRect().top + scrollY;
+        return { y: scrollY, stage, focused: document.activeElement === safety };
       });
-      expect(Math.abs(y - stage) < 2, `it lands at ${Math.round(y)}px, in the dusk before the stage at ${Math.round(stage)}px`);
-      expect(focused, "the light chapter doesn't take focus");
+      expect(Math.abs(y - stage) < 2, `it lands at ${Math.round(y)}px, away from Safety at ${Math.round(stage)}px`);
+      expect(focused, "the Safety chapter doesn't take focus");
     },
   },
   {
@@ -240,10 +240,9 @@ export const CHECKS: Check[] = [
       expect(policy?.includes("default-src 'self'"), `the page is served with ${policy ? `the policy ${policy}` : "no policy"}`);
       // The inline theme script ran, the arch's scene loads, and the film plays.
       expect(await page.evaluate(() => document.documentElement.classList.contains("js")), "the theme script was blocked");
-      await page.click('nav a[href="#light"]');
+      await page.locator("#download").scrollIntoViewIfNeeded();
       await page.waitForFunction(() => document.documentElement.classList.contains("scene-ready"), null, { timeout: 15_000 });
-      // The link scrolls there smoothly (Lenis), and a scene drawn on the GPU is ready before it
-      // lands: sent back up mid-way, the page would carry on down.
+      // Wait for scrolling to settle before returning to the hero to open the film.
       const still = () => !document.documentElement.classList.contains("lenis-scrolling");
       await page.waitForFunction(still);
       await page.evaluate(() => scrollTo(0, 0));
