@@ -13,6 +13,14 @@ import Testing
         }
     }
 
+    /// Taken over, the worktree is locked first, so the daemon's housekeeping leaves it and
+    /// whatever you change there; a session without one resumes from home.
+    @Test func takingOverLocksTheWorktree() {
+        #expect(SystemActions.takeOverCommand(worktree: "/repo/.shared/worktrees/fix-bt-x's", claudeSessionId: "c1", home: "/Users/me")
+            == #"git -C '/repo/.shared/worktrees/fix-bt-x'\''s' worktree lock --reason 'Taken over from Bridgetown' . 2>/dev/null; cd '/repo/.shared/worktrees/fix-bt-x'\''s' && claude --resume 'c1'"#)
+        #expect(SystemActions.takeOverCommand(worktree: nil, claudeSessionId: "c1", home: "/Users/me") == "cd '/Users/me' && claude --resume 'c1'")
+    }
+
     @Test func aFailedScriptSaysWhy() async {
         #expect(await SystemActions.runAppleScript(#"error "Terminal said no""#) == "Terminal said no")
         #expect(await SystemActions.runAppleScript("return 1") == nil)

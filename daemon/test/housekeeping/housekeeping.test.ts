@@ -89,6 +89,21 @@ describe("worktrees past their session's grace", () => {
     expect(branches()).toContain(stale.branch)
   })
 
+  test("a worktree you took over is yours: locked, it stays with your changes and its branch; unlocked, it goes", async () => {
+    const { path, branch, id } = await seed("taken-over", "resolved", ago(HOUR))
+    // What Take over runs before `claude --resume` (app SystemActions.takeOverCommand).
+    sh("git worktree lock --reason 'Taken over from Bridgetown' .", path)
+    writeFileSync(join(path, "yours.txt"), "work in progress\n")
+    await housekeep()
+    expect(existsSync(join(path, "yours.txt"))).toBe(true)
+    expect(branches()).toContain(branch)
+    expect(await sessionOf(id)).toMatchObject({ worktree: path })
+    sh("git worktree unlock .", path)
+    await housekeep()
+    expect(existsSync(path)).toBe(false)
+    expect(branches()).not.toContain(branch)
+  })
+
   test("an active session, and a finished one with a turn waiting for a slot, keep theirs", async () => {
     const active = await seed("active", "ci", ago(40 * 24 * HOUR))
     const parked = await seed("parked", "closed", ago(25 * HOUR))

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { rm } from "node:fs/promises"
-import { basename, join } from "node:path"
+import { basename, join, resolve } from "node:path"
 import { Context, Effect, Layer } from "effect"
 import { Environment } from "../config.ts"
 import { AdapterError, attempt } from "../domain/errors.ts"
@@ -31,6 +31,20 @@ export const isSessionBranch = (branch: string | null): branch is string => bran
 /** The monorepo keeps agent worktrees under `.shared/worktrees/`; other repos get one in the daemon's `home`. */
 export const worktreePath = (home: string, repoPath: string, branch: string): string =>
   existsSync(join(repoPath, ".shared")) ? join(repoPath, ".shared", "worktrees", branch) : join(home, "worktrees", basename(repoPath), branch)
+
+/**
+ * Whether someone ran `git worktree lock` on the worktree at `path`: its admin directory (the one its `.git` file
+ * names) holds a `locked` file. The app's Take over locks a session's worktree before resuming it in Terminal,
+ * which makes it yours: housekeeping leaves a locked worktree, its branch and its row alone.
+ */
+export const isLocked = (path: string): boolean => {
+  try {
+    const gitdir = /^gitdir:\s*(.+)$/m.exec(readFileSync(join(path, ".git"), "utf8"))?.[1]?.trim()
+    return gitdir !== undefined && gitdir !== "" && existsSync(join(resolve(path, gitdir), "locked"))
+  } catch {
+    return false
+  }
+}
 
 export interface Worktree {
   readonly path: string

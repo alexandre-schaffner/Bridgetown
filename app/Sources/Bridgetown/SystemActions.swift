@@ -68,12 +68,11 @@ enum SystemActions {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
-    /// `cd '<worktree>' && claude --resume <id>` in a new Terminal window.
-    /// Returns an error message on failure.
+    /// `takeOverCommand` in a new Terminal window. Returns an error message on failure.
     static func takeOver(_ session: Session) async -> String? {
         guard let id = session.claudeSessionId else { return "No Claude session to resume yet" }
-        let dir = session.worktree ?? FileManager.default.homeDirectoryForCurrentUser.path
-        let shell = "cd \(shellQuote(dir)) && claude --resume \(shellQuote(id))"
+        let shell = takeOverCommand(worktree: session.worktree, claudeSessionId: id,
+                                    home: FileManager.default.homeDirectoryForCurrentUser.path)
         #if DEBUG
         if let sink {
             sink(.takeOver, shell)
@@ -86,6 +85,17 @@ enum SystemActions {
             activate
         end tell
         """)
+    }
+
+    /// `cd '<worktree>' && claude --resume <id>`, after `git worktree lock` on the worktree: taken
+    /// over, it is yours, and the daemon's housekeeping never deletes a locked worktree (nor its
+    /// branch), whatever you changed there. `git worktree unlock` hands it back. Plain `;` and
+    /// `&&`, so it reads the same in bash, zsh and fish.
+    nonisolated static func takeOverCommand(worktree: String?, claudeSessionId id: String, home: String) -> String {
+        let resume = "claude --resume \(shellQuote(id))"
+        guard let worktree else { return "cd \(shellQuote(home)) && \(resume)" }
+        let dir = shellQuote(worktree)
+        return "git -C \(dir) worktree lock --reason 'Taken over from Bridgetown' . 2>/dev/null; cd \(dir) && \(resume)"
     }
 
     /// Runs `source` in osascript and returns its error, if any. Not NSAppleScript, which
@@ -120,7 +130,7 @@ enum SystemActions {
         return message.isEmpty ? "Couldn't open Terminal" : message
     }
 
-    private static func shellQuote(_ s: String) -> String {
+    private nonisolated static func shellQuote(_ s: String) -> String {
         "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
