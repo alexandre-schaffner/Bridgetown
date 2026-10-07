@@ -120,9 +120,13 @@ export const loadSettings = (raw: string | undefined): Settings => {
   }
 }
 
-/** `POST /settings`: any setting, and any key of `thresholds` and `quietHours` on its own. */
+/**
+ * `POST /settings`: any setting, and any key of `thresholds` and `quietHours` on its own. A poll is whole seconds and
+ * at least 10, as the poll loop takes it; settings stored before that rule still load.
+ */
 export const SettingsPatch = Schema.Struct({
   ...Struct.map(Settings.fields, Schema.optional),
+  pollSeconds: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(10))),
   thresholds: Schema.optional(Thresholds.mapFields(Struct.map(Schema.optional))),
   quietHours: Schema.optional(QuietHours.mapFields(Struct.map(Schema.optional))),
 })
