@@ -4,6 +4,7 @@ import { basename, join } from "node:path"
 import { Context, Effect, Layer } from "effect"
 import { Environment } from "../config.ts"
 import { AdapterError, attempt } from "../domain/errors.ts"
+import { isOwnBranch } from "../domain/session.ts"
 import { makeKeyedLock } from "../lib/keyed-lock.ts"
 import { git, run, runOk } from "../lib/proc.ts"
 
@@ -159,8 +160,7 @@ const remove = Effect.fn("Worktrees.remove")(function* (repoPath: string, branch
   yield* run(git("worktree", "prune"), { cwd: repoPath })
   if (!options.deleteBranch) return
   const refs = yield* runOk(git("for-each-ref", "--format=%(refname:short)", `refs/heads/${branch}`, `refs/heads/${branch}-*`), { cwd: repoPath })
-  const followUp = new RegExp(`^${branch}-\\d+$`)
-  const branches = refs.split("\n").filter((name) => name === branch || followUp.test(name))
+  const branches = refs.split("\n").filter((name) => isOwnBranch(branch, name))
   if (branches.length > 0) yield* runOk(git("branch", "-D", ...branches), { cwd: repoPath })
 })
 

@@ -24,7 +24,7 @@ import type { ActionView, AlertDetail, AlertView, Board, LogPatternView, LogSwee
 export const SNAPSHOT_ALERTS = 30
 export const SNAPSHOT_FINISHED_SESSIONS = 20
 
-export const alertView = (alert: Alert, session: Session | undefined, openCards: number): AlertView => ({
+const alertView = (alert: Alert, session: Session | undefined, openCards: number): AlertView => ({
   id: alert.id,
   channelLabel: channelLabel(alert),
   permalink: alert.permalink,
@@ -39,7 +39,7 @@ export const alertView = (alert: Alert, session: Session | undefined, openCards:
 })
 
 /** `alert` is the session's own, for where it came from; without it (gone from the store), its channel's name stands. */
-export const sessionView = (session: Session, alert: Alert | undefined): SessionView => ({
+const sessionView = (session: Session, alert: Alert | undefined): SessionView => ({
   id: session.id,
   alertId: session.alertId,
   title: session.title,
@@ -66,7 +66,7 @@ export const sessionView = (session: Session, alert: Alert | undefined): Session
   updatedAt: session.updatedAt,
 })
 
-export const actionView = (action: Action, session: Session | undefined, inFlight: ReadonlySet<string>): ActionView => ({
+const actionView = (action: Action, session: Session | undefined, inFlight: ReadonlySet<string>): ActionView => ({
   id: action.id,
   kind: action.kind,
   title: action.title,

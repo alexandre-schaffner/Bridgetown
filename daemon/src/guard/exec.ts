@@ -27,7 +27,7 @@ import { GIT_CREDENTIAL, GIT_VALUE_OPTIONS } from "./vcs.ts"
 export const shimDir = (home: string, daemonPort: number): string => join(home, "guard-bin", String(daemonPort))
 
 /** How a shim runs the guard: this compiled daemon itself, or bun on main.ts from source. */
-export const guardRunner = (): ReadonlyArray<string> =>
+const guardRunner = (): ReadonlyArray<string> =>
   import.meta.url.includes("$bunfs") ? [process.execPath] : [process.execPath, fileURLToPath(new URL("../main.ts", import.meta.url))]
 
 const quote = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`

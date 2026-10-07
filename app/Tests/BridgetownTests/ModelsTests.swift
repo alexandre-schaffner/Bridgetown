@@ -113,11 +113,20 @@ import Testing
         outcome["kind"] = "archived"
         outcome["tone"] = "sparkly"
         alerts[0]["outcome"] = outcome
+        // The daemon dropped "pending" from triage decisions and outcome kinds; one still sent is just unknown.
+        var triage = try #require(alerts[1]["triage"] as? [String: Any])
+        triage["decision"] = "pending"
+        alerts[1]["triage"] = triage
+        var pendingOutcome = try #require(alerts[1]["outcome"] as? [String: Any])
+        pendingOutcome["kind"] = "pending"
+        alerts[1]["outcome"] = pendingOutcome
         json["alerts"] = alerts
         let snap = try JSON.decoder().decode(Snapshot.self, from: JSONSerialization.data(withJSONObject: json))
         #expect(snap.status.github == .unknown)
         #expect(snap.alerts[0].outcome.kind == .unknown)
         #expect(snap.alerts[0].outcome.tone == .unknown)
+        #expect(snap.alerts[1].triage.decision == .unknown)
+        #expect(snap.alerts[1].outcome.kind == .unknown)
     }
 }
 
