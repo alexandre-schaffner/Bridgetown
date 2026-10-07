@@ -1,10 +1,8 @@
 import Testing
 @testable import Bridgetown
 
-/// How each step's pill stands (`Session.pillKind`), for the states the daemon sends.
+/// How each step stands (`Session.stepKind`), for the states the daemon sends.
 @Suite struct StepModelTests {
-    private typealias Kind = StepPill.Kind
-
     /// A session of `status`, `tone` and `holder` whose steps are `states` in order,
     /// labelled as the daemon labels them.
     private func session(
@@ -24,53 +22,59 @@ import Testing
     @Test func resolvedWithADeployIsGreenOnDeploy() throws {
         let s = try session(.resolved, .success, nil, [.done, .done, .done, .done, .done, .done],
                             labels: ["Diagnose", "Fix", "PR", "Review", "CI", "Deployed"])
-        #expect(s.pillKinds == [.done, .done, .done, .done, .done, .resolved])
-        #expect(s.pillTint(at: 5) == Ink.green)
+        #expect(s.stepKinds == [.done, .done, .done, .done, .done, .resolved])
+        #expect(s.stepTint(at: 5) == Ink.green)
     }
 
     /// Nothing to release: the daemon skips Deploy, and the outcome sits on CI.
     @Test func resolvedWithNoDeployIsGreenOnTheLastStepItReached() throws {
         let s = try session(.resolved, .success, nil, [.done, .done, .done, .done, .done, .skipped],
                             labels: ["Diagnose", "Fix", "PR", "Review", "CI", "No deploy"])
-        #expect(s.pillKinds == [.done, .done, .done, .done, .resolved, .skipped])
-        #expect(s.pillTint(at: 4) == Ink.green)
+        #expect(s.stepKinds == [.done, .done, .done, .done, .resolved, .skipped])
+        #expect(s.stepTint(at: 4) == Ink.green)
+        #expect(s.focusedStepIndex == 4)
+        #expect(s.focusedStepDescription == "Step 5 of 6, CI, Done")
+        #expect(s.stepStatus(at: 5) == "Not needed")
     }
 
     @Test func closedStopsGreyWhereItStopped() throws {
         let s = try session(.closed, .neutral, nil, [.failed, .pending, .pending, .pending, .pending, .skipped],
                             labels: ["Root cause?", "Fix", "No PR", "Review", "CI", "Deploy"])
-        #expect(s.pillKind(at: 0) == .stopped)
-        #expect(s.pillTint(at: 0) == Ink.neutral)
-        #expect(!s.pillKinds.contains(.resolved))
+        #expect(s.stepKind(at: 0) == .stopped)
+        #expect(s.stepTint(at: 0) == Ink.neutral)
+        #expect(!s.stepKinds.contains(.resolved))
+        #expect(s.focusedStepDescription == "Step 1 of 6, Root cause?, Stopped")
+        #expect(s.stepStatus(at: 1) == "Not reached")
     }
 
     @Test func failedIsRedWhereItFailed() throws {
         let s = try session(.failed, .failure, nil, [.done, .done, .failed, .pending, .pending, .pending])
-        #expect(s.pillKinds == [.done, .done, .failed, .ahead, .ahead, .ahead])
-        #expect(s.pillTint(at: 2) == Ink.red)
+        #expect(s.stepKinds == [.done, .done, .failed, .ahead, .ahead, .ahead])
+        #expect(s.stepTint(at: 2) == Ink.red)
     }
 
     @Test func stoppedByYouIsGreyNotRed() throws {
         let s = try session(.stopped, .neutral, nil, [.done, .failed, .pending, .pending, .pending, .pending])
-        #expect(s.pillKind(at: 1) == .stopped)
-        #expect(s.pillTint(at: 1) != Ink.red)
+        #expect(s.stepKind(at: 1) == .stopped)
+        #expect(s.stepTint(at: 1) != Ink.red)
     }
 
     @Test func readyToMergeWaitsOnYouAtDeploy() throws {
         let s = try session(.awaiting_merge, .waiting, .you, [.done, .done, .done, .done, .done, .pending])
-        #expect(s.pillKind(at: 5) == .you)
-        #expect(s.pillTint(at: 5) == Ink.amber)
+        #expect(s.stepKind(at: 5) == .you)
+        #expect(s.stepTint(at: 5) == Ink.amber)
     }
 
     @Test func queuedIsHeldNotMoving() throws {
         let s = try session(.queued, .neutral, .queue, [.current, .pending, .pending, .pending, .pending, .pending])
-        #expect(s.pillKind(at: 0) == .held)
-        #expect(s.pillTint(at: 0) == Ink.neutral)
+        #expect(s.stepKind(at: 0) == .held)
+        #expect(s.stepTint(at: 0) == Ink.neutral)
+        #expect(s.stepStatus(at: 0) == "Queued")
     }
 
     @Test func aReviewRunningIsMoving() throws {
         let s = try session(.critiquing, .live, .critic, [.done, .done, .done, .current, .pending, .pending])
-        #expect(s.pillKind(at: 3) == .moving)
+        #expect(s.stepKind(at: 3) == .moving)
     }
 
     /// Findings recorded and the agent's turn parked for a slot: the daemon hands it to the
@@ -78,7 +82,7 @@ import Testing
     @Test func aParkedReviewIsHeldNotMoving() throws {
         let s = try session(.critiquing, .neutral, .queue, [.done, .done, .done, .current, .pending, .pending])
         #expect(s.holder?.isMoving == false)
-        #expect(s.pillKind(at: 3) == .held)
-        #expect(s.pillTint(at: 3) == Ink.neutral)
+        #expect(s.stepKind(at: 3) == .held)
+        #expect(s.stepTint(at: 3) == Ink.neutral)
     }
 }

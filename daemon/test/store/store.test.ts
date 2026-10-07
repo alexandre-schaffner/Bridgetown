@@ -2,9 +2,10 @@ import { afterAll, describe, expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
 import { join } from "node:path"
 import * as SqliteClient from "@effect/sql-sqlite-bun/SqliteClient"
+import * as SqliteMigrator from "@effect/sql-sqlite-bun/SqliteMigrator"
 import { Effect } from "effect"
+import { migrations } from "../../src/store/migrations.ts"
 import { Store, tuneStorage } from "../../src/store/store.ts"
-import { oldStore } from "../support/old-store.ts"
 import { makeAlert, makeSession } from "../support/records.ts"
 import { scratchDir } from "../support/tmp.ts"
 import { makeWorld } from "../support/world.ts"
@@ -20,6 +21,26 @@ const pragma = (dir: string, name: string): unknown => {
   } finally {
     db.close()
   }
+}
+
+/** A current-schema database created before storage tuning, with a session to preserve. */
+const untunedStore = async () => {
+  const home = scratchDir("bt-untuned-")
+  const filename = join(home, "bridgetown.db")
+  await Effect.runPromise(
+    SqliteMigrator.run({ loader: migrations, table: "bridgetown_migrations" }).pipe(
+      Effect.provide(SqliteClient.layer({ filename })),
+      Effect.scoped,
+    ),
+  )
+  const db = new Database(filename)
+  const session = makeSession("stopped")
+  try {
+    db.query("INSERT INTO sessions (id, status, updated_at, json) VALUES (?, ?, ?, ?)").run(session.id, session.status, session.updatedAt, JSON.stringify(session))
+  } finally {
+    db.close()
+  }
+  return home
 }
 
 describe("store pruning", () => {
@@ -81,13 +102,13 @@ describe("store pruning", () => {
     expect(pragma(home, "auto_vacuum")).toBe(2)
   })
 
-  test("so is a store an older daemon made without it, with its rows intact", async () => {
-    const old = oldStore()
+  test("so is an existing store without it, with its rows intact", async () => {
+    const old = await untunedStore()
     expect(pragma(old, "auto_vacuum")).toBe(0)
     const reopened = makeWorld({ home: old })
     try {
       const sessions = await reopened.runPromise(Store.use((store) => store.recentSessions(10)))
-      expect(sessions.length).toBeGreaterThan(0)
+      expect(sessions).toEqual([makeSession("stopped")])
     } finally {
       await reopened.dispose()
     }
@@ -95,7 +116,7 @@ describe("store pruning", () => {
   })
 
   test("a VACUUM that cannot run leaves the file as it was and does not stop the store from opening", async () => {
-    const old = oldStore()
+    const old = await untunedStore()
     // A read-only connection reads the mode but cannot VACUUM, as a full disk or a held lock would refuse it.
     await Effect.runPromise(tuneStorage.pipe(Effect.provide(SqliteClient.layer({ filename: join(old, "bridgetown.db"), readonly: true })), Effect.scoped))
     expect(pragma(old, "auto_vacuum")).toBe(0)

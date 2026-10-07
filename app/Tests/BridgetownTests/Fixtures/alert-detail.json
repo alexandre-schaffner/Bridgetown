@@ -21,7 +21,6 @@
       }
     },
     "sessionId": null,
-    "feedback": "bad",
     "outcome": {
       "kind": "dismissed",
       "headline": "Dismissed by you",

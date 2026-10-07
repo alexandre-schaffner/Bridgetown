@@ -192,12 +192,8 @@ struct SelectionHeader<Actions: View>: View {
             Button(action: clear) {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .semibold))
-                    .frame(width: 22, height: 22)
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .hoverFill(radius: Ink.tagRadius)
+            .buttonStyle(.stage(.quiet, iconOnly: true))
             // Escape is the overview's: it clears every list at once (`OverviewPicks`).
             .help("Clear selection (Esc)")
             .accessibilityLabel("Clear selection")

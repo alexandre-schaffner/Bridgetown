@@ -34,7 +34,7 @@ const release = makeAlert({
   id: "C0AUKD42N3U:1790933006.433649", channelId: "C0AUKD42N3U", channelName: "alert-releases", ts: "1790933006.433649",
   permalink: "https://merkl.slack.com/archives/C0AUKD42N3U/p1790933006433649", title: "merkl-admin v0.6.0 · Build failed",
   summary: "vite build failed in the admin app", source: "releases", receivedAt: at(41),
-  triage: { decision: "auto", reason: "Build failure an agent can fix without prod access", jev }, sessionId: "ses_running", feedback: "good",
+  triage: { decision: "auto", reason: "Build failure an agent can fix without prod access", jev }, sessionId: "ses_running",
 })
 const engine = makeAlert({
   id: "C0AUK4AUER0:1790930000.000100", channelId: "C0AUK4AUER0", channelName: "alert-engine", ts: "1790930000.000100",
@@ -51,7 +51,7 @@ const slow = makeAlert({
   title: "status page · Slow response", summary: "p95 above 2s for 5 minutes", source: "uptime", receivedAt: at(435),
   raw: ":warning: *status page* p95 &gt; 2s · <https://grafana.merkl.xyz/d/abc|dashboard> cc <!subteam^S0DEV|dev-product> <@U0HUGO>",
   triage: { decision: "suggest", reason: "Might need an agent, not sure it's actionable", jev: { ...jev, actionable: 0.55, agentResolvable: 0.42, humanOnIt: 0.2, kind: "uptime_incident", kindConfidence: 0.7, depth: "quick", urgency: 1 } },
-  feedback: "bad", disposition: { kind: "dismissed", at: at(422) },
+  disposition: { kind: "dismissed", at: at(422) },
   events: [{ at: at(435), text: "Suggested by Jev: Might need an agent, not sure it's actionable" }, { at: at(422), text: "Dismissed by you, no agent started" }],
 })
 const dm = makeAlert({

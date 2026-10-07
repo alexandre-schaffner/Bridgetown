@@ -131,11 +131,6 @@ struct DaemonClient: Sendable {
         try await post("/alerts/\(escape(alertId))/investigate", Empty())
     }
 
-    func feedback(alertId: String, label: AlertView.Feedback) async throws -> Snapshot {
-        struct Body: Encodable { let label: String }
-        return try await post("/alerts/\(escape(alertId))/feedback", Body(label: label.rawValue))
-    }
-
     func stop(sessionId: String) async throws -> Snapshot {
         try await post("/sessions/\(escape(sessionId))/stop", Empty())
     }

@@ -115,14 +115,10 @@ struct AppMenu: View {
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 13, weight: .medium))
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
         }
         .menuStyle(.button)
-        .buttonStyle(.plain)
+        .buttonStyle(.stage(.quiet, iconOnly: true))
         .menuIndicator(.hidden)
-        .foregroundStyle(.secondary)
-        .hoverFill(radius: 6)
         .fixedSize()
         .help("Settings, logs, quit")
         .accessibilityLabel("Bridgetown menu")

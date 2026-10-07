@@ -118,7 +118,6 @@ export const AlertChannelsLive = Layer.effect(AlertChannels)(
               triage: current?.triage ?? existing.triage,
               sessionId: current?.sessionId ?? null,
               events: [...(current?.events ?? []), ...(existing.title === parsed.title ? [] : [{ at: now(), text: `Updated in Slack: ${parsed.title}` }])],
-              feedback: current?.feedback ?? null,
               disposition: current?.disposition ?? null,
               claimedBy,
             }),

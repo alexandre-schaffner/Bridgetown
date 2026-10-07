@@ -1,4 +1,4 @@
-import type { Feedback, Triage } from "../domain/alert.ts"
+import type { Triage } from "../domain/alert.ts"
 import type { ActionKind } from "../domain/action.ts"
 import type { Outcome, SessionStatus, TranscriptEntry } from "../domain/session.ts"
 import type { Settings } from "../domain/settings.ts"
@@ -77,7 +77,6 @@ export interface AlertView {
   readonly receivedAt: string
   readonly triage: Triage
   readonly sessionId: string | null
-  readonly feedback: Feedback | null
   /** What happened to it. Render this; never infer it from the triage or the history. */
   readonly outcome: AlertOutcome
 }

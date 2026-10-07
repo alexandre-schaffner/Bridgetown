@@ -34,7 +34,7 @@ Decision policy, session boundaries, what Bridgetown keeps, and what it posts to
   Jev suggested it to you, your card goes. **Investigate anyway** still starts your own agent. Inbox items are yours alone, so
   they are never claimed.
 - **Policy** (`daemon/src/triage/policy.ts`) turns probabilities into a decision: auto, suggest, escalate, ignore or filtered. You can tune the
-  thresholds in Settings. Each verdict is stored with its numbers, and 👍/👎 in the app labels it for calibration.
+  thresholds in Settings. Each verdict is stored with its numbers.
 - **Models are configured per role.** Settings → Models selects Codex or Claude Code, model and effort independently for monitoring (investigation) and reviewing. Automatic monitoring keeps `quick` Sonnet/medium, `standard` Opus/high and `deep` Opus/max; Automatic reviewing keeps Codex at medium/high/xhigh. New sessions snapshot their monitoring choice; retries and follow-ups retain it. Each new review reads the current reviewing choice, and an in-flight review retains its profile. Jev still chooses depth and judges findings.
 - **A reviewer checks every fix.** Agents open PRs as drafts. Before a pushed fix goes to CI, the selected model reviews the diff adversarially without write tools (`daemon/src/critique/`). Codex uses its read-only sandbox; Claude Code gets only Read, Glob and Grep, with no shell, MCP or subagents. The same provider may investigate and review. Jev
   judges each finding (`real_defect`, `blocking`, and from round 2 whether the agent's reply already `rebutted` it) and the policy
@@ -141,6 +141,10 @@ Everything stays on your Mac:
 - **The store:** `~/Library/Application Support/Bridgetown/bridgetown.db` (SQLite, moved by `BRIDGETOWN_HOME`): alerts,
   sessions with their transcripts, cards and settings. The exec-time guard's shims live beside it, in
   `guard-bin/<port>/`.
+- **Schema baseline:** `008_initial` creates a fresh store in one migration. Stores already upgraded through
+  version 8 keep their data and migration record; `009_agent_provider` preserves their Claude conversation IDs
+  under the provider-neutral session fields. Earlier database versions are
+  no longer upgraded by the daemon.
 - **Worktrees:** `monorepo/.shared/worktrees/fix-bt-*`, or `<home>/worktrees/<repo>/` for a repo without `.shared/`.
 - **Agent conversations:** where the Claude CLI keeps them, `~/.claude/projects/` (or under `CLAUDE_CONFIG_DIR`).
 - **Logs:** `~/Library/Logs/Bridgetown/daemon.log`, the daemon's output and the app's notes about it. Past 10 MB it
