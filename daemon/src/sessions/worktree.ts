@@ -5,7 +5,7 @@ import { Context, Effect, Layer } from "effect"
 import { Environment } from "../config.ts"
 import { AdapterError, attempt } from "../domain/errors.ts"
 import { makeKeyedLock } from "../lib/keyed-lock.ts"
-import { run, runOk } from "../lib/proc.ts"
+import { git, run, runOk } from "../lib/proc.ts"
 
 const INSTALL_TIMEOUT_MS = 10 * 60_000
 /** A session worktree is a monorepo checkout plus its node_modules: hundreds of thousands of files to delete. */
@@ -81,12 +81,12 @@ export const pinnedBunVersion = (repoPath: string): string | undefined => {
 const fetchMain = Effect.fn("fetchMain")(function* (repoPath: string) {
   let lastError = ""
   for (let attempt = 1; attempt <= FETCH_ATTEMPTS; attempt++) {
-    const result = yield* run(["git", "fetch", "origin", "main"], { cwd: repoPath, timeoutMs: 120_000 })
+    const result = yield* run(git("fetch", "origin", "main"), { cwd: repoPath, timeoutMs: 120_000 })
     if (result.exitCode === 0) return undefined
     lastError = tail(result.stderr, 3)
     if (attempt < FETCH_ATTEMPTS) yield* Effect.sleep(`${2 ** attempt} seconds`)
   }
-  const local = yield* run(["git", "rev-parse", "--verify", "--quiet", "origin/main"], { cwd: repoPath })
+  const local = yield* run(git("rev-parse", "--verify", "--quiet", "origin/main"), { cwd: repoPath })
   if (local.exitCode !== 0) return yield* new AdapterError({ adapter: "git", operation: "fetch", message: lastError, cause: null })
   return `git fetch failed ${FETCH_ATTEMPTS} times, so the worktree starts from the last fetched origin/main, which may be stale:\n${lastError}`
 })
@@ -97,10 +97,10 @@ const fetchMain = Effect.fn("fetchMain")(function* (repoPath: string) {
  * ref is here without a fetch), or from origin/main for a new session.
  */
 const addCommand = Effect.fn("addCommand")(function* (repoPath: string, branch: string, path: string) {
-  const has = (ref: string) => run(["git", "rev-parse", "--verify", "--quiet", ref], { cwd: repoPath }).pipe(Effect.map((r) => r.exitCode === 0))
-  if (yield* has(`refs/heads/${branch}`)) return ["git", "worktree", "add", path, branch]
+  const has = (ref: string) => run(git("rev-parse", "--verify", "--quiet", ref), { cwd: repoPath }).pipe(Effect.map((r) => r.exitCode === 0))
+  if (yield* has(`refs/heads/${branch}`)) return git("worktree", "add", path, branch)
   const base = (yield* has(`refs/remotes/origin/${branch}`)) ? `origin/${branch}` : "origin/main"
-  return ["git", "worktree", "add", "-b", branch, path, base]
+  return git("worktree", "add", "-b", branch, path, base)
 })
 
 /**
@@ -136,7 +136,7 @@ const create = Effect.fn("Worktrees.create")(function* (repoPath: string, branch
   if (!existsSync(join(path, ".git"))) {
     const fetchWarning = yield* fetchMain(repoPath)
     if (fetchWarning !== undefined) warnings.push(fetchWarning)
-    yield* run(["git", "worktree", "prune"], { cwd: repoPath })
+    yield* run(git("worktree", "prune"), { cwd: repoPath })
     // A checkout or a removal cut short: the session's own directory, so it goes.
     if (existsSync(path)) yield* deleteDir(path)
     yield* runOk(yield* addCommand(repoPath, branch, path), { cwd: repoPath })
@@ -153,15 +153,15 @@ const remove = Effect.fn("Worktrees.remove")(function* (repoPath: string, branch
   if (!existsSync(repoPath)) return
   if (existsSync(path)) {
     // Forced twice: a worktree with changes or a lock goes too. A directory git no longer knows is deleted outright.
-    yield* run(["git", "worktree", "remove", "--force", "--force", path], { cwd: repoPath, timeoutMs: REMOVE_TIMEOUT_MS })
+    yield* run(git("worktree", "remove", "--force", "--force", path), { cwd: repoPath, timeoutMs: REMOVE_TIMEOUT_MS })
     if (existsSync(path)) yield* deleteDir(path)
   }
-  yield* run(["git", "worktree", "prune"], { cwd: repoPath })
+  yield* run(git("worktree", "prune"), { cwd: repoPath })
   if (!options.deleteBranch) return
-  const refs = yield* runOk(["git", "for-each-ref", "--format=%(refname:short)", `refs/heads/${branch}`, `refs/heads/${branch}-*`], { cwd: repoPath })
+  const refs = yield* runOk(git("for-each-ref", "--format=%(refname:short)", `refs/heads/${branch}`, `refs/heads/${branch}-*`), { cwd: repoPath })
   const followUp = new RegExp(`^${branch}-\\d+$`)
   const branches = refs.split("\n").filter((name) => name === branch || followUp.test(name))
-  if (branches.length > 0) yield* runOk(["git", "branch", "-D", ...branches], { cwd: repoPath })
+  if (branches.length > 0) yield* runOk(git("branch", "-D", ...branches), { cwd: repoPath })
 })
 
 /** A branch that is not a session's never reaches a path: `""` would be the worktree root itself, everyone's worktrees in it. */

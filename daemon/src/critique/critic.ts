@@ -6,7 +6,7 @@ import { type AdapterError, errorMessage } from "../domain/errors.ts"
 import type { HandOff, Session } from "../domain/session.ts"
 import { Hub } from "../hub.ts"
 import { Jev } from "../jev.ts"
-import { run } from "../lib/proc.ts"
+import { DIFF_FLAGS, git, run } from "../lib/proc.ts"
 import { cannotResume, makeHandOff } from "../sessions/hand-off.ts"
 import { SessionRepo } from "../sessions/repo.ts"
 import { SessionRunner } from "../sessions/runner.ts"
@@ -95,7 +95,7 @@ export const CriticLive = Layer.effect(Critic)(
           findings,
           (finding) =>
             Effect.gen(function* () {
-              const diff = yield* run(["git", "diff", "origin/main...HEAD", "--", finding.file], { cwd: worktree, timeoutMs: 30_000 }).pipe(
+              const diff = yield* run(git("diff", ...DIFF_FLAGS, "origin/main...HEAD", "--", finding.file), { cwd: worktree, timeoutMs: 30_000 }).pipe(
                 Effect.map((result) => result.stdout),
                 Effect.orElseSucceed(() => ""),
               )

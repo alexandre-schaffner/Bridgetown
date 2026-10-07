@@ -1,7 +1,7 @@
 import { Context, Effect, Layer, Schema } from "effect"
 import { GH_HOST, GHE_REPO } from "../config.ts"
 import { type AdapterError, decodeOr, GheBlocked, type GitHubError } from "../domain/errors.ts"
-import { run, runOk } from "../lib/proc.ts"
+import { git, run, runOk } from "../lib/proc.ts"
 import { nextTagFrom } from "./tags.ts"
 
 /** What `gh` / git print when the Merkl org's IP allow list refuses this network. */
@@ -80,12 +80,12 @@ const mergePr = (prUrl: string) => gh(["pr", "merge", prUrl, "--squash"]).pipe(E
 const rerunFailedJobs = (runId: string) => gh(["run", "rerun", runId, "--failed", "-R", GHE_REPO]).pipe(Effect.asVoid)
 
 const nextPatchTag = (repoPath: string, prefix: string) =>
-  onGhe(runOk(["git", "ls-remote", "--tags", "--refs", "origin", `refs/tags/${prefix}-v*`], { cwd: repoPath, timeoutMs: 60_000 })).pipe(
+  onGhe(runOk(git("ls-remote", "--tags", "--refs", "origin", `refs/tags/${prefix}-v*`), { cwd: repoPath, timeoutMs: 60_000 })).pipe(
     Effect.map((out) => nextTagFrom(out.split("\n").map((line) => line.split("refs/tags/")[1]?.trim() ?? ""), prefix)),
   )
 
 const tagExists = (repoPath: string, tag: string) =>
-  onGhe(runOk(["git", "ls-remote", "--tags", "--refs", "origin", `refs/tags/${tag}`], { cwd: repoPath, timeoutMs: 60_000 })).pipe(
+  onGhe(runOk(git("ls-remote", "--tags", "--refs", "origin", `refs/tags/${tag}`), { cwd: repoPath, timeoutMs: 60_000 })).pipe(
     Effect.map((out) => out.trim() !== ""),
   )
 
@@ -94,7 +94,7 @@ const createRelease = (tag: string, notes: string) =>
 
 /** Evidence that the agent pushed its branch: the commit its ref points at on origin. Unknown (no answer) counts as not pushed. */
 const branchHead = (repoPath: string, branch: string) =>
-  run(["git", "ls-remote", "--heads", "origin", branch], { cwd: repoPath, timeoutMs: 30_000 }).pipe(
+  run(git("ls-remote", "--heads", "origin", branch), { cwd: repoPath, timeoutMs: 30_000 }).pipe(
     Effect.map((result) => (result.exitCode === 0 ? (result.stdout.trim().split(/\s+/)[0] ?? "") : "")),
     Effect.map((sha) => (sha === "" ? null : sha)),
     Effect.orElseSucceed(() => null),
