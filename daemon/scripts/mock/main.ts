@@ -181,8 +181,10 @@ const steer = (input: ReturnType<typeof Bun.stdin.stream>) =>
 
 const program = Effect.gen(function* () {
   const root = yield* mockRoot
-  // Sessions' worktrees live under it too (`worktreePath`); a caller's own home is kept.
-  const home = process.env.BRIDGETOWN_HOME ?? join(root, "home")
+  // Always in the throwaway root, with sessions' worktrees under it (`worktreePath`). Never a BRIDGETOWN_HOME the shell
+  // exported: that is a real daemon's, and the mock would seed its store, overwrite its settings and run housekeeping
+  // and agents over its sessions.
+  const home = join(root, "home")
   const repoPath = yield* makeRepo(root)
   const fixtures = buildFixtures({ now: Date.now(), repoPath, worktrees: join(home, "worktrees", "monorepo"), world, static: staticWorld })
 
