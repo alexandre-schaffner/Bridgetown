@@ -15,7 +15,7 @@ enum ArchMark {
     private static let keyRise: CGFloat = 26
     private static let keyDrop: CGFloat = 12
     /// The keystone's share of the half ring: a little wider than on the icon (one of
-    /// nine there), so it still reads as a wedge at menu bar size.
+    /// nine there), so it still reads as a wedge at the island's size.
     private static let keySpan: CGFloat = .pi / 7
     private static let width = 2 * outer
     private static let height = outer + keyRise + pier

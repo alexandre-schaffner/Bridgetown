@@ -100,7 +100,6 @@ extension Triage.Decision {
         case .suggest: "Suggest an agent to you"
         case .auto: "Start an agent"
         case .escalate: "Needs you personally"
-        case .pending: "Not triaged yet"
         case .unknown: "Unknown decision"
         }
     }
@@ -136,7 +135,6 @@ struct OutcomeGlyph {
 
     init(_ outcome: AlertOutcome, session: Session?) {
         switch outcome.kind {
-        case .pending: self.init("circle.dotted", .tertiary)
         case .filtered: self.init("line.3.horizontal.decrease", .tertiary, dimmed: true)
         case .ignored: self.init("minus.circle", .tertiary, dimmed: true)
         case .suggested: self.init("hand.raised", .secondary)

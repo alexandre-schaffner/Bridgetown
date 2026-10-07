@@ -231,7 +231,7 @@ struct AlertOutcome: Codable, Sendable, Equatable {
     /// else's Bridgetown claimed it in Slack, or they reacted 👀 ("Alice's agent is on it") ·
     /// session = an agent session owns it; headline and tone are the session's own.
     enum Kind: String, LenientStringEnum {
-        case pending, filtered, ignored, suggested, escalated, waiting, dismissed, opened, withdrawn, teammate, session, unknown
+        case filtered, ignored, suggested, escalated, waiting, dismissed, opened, withdrawn, teammate, session, unknown
     }
 
     var kind: Kind
@@ -244,7 +244,7 @@ struct AlertOutcome: Codable, Sendable, Equatable {
 
 struct Triage: Codable, Sendable, Equatable {
     /// `escalate` = Jev says this needs the user personally.
-    enum Decision: String, LenientStringEnum { case pending, filtered, ignore, suggest, auto, escalate, unknown }
+    enum Decision: String, LenientStringEnum { case filtered, ignore, suggest, auto, escalate, unknown }
 
     var decision: Decision
     var reason: String
