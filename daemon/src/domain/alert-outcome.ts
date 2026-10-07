@@ -1,16 +1,7 @@
+import type { AlertOutcome, OutcomeKind, Tone } from "../api/wire.ts"
 import { type Alert, claimHeadline } from "./alert.ts"
-import { progressOf, type Tone } from "./progress.ts"
+import { progressOf } from "./progress.ts"
 import type { Session } from "./session.ts"
-
-export type OutcomeKind = "filtered" | "ignored" | "suggested" | "escalated" | "waiting" | "dismissed" | "opened" | "withdrawn" | "teammate" | "session"
-
-export interface AlertOutcome {
-  readonly kind: OutcomeKind
-  readonly headline: string
-  /** One longer line for the detail view; `null` when the headline says it all. */
-  readonly sentence: string | null
-  readonly tone: Tone
-}
 
 const outcome = (kind: OutcomeKind, headline: string, sentence: string | null, tone: Tone = "neutral"): AlertOutcome => ({
   kind,

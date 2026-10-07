@@ -2,65 +2,6 @@ import Foundation
 import Testing
 @testable import Bridgetown
 
-@Suite struct MrkdwnTests {
-    /// What the app shows for a Slack message: its words, with block and inline syntax gone.
-    private func shown(_ s: String) -> String { Markdown.plain(Mrkdwn.markdown(s)) }
-
-    @Test func unterminatedAngleBracketIsKeptOnce() {
-        #expect(shown("p95 < 2s") == "p95 < 2s")
-        #expect(shown("see <https://x.io|docs> then <oops") == "see docs then <oops")
-    }
-
-    @Test func tokens() {
-        #expect(Mrkdwn.markdown("<https://x.io|docs>") == "[docs](<https://x.io>)")
-        #expect(Mrkdwn.markdown("<https://x.io>") == "<https://x.io>")
-        #expect(Mrkdwn.markdown("<#C123|alert-dev>") == "#alert-dev")
-        #expect(Mrkdwn.markdown("<!here>") == "@here")
-        #expect(Mrkdwn.markdown("<!subteam^S0DEV|dev-product>") == "@dev-product")
-        #expect(Mrkdwn.markdown("cc <!subteam^S04ONCALL|@engine-oncall>") == "cc @engine-oncall")
-        #expect(Mrkdwn.markdown("<#C123|#alert-dev>") == "#alert-dev")
-        #expect(Mrkdwn.markdown("<@U123>") == "@U123")
-        #expect(Mrkdwn.markdown("<https://x.io|[RESOLVED] api>") == "[\\[RESOLVED\\] api](<https://x.io>)")
-    }
-
-    @Test func entitiesDecodeOnce() {
-        #expect(shown("a &lt; b &amp;&amp; c &gt; d") == "a < b && c > d")
-        #expect(shown("&amp;lt;") == "&lt;")
-        #expect(shown("`a &lt; b`") == "a < b")
-    }
-
-    @Test func emphasis() {
-        #expect(Mrkdwn.markdown("*Deploy failed* in _prod_ ~maybe~") == "**Deploy failed** in *prod* ~~maybe~~")
-        #expect(Mrkdwn.markdown("snake_case_name and 2*3*4") == "snake_case_name and 2*3*4")
-        #expect(Mrkdwn.markdown("`*not bold*`") == "`*not bold*`")
-        #expect(Mrkdwn.markdown("<https://x.io/_a_b_|_docs_>") == "[_docs_](<https://x.io/_a_b_>)")
-        #expect(Mrkdwn.markdown("*see <https://x.io|docs>*") == "**see [docs](<https://x.io>)**")
-    }
-
-    @Test func slackHasNoEscapes() {
-        #expect(shown("C:\\temp\\*") == "C:\\temp\\*")
-    }
-
-    @Test func fencesAndQuotes() {
-        let blocks = Markdown.blocks(Mrkdwn.markdown("Error:```panic: &lt;nil&gt;\n  at main.go:12```&gt; quoted *bold*"))
-        #expect(blocks == [
-            .paragraph("Error:"),
-            .code("panic: <nil>\n  at main.go:12"),
-            .quote([.paragraph("quoted **bold**")]),
-        ])
-    }
-
-    @Test func emoji() {
-        #expect(Mrkdwn.markdown(":rotating_light: *TX Executor* :+1::skin-tone-3:") == "🚨 **TX Executor** 👍")
-        #expect(Mrkdwn.markdown(":merkl-logo: at 10:42:07") == ":merkl-logo: at 10:42:07")
-        #expect(Mrkdwn.markdown("`:fire:`") == "`:fire:`")
-    }
-
-    @Test func unclosedFenceStaysText() {
-        #expect(shown("a ``` b") == "a ``` b")
-    }
-}
-
 @Suite struct MarkdownTests {
     @Test func blocks() {
         let text = """

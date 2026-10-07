@@ -1,7 +1,7 @@
 import type { ThreadReply } from "../domain/alert.ts"
 import type { SlackMessage } from "./client.ts"
 
-/** Slack messages as text: flattened to one mrkdwn string, read as plain text or written from an agent's Markdown, and who wrote them. */
+/** Slack messages as text: flattened to one mrkdwn string, read as plain text or as Markdown, written from an agent's Markdown, and who wrote them. */
 
 /** Marks everything Bridgetown posts as the user, so it is never mistaken for them (or re-ingested). */
 export const BOT_PREFIX = "🤖"
@@ -113,6 +113,110 @@ const proseToMrkdwn = (text: string): string => {
     .replace(/~~(?=\S)(.+?)(?<=\S)~~/g, "~$1~")
     .replace(/^[ \t]*#{1,6}[ \t]+(.+?)[ \t#]*$/gm, (_, heading: string) => `*${heading.replace(/\*/g, "")}*`)
     .replace(/\u0000(\d+)\u0000/g, (_, index: string) => tokens[Number(index)] ?? "")
+}
+
+/**
+ * Slack mrkdwn as Markdown, for the app's renderer (`AlertDetail.raw`): `*bold*` → `**bold**`, `_italic_` → `*italic*`,
+ * `~strike~` → `~~strike~~`, fences on lines of their own, `<url|label>` → `[label](<url>)`, `<#C…|name>` → #name,
+ * `<@U…>` → @their name from `names` (the id when unknown), `<!here>` → @here, a leading `&gt;` → a quote, and common
+ * `:shortcodes:` → emoji. Entities are left for the Markdown parser to decode, but inside code, which it reads verbatim.
+ * Slack has no escapes, so a backslash, and a `<` with no closing `>`, stay as written.
+ */
+export const fromMrkdwn = (mrkdwn: string, names: ReadonlyMap<string, string> = new Map()): string => {
+  const parts = mrkdwn.split("```")
+  return parts
+    .map((part, index) => {
+      const code = index % 2 === 1
+      if (code && index < parts.length - 1) return `\n\`\`\`\n${decoded(trimOneNewline(part))}\n\`\`\`\n`
+      // An unclosed fence is text, its backticks escaped so they stay literal.
+      return (code ? "\\`\\`\\`" : "") + textFromMrkdwn(part, names)
+    })
+    .join("")
+}
+
+/** The users `raw` mentions without a label (`<@U123>`), whose names `fromMrkdwn` needs. */
+export const mentionedUsers = (mrkdwn: string): ReadonlyArray<string> => [...new Set([...mrkdwn.matchAll(/<@([A-Z0-9]+)>/g)].map((m) => m[1] ?? ""))]
+
+/** Text between fences: inline code kept (decoded), everything else translated. */
+const textFromMrkdwn = (text: string, names: ReadonlyMap<string, string>): string => {
+  const parts = text.split("`")
+  return parts
+    .map((part, index) => {
+      if (index % 2 === 1 && index < parts.length - 1) return `\`${decoded(part)}\``
+      return (index % 2 === 1 ? "\\`" : "") + proseFromMrkdwn(part, names)
+    })
+    .join("")
+}
+
+/** Tokens stand aside as private-use placeholders while emphasis is rewritten: a URL's underscores are never italics, yet `*see <url|docs>*` still bolds the link. */
+const PLACEHOLDER_BASE = 0xf0000
+
+const EMPHASIS: ReadonlyArray<readonly [RegExp, string]> = [
+  // Bold first, so the `*italic*` it writes is not bolded again. A marker counts only at a word's edge, as in Slack: `snake_case` and `2*3*4` stay.
+  [/(?<![\p{L}\p{N}_*\\])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![\p{L}\p{N}_*])/gu, "**$1**"],
+  [/(?<![\p{L}\p{N}_\\])_(?=\S)([^_\n]+?)(?<=\S)_(?![\p{L}\p{N}_])/gu, "*$1*"],
+  [/(?<![\p{L}\p{N}~\\])~(?=\S)([^~\n]+?)(?<=\S)~(?![\p{L}\p{N}~])/gu, "~~$1~~"],
+]
+
+const proseFromMrkdwn = (text: string, names: ReadonlyMap<string, string>): string => {
+  const tokens: Array<string> = []
+  let masked = ""
+  let rest = text
+  for (;;) {
+    const open = rest.indexOf("<")
+    const close = open === -1 ? -1 : rest.indexOf(">", open)
+    if (close === -1) break
+    masked += escapedProse(rest.slice(0, open)) + String.fromCodePoint(PLACEHOLDER_BASE + tokens.length)
+    tokens.push(tokenFromMrkdwn(rest.slice(open + 1, close), names))
+    rest = rest.slice(close + 1)
+  }
+  masked += escapedProse(rest)
+  for (const [pattern, template] of EMPHASIS) masked = masked.replace(pattern, template)
+  masked = masked.replace(/^&gt; ?/gm, ">").replace(/:([a-z0-9_+-]+):/g, (code, name: string) => (name.startsWith("skin-tone-") ? "" : (EMOJI[name] ?? code)))
+  return [...masked].map((char) => tokens[(char.codePointAt(0) ?? 0) - PLACEHOLDER_BASE] ?? char).join("")
+}
+
+/** Slack has no escapes, so a backslash is always literal, and so is a bare `<`. */
+const escapedProse = (text: string): string => text.replace(/\\/g, "\\\\").replace(/</g, "\\<")
+
+/** `<https://x|label>` → a Markdown link; channels, users and groups → their name, the sigil never twice (`<!subteam^S0|@dev>`). */
+const tokenFromMrkdwn = (token: string, names: ReadonlyMap<string, string>): string => {
+  const bar = token.indexOf("|")
+  const target = bar === -1 ? token : token.slice(0, bar)
+  const label = bar === -1 ? undefined : token.slice(bar + 1)
+  const sigiled = (sigil: string, name: string) => (name.startsWith(sigil) ? name : sigil + name)
+  if (target.startsWith("#")) return sigiled("#", label ?? target.slice(1))
+  if (target.startsWith("@")) return sigiled("@", label ?? names.get(target.slice(1)) ?? target.slice(1))
+  if (target.startsWith("!")) return sigiled("@", label ?? target.slice(1).split("^")[0] ?? "")
+  if (!target.includes(":")) return label ?? target
+  if (label === undefined || label === target) return `<${target}>`
+  return `[${label.replace(/\[/g, "\\[").replace(/\]/g, "\\]")}](<${target}>)`
+}
+
+const decoded = (text: string): string => text.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")
+
+const trimOneNewline = (text: string): string => text.replace(/^\n/, "").replace(/\n$/, "")
+
+/** Slack's names for the emoji alerts and teammates use; anything else stays as written. */
+const EMOJI: Readonly<Record<string, string>> = {
+  rotating_light: "🚨", warning: "⚠️", fire: "🔥", boom: "💥", x: "❌", no_entry: "⛔", no_entry_sign: "🚫", bangbang: "‼️",
+  exclamation: "❗", heavy_exclamation_mark: "❗", question: "❓", white_check_mark: "✅", heavy_check_mark: "✔️",
+  ballot_box_with_check: "☑️", red_circle: "🔴", large_red_circle: "🔴", large_green_circle: "🟢", green_circle: "🟢",
+  large_yellow_circle: "🟡", yellow_circle: "🟡", large_orange_circle: "🟠", large_blue_circle: "🔵", white_circle: "⚪",
+  black_circle: "⚫", red_square: "🟥", green_square: "🟩", yellow_square: "🟨", information_source: "ℹ️", bell: "🔔",
+  no_bell: "🔕", mag: "🔍", eyes: "👀", robot_face: "🤖", rocket: "🚀", ship: "🚢", package: "📦", hourglass: "⌛",
+  hourglass_flowing_sand: "⏳", stopwatch: "⏱️", alarm_clock: "⏰", clock1: "🕐", chart_with_upwards_trend: "📈",
+  chart_with_downwards_trend: "📉", bar_chart: "📊", memo: "📝", pencil: "📝", link: "🔗", lock: "🔒", unlock: "🔓",
+  key: "🔑", wrench: "🔧", hammer_and_wrench: "🛠️", gear: "⚙️", construction: "🚧", bug: "🐛", zap: "⚡", sos: "🆘",
+  new: "🆕", recycle: "♻️", arrows_counterclockwise: "🔄", repeat: "🔁", arrow_right: "➡️", arrow_up: "⬆️", arrow_down: "⬇️",
+  point_right: "👉", point_up: "☝️", "+1": "👍", thumbsup: "👍", "-1": "👎", thumbsdown: "👎", pray: "🙏", raised_hands: "🙌",
+  clap: "👏", wave: "👋", ok_hand: "👌", muscle: "💪", tada: "🎉", sparkles: "✨", star: "⭐", "100": "💯", heart: "❤️",
+  thinking_face: "🤔", sweat_smile: "😅", smile: "😄", slightly_smiling_face: "🙂", joy: "😂", sob: "😭", scream: "😱",
+  skull: "💀", money_with_wings: "💸", moneybag: "💰", gem: "💎", calendar: "📆", date: "📅", pushpin: "📌",
+  round_pushpin: "📍", speech_balloon: "💬", loudspeaker: "📢", mega: "📣", satellite_antenna: "📡", computer: "💻",
+  globe_with_meridians: "🌐", heavy_plus_sign: "➕", heavy_minus_sign: "➖", heavy_multiplication_x: "✖️",
+  large_blue_diamond: "🔷", small_red_triangle: "🔺", small_red_triangle_down: "🔻", white_large_square: "⬜",
+  black_large_square: "⬛",
 }
 
 /** Display text for titles: readable links, no mrkdwn emphasis. */

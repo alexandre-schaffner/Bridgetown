@@ -35,7 +35,7 @@ export const Settings = Schema.Struct({
   dryRun: Schema.Boolean,
   /** A different model reviews each pushed fix before the PR leaves draft. */
   adversarialReview: Schema.Boolean,
-  /** Watch prod signals in Grafana and suggest an investigation when one rises before any alert fires. */
+  /** Watch prod signals in Grafana and investigate one that rises before any alert fires (one Jev doubts is only suggested). */
   watchProd: Schema.Boolean,
   pollSeconds: Schema.Number.check(Schema.isGreaterThan(0)),
   monorepoPath: Schema.String,

@@ -83,8 +83,8 @@ describe("a store the first daemon wrote", () => {
     })
     // Rows from before the adversarial review: none ran, and the stepper says so instead of claiming one.
     const ci = out.snapshot.sessions.find((s) => s.id === OLD_SESSIONS.ci.id)
-    expect(ci).toMatchObject({ critique: null, critiqueRounds: 0 })
-    expect(ci?.steps.find((step) => step.key === "critique")).toEqual({ key: "critique", label: "No review", state: "skipped" })
+    expect(ci).toMatchObject({ critiqueLine: "Not run" })
+    expect(ci?.steps.find((step) => step.key === "critique")).toEqual({ key: "critique", label: "No review", state: "skipped", detail: "Not run" })
     expect(out.snapshot.actions).toEqual([expect.objectContaining({ id: "a_old_review", url: null, inFlight: false, dismissCloses: false })])
     // Before history existed, the detail still says how it was triaged.
     expect(out.release?.events).toEqual([{ at: OLD_ALERTS.release.receivedAt, text: "Handed to an agent: Agent-resolvable build_failure" }])

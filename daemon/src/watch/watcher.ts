@@ -1,9 +1,9 @@
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Ref } from "effect"
 import { ActionQueue } from "../actions/queue.ts"
 import type { Alert, AlertKind, ParsedAlert, Triage } from "../domain/alert.ts"
 import type { AdapterError } from "../domain/errors.ts"
 import { daysAgo, now as nowIso } from "../domain/ids.ts"
-import { type Board, Boards, GRAFANA_DOWN } from "../grafana/board.ts"
+import { Boards, type FetchedBoard, GRAFANA_DOWN } from "../grafana/board.ts"
 import { alertBoard, type PanelSpec } from "../grafana/boards.ts"
 import { Grafana } from "../grafana/client.ts"
 import { Hub, type HubShape } from "../hub.ts"
@@ -15,7 +15,7 @@ import { alertKind } from "../triage/kind.ts"
 import { decideAnomaly } from "../triage/policy.ts"
 import { applyRules } from "../triage/rules.ts"
 import { reportJev, triageWith } from "../triage/verdict.ts"
-import { type Anomaly, anomalyOf, backToUsual, findingOf, formatValue, measure, type Measure, watchBoard, watchFingerprint, WORSE_FACTOR } from "./detect.ts"
+import { type Anomaly, anomalyOf, backToUsual, findingOf, formatValue, measure, type Measure, type Reading, readingOf, watchBoard, watchFingerprint, WORSE_FACTOR } from "./detect.ts"
 import type { LogPatternVerdict } from "./judge.ts"
 import { candidates, judgeInput, type LogPattern, logFinding, logTriage, mergeRows, type PatternRow, patternLink, rowOf, SWEEPS, type Sweep, sweepQuery } from "./logs.ts"
 import { type Judged, loadJudged, saveJudged, saveSweep } from "./sweep-store.ts"
@@ -29,7 +29,12 @@ import { type Judged, loadJudged, saveJudged, saveSweep } from "./sweep-store.ts
  * Jev unavailable, is only suggested (`decideAnomaly`).
  */
 export interface WatcherShape {
+  /** `observe`, then a finding for each signal that rose or spiked, and the cards of those back to normal withdrawn. */
   readonly tick: Effect.Effect<void, AdapterError>
+  /** Measures the watched signals and keeps what it read for `readings`, raising nothing. */
+  readonly observe: Effect.Effect<void>
+  /** By panel id, what the last look read of each watched signal: the boards' only judge of what is unusual. Empty while watching is blocked. */
+  readonly readings: Effect.Effect<ReadonlyMap<string, Reading>>
   /**
    * Sweeps prod's error and warning logs for patterns that are new, surging or
    * name a risk, asks Jev about the new candidates in one batch, and starts
@@ -108,7 +113,7 @@ export const WatcherLive = Layer.effect(Watcher)(
       })
 
     /** One risen signal: skipped while cooling down or covered, else filed. */
-    const raise = (anomaly: Anomaly, spec: PanelSpec, board: Board, stepSeconds: number, recent: ReadonlyArray<Alert>, now: Date) =>
+    const raise = (anomaly: Anomaly, spec: PanelSpec, board: FetchedBoard, stepSeconds: number, recent: ReadonlyArray<Alert>, now: Date) =>
       Effect.gen(function* () {
         const history = yield* store.alertsByFingerprint(watchFingerprint(anomaly.panel.id), daysAgo(7))
         // Cooling down after a finding, unless the signal has since got much worse.
@@ -155,17 +160,31 @@ export const WatcherLive = Layer.effect(Watcher)(
         }
       })
 
-    const tick = Effect.gen(function* () {
-      if ((yield* watchBlocked(hub)) !== null) return
+    const readings = yield* Ref.make<ReadonlyMap<string, Reading>>(new Map())
+
+    /** The watched panels measured now, and what they read kept for `readings`; undefined while watching is blocked or Grafana failed. */
+    const look = Effect.gen(function* () {
+      if ((yield* watchBlocked(hub)) !== null) {
+        yield* Ref.set(readings, new Map())
+        return undefined
+      }
       const now = new Date()
       const spec = watchBoard(now)
       const board = yield* boards.latest(spec)
-      if (board.error !== null) return
+      if (board.error !== null) return undefined
       const measured = spec.panels.flatMap((panelSpec) => {
         const panel = board.panels.find((p) => p.id === panelSpec.id)
         const m = panel === undefined ? null : measure(panel, spec.stepSeconds, now, panelSpec.source)
         return m === null ? [] : [{ m, panelSpec }]
       })
+      yield* Ref.set(readings, new Map(measured.map(({ m }) => [m.panel.id, readingOf(m, now)])))
+      return { now, spec, board, measured }
+    })
+
+    const tick = Effect.gen(function* () {
+      const looked = yield* look
+      if (looked === undefined) return
+      const { now, spec, board, measured } = looked
       const recent = measured.some(({ m }) => anomalyOf(m) !== null)
         ? yield* store.slackAlertsSince(new Date(now.getTime() - COVERED_HOURS * 3_600_000).toISOString())
         : []
@@ -242,6 +261,6 @@ export const WatcherLive = Layer.effect(Watcher)(
       yield* saveSweep(store, { at: now.toISOString(), patterns, failures })
     })
 
-    return { tick, sweepLogs }
+    return { tick, observe: Effect.asVoid(look), readings: Ref.get(readings), sweepLogs }
   }),
 )

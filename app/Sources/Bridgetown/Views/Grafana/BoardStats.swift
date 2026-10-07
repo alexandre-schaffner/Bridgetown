@@ -1,7 +1,8 @@
 import Foundation
 
-// A board's numbers as the charts read them: units, the window's usual level, spikes,
-// and the buckets the window is cut into.
+// A board's numbers as the charts read them: units, the window at a glance, and the
+// buckets the window is cut into. What is usual and what is a spike is the daemon's call
+// (`Panel.usual`, `spikeAbove`, `spike`).
 
 extension Board.Panel.Unit {
     /// "1.2k", "423 ms", "0.9/s", "567 MB".
@@ -20,14 +21,6 @@ extension Board.Panel.Unit {
 }
 
 extension Board.Panel {
-    /// The window's usual level, the median of its one series; nil for several series,
-    /// an empty window or a median of zero.
-    var typical: Double? {
-        guard series.count == 1, let median = Self.median(series[0].points.compactMap { $0.count == 2 ? $0[1] : nil })
-        else { return nil }
-        return median > 0 ? median : nil
-    }
-
     private static func median(_ values: [Double]) -> Double? {
         let values = values.sorted()
         guard !values.isEmpty else { return nil }
@@ -54,7 +47,7 @@ extension Board.Panel {
     var summary: Summary? {
         var sums: [Double: Double] = [:]
         for s in series {
-            for p in s.points where p.count == 2 { sums[p[0], default: 0] += p[1] }
+            for p in s.points { sums[p.t, default: 0] += p.v }
         }
         let totals = sums.sorted { $0.key < $1.key }.map { Sample(at: Date(timeIntervalSince1970: $0.key), value: $0.value) }
         guard error == nil,
@@ -67,30 +60,18 @@ extension Board.Panel {
 
     /// A series' value nearest `date`, or its last when `date` is nil.
     static func value(of series: Series, at date: Date?) -> Double? {
-        guard let date else { return series.points.last?.last }
+        guard let date else { return series.points.last?.v }
         let t = date.timeIntervalSince1970
-        return series.points.min { abs($0[0] - t) < abs($1[0] - t) }?.last
-    }
-
-    /// Well above usual: at least 1.8× the median, and more than one over it.
-    static func isSpike(_ value: Double, typical: Double?) -> Bool {
-        guard let typical else { return false }
-        return value >= max(typical * 1.8, typical + 1)
-    }
-
-    /// How unusual the latest value is, as a multiple of the median, when it spikes.
-    var spikeRatio: Double? {
-        guard error == nil, let latest, let typical, Self.isSpike(latest, typical: typical) else { return nil }
-        return latest / typical
+        return series.points.min { abs($0.t - t) < abs($1.t - t) }?.v
     }
 }
 
 extension Board.Panel {
-    var hasSamples: Bool { series.contains { $0.points.contains { $0.count == 2 } } }
+    var hasSamples: Bool { series.contains { !$0.points.isEmpty } }
 
-    /// The chart's top: a little above the highest sample.
+    /// The chart's top: a little above the highest sample, or the usual level's rule.
     var chartTop: Double {
-        let top = series.flatMap { $0.points.compactMap { $0.count == 2 ? $0[1] : nil } }.max() ?? 0
+        let top = max(series.flatMap { $0.points.map(\.v) }.max() ?? 0, usual ?? 0)
         return top > 0 ? top * 1.15 : 1
     }
 }
@@ -121,11 +102,11 @@ extension Board {
         let count = columns
         return panel.series.map { s in
             var values = [Double?](repeating: nil, count: count)
-            for p in s.points where p.count == 2 {
-                let c = column(of: Date(timeIntervalSince1970: p[0]))
-                if values.indices.contains(c) { values[c] = max(values[c] ?? 0, p[1]) }
+            for p in s.points {
+                let c = column(of: Date(timeIntervalSince1970: p.t))
+                if values.indices.contains(c) { values[c] = max(values[c] ?? 0, p.v) }
             }
-            let reporting = panel.series.count == 1 || (s.points.last?[1] ?? 0) > 0
+            let reporting = panel.series.count == 1 || (s.points.last?.v ?? 0) > 0
             return BucketChart.Series(values: values, current: reporting)
         }
     }
@@ -135,9 +116,10 @@ extension Board {
     /// The window runs up to about now (within ten minutes), rather than around an alert.
     func endsNow(at now: Date) -> Bool { abs(to.timeIntervalSince(now)) < 600 }
 
-    /// The panel to lead with: the one spiking hardest, or else the board's first.
+    /// The panel to lead with: the one the prod watcher finds the most unusual, or else the
+    /// board's first.
     var lead: Board.Panel? {
-        panels.filter { $0.spikeRatio != nil }.max { ($0.spikeRatio ?? 0) < ($1.spikeRatio ?? 0) } ?? panels.first
+        panels.filter { $0.spike != nil }.max { ($0.spike ?? 0) < ($1.spike ?? 0) } ?? panels.first
     }
 
     /// "per 30m": what one point of a count panel covers.

@@ -92,7 +92,7 @@ struct AlertDetailView: View {
         if let raw = detail.value?.raw, !raw.isEmpty {
             DetailSection(title: "Message") {
                 // Set apart from the app's own words: a block of its own on a faint fill.
-                ClampedText(markdown: Mrkdwn.markdown(raw), lineLimit: 8, size: 10.5, mono: true, lineSpacing: 1.5, moreLabel: "Show full message")
+                ClampedText(markdown: raw, lineLimit: 8, size: 10.5, mono: true, lineSpacing: 1.5, moreLabel: "Show full message")
                     .id(raw)
                     .padding(.horizontal, Metrics.inset)
                     .padding(.vertical, 10)
@@ -123,7 +123,7 @@ struct AlertDetailView: View {
                     .textSelection(.enabled)
             }
             HStack(spacing: 8) {
-                ChannelChip(name: alert.channelName)
+                ChannelChip(label: alert.channelLabel)
                 Text(Format.ago(alert.receivedAt, now: now))
                     .font(Typo.caption)
                     .monospacedDigit()

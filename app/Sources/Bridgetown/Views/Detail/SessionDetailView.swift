@@ -61,19 +61,7 @@ struct SessionDetailView: View {
 
     private var summary: some View {
         VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 6) {
-                StatusLine(session: session, size: 15, lineLimit: session.isActive ? 2 : 3)
-                // A finished session shows its outcome, not the last thing the agent was doing.
-                if !session.isActive, let resolution = session.resolutionLine {
-                    Text(resolution)
-                        .font(Typo.lead)
-                        .lineSpacing(Typo.rowLineSpacing)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.leading, 12)  // align under the headline, past the dot
-                }
-            }
+            StatusLine(session: session, size: 15, lineLimit: session.isActive ? 2 : 3)
             PhaseStepper(session: session)
                 .padding(.vertical, 4)
             VStack(alignment: .leading, spacing: 5) {
@@ -98,7 +86,7 @@ struct SessionDetailView: View {
         HStack(spacing: 4) {
             // Short of room, the channel's name gives way, in its middle: never "From" or a link.
             Text("From").foregroundStyle(.tertiary)
-            Text(Format.channel(session.channelName))
+            Text(session.channelLabel)
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -148,17 +136,15 @@ struct SessionDetailView: View {
                     }
                 }
 
-                if let reviewer = session.reviewerName, let line = session.critiqueLine {
-                    keyValue(reviewer) {
-                        Text(line)
-                            .foregroundStyle(.secondary)
-                    }
-                    .help("Another vendor's model reviews each fix the agent pushes; Jev drops the nitpicks. The PR leaves draft once it passes.")
+                keyValue(session.reviewerName) {
+                    Text(session.critiqueLine)
+                        .foregroundStyle(.secondary)
                 }
+                .help("Another vendor's model reviews each fix the agent pushes; Jev drops the nitpicks. The PR leaves draft once it passes.")
 
                 keyValue("CI") {
-                    Text(session.ciText)
-                        .foregroundStyle(session.ciColor.map(AnyShapeStyle.init) ?? AnyShapeStyle(.secondary))
+                    Text(session.ciLine)
+                        .foregroundStyle(session.step(.ci)?.lineColor.map(AnyShapeStyle.init) ?? AnyShapeStyle(.secondary))
                 }
                 if let branch = session.branch {
                     keyValue("Branch") {

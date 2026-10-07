@@ -77,7 +77,7 @@ struct StatusSummary: View {
         if let poll = status.lastPollAt {
             parts.append("Polled \(Format.ago(poll, now: now))")
         }
-        if let sessions = store.snapshot?.metrics?.sessions, sessions.started > 0 {
+        if let sessions = store.snapshot?.metrics.sessions, sessions.started > 0 {
             parts.append("\(sessions.resolved) of \(sessions.started) resolved in 24h")
         }
         return parts

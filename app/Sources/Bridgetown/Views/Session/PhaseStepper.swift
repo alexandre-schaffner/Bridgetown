@@ -28,7 +28,7 @@ struct PhaseStepper: View {
         Color.clear
             .frame(height: 14)
             .overlay(alignment: .leading) {
-                if shown, let text = session.evidence(for: step) {
+                if shown, let text = step.detail {
                     Text(text)
                         .font(Typo.caption.monospacedDigit())
                         .foregroundStyle(step.state == .failed ? AnyShapeStyle(session.tone.stopTint) : AnyShapeStyle(.tertiary))

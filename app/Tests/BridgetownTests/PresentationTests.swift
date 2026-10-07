@@ -41,20 +41,6 @@ import Testing
         #expect(!teammate.dimmed)
         #expect(teammate.symbol == "person.fill")
     }
-
-    @Test func ciTextComesFromTheStep() throws {
-        var s = try session(.ci)
-        #expect(s.ciText == "Passed · 1 round")
-        s.steps[4].state = .skipped
-        s.ciRounds = 0
-        #expect(s.ciText == "Not needed")
-    }
-
-    @Test func aSessionInAdversarialReviewIsMovingButNotTheAgent() throws {
-        let s = try session(.critiquing)
-        #expect(s.holder == .critic)
-        #expect(s.holder?.isMoving == true)
-    }
 }
 
 @Suite struct HeaderProblemsTests {
@@ -120,32 +106,11 @@ import Testing
     }
 }
 
-@Suite struct ResolutionLineTests {
-    private func closed(headline: String, resolution: String?) throws -> Session {
-        var s = try #require(Fixture.snapshot().session(id: "ses_closed"))
-        s.headline = headline
-        s.resolution = resolution
-        return s
-    }
-
-    @Test func notRepeatedWhenTheHeadlineSaysIt() throws {
-        // The daemon's headline for a finished session already carries its resolution.
-        #expect(try closed(headline: "Closed · root cause not found", resolution: "root cause not found").resolutionLine == nil)
-        #expect(try closed(headline: "Stopped by you", resolution: "stopped by you").statusDetail == "")
-    }
-
-    @Test func shownWhenItAddsSomething() throws {
-        let s = try closed(headline: "Closed · root cause not found", resolution: "Closed by you without a fix")
-        #expect(s.resolutionLine == "Closed by you without a fix")
-        #expect(s.statusDetail == "Closed by you without a fix")
-        #expect(try closed(headline: "Closed · not fixed", resolution: "").resolutionLine == nil)
-    }
-}
-
 @Suite struct ActivityLineTests {
-    private func session(_ status: Session.State, activity: String) throws -> Session {
+    private func session(_ status: Session.State, _ holder: Session.Holder?, activity: String) throws -> Session {
         var s = try #require(Fixture.snapshot().session(id: "ses_running"))
         s.status = status
+        s.holder = holder
         s.activity = activity
         return s
     }
@@ -153,17 +118,17 @@ import Testing
     /// Waiting on you, the session's card stands under its headline: "Asked: Switch the
     /// keeper to the fallback provider?" would say the card's question twice.
     @Test func notRepeatedOverTheCardItWaitsOn() throws {
-        let asked = try session(.waiting, activity: "Asked: Switch the keeper to the fallback provider?")
+        let asked = try session(.waiting, .you, activity: "Asked: Switch the keeper to the fallback provider?")
         #expect(asked.activityLine(besideCard: true) == nil)
         #expect(asked.activityLine(besideCard: false) == "Asked: Switch the keeper to the fallback provider?")
-        #expect(try session(.awaiting_merge, activity: "#3345 approved and green, ready to merge").activityLine(besideCard: true) == nil)
+        #expect(try session(.awaiting_merge, .you, activity: "#3345 approved and green, ready to merge").activityLine(besideCard: true) == nil)
     }
 
     @Test func shownWhileTheAgentWorks() throws {
-        let running = try session(.running, activity: "Guarding computeApr")
+        let running = try session(.running, .agent, activity: "Guarding computeApr")
         #expect(running.activityLine(besideCard: true) == "Guarding computeApr")
-        #expect(try session(.running, activity: "").activityLine(besideCard: false) == nil)
-        #expect(try session(.closed, activity: "Guarding computeApr").activityLine(besideCard: false) == nil)
+        #expect(try session(.running, .agent, activity: "").activityLine(besideCard: false) == nil)
+        #expect(try session(.closed, nil, activity: "Guarding computeApr").activityLine(besideCard: false) == nil)
     }
 }
 
@@ -180,15 +145,6 @@ import Testing
         s.status = .resolved
         #expect(s.elapsed(now: now) == "12m")
         #expect(s.meta(now: now).components(separatedBy: " · ").contains("12m"))
-    }
-}
-
-@Suite struct ChannelNameTests {
-    @Test func directMessagesTakeNoHash() {
-        #expect(Format.channel("alert-dev") == "#alert-dev")
-        #expect(Format.channel("DM") == "DM")
-        #expect(Format.channel("group DM") == "group DM")
-        #expect(Format.channel("Grafana") == "Grafana")
     }
 }
 
@@ -295,36 +251,28 @@ import Testing
 }
 
 @Suite struct SessionHolderTests {
-    private func session(_ status: Session.State, tone: Tone = .live, reviewChannel: String? = nil) throws -> Session {
+    private func session(_ holder: Session.Holder?) throws -> Session {
         var s = try #require(try Fixture.snapshot().sessions.first)
-        s.status = status
-        s.tone = tone
-        s.reviewChannel = reviewChannel
+        s.holder = holder
         return s
     }
 
-    @Test func inReviewIsNotWorking() throws {
+    @Test func inReviewIsNotWorking() {
         // The daemon calls "In review" live; nobody is working on it.
-        let review = try session(.ci, reviewChannel: "product-approvals")
-        #expect(review.holder == .reviewers)
-        #expect(review.holder?.isMoving == false)
-    }
-
-    @Test func ciGreenWithoutAReviewRequestIsOnYou() throws {
-        #expect(try session(.ci, tone: .waiting).holder == .you)
-        #expect(try session(.ci).holder == .ci)
+        #expect(Session.Holder.reviewers.isMoving == false)
+        #expect(Session.Holder.critic.isMoving)
+        #expect(Session.Holder.reviewers.label == "in review")
     }
 
     /// Only motion pulses, on the row and in the detail alike; an ended session is still,
     /// not a ring that says it waits on someone.
     @Test func theDotPulsesOnlyWhileSomethingMovesIt() throws {
-        #expect(try session(.running).dot == .moving)
+        #expect(try session(.agent).dot == .moving)
         #expect(try session(.ci).dot == .moving)
-        #expect(try session(.ci, reviewChannel: "product-approvals").dot == .waiting)
-        #expect(try session(.critiquing, tone: .neutral).dot == .waiting)
-        #expect(try session(.queued, tone: .neutral).dot == .waiting)
-        #expect(try session(.waiting, tone: .waiting).dot == .still)
-        #expect(try session(.resolved, tone: .success).dot == .still)
-        #expect(try session(.closed, tone: .neutral).dot == .still)
+        #expect(try session(.critic).dot == .moving)
+        #expect(try session(.reviewers).dot == .waiting)
+        #expect(try session(.queue).dot == .waiting)
+        #expect(try session(.you).dot == .still)
+        #expect(try session(nil).dot == .still)
     }
 }

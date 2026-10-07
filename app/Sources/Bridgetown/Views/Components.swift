@@ -84,10 +84,11 @@ struct DetailSection<Content: View>: View {
 // MARK: Channel chip
 
 struct ChannelChip: View {
-    let name: String
+    /// "#alert-dev", "DM", "Grafana", as the daemon writes it.
+    let label: String
 
     var body: some View {
-        Text(Format.channel(name))
+        Text(label)
             .font(.geist(11, .medium))
             .foregroundStyle(.secondary)
             .lineLimit(1)

@@ -28,13 +28,15 @@ describe("a poster's name cannot carry instructions into the trusted prompt", ()
 })
 
 describe("slack_context", () => {
-  test("names a Slack alert's channel, and a Grafana finding's source without a '#'", () => {
-    const slackAlert = { source: "generic", channelName: "alert-dev" } as unknown as Alert
-    const finding = { source: "watch", channelName: "Grafana" } as unknown as Alert
+  test("names a Slack alert's channel, and a Grafana finding's source or a DM without a '#'", () => {
+    const slackAlert = { source: "generic", channelName: "alert-dev", fields: { _tag: "generic" } } as unknown as Alert
+    const finding = { source: "watch", channelName: "Grafana", fields: { _tag: "watch" } } as unknown as Alert
+    const dm = { source: "inbox", channelName: "DM", fields: { _tag: "inbox", channelKind: "dm" } } as unknown as Alert
     expect(slackContextText(slackAlert, [{ author: "teammate", text: "a reply" }], ["a neighbour"], 20)).toBe(
       "Thread replies (1):\n- [a teammate] a reply\n\n#alert-dev within ±20 min (1):\n- a neighbour",
     )
     expect(slackContextText(finding, [], [], 20)).toContain("\nGrafana within ±20 min (0):")
+    expect(slackContextText(dm, [], [], 20)).toContain("\nDM within ±20 min (0):")
   })
 })
 

@@ -1,5 +1,6 @@
 import { type ParsedAlert, WATCH_CHANNEL } from "../domain/alert.ts"
-import type { Deploy, Panel } from "../grafana/board.ts"
+import type { Deploy } from "../api/wire.ts"
+import type { FetchedPanel } from "../grafana/board.ts"
 import { type BoardSpec, HOUR, type OverviewView, overviewPanels, type PanelSpec, type Unit } from "../grafana/boards.ts"
 import { clock } from "../lib/text.ts"
 
@@ -60,7 +61,7 @@ const MIN_BASELINE_STEPS = 24
 
 /** Where a ruled signal stands: its recent level against its usual one. */
 export interface Measure {
-  readonly panel: Panel
+  readonly panel: FetchedPanel
   /** The panel's rule. */
   readonly rule: Rule
   /** Median of the recent steps. */
@@ -89,7 +90,7 @@ const quantile = (values: ReadonlyArray<number>, q: number): number => {
  * Every series of the panel summed per step, oldest first, keyed by the start of the step. A log bucket at `t`
  * counts `[t, t+step)`, so the last one is still filling; a Prometheus point at `t` already covers `(t-step, t]`.
  */
-const completeTotals = (panel: Panel, stepSeconds: number, now: Date, source: PanelSpec["source"]): ReadonlyArray<readonly [number, number]> => {
+const completeTotals = (panel: FetchedPanel, stepSeconds: number, now: Date, source: PanelSpec["source"]): ReadonlyArray<readonly [number, number]> => {
   const shift = source === "prom" ? stepSeconds : 0
   const totals = new Map<number, number>()
   for (const series of panel.series) for (const [t, v] of series.points) totals.set(t - shift, (totals.get(t - shift) ?? 0) + v)
@@ -97,7 +98,7 @@ const completeTotals = (panel: Panel, stepSeconds: number, now: Date, source: Pa
 }
 
 /** The panel's level against its usual one, or null when it has no rule, failed or has too little history. */
-export const measure = (panel: Panel, stepSeconds: number, now: Date, source: PanelSpec["source"] = "logs"): Measure | null => {
+export const measure = (panel: FetchedPanel, stepSeconds: number, now: Date, source: PanelSpec["source"] = "logs"): Measure | null => {
   const rule = RULES[panel.id]
   if (rule === undefined || panel.error !== null) return null
   const points = completeTotals(panel, stepSeconds, now, source)
@@ -120,9 +121,41 @@ export const anomalyOf = (m: Measure): Anomaly | null => {
 }
 
 /** `measure` then `anomalyOf`, in one step (for tests and replays; the watcher keeps the measure to settle on). */
-export const detect = (panel: Panel, stepSeconds: number, now: Date, source: PanelSpec["source"] = "logs"): Anomaly | null => {
+export const detect = (panel: FetchedPanel, stepSeconds: number, now: Date, source: PanelSpec["source"] = "logs"): Anomaly | null => {
   const m = measure(panel, stepSeconds, now, source)
   return m === null ? null : anomalyOf(m)
+}
+
+/**
+ * What the watcher last read of a signal, per watch step: the boards' only judge of what is unusual (views.ts
+ * `boardView`), so a chart never calls a spike what the watcher, which is calibrated, would not.
+ */
+export interface Reading {
+  /** When it was measured, epoch ms. */
+  readonly at: number
+  readonly usual: number
+  /** A step above this is one the rule calls a spike. */
+  readonly spikeAbove: number
+  /** When the rule broke (a rise or a spike): how many times its usual level the signal is, a usual under 1 counting as 1. */
+  readonly spike: number | null
+  readonly perStep: boolean
+}
+
+export const readingOf = (m: Measure, at: Date): Reading => {
+  const anomaly = anomalyOf(m)
+  return {
+    at: at.getTime(),
+    usual: m.usual,
+    spikeAbove: Math.max(m.rule.spike.floor, m.rule.spike.factor * m.usual),
+    spike: anomaly === null ? null : anomaly.level / Math.max(m.usual, 1),
+    perStep: m.rule.perStep,
+  }
+}
+
+/** A reading's levels on a board of `stepSeconds` steps: a count per step scales with the step, a level does not. */
+export const readingOnBoard = (reading: Reading, stepSeconds: number): { readonly usual: number; readonly spikeAbove: number } => {
+  const scale = reading.perStep ? stepSeconds / WATCH_STEP_SECONDS : 1
+  return { usual: reading.usual * scale, spikeAbove: reading.spikeAbove * scale }
 }
 
 /** Within a cooldown, a rise gets a new finding only once it reaches this many times the last finding's level. */

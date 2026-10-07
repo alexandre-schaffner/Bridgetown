@@ -15,7 +15,6 @@ describe("metrics", () => {
       makeSession("running", { id: "e", startedAt: at(1), costUsd: 2 }),
       makeSession("resolved", { id: "old", startedAt: at(30), costUsd: 9 }),
     ])
-    expect(m.since).toBe("2026-10-03T14:25:00.000Z")
-    expect(m.sessions).toEqual({ started: 5, resolved: 1, failed: 1, closed: 2, costUsd: 4 })
+    expect(m.sessions).toEqual({ started: 5, resolved: 1 })
   })
 })
