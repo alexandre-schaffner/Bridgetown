@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Daily Dependabot patch batch. Reads PR data; never runs code from a PR."""
+"""Batch and release allowlisted Dependabot patches."""
 
 import argparse
 import base64
-import copy
 import json
 import os
 import re
@@ -23,6 +22,8 @@ ALLOW = {
 SENSITIVE = ("@anthropic-ai/", "@effect/", "effect", "@typesafe-ai/", "@modelcontextprotocol/")
 RELEASE_BRANCH = "release-please--branches--main--components--bridgetown"
 RELEASE_FILES = {".release-please-manifest.json", "CHANGELOG.md", "app/Info.plist", "daemon/package.json", "daemon/src/config.ts"}
+DEPENDENCY_PATHS = {f"{folder}/{name}" for folder in ALLOW for name in ("package.json", "bun.lock")}
+RELEASE_TOOLING = {"README.md", ".gitignore", "scripts/dependency_release.py", "scripts/test_dependency_release.py"}
 
 
 def version(value):
@@ -42,8 +43,7 @@ def lock_json(text):
 
 
 def dependency_patch(folder, old_manifest, new_manifest, old_lock, new_lock):
-    """Reject source edits, manifest behavior changes, and non-patch lockfile changes."""
-    before, after = copy.deepcopy(old_manifest), copy.deepcopy(new_manifest)
+    before, after = old_manifest.copy(), new_manifest.copy()
     direct = set()
     for section in ("dependencies", "devDependencies"):
         left, right = before.pop(section, {}), after.pop(section, {})
@@ -51,26 +51,27 @@ def dependency_patch(folder, old_manifest, new_manifest, old_lock, new_lock):
             return False
         direct.update(left)
         for name in left:
-            if left[name] != right[name]:
-                old = re.fullmatch(r"([~^]?)(\d+\.\d+\.\d+)", left[name])
-                new = re.fullmatch(r"([~^]?)(\d+\.\d+\.\d+)", right[name])
-                if name not in ALLOW[folder] or not old or not new or old[1] != new[1] or not patch(old[2], new[2]):
-                    return False
+            if left[name] == right[name]:
+                continue
+            old = re.fullmatch(r"([~^]?)(\d+\.\d+\.\d+)", left[name])
+            new = re.fullmatch(r"([~^]?)(\d+\.\d+\.\d+)", right[name])
+            if name not in ALLOW[folder] or not old or not new or old[1] != new[1] or not patch(old[2], new[2]):
+                return False
     if before != after:
         return False
-    left, right = copy.deepcopy(old_lock), copy.deepcopy(new_lock)
+    left, right = old_lock.copy(), new_lock.copy()
     old_packages, new_packages = left.pop("packages"), right.pop("packages")
     if old_packages.keys() != new_packages.keys():
         return False
-    # Workspace declarations must agree with the manifests, including scripts and names.
     for lock, manifest in ((left, old_manifest), (right, new_manifest)):
-        workspace = lock.get("workspaces", {}).get("", {})
+        workspace = lock["workspaces"][""].copy()
         for section in ("dependencies", "devDependencies"):
             if workspace.pop(section, {}) != manifest.get(section, {}):
                 return False
+        lock["workspaces"] = {**lock["workspaces"], "": workspace}
     if left != right:
         return False
-    changed_direct = set()
+    changed_direct = False
     for key in old_packages:
         old_entry, new_entry = old_packages[key], new_packages[key]
         if old_entry == new_entry:
@@ -82,8 +83,8 @@ def dependency_patch(folder, old_manifest, new_manifest, old_lock, new_lock):
         if key in direct:
             if key not in ALLOW[folder]:
                 return False
-            changed_direct.add(key)
-    return bool(changed_direct)
+            changed_direct = True
+    return changed_direct
 
 
 class GitHub:
@@ -119,15 +120,13 @@ class GitHub:
     def safe_diff(self, base, head, neutral=False):
         files = self.compare(base, head)["files"]
         paths = {file["filename"] for file in files}
-        dependency_paths = {f"{folder}/{name}" for folder in ALLOW for name in ("package.json", "bun.lock")}
-        allowed = dependency_paths | {"README.md", ".gitignore", "scripts/dependency-release.py", "scripts/test_dependency_release.py"} if neutral else dependency_paths
         for file in files:
             path = file["filename"]
-            if path in dependency_paths:
-                if file["status"] != "modified":
-                    return False
-            elif not neutral or file["status"] not in ("added", "modified") or (path not in allowed and not path.startswith(".github/")):
-                return False
+            if path in DEPENDENCY_PATHS and file["status"] == "modified":
+                continue
+            if neutral and file["status"] in ("added", "modified") and (path in RELEASE_TOOLING or path.startswith(".github/")):
+                continue
+            return False
         changed = False
         for folder in ALLOW:
             if not paths.intersection({f"{folder}/package.json", f"{folder}/bun.lock"}):
@@ -145,19 +144,17 @@ class GitHub:
         runs = [run for run in runs if run["conclusion"] != "action_required"]
         return bool(runs) and runs[0]["status"] == "completed" and runs[0]["conclusion"] == "success"
 
-    def dispatch_wait(self, workflow, ref, sha=None, inputs=None):
+    def dispatch_wait(self, workflow, ref, sha):
         previous = self.api(f"actions/workflows/{workflow}/runs?per_page=1")["workflow_runs"]
         previous_id = previous[0]["id"] if previous else 0
-        dispatch_inputs = dict(inputs or {})
-        if workflow == "release.yml" and sha:
-            dispatch_inputs["expected_sha"] = sha
-        self.api(f"actions/workflows/{workflow}/dispatches", "POST", {"ref": ref, "inputs": dispatch_inputs})
+        inputs = {"expected_sha": sha} if workflow == "release.yml" else {}
+        self.api(f"actions/workflows/{workflow}/dispatches", "POST", {"ref": ref, "inputs": inputs})
         deadline = time.monotonic() + 2400
         while time.monotonic() < deadline:
-            if ref == "main" and sha and self.main_sha() != sha:
+            if ref == "main" and self.main_sha() != sha:
                 raise RuntimeError("Main changed after workflow dispatch; stopping this batch")
             runs = self.api(f"actions/workflows/{workflow}/runs?event=workflow_dispatch&per_page=100")["workflow_runs"]
-            candidates = [run for run in runs if run["id"] > previous_id and run["head_branch"] == ref and (sha is None or run["head_sha"] == sha)]
+            candidates = [run for run in runs if run["id"] > previous_id and run["head_branch"] == ref and run["head_sha"] == sha]
             if candidates:
                 run = min(candidates, key=lambda item: item["id"])
                 if run["status"] == "completed":

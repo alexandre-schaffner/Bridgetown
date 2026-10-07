@@ -1,14 +1,10 @@
 import copy
-import importlib.util
 import json
 from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-
-spec = importlib.util.spec_from_file_location("dependency_release", Path(__file__).with_name("dependency-release.py"))
-policy = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(policy)
+import dependency_release as policy
 
 
 def fixture(name="zod", old="4.1.0", new="4.1.1", section="dependencies"):
@@ -113,22 +109,6 @@ class DependencyPolicyTests(unittest.TestCase):
             github.merge({"number": 42, "title": "deps: update zod"}, "validated-sha")
             self.assertEqual(api.call_args.args[2]["sha"], "validated-sha")
 
-    def test_read_only_run_never_mutates(self):
-        github = policy.GitHub("owner/repo")
-        pr = {"number": 42, "title": "deps: update zod", "draft": False,
-              "user": {"login": "dependabot[bot]"}, "head": {"sha": "head", "repo": {"full_name": github.repo}}}
-        manifest, _, lock, _ = fixture()
-        def content(ref, path):
-            return json.dumps(manifest if path.endswith("package.json") else lock)
-        with patch.object(github, "idle", return_value=True), patch.object(github, "api", return_value={"immutable": True, "tag_name": "v1.0.1"}), \
-             patch.object(github, "pages", return_value=[pr]), patch.object(github, "main_sha", return_value="main"), \
-             patch.object(github, "safe_diff", return_value=True), patch.object(github, "ci_green", return_value=True), \
-             patch.object(github, "content", side_effect=content), \
-             patch.object(github, "merge") as merge, patch.object(github, "dispatch_wait") as dispatch:
-            policy.run(github, False)
-            merge.assert_not_called()
-            dispatch.assert_not_called()
-
     def test_only_next_patch_release_metadata_is_accepted(self):
         github = policy.GitHub("owner/repo")
         before = {
@@ -164,7 +144,6 @@ class DependencyPolicyTests(unittest.TestCase):
 
 
 class BatchGitHub:
-    """In-memory GitHub boundary: run the actual orchestration without external writes."""
     repo = "owner/repo"
 
     def __init__(self, runtime=True):
@@ -206,7 +185,7 @@ class BatchGitHub:
         return sha != "release"
 
     def content(self, ref, path):
-        before, after, left, right = fixture()
+        before, _, left, right = fixture()
         if path.endswith("package.json"):
             return json.dumps(before)
         return json.dumps(right if self.runtime and ref == "batch" else left)
@@ -228,6 +207,11 @@ class BatchGitHub:
 
 
 class BatchTests(unittest.TestCase):
+    def test_read_only_run_never_mutates(self):
+        github = BatchGitHub()
+        policy.run(github, False)
+        self.assertEqual(github.calls, [])
+
     def test_runtime_batch_checks_combined_main_then_release_and_deployment(self):
         github = BatchGitHub()
         with patch.object(policy, "release_metadata_valid", return_value=True):
