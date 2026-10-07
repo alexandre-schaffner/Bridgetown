@@ -21,8 +21,8 @@ export interface Launch {
  * `BRIDGETOWN_SECRETS=stdin`, or no API token on the line. The mock passes its own
  * branch of the pipe, so it can read control lines after the secrets.
  */
-export const readLaunch = async (stdin: ReadableStream<Uint8Array> = Bun.stdin.stream()): Promise<Launch> => {
-  if (process.env.BRIDGETOWN_SECRETS !== "stdin") {
+export const readLaunch = async (stdin: ReadableStream<Uint8Array> = Bun.stdin.stream(), env: NodeJS.ProcessEnv = process.env): Promise<Launch> => {
+  if (env.BRIDGETOWN_SECRETS !== "stdin") {
     console.error("The daemon reads its secrets from stdin, as the app launches it (BRIDGETOWN_SECRETS=stdin). Run it from source with `make dev`.")
     process.exit(1)
   }
@@ -32,7 +32,7 @@ export const readLaunch = async (stdin: ReadableStream<Uint8Array> = Bun.stdin.s
     console.error("BRIDGETOWN_SECRETS=stdin: expected one JSON line with an apiToken on stdin")
     process.exit(1)
   }
-  return { env: { ...readEnv(secrets), apiToken: secrets.apiToken }, closed }
+  return { env: { ...readEnv(env, secrets), apiToken: secrets.apiToken }, closed }
 }
 
 const appGone = (closed: Promise<void>) =>

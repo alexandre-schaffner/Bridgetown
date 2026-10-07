@@ -21,7 +21,7 @@ import { worktreePath } from "../src/sessions/worktree.ts"
 import { GitHubLive } from "../src/ship/github.ts"
 import { Store } from "../src/store/store.ts"
 import { makeAlert } from "../test/support/records.ts"
-import { worldLayer } from "../test/support/world.ts"
+import { worldLayer } from "../test/support/world-layer.ts"
 
 const root = mkdtempSync(join(tmpdir(), "bt-smoke-"))
 mkdirSync(`${root}/repo/src`, { recursive: true })

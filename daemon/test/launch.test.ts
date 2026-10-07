@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { readLaunch } from "../src/launch.ts"
@@ -25,18 +25,9 @@ const daemon = (env: Record<string, string>) => {
 }
 
 describe("the daemon's launch", () => {
-  const saved = { BRIDGETOWN_SECRETS: process.env.BRIDGETOWN_SECRETS, SLACK_USER_TOKEN: process.env.SLACK_USER_TOKEN }
-  afterEach(() => {
-    for (const [key, value] of Object.entries(saved)) {
-      if (value === undefined) delete process.env[key]
-      else process.env[key] = value
-    }
-  })
-
   test("its secrets come from the stdin line, never from the environment", async () => {
-    process.env.BRIDGETOWN_SECRETS = "stdin"
-    process.env.SLACK_USER_TOKEN = "xoxp-from-env"
-    const launch = await readLaunch(lineOf({ apiToken: "t", slackUserToken: "", typesafeApiKey: "k" }))
+    const env = { BRIDGETOWN_SECRETS: "stdin", SLACK_USER_TOKEN: "xoxp-from-env", TYPESAFE_API_KEY: "from-env" }
+    const launch = await readLaunch(lineOf({ apiToken: "t", slackUserToken: "", typesafeApiKey: "k" }), env)
     expect(launch.env).toMatchObject({ apiToken: "t", slackToken: undefined, typesafeKey: "k" })
     await launch.closed
   })
