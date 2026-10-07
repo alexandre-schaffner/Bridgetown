@@ -1,6 +1,6 @@
 import { Context, Duration, Effect, Layer, Record, Schedule } from "effect"
 import { Critic } from "./critique/critic.ts"
-import type { Settings } from "./domain/settings.ts"
+import { MIN_POLL_SECONDS, type Settings } from "./domain/settings.ts"
 import { Boards } from "./grafana/board.ts"
 import { Health } from "./health.ts"
 import { Housekeeping } from "./housekeeping/housekeeping.ts"
@@ -24,7 +24,7 @@ export type SchedulerTiming = Record.ReadonlyRecord<LoopName, LoopTiming>
 /** The daemon's schedule. The mock daemon runs it with some loops sped up. */
 export const SCHEDULER_TIMING: SchedulerTiming = {
   github: { every: "120 seconds", first: "120 seconds" },
-  poll: { every: (s) => Duration.seconds(Math.max(10, s.pollSeconds)) },
+  poll: { every: (s) => Duration.seconds(Math.max(MIN_POLL_SECONDS, s.pollSeconds)) },
   ship: { every: "60 seconds" },
   critique: { every: "10 seconds" },
   inbox: { every: (s) => Duration.seconds(Math.max(30, s.pollSeconds * 2)) },

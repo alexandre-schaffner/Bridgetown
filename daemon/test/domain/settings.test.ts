@@ -35,6 +35,11 @@ describe("settings stored before a setting existed", () => {
     expect(settings).toMatchObject({ maxConcurrent: 3, quietHours: { enabled: true, start: "23:00", end: "08:00" } })
   })
 
+  test("a poll stored before it had to be whole seconds reads as the loop runs it", () => {
+    expect(loadSettings(JSON.stringify({ ...DEFAULT_SETTINGS, pollSeconds: 7.5 })).pollSeconds).toBe(10)
+    expect(loadSettings(JSON.stringify({ ...DEFAULT_SETTINGS, pollSeconds: 42.6 })).pollSeconds).toBe(43)
+  })
+
   test("a value out of range is unreadable: the defaults", () => {
     expect(loadSettings(JSON.stringify({ ...DEFAULT_SETTINGS, maxConcurrent: 0 }))).toEqual(DEFAULT_SETTINGS)
   })

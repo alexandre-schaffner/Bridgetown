@@ -113,20 +113,25 @@ export const loadSettings = (raw: string | undefined): Settings => {
     const settings = Schema.decodeUnknownSync(Settings)(over(DEFAULT_SETTINGS, JSON.parse(raw)))
     const known = new Set(settings.channels.map((c) => c.id))
     const added = DEFAULT_CHANNELS.filter((c) => !known.has(c.id)).map((c) => ({ ...c, enabled: false }))
-    return { ...settings, channels: [...settings.channels, ...added] }
+    // A poll stored before the patch took whole seconds of at least 10 reads as the loop runs it: the app decodes whole seconds.
+    const pollSeconds = Math.max(MIN_POLL_SECONDS, Math.round(settings.pollSeconds))
+    return { ...settings, pollSeconds, channels: [...settings.channels, ...added] }
   } catch (cause) {
     console.error(`Ignoring stored settings: ${errorMessage(cause)}`)
     return DEFAULT_SETTINGS
   }
 }
 
+/** The shortest poll the loop runs, in whole seconds. */
+export const MIN_POLL_SECONDS = 10
+
 /**
  * `POST /settings`: any setting, and any key of `thresholds` and `quietHours` on its own. A poll is whole seconds and
- * at least 10, as the poll loop takes it; settings stored before that rule still load.
+ * at least `MIN_POLL_SECONDS`, as the poll loop takes it; a poll stored before that rule loads rounded to it.
  */
 export const SettingsPatch = Schema.Struct({
   ...Struct.map(Settings.fields, Schema.optional),
-  pollSeconds: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(10))),
+  pollSeconds: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(MIN_POLL_SECONDS))),
   thresholds: Schema.optional(Thresholds.mapFields(Struct.map(Schema.optional))),
   quietHours: Schema.optional(QuietHours.mapFields(Struct.map(Schema.optional))),
 })
