@@ -183,3 +183,6 @@ jobs:
       contents: read
     # A job-level call resolves from this commit, not the runner filesystem; actionlint does not know `$/` yet.
     uses: ./.github/workflows/deploy-site.yml # zizmor: ignore[self-repository]
+    secrets:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -1,6 +1,6 @@
 # The landing page to Cloudflare (site/wrangler.jsonc): on site changes, and after every release
-# so the download button names the version that just shipped. Cloudflare's credentials live in
-# the `production` environment, which only main can deploy from.
+# so the download button names the version that just shipped. Cloudflare's repository secrets
+# are passed explicitly by the release workflow; the `production` environment only allows main.
 
 name: Deploy site
 
@@ -11,6 +11,11 @@ on:
       - site/**
       - .github/workflows/deploy-site.yml
   workflow_call:
+    secrets:
+      CLOUDFLARE_API_TOKEN:
+        required: true
+      CLOUDFLARE_ACCOUNT_ID:
+        required: true
   workflow_dispatch:
 
 permissions: {}
