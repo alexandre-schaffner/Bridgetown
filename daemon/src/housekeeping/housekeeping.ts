@@ -89,6 +89,7 @@ export const HousekeepingLive = Layer.effect(Housekeeping)(
         const refs = yield* store.pruneRefs()
         yield* Effect.forEach(refs.sessions, (ref) => reclaimWorktree(ref, nowMs), { discard: true })
         yield* prune(refs, nowMs).pipe(Effect.catch(warn("rows")))
+        yield* store.pruneMemory.pipe(Effect.catch(warn("memory evidence")))
         yield* store.maintain().pipe(Effect.catch(warn("database")))
         yield* sweepReviewSandboxes(tmpdir(), nowMs).pipe(Effect.catch(warn("review scratch")))
       }).pipe(Effect.catch(warn("refs"))),

@@ -186,3 +186,33 @@ starts, then every 10 minutes); `error` says why no sweep runs (watching off, Gr
 the last sweep failed. Its patterns come suspicious first (new, then surging, then risky warnings), then steady errors,
 busiest first within each. A pattern's `jev` is Jev's verdict when it was asked in the last day (only suspicious
 patterns are, each at most once a day), else `null`.
+
+
+## Memory
+
+`settings.memory` is a boolean, enabled by default. It controls capture, recall and background learning independently
+of `autoStart`, pause and dry run. Turning it off cancels an active model job and preserves the repository and queue.
+
+Authenticated `GET /memory` returns:
+
+```json
+{
+  "enabled": true,
+  "path": "/Users/me/Library/Application Support/Bridgetown/memory",
+  "state": "idle",
+  "pending": 3,
+  "lastLearnedAt": "2026-10-07T10:00:00.000Z",
+  "lastDreamedAt": null,
+  "error": null
+}
+```
+
+`state` is `disabled`, `idle`, `queued`, `learning`, `dreaming`, or `error`. Dates are nullable ISO timestamps; `error`
+is a nullable explanation. `path` is a local filesystem path for the app's Open memory folder control.
+
+Authenticated `POST /memory/run` takes an empty object and returns the same status shape immediately. It schedules
+learning followed by dreaming when there is memory to consolidate; repeated requests during the job coalesce.
+A disabled memory service schedules nothing. Settings polls `GET /memory` while the tab is open.
+
+Session MCP tools `memory_search(query)`, `memory_read(path)` and `memory_remember(text)` provide bounded recall and
+submit agent claims with daemon-supplied source identities. The existing write and approval guards are unchanged.

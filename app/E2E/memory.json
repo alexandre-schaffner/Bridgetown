@@ -1,0 +1,22 @@
+{
+  "now": "2026-10-07T12:00:00Z",
+  "world": "empty",
+  "appearances": ["dark", "light"],
+  "steps": [
+    {"surface": "settings", "tab": "memory"},
+    {"see": "Remember across messages and sessions"},
+    {"see": "Run now"},
+    {"see": "Open memory folder"},
+    {"shot": "memory-enabled"},
+    {"press": "Run now"},
+    {"wait": "settled"},
+    {"shot": "memory-after-run"},
+    {"press": "Remember across messages and sessions"},
+    {"wait": "settled"},
+    {"see": "Disabled"},
+    {"shot": "memory-disabled"},
+    {"press": "Remember across messages and sessions"},
+    {"wait": "settled"},
+    {"shot": "memory-reenabled"}
+  ]
+}

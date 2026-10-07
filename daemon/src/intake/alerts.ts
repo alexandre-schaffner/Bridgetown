@@ -4,6 +4,7 @@ import { type Alert, alertFromParsed, claimHeadline, type ParsedAlert } from "..
 import { daysAgo, now, tsToIso } from "../domain/ids.ts"
 import type { Channel } from "../domain/settings.ts"
 import { Hub, problemOf } from "../hub.ts"
+import { Memory } from "../memory/memory.ts"
 import { Jev } from "../jev.ts"
 import { Shipper } from "../ship/shipper.ts"
 import { followsDeploy } from "../ship/transitions.ts"
@@ -66,6 +67,7 @@ export const AlertChannelsLive = Layer.effect(AlertChannels)(
     const slack = yield* SlackClient
     const me = yield* SlackMe
     const jev = yield* Jev
+    const memory = yield* Memory
     const intake = yield* Intake
     const shipper = yield* Shipper
     const threads = yield* SlackThread
@@ -87,7 +89,8 @@ export const AlertChannelsLive = Layer.effect(AlertChannels)(
       const identity = yield* me.known
       const replies = toThreadReplies(thread, identity?.user_id)
       const mentioned = parsed.mentionsMe || replies.some((r) => identity !== undefined && r.text.includes(identity.user))
-      const judging = jev.judge({ alert: { ...parsed, mentionsMe: mentioned }, thread: replies, reactions: reactionsOf(message, identity?.user_id), history })
+      const memoryContext = yield* memory.context(`${parsed.title} ${parsed.raw}`)
+      const judging = jev.judge({ memory: memoryContext, alert: { ...parsed, mentionsMe: mentioned }, thread: replies, reactions: reactionsOf(message, identity?.user_id), history })
       return yield* triageWith(hub, judging, decide, "suggest")
     })
 

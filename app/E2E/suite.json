@@ -215,6 +215,9 @@
     {"shot": "settings-repos", "appearances": ["dark", "light"]},
     {"surface": "settings", "tab": "behaviour"},
     {"shot": "settings-behaviour", "appearances": ["dark", "light"]},
+    {"surface": "settings", "tab": "memory"},
+    {"see": "Remember across messages and sessions"},
+    {"shot": "settings-memory", "appearances": ["dark", "light"]},
 
     {"surface": "open", "preset": "wide"},
     {"mock": {"status": {"github": "blocked"}}},

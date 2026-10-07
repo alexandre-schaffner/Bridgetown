@@ -364,6 +364,7 @@
     },
     "autoStart": true,
     "inbox": true,
+    "memory": true,
     "maxConcurrent": 2,
     "dryRun": false,
     "adversarialReview": true,

@@ -170,6 +170,61 @@ Housekeeping (`daemon/src/housekeeping/`) runs 2 minutes after the daemon starts
 - **Review scratch.** A Codex review works in a `bt-review-*` temporary directory; one a killed daemon left behind
   goes after a day.
 
+### Persistent memory
+
+Memory is enabled by default and starts with new evidence after activation; it does not import previous Slack
+history or stored transcripts. Disabling it in Settings stops capture, recall and background jobs, preserving the
+existing notes and pending queue. Pause auto-start and dry run retain their existing meanings: memory can still
+learn while agents are paused or Slack posting is suppressed, and a dry-run reply is recorded as not sent.
+
+The daemon stores pending evidence in SQLite alongside source records when possible. Message edits, new thread
+replies, accepted user messages and answers, action attempts/results/dismissals, agent findings and session outcomes
+are distinct evidence. Known launch credentials and common token/private-key formats are redacted. Learning selects
+durable technical context and preferences rather than saving transcript dumps. Processed evidence expires after 30
+days; pending evidence stays until successfully processed. The Markdown notes and Git history have no automatic
+expiry and survive normal session/worktree housekeeping.
+
+The separate local repo is `$BRIDGETOWN_HOME/memory` (by default
+`~/Library/Application Support/Bridgetown/memory`). `MEMORY.md` is the short entry point; topic files use root-relative
+`[[path]]` links without `.md`. Each new fact carries its evidence ID, date, category and original source link:
+
+```markdown
+- Prefers concise summaries [source: bridgetown:event/<id>; added: 2026-10-07; evidence: user statement; origin: bridgetown:session/<id>]
+```
+
+Source categories are user statements, source statements (including Slack alerts), observed workflow, and agent
+claims. An agent cannot upgrade its claim to an observed outcome. A dismissal is not proof of resolution or a
+lasting preference; a draft PR is not a deployment. Original links remain in the notes after raw evidence expires.
+
+The daemon runs one memory job at a time with your existing Claude authentication. Learning batches up to 50 events
+(and 60,000 characters of evidence) once a minute; Sonnet has a $0.50/two-minute/12-turn limit. Dreaming has a
+$1/five-minute/20-turn limit and runs every six hours when evidence has changed, or after a manual **Run now**.
+It merges duplicates, updates stale entries, and checks retained sources for contradictions. Missing evidence is
+not confirmation. Empty batches require no model call. Tests and the demo use fake adapters.
+
+Memory jobs can only read their input wiki and supported evidence. They return proposed Markdown changes; the
+daemon validates sources, links and paths, checks for concurrent edits, and commits only its own files. They cannot
+run shell commands, fetch URLs, edit project files, or change approvals. Git commits record processed event IDs so a
+restart between commit and database acknowledgement does not repeat the batch. Model, Git or validation failures
+leave evidence pending and appear in Settings; intake and agent work continue without recalled context if memory
+cannot be read. No remote is created, fetched or pushed.
+
+Agent sessions use the Claude SDK's OS sandbox to deny shell writes to the memory folder, including commands run
+by project scripts. The existing command guards and approval gates still apply. Sessions fail closed if the OS
+sandbox is unavailable; agents submit new notes through `memory_remember` instead of editing the wiki.
+
+**Correcting memory.** Use **Open memory folder**, edit the Markdown files, then commit the files you changed:
+
+```sh
+cd "$HOME/Library/Application Support/Bridgetown/memory"
+git add -- preferences.md MEMORY.md
+git -c user.name=Bridgetown -c user.email=memory@bridgetown.local commit -m "Correct preferences"
+```
+
+Use the actual filenames you edited and your configured `BRIDGETOWN_HOME` if different. The daemon never resets
+or overwrites dirty files. It can read uncommitted corrections, but learning waits for a clean repository. To remove
+a topic, also remove or update links to it. Do not rewrite Git history: its checkpoints support restart recovery.
+
 ## What gets posted as you (🤖-prefixed)
 
 - **In the alert thread:** "Investigating with Bridgetown…" (also your claim on the alert, see above), the fix PR, a

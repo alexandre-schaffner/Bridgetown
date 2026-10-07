@@ -83,6 +83,11 @@ const acknowledge = (text: string) => `Got your message — "${text}". Taking th
 /** `opened` hears of each PR a turn reports, and the branch it is on (the worktree's). */
 export const scriptedAgent = (scriptFor: (turn: Turn) => Script, opened: (prUrl: string, branch: string) => void): AgentShape => ({
   query: ({ prompt, options }) => {
+    if (options.mcpServers?.memory !== undefined) return (async function* () {
+      const message = Sdk.result("mock-memory", { outcome: "no_action", rootCauseFound: false, diagnosis: "", tried: [], summary: "", prUrl: null, recommendation: null, recommendationDetail: null, releasePrefix: null }, 0)
+      yield { ...message, structured_output: { changes: [] } }
+    })()
+
     const sessionId = options.env?.BRIDGETOWN_SESSION ?? "unknown"
     const conversation = options.resume ?? randomUUID()
     const signal = options.abortController?.signal

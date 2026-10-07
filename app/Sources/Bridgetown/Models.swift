@@ -417,7 +417,7 @@ struct Settings: Codable, Sendable, Equatable {
     /// in: a changed nested object is sent whole, though the daemon would merge
     /// `thresholds` and `quietHours` key by key.
     enum CodingKeys: String, CodingKey, CaseIterable, Sendable {
-        case channels, thresholds, autoStart, inbox, maxConcurrent, dryRun, adversarialReview, watchProd, pollSeconds
+        case channels, thresholds, autoStart, inbox, memory, maxConcurrent, dryRun, adversarialReview, watchProd, pollSeconds
         case monorepoPath, deploymentRepoPath, quietHours
     }
 
@@ -426,6 +426,7 @@ struct Settings: Codable, Sendable, Equatable {
     var autoStart: Bool
     /// Watch mentions, group mentions and DMs across all of Slack.
     var inbox: Bool
+    var memory: Bool = true
     var maxConcurrent: Int
     var dryRun: Bool
     /// Another vendor's model reviews each pushed fix before the PR leaves draft.
@@ -448,6 +449,7 @@ extension Settings {
         case .thresholds: thresholds = other.thresholds
         case .autoStart: autoStart = other.autoStart
         case .inbox: inbox = other.inbox
+        case .memory: memory = other.memory
         case .maxConcurrent: maxConcurrent = other.maxConcurrent
         case .dryRun: dryRun = other.dryRun
         case .adversarialReview: adversarialReview = other.adversarialReview
@@ -560,5 +562,28 @@ enum JSON {
         let e = JSONEncoder()
         e.dateEncodingStrategy = .iso8601
         return e
+    }
+}
+
+/// Persistent local memory status, supplied by the daemon.
+struct MemoryStatus: Codable, Sendable, Equatable {
+    var enabled: Bool
+    var path: String
+    var state: String
+    var pending: Int
+    var lastLearnedAt: Date?
+    var lastDreamedAt: Date?
+    var error: String?
+
+    var isWorking: Bool { ["queued", "learning", "dreaming"].contains(state) }
+    var label: String {
+        switch state {
+        case "disabled": "Disabled"
+        case "queued": "Queued"
+        case "learning": "Learning"
+        case "dreaming": "Consolidating"
+        case "error": "Needs attention"
+        default: "Ready"
+        }
     }
 }

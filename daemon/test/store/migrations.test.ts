@@ -59,17 +59,17 @@ const reopen = async (home: string) => {
 const saved = { alert, hash: "hash", session, actions: [action], transcript: [entry], cursor: "123" }
 
 describe("the squashed schema baseline", () => {
-  test("a fresh store records one migration and creates every table and index", async () => {
+  test("a fresh store records the baseline and memory migration and creates every table and index", async () => {
     const home = scratchDir("bt-baseline-")
     await seed(home)
     const db = new Database(join(home, "bridgetown.db"), { readonly: true })
     try {
-      expect(db.query("SELECT migration_id, name FROM bridgetown_migrations").all()).toEqual([{ migration_id: 8, name: "initial" }])
+      expect(db.query("SELECT migration_id, name FROM bridgetown_migrations").all()).toEqual([{ migration_id: 8, name: "initial" }, { migration_id: 9, name: "memory" }])
       expect(db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all()).toEqual(
-        ["actions", "alerts", "bridgetown_migrations", "kv", "sessions", "transcript"].map((name) => ({ name })),
+        ["actions", "alerts", "bridgetown_migrations", "kv", "memory_evidence", "sessions", "transcript"].map((name) => ({ name })),
       )
       expect(db.query("SELECT name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%' ORDER BY name").all()).toEqual(
-        ["alerts_fingerprint", "alerts_received", "transcript_session"].map((name) => ({ name })),
+        ["alerts_fingerprint", "alerts_received", "memory_pending", "transcript_session"].map((name) => ({ name })),
       )
     } finally {
       db.close()
@@ -85,6 +85,10 @@ describe("the squashed schema baseline", () => {
     try {
       // The last migration's original name: the migrator must skip the baseline by version.
       db.run("UPDATE bridgetown_migrations SET name = 'action_fields' WHERE migration_id = 8")
+      // Simulate a pre-memory installation, with all original rows still present.
+      db.run("DROP TABLE memory_evidence")
+      db.run("DELETE FROM bridgetown_migrations WHERE migration_id = 9")
+      db.run("DELETE FROM kv WHERE key = 'memory_activated_at'")
     } finally {
       db.close()
     }
@@ -95,12 +99,12 @@ describe("the squashed schema baseline", () => {
         loader: Effect.all([
           migrations,
           SqliteMigrator.fromRecord({
-            "009_next": SqlClient.SqlClient.pipe(Effect.flatMap((sql) => sql`INSERT INTO kv (key, value) VALUES ('next', 'applied')`)),
+            "010_next": SqlClient.SqlClient.pipe(Effect.flatMap((sql) => sql`INSERT INTO kv (key, value) VALUES ('next', 'applied')`)),
           }),
         ]).pipe(Effect.map((groups) => groups.flat())),
       }).pipe(Effect.provide(SqliteClient.layer({ filename: join(home, "bridgetown.db") })), Effect.scoped),
     )
-    expect(applied).toEqual([[9, "next"]])
+    expect(applied).toEqual([[10, "next"]])
     expect(await reopen(home)).toEqual(saved)
     const updated = new Database(join(home, "bridgetown.db"), { readonly: true })
     try {

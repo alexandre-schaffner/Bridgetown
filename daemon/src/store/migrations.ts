@@ -42,4 +42,10 @@ export const migrations = SqliteMigrator.fromRecord({
     yield* sql`CREATE INDEX transcript_session ON transcript (session_id, seq)`
     yield* sql`CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)`
   }),
+  "009_memory": Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`CREATE TABLE memory_evidence (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, json TEXT NOT NULL, at TEXT NOT NULL, processed_at TEXT)`
+    yield* sql`CREATE INDEX memory_pending ON memory_evidence (processed_at, seq)`
+    yield* sql`INSERT OR IGNORE INTO kv (key, value) VALUES ('memory_activated_at', ${new Date().toISOString()})`
+  }),
 })

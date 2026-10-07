@@ -7,6 +7,7 @@ import { mergeSettings, SettingsPatch } from "../domain/settings.ts"
 import { Boards } from "../grafana/board.ts"
 import { alertBoard, type BoardSpec, OVERVIEW_VIEWS, type OverviewView, overviewBoard } from "../grafana/boards.ts"
 import { Hub } from "../hub.ts"
+import { Memory } from "../memory/memory.ts"
 import { Intake } from "../intake/intake.ts"
 import { SessionRunner } from "../sessions/runner.ts"
 import { SlackMe } from "../slack/me.ts"
@@ -16,7 +17,7 @@ import { MessageBody, pathId, PauseBody, readBody, ResolveBody } from "./request
 import { snapshotEvents, SSE_TIMING, type SseTiming } from "./sse.ts"
 import { alertDetail, boardView, logSweep, snapshot } from "./views.ts"
 
-type Services = Store | Hub | Actions | Intake | SessionRunner | Boards | SlackMe | Watcher
+type Services = Store | Hub | Actions | Intake | SessionRunner | Boards | SlackMe | Watcher | Memory
 
 const isOverviewView = (value: string): value is OverviewView => OVERVIEW_VIEWS.some((view) => view === value)
 
@@ -100,6 +101,7 @@ const events = (timing: SseTiming) =>
 
 const getRoute = (path: string, options: ServerOptions) =>
   Effect.gen(function* () {
+    if (path === "/memory") return json(yield* (yield* Memory).status)
     if (path === "/state") return json(yield* snapshot)
     if (path === "/events") return yield* events(options.sse ?? SSE_TIMING)
     if (path === "/logs") return json(yield* logSweep)
@@ -133,6 +135,11 @@ const getRoute = (path: string, options: ServerOptions) =>
 
 const postRoute = (path: string, request: Request) =>
   Effect.gen(function* () {
+    if (path === "/memory/run") {
+      const memory = yield* Memory
+      yield* memory.requestRun
+      return json(yield* memory.status)
+    }
     const action = /^\/actions\/([^/]+)\/(resolve|dismiss)$/.exec(path)
     if (action !== null) {
       const actions = yield* Actions
@@ -158,7 +165,9 @@ const postRoute = (path: string, request: Request) =>
     const hub = yield* Hub
     if (path === "/settings") {
       const patch = yield* readBody(request, SettingsPatch)
-      return yield* thenSnapshot(hub.modifySettings((current) => mergeSettings(current, patch)))
+      return yield* thenSnapshot(hub.modifySettings((current) => mergeSettings(current, patch)).pipe(Effect.tap((settings) =>
+        settings.memory ? Effect.void : Memory.pipe(Effect.flatMap((memory) => memory.cancel)),
+      )))
     }
     if (path === "/pause") {
       const body = yield* readBody(request, PauseBody)

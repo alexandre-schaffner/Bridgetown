@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto"
 import { Context, Effect, Layer } from "effect"
 import { type Alert, type ThreadReply, threadTsOf } from "../domain/alert.ts"
 import { Hub } from "../hub.ts"
 import { clock } from "../lib/text.ts"
+import { Store } from "../store/store.ts"
 import { SlackClient, type SlackMessage } from "./client.ts"
 import { SlackMe } from "./me.ts"
 import { BOT_PREFIX, flattenMessage, plain, toThreadReplies } from "./mrkdwn.ts"
@@ -41,6 +43,7 @@ export const SlackThreadLive = Layer.effect(SlackThread)(
     const slack = yield* SlackClient
     const hub = yield* Hub
     const me = yield* SlackMe
+    const store = yield* Store
     /**
      * `🤖 <text>` as the user, in `channel` (under `threadTs`). Every post goes through here, so Slack posts' problem
      * is set by a failed one and cleared by one that went out, or by dry run: nothing goes out then, so none is failing.
@@ -59,7 +62,21 @@ export const SlackThreadLive = Layer.effect(SlackThread)(
         Effect.catch((error) => hub.problem("post", `Slack post failed: ${error.message}`).pipe(Effect.as({ _tag: "NotPosted", reason: "error" } as const))),
       )
     const messages = (where: Pick<Alert, "channelId" | "ts" | "fields" | "source">): Effect.Effect<ReadonlyArray<SlackMessage>> =>
-      where.source === "watch" ? Effect.succeed([]) : slack.replies(where.channelId, threadTsOf(where)).pipe(Effect.orElseSucceed(() => []))
+      where.source === "watch" ? Effect.succeed([]) : slack.replies(where.channelId, threadTsOf(where)).pipe(
+        Effect.tap((messages) => Effect.gen(function* () {
+          const activatedAt = yield* store.getKv("memory_activated_at")
+          const identity = yield* me.known
+          for (const message of messages) {
+            if (message.ts === where.ts || Number(message.edited?.ts ?? message.ts) * 1000 < Date.parse(activatedAt ?? new Date().toISOString())) continue
+            const raw = flattenMessage(message)
+            if (raw.startsWith(BOT_PREFIX)) continue
+            const source = `${identity?.url ?? "bridgetown:slack/"}archives/${where.channelId}/p${message.ts.replace(".", "")}`
+            const hash = createHash("sha256").update(raw).digest("hex")
+            yield* store.captureMemory("message", source, JSON.stringify({ author: message.user === identity?.user_id ? "me" : message.user ?? "bot", raw }), `thread:${where.channelId}:${message.ts}:${hash}`)
+          }
+        }).pipe(Effect.catch((error) => hub.problem("memory", error.message)))),
+        Effect.orElseSucceed(() => []),
+      )
     const post = (alert: Alert, text: string): Effect.Effect<ThreadPost> =>
       // The prod watcher's findings have no Slack message to reply under.
       alert.source === "watch"
