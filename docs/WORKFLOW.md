@@ -147,7 +147,8 @@ Everything stays on your Mac:
 - **Agent conversations:** where the Claude CLI keeps them, `~/.claude/projects/` (or under `CLAUDE_CONFIG_DIR`).
 - **Logs:** `~/Library/Logs/Bridgetown/daemon.log`, the daemon's output and the app's notes about it. Past 10 MB it
   becomes `daemon.log.1`, replacing the one before, so the two stay within about 20 MB. Deleting it is fine: **Open
-  logs** creates it again.
+  logs** creates it again. A daemon that stops on its own soon after starting, twice in a row, shows as a problem with
+  an **Open logs** button.
 
 Housekeeping (`daemon/src/housekeeping/`) runs 2 minutes after the daemon starts, then every hour:
 
@@ -161,7 +162,7 @@ Housekeeping (`daemon/src/housekeeping/`) runs 2 minutes after the daemon starts
   anything a card still names, a session whose worktree is still there, and an active session's alerts. A session
   goes only with its alert, and its agent conversation goes with it.
 - **The database.** Freed pages go back to the disk (incremental auto-vacuum, switched on once for a database made
-  before it), and the write-ahead log is checkpointed every round and kept under 8 MB.
+  before it), and the write-ahead log is emptied every round and shrinks back to 8 MB after any other checkpoint.
 - **Review scratch.** A Codex review works in a `bt-review-*` temporary directory; one a killed daemon left behind
   goes after a day.
 

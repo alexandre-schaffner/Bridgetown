@@ -94,7 +94,7 @@ The current integration targets `Merkl/monorepo` on `nocturlab.ghe.com`. Reposit
    open build/Bridgetown.app
    ```
 
-Open **Settings** from the app’s **…** menu. Save the Slack and TypeSafe tokens under **Accounts**, set the checkout paths under **Repos**, and choose channels and triage thresholds. Tokens are stored in macOS Keychain.
+Open **Settings** from the app’s **…** menu. Save the Slack and TypeSafe tokens under **Accounts** (saving restarts the daemon with them), set the checkout paths under **Repos**, and choose channels and triage thresholds. Tokens are stored in macOS Keychain; if it refuses a read, Settings says so and saves only the fields you change.
 
 **Dry run is on by default.** It suppresses Slack posts; agents can still run and prepare PRs. Turn off **Start agents automatically** under **Triage** to keep candidates waiting for your decision.
 
@@ -153,7 +153,7 @@ Launched like the daemon (`BRIDGETOWN_DAEMON_CMD="bun /abs/path/daemon/scripts/m
 <details>
 <summary><b>The app's e2e</b></summary>
 
-`make e2e` builds the debug app and runs every step of `app/E2E/suite.json` against the static mock, on a port of its own (never 47621). Each shot is drawn off screen and linted for layout. The run doesn't touch your world: the Keychain is in memory, the clock stops at the suite's instant, links and notifications are recorded rather than opened, and no prompt or window reaches the screen.
+`make e2e` builds the debug app and runs every step of `app/E2E/suite.json` against the static mock, on a port of its own (never 47621). The app sets the mock's world, clock and store itself, whatever your shell exports. Each shot is drawn off screen and linted for layout. The run doesn't touch your world: the Keychain is in memory, the clock stops at the suite's instant, links and notifications are recorded rather than opened, and no prompt or window reaches the screen.
 
 It writes `.context/e2e/<UTC time>/` (`latest` points at it; the newest five stay): `index.md` first, `report.json`, `shots/`, `issues/` (a crop per issue), `diff/`, and the app's and daemon's logs. It exits 0 when clean, 1 on lint errors, and 2 when the harness failed.
 
