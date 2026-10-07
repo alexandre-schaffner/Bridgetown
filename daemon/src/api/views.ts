@@ -34,7 +34,6 @@ const alertView = (alert: Alert, session: Session | undefined, openCards: number
   receivedAt: alert.receivedAt,
   triage: alert.triage,
   sessionId: alert.sessionId,
-  feedback: alert.feedback,
   outcome: alertOutcome(alert, session, openCards),
 })
 

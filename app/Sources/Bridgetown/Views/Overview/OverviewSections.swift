@@ -297,7 +297,7 @@ struct RecentSection: View {
         }
     }
 
-    /// Judge Jev's calls in one go, or start agents on alerts it let through.
+    /// Start agents on selected alerts, whatever Jev decided.
     @ViewBuilder
     private var bulkActions: some View {
         let picked = snapshot.alerts.filter { selection.contains($0.id) && !store.isBusy($0.id) }
@@ -311,27 +311,5 @@ struct RecentSection: View {
             .buttonStyle(.stage(.secondary))
             .help("Start an agent on each, whatever Jev decided")
         }
-        Menu {
-            Button {
-                picked.forEach { store.feedback($0, .good) }
-                selection.clear()
-            } label: {
-                Label("Good call", systemImage: "hand.thumbsup")
-            }
-            Button {
-                picked.forEach { store.feedback($0, .bad) }
-                selection.clear()
-            } label: {
-                Label("Bad call", systemImage: "hand.thumbsdown")
-            }
-        } label: {
-            Text("Rate")
-        }
-        .menuStyle(.button)
-        .buttonStyle(.stage(.secondary))
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .disabled(picked.isEmpty)
-        .help("Tell Jev whether it triaged these right")
     }
 }

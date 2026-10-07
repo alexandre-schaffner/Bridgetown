@@ -118,14 +118,6 @@ describe("contract shape", () => {
   })
 })
 
-describe("feedback on Jev's call", () => {
-  test("is stored on the alert, and its history says so", async () => {
-    expect((await post(`/alerts/${encodeURIComponent(alert.id)}/feedback`, { label: "good" })).status).toBe(200)
-    const detail: unknown = await (await call(`/alerts/${encodeURIComponent(alert.id)}`)).json()
-    expect(detail).toMatchObject({ alert: { feedback: "good" }, events: [{ text: "Ignored by Jev: noise" }, { text: "You marked Jev's call as right" }] })
-  })
-})
-
 describe("status codes", () => {
   test("404 for unknown ids", async () => {
     expect((await call("/alerts/C9%3A1")).status).toBe(404)
@@ -133,7 +125,6 @@ describe("status codes", () => {
     expect((await post("/actions/a_nope/resolve", { response: null })).status).toBe(404)
     expect((await post("/actions/a_nope/dismiss")).status).toBe(404)
     expect((await post("/alerts/C9%3A1/investigate")).status).toBe(404)
-    expect((await post("/alerts/C9%3A1/feedback", { label: "good" })).status).toBe(404)
     expect((await post("/sessions/s_nope/stop")).status).toBe(404)
     expect((await post("/sessions/s_nope/message", { text: "hi" })).status).toBe(404)
     expect((await call("/nope")).status).toBe(404)
@@ -141,7 +132,6 @@ describe("status codes", () => {
   test("400 for malformed or invalid bodies", async () => {
     expect((await post("/pause", "{not json")).status).toBe(400)
     expect((await post("/pause", { paused: "yes" })).status).toBe(400)
-    expect((await post(`/alerts/${encodeURIComponent(alert.id)}/feedback`, { label: "meh" })).status).toBe(400)
     expect((await post("/settings", { maxConcurrent: "x" })).status).toBe(400)
     expect((await post("/settings", { maxConcurrent: 0 })).status).toBe(400)
     expect((await post("/settings", { thresholds: { autoActionable: 3 } })).status).toBe(400)

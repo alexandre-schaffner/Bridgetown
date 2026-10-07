@@ -71,30 +71,17 @@ extension Tone {
     var stopSymbol: String { self == .failure ? "xmark.circle" : "minus.circle" }
 }
 
-// MARK: Pills
+// MARK: Step appearance
 
-extension StepPill {
-    /// How a step stands, which decides its pill.
-    enum Kind: Hashable {
+extension Session {
+    /// How a step stands, independently of its visual treatment.
+    enum StepKind: Hashable {
         case ahead, done, moving, held, you, failed, stopped, resolved, skipped
 
-        /// Tinted, with a mark at its head: where the session is, or how it ended.
+        /// Where the session is, or how it ended.
         var isMarked: Bool { ![.ahead, .done, .skipped].contains(self) }
     }
 
-    /// How much of the row is spelled out, from the widest to the narrowest: a column too
-    /// narrow for every name keeps only the name of the step in play, then none.
-    enum Style {
-        /// Every step a pill with its name.
-        case named
-        /// The marked step named; the others as small marks.
-        case focused
-        /// Marks only; names stay in the tooltip and for VoiceOver.
-        case marks
-    }
-}
-
-extension Session {
     /// Where the session is: the step in progress or the one that failed; the next step
     /// when it waits between two (ready to merge, approval to release); past the end once
     /// resolved; where it stopped otherwise.
@@ -106,10 +93,32 @@ extension Session {
         return frontier
     }
 
-    /// How each step's pill stands, for animating a change across the row.
-    var pillKinds: [StepPill.Kind] { steps.indices.map(pillKind(at:)) }
+    /// How each step stands, for drawing and updating its progress segment.
+    var stepKinds: [StepKind] { steps.indices.map(stepKind(at:)) }
 
-    func pillKind(at index: Int) -> StepPill.Kind {
+    /// The counter names the step in play, or the last outcome, never a count of successes.
+    var focusedStepIndex: Int? { steps.indices.first { stepKind(at: $0).isMarked } }
+
+    var focusedStepDescription: String {
+        guard let index = focusedStepIndex else { return stepsDescription }
+        return "Step \(index + 1) of \(steps.count), \(steps[index].label), \(stepStatus(at: index))"
+    }
+
+    func stepStatus(at index: Int) -> String {
+        if steps[index].state == .unknown { return "Unknown" }
+        return switch stepKind(at: index) {
+        case .ahead: "Not reached"
+        case .done, .resolved: "Done"
+        case .moving: "In progress"
+        case .held: holder == .queue ? "Queued" : steps[index].state == .current ? "In progress" : "Waiting"
+        case .you: "Waiting on you"
+        case .failed: "Failed"
+        case .stopped: "Stopped"
+        case .skipped: "Not needed"
+        }
+    }
+
+    func stepKind(at index: Int) -> StepKind {
         let step = steps[index]
         let at = markerIndex
         if step.state == .failed { return tone == .failure ? .failed : .stopped }
@@ -127,10 +136,10 @@ extension Session {
         return .ahead
     }
 
-    /// A marked pill's colour: the session's while it's in play (amber on you), red where
+    /// A marked step's colour: the session's while it's in play (amber on you), red where
     /// it failed, green once resolved, grey where it stopped.
-    func pillTint(at index: Int) -> Color {
-        switch pillKind(at: index) {
+    func stepTint(at index: Int) -> Color {
+        switch stepKind(at: index) {
         case .moving, .held: tone.isQuiet ? Ink.neutral : tone.color
         case .you: Ink.amber
         case .failed: Ink.red

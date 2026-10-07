@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Any past alert, opened from Recent: what it was, how it ended, how Jev called it, its
 /// history and the original message. Data comes from `GET /alerts/:id`; live fields
-/// (outcome, feedback, the session's progress, open actions) come from the snapshot when
+/// (outcome, the session's progress, open actions) come from the snapshot when
 /// it has them.
 struct AlertDetailView: View {
     @Environment(Store.self) private var store
@@ -27,8 +27,8 @@ struct AlertDetailView: View {
 
     private var events: [AlertDetail.Event] { detail.value?.events ?? [] }
 
-    /// Refetch when anything the detail depends on changes (feedback, a new session, a
-    /// dismissed card), so the history stays current. Only live data counts: what the
+    /// Refetch when anything the detail depends on changes (a new session, a dismissed
+    /// card), so the history stays current. Only live data counts: what the
     /// fetch itself fills in (an aged-out session, the actions while disconnected) would
     /// change the key and fetch it all again.
     struct RefreshKey: Equatable {
@@ -199,7 +199,6 @@ struct AlertDetailView: View {
                     .font(Typo.caption)
                     .foregroundStyle(.tertiary)
             }
-            FeedbackRow(alert: alert)
         }
     }
 
@@ -269,31 +268,6 @@ struct AlertDetailView: View {
 
     private func load() async {
         detail = await detail.reloaded { try await store.fetch { try await $0.alertDetail(id: alertId) } }
-    }
-}
-
-// MARK: - Feedback
-
-private struct FeedbackRow: View {
-    @Environment(Store.self) private var store
-    let alert: AlertView
-
-    private var text: String {
-        switch alert.feedback {
-        case .good?: "You marked this a good call"
-        case .bad?: "You marked this a bad call"
-        default: "Was this the right call?"
-        }
-    }
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Text(text)
-                .font(Typo.caption)
-                .foregroundStyle(alert.feedback == nil ? .tertiary : .secondary)
-            Spacer(minLength: 0)
-            FeedbackThumbs(alert: alert)
-        }
     }
 }
 

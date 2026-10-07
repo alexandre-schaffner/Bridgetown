@@ -54,8 +54,7 @@ interface AlertSpec {
   readonly fields?: AlertFields
   readonly triage: Triage
   readonly sessionId?: string
-  readonly feedback?: Alert["feedback"]
-  /** History after the triage line (dismissals, feedback…). */
+  /** History after the triage line (dismissals…). */
   readonly events?: ReadonlyArray<{ readonly minutesAgo: number; readonly text: string }>
   readonly disposition?: { readonly kind: Disposition["kind"]; readonly minutesAgo: number }
   readonly claimedBy?: Alert["claimedBy"]
@@ -79,7 +78,6 @@ const alert = ({ ago, tsAgo }: Clock, spec: AlertSpec): Alert => {
     receivedAt: ago(spec.minutesAgo),
     triage: spec.triage,
     sessionId: spec.sessionId ?? null,
-    feedback: spec.feedback ?? null,
     events: [
       { at: ago(spec.minutesAgo - 0.05), text: triageEvent(spec.triage) },
       ...(spec.events ?? []).map((e) => ({ at: ago(e.minutesAgo), text: e.text })),
@@ -229,7 +227,7 @@ export const buildFixtures = (options: WorldOptions) => {
     escalated: alert(clock, { channel: DM_HUGO, minutesAgo: 1, title: "Hugo Lextrait · DM: should we prioritise the sparkline work over the studio revamp?", summary: "Direct message asking for a prioritisation call", raw: "should we prioritise the sparkline work over the studio revamp?", source: "inbox", fields: inbox("U04HUGO", "Hugo Lextrait", "dm"), triage: { decision: "escalate", reason: "A decision only you can make (needs you 90% · agent 4%)", jev: jev("decision_or_approval", 0.9, 0.04, 0, "quick", 1.6) } }),
     opened: alert(clock, { channel: PRODUCT, minutesAgo: 45, title: "Baptiste · #product: review #3336 when you get a chance?", summary: "PR review request", raw: "<@U03ALEX> review https://nocturlab.ghe.com/Merkl/monorepo/pull/3336 when you get a chance?", source: "inbox", fields: inbox("U04BAPTISTE", "Baptiste", "mention", pr(3336)), triage: { decision: "escalate", reason: "PR reviews always go to you", jev: jev("pr_review", 0.95, 0.1, 0.02, "quick", 1.2) }, events: [{ minutesAgo: 40, text: "Opened by you in Slack or Revv" }], disposition: { kind: "opened", minutesAgo: 40 } }),
     dismissed: alert(clock, { channel: DEV, minutesAgo: 131, title: "merkl-api · p95 latency 1.4s on /v4/campaigns", summary: "Grafana: p95 above 1.2s for 10 minutes, error rate normal", raw: "*[FIRING:1] merkl-api p95 latency*\n*Summary:* p95 latency 1.41s on /v4/campaigns (threshold 1.2s) for 10m\n*Error rate:* 0.2% (normal)", source: "generic", triage: { decision: "suggest", reason: "Borderline runtime_error (actionable 58% · agent 44%)", jev: jev("runtime_error", 0.58, 0.44, 0.22, "standard", 1.3) }, events: [{ minutesAgo: 118, text: "Dismissed by you, no agent started" }], disposition: { kind: "dismissed", minutesAgo: 118 } }),
-    ignored: alert(clock, { channel: RELEASES, minutesAgo: 63, title: "merkl-api v1.35.9 · Deployed", summary: "Approval ✓ · Build ✓ · Production ✓", source: "releases", triage: { decision: "ignore", reason: "Not actionable (actionable 3%)", jev: jev("informational", 0.03, 0.02, 0, "quick", 0.1) }, feedback: "good", events: [{ minutesAgo: 60, text: "You marked Jev's call as right" }] }),
+    ignored: alert(clock, { channel: RELEASES, minutesAgo: 63, title: "merkl-api v1.35.9 · Deployed", summary: "Approval ✓ · Build ✓ · Production ✓", source: "releases", triage: { decision: "ignore", reason: "Not actionable (actionable 3%)", jev: jev("informational", 0.03, 0.02, 0, "quick", 0.1) } }),
     filtered: alert(clock, { channel: INFRA, minutesAgo: 66, title: "SSL certificate for merkl.xyz expires in 7 days", summary: "cert-manager will renew automatically at 30 days remaining", source: "uptime", fields: { _tag: "uptime", target: "merkl.xyz", state: "ssl_expiry" }, triage: { decision: "filtered", reason: "Certificate notices are handled by cert-manager", jev: null } }),
     teammate: alert(clock, { channel: DEV, minutesAgo: 33, title: "merkl-api · 504s on /v4/campaigns/leaderboard", summary: "Grafana: 504 rate 2.2% for 8 minutes", source: "generic", triage: { decision: "filtered", reason: "Julien's agent is on it", jev: null }, claimedBy: [{ userId: "U04JULIEN", name: "Julien", via: "agent", latest: "Fix PR: https://nocturlab.ghe.com/Merkl/monorepo/pull/3351" }, { userId: "U04HUGO", name: "Hugo Lextrait", via: "eyes", latest: null }] }),
     teammateEyes: alert(clock, { channel: ENGINE, minutesAgo: 52, title: "Keeper gas balance low on Gnosis", summary: "merkl-keeper: 0.8 xDAI left (threshold 2)", source: "engine", fields: { _tag: "engine", subject: "merkl-keeper", error: "gas balance low", txHash: null }, triage: { decision: "filtered", reason: "Baptiste is on it", jev: null }, claimedBy: [{ userId: "U04BAPTISTE", name: "Baptiste", via: "eyes", latest: null }] }),

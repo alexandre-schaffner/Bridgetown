@@ -16,19 +16,9 @@ struct AlertRow: View {
     /// Where the glyphs start, past the time column: a fold row's words line up with them.
     static let glyphColumn = leading + timeWidth + 10
 
-    /// Jev's call can be labelled right here, as in the detail: the thumbs take the rating's
-    /// place while the pointer is on the row. Rule decisions had no call to judge.
-    private var offersFeedback: Bool { alert.triage.jev != nil }
-
     var body: some View {
         TableRow(pick: pick, open: { store.show(.alert(alert.id)) }) { hovering in
             content(hovering)
-        } overlay: { hovering in
-            if offersFeedback && hovering {
-                FeedbackThumbs(alert: alert)
-                    .padding(.trailing, Metrics.inset - 4)
-                    .transition(.opacity)
-            }
         } menu: {
             menu
         }
@@ -68,18 +58,6 @@ struct AlertRow: View {
             }
 
             Spacer(minLength: 4)
-
-            ZStack(alignment: .trailing) {
-                if let fb = alert.feedback, fb != .unknown {
-                    Image(systemName: fb == .good ? "hand.thumbsup.fill" : "hand.thumbsdown.fill")
-                        .font(.geist(9))
-                        .foregroundStyle(.tertiary)
-                        .accessibilityLabel(fb == .good ? "Rated a good call" : "Rated a bad call")
-                }
-            }
-            .opacity(offersFeedback && hovering ? 0 : 1)
-            // Room for the thumbs, so the title truncates before them rather than under them.
-            .frame(minWidth: offersFeedback && hovering ? 52 : 0, alignment: .trailing)
         }
         .padding(.leading, Self.leading)
         .padding(.trailing, Metrics.inset)
@@ -98,20 +76,6 @@ struct AlertRow: View {
         Divider()
         Button("Investigate anyway") { store.investigate(alert) }
             .disabled(session?.isActive == true || busy)
-        Divider()
-        Group {
-            Button {
-                store.feedback(alert, .good)
-            } label: {
-                Label("Good call", systemImage: alert.feedback == .good ? "checkmark" : "hand.thumbsup")
-            }
-            Button {
-                store.feedback(alert, .bad)
-            } label: {
-                Label("Bad call", systemImage: alert.feedback == .bad ? "checkmark" : "hand.thumbsdown")
-            }
-        }
-        .disabled(busy)
         Divider()
         Button(alert.permalinkLabel) { SystemActions.open(alert.permalink) }
             .disabled(alert.permalink == nil)

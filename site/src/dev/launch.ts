@@ -689,7 +689,6 @@ chapter("ch-watch", 81, 83.6);
 // whole bars, so the grid holds. Times above this are in the cut before the splices; the spliced
 // shots below are timed in the final cut.
 const INSERTS = [
-  { at: 36, d: 6 }, // calibration, after Depth
   { at: 69, d: 2 }, // the notch, held a bar so the island folds before it goes
   { at: 81, d: 6 }, // a session, live, after Ask
   { at: 96, d: 12 }, // health, then the Prod board, after the logs
@@ -701,49 +700,21 @@ for (const { at, d } of [...INSERTS].sort((a, b) => b.at - a.at)) {
   for (const c of cues) if (c.t >= at - 1e-6) c.t = +(c.t + d).toFixed(3);
 }
 
-// MARK: 4b · Calibration (36–42)
-
-{
-  const T = 36;
-  const s = shot("calibrate");
-  enter("calibrate", T, "cut");
-  drift("calibrate", T, 6, { rotateY: -6, z: -40 }, { rotateY: 3, z: 30 });
-  reveal($(".hl-m", s), T + 0.05);
-  reveal($(".sub", s), T + 0.7, { stagger: 0.03, dur: 0.8, hit: false });
-  const rows = $$("[data-vrow]", s);
-  tl.fromTo(rows, { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.6, ease: "expo.out", stagger: 0.18 }, T + 0.4);
-  const ptr = $<SVGElement>("[data-pointer]", s);
-  const label = (row: HTMLElement, i: number, text: string, at: number) => {
-    const thumb = $$("[data-thumb]", row)[i]!;
-    const q = $("[data-vq]", row);
-    tl.call(() => thumb.classList.add("picked"), [], at + 0.05);
-    tl.to(q, { opacity: 0, duration: 0.12 }, at + 0.05);
-    tl.call(() => (q.textContent = text), [], at + 0.18);
-    tl.to(q, { opacity: 1, color: "#a1a1a6", duration: 0.4 }, at + 0.19);
-    return thumb;
-  };
-  const up = label(rows[0]!, 0, "You marked this a good call", T + 2.0);
-  press(ptr, up, T + 2.0, { dx: 240, dy: 260 }, 0.8);
-  tap(ptr, label(rows[1]!, 1, "You marked this a bad call", T + 3.4), T + 3.4, 0.6);
-  tl.to(ptr, { opacity: 0, x: "+=60", y: "+=80", duration: 0.5, ease: "power2.in" }, T + 4.4);
-  leave("calibrate", T + 5.6);
-}
-
-// MARK: 6b · The notch's exit (75–77)
+// MARK: 6b · The notch's exit (69–71)
 
 {
   // From the white desktop to the black of the next shot: a dusk, not a cut.
   const s = shot("notch");
-  tl.to($(".mac-wrap", s), { scale: 1.08, duration: 1.6, ease: "power1.in" }, 75.4);
-  tl.fromTo($("[data-dusk]", s), { opacity: 0 }, { opacity: 1, duration: 1.25, ease: "sine.inOut" }, 75.7);
-  cue(75.7, "whoosh");
-  leave("notch", 77, "cut");
+  tl.to($(".mac-wrap", s), { scale: 1.08, duration: 1.6, ease: "power1.in" }, 69.4);
+  tl.fromTo($("[data-dusk]", s), { opacity: 0 }, { opacity: 1, duration: 1.25, ease: "sine.inOut" }, 69.7);
+  cue(69.7, "whoosh");
+  leave("notch", 71, "cut");
 }
 
-// MARK: 9b · Health (110–116)
+// MARK: 9b · Health (104–110)
 
 {
-  const T = 110;
+  const T = 104;
   const s = shot("health");
   enter("health", T, "cut");
   drift("health", T, 6, { z: -50, rotateX: 5 }, { z: 30, rotateX: 0 });
@@ -767,10 +738,10 @@ for (const { at, d } of [...INSERTS].sort((a, b) => b.at - a.at)) {
   leave("health", T + 5.6);
 }
 
-// MARK: 8b · A session, live (89–95)
+// MARK: 8b · A session, live (83–89)
 
 {
-  const T = 89;
+  const T = 83;
   const s = shot("session");
   enter("session", T, "cut");
   drift("session", T, 6, { rotateY: -7, z: -40 }, { rotateY: 3, z: 40 });
@@ -819,10 +790,10 @@ for (const { at, d } of [...INSERTS].sort((a, b) => b.at - a.at)) {
   leave("session", T + 5.6);
 }
 
-// MARK: 9c · Prod at a glance (116–122)
+// MARK: 9c · Prod at a glance (110–116)
 
 {
-  const T = 116;
+  const T = 110;
   const s = shot("board");
   enter("board", T, "cut");
   drift("board", T, 6, { rotateX: 7, z: -50 }, { rotateX: 0, z: 40 });
@@ -855,10 +826,10 @@ for (const { at, d } of [...INSERTS].sort((a, b) => b.at - a.at)) {
   leave("board", T + 5.6);
 }
 
-// MARK: 10b · Settings (136–142)
+// MARK: 10b · Settings (130–136)
 
 {
-  const T = 136;
+  const T = 130;
   const s = shot("settings");
   enter("settings", T, "cut");
   drift("settings", T, 6, { rotateY: 7, z: -40 }, { rotateY: -3, z: 40 });
@@ -882,10 +853,10 @@ for (const { at, d } of [...INSERTS].sort((a, b) => b.at - a.at)) {
   leave("settings", T + 5.6);
 }
 
-// MARK: 12b · Everything else (156–162)
+// MARK: 12b · Everything else (150–156)
 
 {
-  const T = 156;
+  const T = 150;
   const s = shot("more");
   stage(false, T + 0.1);
   enter("more", T, "cut");

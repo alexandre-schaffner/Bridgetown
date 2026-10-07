@@ -1,11 +1,9 @@
 import { Effect, Schema } from "effect"
-import { Feedback } from "../domain/alert.ts"
 import { attempt, InvalidInput } from "../domain/errors.ts"
 
 /** Request bodies and path ids: anything malformed or out of range is `InvalidInput` (400). `SettingsPatch` is the settings'. */
 
 export const ResolveBody = Schema.Struct({ response: Schema.optional(Schema.NullOr(Schema.String)) })
-export const FeedbackBody = Schema.Struct({ label: Feedback })
 export const MessageBody = Schema.Struct({ text: Schema.String })
 export const PauseBody = Schema.Struct({ paused: Schema.Boolean })
 
