@@ -156,7 +156,8 @@ Housekeeping (`daemon/src/housekeeping/`) runs 2 minutes after the daemon starts
   worktree for 24 hours, so your message can reopen it, or Retry rebuild it; what setup left of one stopped while
   preparing goes at the next round. The session's local `fix-bt-*` branch and its `-N` follow-ups go with the
   worktree, except a failed session's, which stays for Retry until the session itself goes. Branches on GitHub are
-  left alone.
+  left alone. A locked worktree is yours and stays, with its branch and whatever you changed there: **Take over in
+  Terminal** runs `git worktree lock` before `claude --resume`, and `git worktree unlock` hands it back.
 - **Rows.** After 30 days: alerts, finished sessions with their transcripts, and cards, unless the card's session is
   still active. Kept however old: the newest 30 alerts and the newest 20 finished sessions (what the app shows),
   anything a card still names, a session whose worktree is still there, and an active session's alerts. A session

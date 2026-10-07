@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { existsSync } from "node:fs"
+import { existsSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 import { Effect } from "effect"
 import { mockGitHub } from "../scripts/mock/fakes.ts"
@@ -145,6 +145,15 @@ describe("the mock honours the daemon's launch contract", () => {
     const mock = launch({ MOCK_GITHUB: "blocked" })
     expect(await mock.child.exited).toBe(1)
     expect(existsSync(join(scratch, "root"))).toBe(false)
+  }, 30_000)
+
+  test("makes its own store even when the shell exported a real daemon's BRIDGETOWN_HOME", async () => {
+    const real = scratchDir("bt-real-home-")
+    const mock = launch({ BRIDGETOWN_HOME: real })
+    await mock.state()
+    mock.child.stdin.end()
+    expect(await mock.child.exited).toBe(0)
+    expect(readdirSync(real)).toEqual([])
   }, 30_000)
 
   test("a taken port exits 98", async () => {

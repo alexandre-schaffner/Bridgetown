@@ -10,7 +10,7 @@ import { isFinished } from "../domain/session.ts"
 import { Hub } from "../hub.ts"
 import { SessionRepo } from "../sessions/repo.ts"
 import { SessionRunner } from "../sessions/runner.ts"
-import { isSessionBranch, Worktrees } from "../sessions/worktree.ts"
+import { isLocked, isSessionBranch, Worktrees } from "../sessions/worktree.ts"
 import { Store, type SessionRef } from "../store/store.ts"
 import { planPrune, type PruneRefs, worktreeDue } from "./retention.ts"
 
@@ -41,11 +41,14 @@ export const HousekeepingLive = Layer.effect(Housekeeping)(
     /**
      * Claimed first, so nothing resumes into it: `worktree: null` makes the session refuse messages,
      * and Retry waits for the removal on the path's lock. A failed session keeps its branch for Retry.
+     * A worktree you took over (`git worktree lock`, which Take over runs) is yours: it stays, with
+     * whatever you changed there, until you unlock or remove it.
      */
     const reclaimWorktree = (ref: SessionRef, nowMs: number) =>
       Effect.gen(function* () {
         if (!isSessionBranch(ref.branch) || !worktreeDue(ref, nowMs)) return
         if (ref.worktree === null && !existsSync(worktrees.path(ref.repoPath, ref.branch))) return
+        if (ref.worktree !== null && isLocked(ref.worktree)) return
         if (yield* runner.busy(ref.id)) return
         const claimed = yield* repo.modify(
           ref.id,
