@@ -32,6 +32,10 @@ updates:
     directory: /site
     schedule:
       interval: weekly
+    # astro check requires TypeScript 6; remove when the site's checker supports 7+.
+    ignore:
+      - dependency-name: typescript
+        versions: [">=7"]
     commit-message:
       prefix: chore
     groups:
