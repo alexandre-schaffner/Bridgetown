@@ -167,7 +167,7 @@ enum E2EStep {
     }
 
     enum Wait: Equatable {
-        case settled, connected, disconnected, rejected, portInUse
+        case settled, connected, disconnected, rejected, portInUse, keepsExiting
         case milliseconds(Int)
     }
 
@@ -188,6 +188,8 @@ enum E2EStep {
     case back
     case telemetry(TelemetryPanel.Mode)
     case press(Element)
+    case hover(Element?)
+    case see(Element)
     /// A mouse click on the element: at its centre, or `at` points from its top-left corner
     /// (a control inside a row that is one button has no element of its own).
     case click(Element, at: CGPoint?)
@@ -201,14 +203,14 @@ enum E2EStep {
     case crash(Int)
     /// The app stops its daemon and leaves it down, until a `restart`.
     case stopDaemon
-    case restart(world: String?, tokenMismatch: Bool)
+    case restart(world: String?, tokenMismatch: Bool, exitsAtStart: Bool)
     case appearance([E2EAppearance])
     case wait(Wait, timeoutMs: Int)
     /// Fails the run unless the app's state (`GET /state`: route, actions, alerts…) comes
     /// to hold these values within 2s: what a step did, where a shot can't say it.
     case expect([String: E2EJSON])
     case shot(name: String, lint: Lint, appearances: [E2EAppearance]?)
-    case each(String, [E2EJSON])
+    case each(String, title: String?, [E2EJSON])
 
     struct Invalid: Error, CustomStringConvertible {
         let description: String
@@ -217,7 +219,7 @@ enum E2EStep {
     /// It changes what the app shows (or may): a frame settled before it no longer stands.
     var acts: Bool {
         switch self {
-        case .appearance, .wait, .expect, .shot, .each: false
+        case .appearance, .wait, .expect, .see, .shot, .each: false
         default: true
         }
     }
@@ -294,6 +296,11 @@ enum E2EStep {
             // Before `action`, which a banner step names its card with.
             guard ["rest", "hover", "banner", "open", "close"].contains(island) else { throw bad("island is rest, hover, banner, open or close") }
             self = .island(island, action: json["action"]?.string)
+        } else if let target = json["see"]?.string {
+            self = .see(Element(target: target, within: json["in"]?.string))
+        } else if let hover = json["hover"] {
+            if hover == .bool(false) { self = .hover(nil) }
+            else { self = .hover(Element(target: try text("hover"), within: json["in"]?.string)) }
         } else if let target = json["press"]?.string {
             self = .press(Element(target: target, within: json["in"]?.string))
         } else if let target = json["click"]?.string {
@@ -323,7 +330,7 @@ enum E2EStep {
             guard daemon.string == "stop" else { throw bad("daemon takes \"stop\"") }
             self = .stopDaemon
         } else if let restart = json["restart"] {
-            self = .restart(world: restart["world"]?.string, tokenMismatch: restart["tokenMismatch"]?.bool ?? false)
+            self = .restart(world: restart["world"]?.string, tokenMismatch: restart["tokenMismatch"]?.bool ?? false, exitsAtStart: restart["exitsAtStart"]?.bool ?? false)
         } else if let appearance = json["appearance"] {
             self = .appearance(try appearances(appearance) ?? [])
         } else if let wait = json["wait"] {
@@ -331,7 +338,7 @@ enum E2EStep {
             if let ms = wait["ms"]?.number {
                 self = .wait(.milliseconds(Int(ms)), timeoutMs: timeout)
             } else {
-                let waits: [String: Wait] = ["settled": .settled, "connected": .connected, "disconnected": .disconnected, "rejected": .rejected, "portInUse": .portInUse]
+                let waits: [String: Wait] = ["settled": .settled, "connected": .connected, "disconnected": .disconnected, "rejected": .rejected, "portInUse": .portInUse, "keepsExiting": .keepsExiting]
                 guard let name = wait.string, let parsed = waits[name] else { throw bad("wait for \(waits.keys.sorted()) or {\"ms\": n}") }
                 self = .wait(parsed, timeoutMs: timeout)
             }
@@ -347,7 +354,7 @@ enum E2EStep {
             self = .shot(name: shot, lint: lint, appearances: try appearances(json["appearances"]))
         } else if let each = json["each"]?.string {
             guard ["sessions", "actions", "alerts"].contains(each), let steps = json["do"]?.array else { throw bad("each sessions, actions or alerts, with \"do\"") }
-            self = .each(each, steps)
+            self = .each(each, title: json["title"]?.string, steps)
         } else {
             throw bad("unknown step")
         }

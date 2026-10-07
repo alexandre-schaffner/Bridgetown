@@ -32,6 +32,7 @@ final class E2ESurfaces {
     private let daemon: DaemonProcess
     private let island: IslandController
     let defaults: UserDefaults
+    let hover = E2EHover()
     private(set) var current: Shown?
 
     init(store: Store, daemon: DaemonProcess, island: IslandController, defaults: UserDefaults) {
@@ -45,6 +46,7 @@ final class E2ESurfaces {
     @discardableResult
     func show(_ spec: E2EStep.Surface) -> Shown {
         current?.window.close()
+        hover.point = nil
         let root: AnyView
         let size: CGSize
         let name: String
@@ -65,7 +67,7 @@ final class E2ESurfaces {
             size = CGSize(width: 480, height: 400)
             name = "settings/\(tab.rawValue)"
         }
-        let host = NSHostingView(rootView: AnyView(root.modifier(E2EEnvironment(store: store, daemon: daemon, defaults: defaults))))
+        let host = NSHostingView(rootView: AnyView(root.modifier(E2EEnvironment(store: store, daemon: daemon, defaults: defaults, hover: hover))))
         // Settings is as tall as its tab's content, as its own window is; the island's are fixed.
         host.sizingOptions = spec.isStage ? [] : [.intrinsicContentSize]
         let window = NSWindow(
@@ -132,9 +134,12 @@ private struct E2EEnvironment: ViewModifier {
     let store: Store
     let daemon: DaemonProcess
     let defaults: UserDefaults
+    let hover: E2EHover
 
     func body(content: Content) -> some View {
         content
+            .coordinateSpace(name: "e2e")
+            .environment(\.e2eHoverPoint, hover.point)
             .environment(store)
             .environment(daemon)
             .environment(\.openURL, SystemActions.openLink)
@@ -148,6 +153,41 @@ private struct E2EEnvironment: ViewModifier {
                 $0.animation = nil
                 $0.disablesAnimations = true
             }
+    }
+}
+
+/// A point in the harness surface, shared by rows drawn in its offscreen window.
+@Observable
+final class E2EHover {
+    var point: CGPoint?
+}
+
+private struct E2EHoverPoint: EnvironmentKey {
+    static let defaultValue: CGPoint? = nil
+}
+
+extension EnvironmentValues {
+    var e2eHoverPoint: CGPoint? {
+        get { self[E2EHoverPoint.self] }
+        set { self[E2EHoverPoint.self] = newValue }
+    }
+}
+
+/// SwiftUI ignores native pointer moves in a window that was never ordered in. Feed the
+/// same row state from its rendered frame instead; the row's controls still take the clicks.
+struct E2EHoverModifier: ViewModifier {
+    @Environment(\.e2eHoverPoint) private var point
+    @Binding var hovering: Bool
+
+    func body(content: Content) -> some View {
+        content.overlay {
+            GeometryReader { geometry in
+                let inside = point.map { geometry.frame(in: .named("e2e")).contains($0) } ?? false
+                Color.clear
+                    .allowsHitTesting(false)
+                    .onChange(of: inside) { _, value in hovering = value }
+            }
+        }
     }
 }
 #endif

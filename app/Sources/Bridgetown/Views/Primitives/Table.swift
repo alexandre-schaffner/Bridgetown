@@ -174,6 +174,9 @@ struct TableRow<Content: View, Overlay: View, Menu: View>: View {
                 label.background(pick?.selected == true ? Ink.picked : .clear)
             }
         }
+        #if DEBUG
+        .modifier(E2EHoverModifier(hovering: $hovering))
+        #endif
         .overlay(alignment: .trailing) { overlay(hovering) }
         .onHover { hovering = $0 }
         .animation(Easing.quick, value: hovering)

@@ -119,7 +119,22 @@ final class E2ERunner {
             try await wait(.settled, timeoutMs: 0)
         case let .telemetry(mode):
             surfaces.defaults.set(mode.rawValue, forKey: "telemetryMode")
+        case let .see(target):
+            _ = try await find(target)
+        case let .hover(target):
+            try await wait(.settled, timeoutMs: 0)
+            guard surfaces.current != nil else { throw Failure(description: "no surface to hover") }
+            let point: CGPoint
+            if let target {
+                let (element, _) = try await find(target)
+                point = CGPoint(x: element.frame.midX, y: element.frame.midY)
+            } else { point = CGPoint(x: -1, y: -1) }
+            surfaces.hover.point = target == nil ? nil : point
+            lastSettled = nil
+            try await wait(.settled, timeoutMs: 0)
         case let .press(target):
+            // A prior request may replace the card and its controls on the next snapshot.
+            try await wait(.settled, timeoutMs: 0)
             let (element, node) = try await find(target)
             guard E2EAccessibility.press(node) else {
                 throw Failure(description: "\(target.target) (\(element.role), \(type(of: node))) doesn't take a press")
@@ -179,14 +194,17 @@ final class E2ERunner {
             await withCheckedContinuation { done in
                 if !daemon.stop(completion: { done.resume() }) { done.resume() }
             }
-        case let .restart(world, tokenMismatch):
+        case let .restart(world, tokenMismatch, exitsAtStart):
+            daemon.extraEnvironment["MOCK_EXIT_AT_START"] = exitsAtStart ? "1" : ""
             daemon.extraEnvironment["MOCK_WORLD"] = world ?? suite.world
             daemon.extraEnvironment["MOCK_API_TOKEN"] = tokenMismatch ? "not-this-app" : ""
             try await wait(.settled, timeoutMs: 0)
             let replaced = daemonPid
             daemon.restart()
-            try await until("the new daemon to run") { daemonPid.map { $0 != replaced } ?? false }
-            try await wait(tokenMismatch ? .rejected : .connected, timeoutMs: 20_000)
+            if !exitsAtStart {
+                try await until("the new daemon to run") { daemonPid.map { $0 != replaced } ?? false }
+            }
+            try await wait(exitsAtStart ? .keepsExiting : tokenMismatch ? .rejected : .connected, timeoutMs: 20_000)
         case let .appearance(next):
             appearances = next
         case let .wait(condition, timeoutMs):
@@ -203,9 +221,11 @@ final class E2ERunner {
             }
         case let .shot(name, lint, only):
             return try await shoot(name, lint: lint, appearances: only ?? appearances)
-        case let .each(collection, steps):
+        case let .each(collection, title, steps):
             var results: [ShotResult] = []
-            for id in ids(collection) {
+            let matching = ids(collection, title: title)
+            if let title, matching.isEmpty { throw Failure(description: "no \(collection) titled \(title)") }
+            for id in matching {
                 for json in steps { results += try await perform(json.filling(["id": id])) }
             }
             return results
@@ -213,12 +233,12 @@ final class E2ERunner {
         return []
     }
 
-    private func ids(_ collection: String) -> [String] {
+    private func ids(_ collection: String, title: String?) -> [String] {
         guard let snap = store.snapshot else { return [] }
         switch collection {
-        case "sessions": return snap.sessions.map(\.id)
-        case "actions": return snap.sortedActions.map(\.id)
-        default: return snap.alerts.map(\.id)
+        case "sessions": return snap.sessions.filter { title == nil || $0.title == title }.map(\.id)
+        case "actions": return snap.sortedActions.filter { title == nil || $0.title == title }.map(\.id)
+        default: return snap.alerts.filter { title == nil || $0.title == title }.map(\.id)
         }
     }
 
@@ -378,6 +398,7 @@ final class E2ERunner {
         case .connected: store.connection == .connected && store.snapshot != nil
         case .rejected: store.connection == .rejected
         case .portInUse: daemon.state == .portInUse
+        case .keepsExiting: daemon.keepsExiting
         case .disconnected: if case .disconnected = store.connection { true } else { false }
         case .settled, .milliseconds: true
         }
@@ -575,6 +596,7 @@ final class E2ERunner {
             "actions": .number(Double(store.actions.count)),
             "alerts": .number(Double(store.snapshot?.alerts.count ?? 0)),
             "shots": .number(Double(report.shots.count)),
+            "reduceMotion": .bool(Easing.reduceMotion),
         ]
     }
 }
