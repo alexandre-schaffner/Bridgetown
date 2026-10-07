@@ -22,7 +22,9 @@ Built for macOS with SwiftUI and a local Bun + Effect daemon. Currently tailored
 - **Needs you:** answer an agent, investigate an alert, merge a reviewed fix, cut a release, or send a prepared reply.
 - **Agents:** see the current step, latest activity, and outcome of each session. Open one to inspect its work or take over in Terminal.
 
-The notch shows running agents and decisions waiting on you. Click it to expand Bridgetown from the notch itself, leaving your desktop visible around it. On a Mac without one, it sits at the top centre of the display. Blue marks live work, amber marks a decision, and green marks a verified outcome.
+There is no menu bar item or Dock icon: the island in the notch is the app. At rest it shows running agents on its left and decisions waiting on you on its right, and a new decision drops a banner for a few seconds. Click it to expand Bridgetown from the notch itself, leaving your desktop visible around it; Esc or a click outside folds it back. On a screen without a notch it rests as a small black notch at the top centre, and opening Bridgetown again (Finder, Spotlight, `open -a Bridgetown`) always unfolds it. Blue marks live work, amber marks a decision, and green marks a verified outcome.
+
+Open, its top line says how Bridgetown is doing, and its **…** menu holds Settings, Pause auto-start, Open logs, and Quit. ⌘, and ⌘Q work while it's open.
 
 ## From alert to deployment
 
@@ -42,7 +44,7 @@ Slack alerts + mentions + DMs     Grafana metrics + logs
                       Track the production deploy
 ```
 
-Codex reviews the fix before the PR leaves draft. Blocking findings return to the same Claude session for a fix or an evidence-backed rebuttal. The app keeps resolved, closed without a fix, failed, and stopped sessions distinct.
+Codex reviews the fix before the PR leaves draft. Blocking findings return to the same Claude session for a fix or an evidence-backed rebuttal; red CI, requested changes, and a failed deploy go back to it too, up to three rounds, before they come to you. A decision is withdrawn as soon as its session moves past it ([how long each lasts](docs/API.md#cards)). The app keeps resolved, closed without a fix (a PR closed on GitHub included), failed, and stopped sessions distinct.
 
 ![Bridgetown session with a reviewed pull request ready to merge and production charts beside it](docs/images/bridgetown-session.png)
 
@@ -98,11 +100,11 @@ Open **Settings** from the app’s **…** menu. Save the Slack and TypeSafe tok
 
 ## You keep the controls
 
-Each agent gets its own Git worktree. The command guard restricts production operations and pushes, and file-edit tools are confined to that worktree. The daemon strips its Slack and TypeSafe credentials from spawned processes.
+Each agent gets its own Git worktree and a named set of tools, and one gate checks every tool call: it keeps commands off production, lets an agent push only its own branch and run only the `gh` commands a fix needs, and keeps file edits in the worktree. `gh`, `git`, and the other risky tools are checked again as they run, whatever started them. The daemon takes its tokens only over stdin and passes none to an agent.
 
 Merging, cutting releases, and sending prepared replies require your click. Production environment approval remains with the reviewer team. Slack content is treated as untrusted input.
 
-The guard has limits: it cannot inspect every operation inside interpreter-run code or shell writes. [The workflow reference](docs/WORKFLOW.md#safety-model) documents the boundaries and backstops.
+The guard has limits: a program that runs a binary by its absolute path goes around the second check, and files written by shell commands aren't confined. [The workflow reference](docs/WORKFLOW.md#safety-model) documents the boundaries and backstops, and [what Bridgetown keeps on your Mac, and for how long](docs/WORKFLOW.md#storage-and-retention).
 
 ## Develop
 
@@ -111,7 +113,8 @@ Run these from the repository root:
 | Command | Purpose |
 | --- | --- |
 | `make mock` | Start the daemon with local demo services |
-| `make dev-app` | Attach the SwiftUI app to the running daemon |
+| `make dev-app` | Attach the debug app to the running mock |
+| `make dev` | Run the debug app with the daemon from source, your Keychain tokens on its stdin. Quit the installed app first, or set `BRIDGETOWN_PORT`: both use 47621 |
 | `make all` | Compile the daemon and assemble `build/Bridgetown.app` |
 | `make dmg` | Package the built app as `build/Bridgetown.dmg` |
 | `make test-app` | Run Swift tests |
@@ -123,6 +126,79 @@ Run these from the repository root:
 | `bun run --cwd site test` | Run the landing page's tests |
 | `make e2e-site` | Build the landing page if stale, then screenshot, lint and check it at six screen sizes, into `.context/e2e/`. Needs Chromium once: `bunx playwright-core install chromium` in `site/` |
 
+Daemon tests mirror `src/` as `daemon/test/<folder>/<module>.test.ts`; the shared fakes, records, and test world live in `daemon/test/support/`, which the mock is built on too. `bun scripts/session-smoke.ts` in `daemon/` runs one real agent session against a throwaway repo (it costs money) and exits 1 unless it reaches a result.
+
+<details>
+<summary><b>The mock daemon</b></summary>
+
+`make mock` runs the real daemon (store, sessions, ship flow, gates, HTTP, and its own scheduler, with sessions, CI, and reviews sped up) on a throwaway store, with Slack, Jev, the agent, GitHub, and Grafana faked. Nothing leaves the machine. Started by hand it listens on `127.0.0.1:47621` and answers the token `dev` (or `BRIDGETOWN_API_TOKEN`), which `make dev-app` sends. It never reads the terminal, so `make mock &` works.
+
+| Variable | Effect |
+| --- | --- |
+| `BRIDGETOWN_PORT=47650` | Another port |
+| `MOCK_EXTRA=1` | The running agent also asks a question |
+| `MOCK_GITHUB=blocked` | GitHub Enterprise refuses this network from the start; `kill -USR1 <pid>` toggles it |
+| `MOCK_GRAFANA=live` | Real prod charts through the local Grafana MCP (read-only) |
+| `MOCK_RELEASE_HOLD_SECONDS=600` | How long the release in flight at startup takes |
+| `MOCK_STATIC=1` | Nothing moves: no scheduler, no agents, the release held in flight (what `make e2e` runs) |
+| `MOCK_WORLD=empty` | A fresh install that has received nothing yet |
+| `MOCK_NOW=2026-10-04T12:00:00Z` | The wall clock stopped there |
+| `MOCK_ROOT=/tmp/bt-mock` | The throwaway root at a fixed path, not a temp dir |
+| `MOCK_API_TOKEN=other` | Answers only this token, so the app that launched it is turned away |
+
+Launched like the daemon (`BRIDGETOWN_DAEMON_CMD="bun /abs/path/daemon/scripts/mock/main.ts"`), it takes its token on stdin, exits when stdin closes, and reads control lines after it: `{"mock":"status","patch":{"github":"blocked"}}` patches the status (an `error` in it is reported as a problem), and `{"mock":"crash","code":98}` exits at once with that code.
+
+</details>
+
+<details>
+<summary><b>The app's e2e</b></summary>
+
+`make e2e` builds the debug app and runs every step of `app/E2E/suite.json` against the static mock, on a port of its own (never 47621). Each shot is drawn off screen and linted for layout. The run doesn't touch your world: the Keychain is in memory, the clock stops at the suite's instant, links and notifications are recorded rather than opened, and no prompt or window reaches the screen.
+
+It writes `.context/e2e/<UTC time>/` (`latest` points at it; the newest five stay): `index.md` first, `report.json`, `shots/`, `issues/` (a crop per issue), `diff/`, and the app's and daemon's logs. It exits 0 when clean, 1 on lint errors, and 2 when the harness failed.
+
+- `ONLY='overview*'` takes only the shots whose names match; every step still runs.
+- `SUITE=<file>` runs another suite, and `SUITE=none` none (with `SERVE=1`, straight to serving).
+- `BASELINE=<run dir>` diffs against that run instead of the previous `latest`, and `BASELINE=` against none. A partial run becomes `latest` too, so pass a full run's directory while you iterate with `ONLY`.
+- `SERVE=1` keeps the app up afterwards for an agent to drive. `.context/e2e/latest/control.json` holds a loopback `url` and a `token`; send the token as `X-E2E-Token`, then `POST /step` with one suite step as JSON (it answers `{ok, shots, error}`, each shot with its PNG and issues), `GET /tree` for the screen's accessibility tree and its lint, `GET /state`, and `POST /quit`. A run that hears nothing for 10 minutes ends.
+
+</details>
+
+<details>
+<summary><b>The landing page</b></summary>
+
+`site/` is an Astro page with three.js. `src/scripts/main.ts` holds what moves across chapters (the hero's dawn and board, the camera, the light); a widget that keeps to its own chapter runs from its component, and the facts the page shares with the launch film live in `src/lib/story.ts`.
+
+- `bun run build` writes `worker/media.json` (the films' sizes, for the Worker that answers Safari's byte-range requests; generated, not committed), checks the types, builds, and fails if the built pages inline a script or style the Content-Security-Policy doesn't allow.
+- `bun run test` writes `media.json` first, so use it rather than a bare `bun test`.
+- `bun run deploy` (`wrangler deploy`, which builds first) runs only in GitHub Actions: see [Releasing](#releasing).
+- Every response carries the headers in `public/_headers`: `nosniff`, `X-Frame-Options: DENY`, a referrer policy, HSTS, a Permissions-Policy, and a Content-Security-Policy that allows the site's own scripts, styles, fonts, images, and films and nothing else, plus the one inline theme script (by its hash) and style attributes.
+- The films in `public/media/` are recorded from rigs that exist only under `astro dev` (`/film` and `/launch`; nothing of them ships). `bun run record film/keynote`, `film/launch`, or `film/island` draws a cut frame by frame on the rig's own clock into `public/media/` (it needs ffmpeg; `--poster <s>` also writes its poster). `bun run record launch` writes the full launch film to `.context/films/launch.mp4`, with `launch.cues.json`, the cues its score is built from.
+
+`make e2e-site` builds the page if `dist/` is stale, serves it with those headers on a free port, and walks `/` and the 404 at 375×812, 812×375, 768×1024, 1280×800, 1512×982, and 1920×1080, with and without Reduce Motion, linting every scroll stop. Then it runs 16 checks of what the page has to do (one on a 320×568 phone). It writes `.context/e2e/<run>/site/` (`latest-site` points at it; the newest five stay) and exits 0, 1, or 2 like `make e2e`. `ARGS=--quick` takes one stop per section, `--only <part of a shot name>` one walk (`375x812`, `checks`), `--no-build` skips the build, and `--dist <dir>` walks another one. An allowlist entry in `site/scripts/e2e/lint.ts` says why the issue is the design, and may name a `media` query, so the same issue on other screens is still reported.
+
+</details>
+
+<details>
+<summary><b>Environment</b></summary>
+
+| Variable | Read by | Effect |
+| --- | --- | --- |
+| `BRIDGETOWN_DAEMON_CMD` | app | Run this as the daemon, through `/bin/sh -c "exec <cmd>"`: one command (`bun /abs/path/daemon/src/main.ts`), not a list. `make dev` sets it |
+| `BRIDGETOWN_ATTACH=1` | app | Start no daemon; attach to a running one with `BRIDGETOWN_API_TOKEN`. `make dev-app` sets both |
+| `BRIDGETOWN_LOG_DIR` | app | Where `daemon.log` goes (`~/Library/Logs/Bridgetown`) |
+| `BRIDGETOWN_PORT` | app, daemon | The daemon's loopback port (47621) |
+| `BRIDGETOWN_HOME` | daemon | The store, the guard's shims, and the worktrees of a repo without `.shared/` (`~/Library/Application Support/Bridgetown`) |
+| `BRIDGETOWN_CLAUDE_PATH`, `BRIDGETOWN_CODEX_PATH` | daemon | The `claude` and `codex` to run, instead of the ones on the PATH (from source, the SDK's own `claude`) |
+| `CLAUDE_CONFIG_DIR` | daemon | Where the Claude CLI keeps conversations (`~/.claude`), for housekeeping |
+| `BRIDGETOWN_DRY_RUN=1`, `--dry-run` | daemon | Never post to Slack, whatever Settings say |
+| `--paused` | daemon | Start paused |
+| `JEV_MODEL` | daemon | The Jev model (`jev-1.13.0`) |
+
+The app runs the first of `BRIDGETOWN_DAEMON_CMD`, `BRIDGETOWN_ATTACH=1`, and its bundled daemon. The daemon reads its variables once at launch, so a change needs a restart. The app hands its own environment on to the daemon it starts, secrets aside; daemon flags go in `BRIDGETOWN_DAEMON_CMD`. Opened from Finder, the app has launchd's environment: set a variable there with `launchctl setenv`, then quit and reopen Bridgetown.
+
+</details>
+
 To update the README visuals, see the [screenshot capture guide](docs/images/README.md).
 
 ## Inside the repository
@@ -133,7 +209,7 @@ To update the README visuals, see the [screenshot capture guide](docs/images/REA
 | [daemon/](daemon/) | Slack ingestion, triage, agent sessions, Codex review, shipping, Grafana monitoring |
 | [site/](site/) | Astro landing page, three.js visuals, and product recordings |
 | [docs/API.md](docs/API.md) | Local HTTP/SSE contract between the app and daemon |
-| [docs/WORKFLOW.md](docs/WORKFLOW.md) | Decision policy, safety boundaries, and Slack posting behavior |
+| [docs/WORKFLOW.md](docs/WORKFLOW.md) | Decision policy, safety boundaries, storage and retention, and Slack posting behavior |
 | [PRODUCT.md](PRODUCT.md) | Product purpose and design principles |
 | [.github/workflows/](.github/workflows/) | CI, releases, and the landing-page deploy |
 
