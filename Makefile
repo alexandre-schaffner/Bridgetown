@@ -68,9 +68,13 @@ dmg:
 	mkdir -p build/dmg
 	ditto $(APP) build/dmg/Bridgetown.app
 	ln -s /Applications build/dmg/Applications
+	@# Automatic APFS sizing can leave too little room for the bundled daemon on CI.
+	@# Count logical bytes (including sparse files) and reserve space for filesystem metadata.
 	@# hdiutil fails now and then with "Resource busy" on CI runners; a retry gets through.
+	@size_kb=$$(du -skA build/dmg | awk '{print $$1}'); \
+		size_mb=$$(( (size_kb + 1023) / 1024 + 64 )); \
 	for i in 1 2 3; do \
-		hdiutil create -volname Bridgetown -srcfolder build/dmg -format UDZO -ov $(DMG) && break; \
+		hdiutil create -volname Bridgetown -srcfolder build/dmg -size "$${size_mb}m" -format UDZO -ov $(DMG) && break; \
 		sleep 5; \
 	done; test -f $(DMG)
 	rm -rf build/dmg
