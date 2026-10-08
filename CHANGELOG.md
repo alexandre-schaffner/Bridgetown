@@ -9,6 +9,10 @@
 * add persistent local memory across messages and agent sessions ([#18](https://github.com/alexandre-schaffner/Bridgetown/issues/18)) ([a83d3b2](https://github.com/alexandre-schaffner/Bridgetown/commit/a83d3b2bad5e313c256150faedc092d2ea9b8967))
 * sandbox agent operations behind scoped security brokers ([#19](https://github.com/alexandre-schaffner/Bridgetown/issues/19)) ([4abf51e](https://github.com/alexandre-schaffner/Bridgetown/commit/4abf51e8e208c315fac00fbdf96abf4b51195176))
 
+### Fixes
+
+* reserve filesystem space when creating the macOS download image
+
 ## [1.0.2](https://github.com/alexandre-schaffner/Bridgetown/compare/v1.0.1...v1.0.2) (2026-10-07)
 
 
