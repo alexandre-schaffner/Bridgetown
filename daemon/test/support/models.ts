@@ -5,12 +5,14 @@ import type { ModelCatalog } from "../../src/domain/models.ts"
 
 export const MODEL_CATALOG: ModelCatalog = { providers: [
   { provider: "codex", error: null, models: [
-    { id: "gpt-5.6-sol", name: "GPT-5.6 Sol", efforts: ["low", "medium", "high", "xhigh"], defaultEffort: "medium", isDefault: true },
-    { id: "gpt-6.1-sol", name: "GPT-6.1 Sol", efforts: ["low", "medium", "high", "xhigh", "max", "ultra"], defaultEffort: "medium", isDefault: false },
+    { id: "gpt-6.1-sol", name: "GPT-6.1 Sol", efforts: ["low", "medium", "high", "xhigh", "max", "ultra"], defaultEffort: "medium", isDefault: true },
+    { id: "gpt-6-astra", name: "GPT-6 Astra", efforts: ["low", "medium", "high", "xhigh", "max", "ultra"], defaultEffort: "low", isDefault: false },
+    { id: "gpt-6-luna", name: "GPT-6 Luna", efforts: ["low", "medium", "high", "xhigh", "max"], defaultEffort: "medium", isDefault: false },
   ] },
   { provider: "claude", error: null, models: [
-    { id: "claude-sonnet-4-6", name: "Sonnet 4.6", efforts: ["low", "medium", "high"], defaultEffort: null, isDefault: true },
-    { id: "claude-opus-4-6", name: "Opus 4.6", efforts: ["low", "medium", "high", "max"], defaultEffort: null, isDefault: false },
+    { id: "claude-opus-5-5", name: "Opus 5.5", efforts: ["low", "medium", "high", "xhigh", "max"], defaultEffort: null, isDefault: true },
+    { id: "claude-fable-5-1", name: "Fable 5.1", efforts: ["low", "medium", "high", "xhigh", "max"], defaultEffort: null, isDefault: false },
+    { id: "claude-sonnet-5-5", name: "Sonnet 5.5", efforts: ["low", "medium", "high", "xhigh", "max"], defaultEffort: null, isDefault: false },
   ] },
 ] }
 
