@@ -402,7 +402,7 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
         if (session.critiqueRounds >= MAX_CRITIQUE_ROUNDS) yield* repo.patch(sessionId, { critiqueRounds: 0 })
         const delivery = yield* deliver(sessionId, text, {}, true)
         if (delivery === "refused") return yield* new Conflict({ message: "The session no longer takes messages" })
-        yield* store.captureMemory("user", `bridgetown:session/${sessionId}`, text).pipe(Effect.catch((error) => hub.problem("memory", error.message)))
+        yield* store.captureMemory("user", `bridgetown:session/${sessionId}`, text).pipe(hub.observe("memory-capture"), Effect.ignoreCause)
         if (delivery === "sent") yield* repo.patch(sessionId, { activity: "Read your message" })
         if (delivery === "queued") yield* repo.patch(sessionId, { activity: "Message queued for after the current step" })
       }),

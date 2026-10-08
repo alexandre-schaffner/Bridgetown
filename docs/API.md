@@ -86,7 +86,7 @@ settings saved:
 Settings stored by an older daemon load over the defaults the same way, so a setting added since takes its default,
 and a default channel added since is listed but off.
 
-Model selections are `{ "mode": "automatic" }` or `{ "mode": "manual", "provider": "codex" | "claude", "model": "<ID>", "effort": "<effort>" | null }`. `models.monitoring` and `models.reviewing` are independent. An explicit `null` effort restores the provider default. Detected models reject unsupported efforts with `400`; custom IDs remain available when discovery is unavailable. Blank IDs and incomplete selections fail with `400`.
+Model selections are `{ "mode": "automatic" }` or `{ "mode": "manual", "provider": "codex" | "claude", "model": "<ID>", "effort": "<effort>" | null }`. `models.monitoring`, `models.reviewing` and `models.memory` are independent. An explicit `null` effort restores the provider default. Detected models reject unsupported efforts with `400`; custom IDs remain available when discovery is unavailable. Blank IDs and incomplete selections fail with `400`.
 
 New sessions persist the selected provider, model and effort; existing sessions retain theirs. A new review snapshots the reviewing profile. Session views expose `provider`, `agentSessionId` and optional `agentConfigDir` for provider-specific takeover, replacing `claudeSessionId`; stored Claude conversations are migrated. `costUsd: null` means the provider did not report a cost.
 
@@ -129,6 +129,13 @@ Read wire.ts for the fields; what follows is what their names don't say.
 
 **Nulls and times.** Every field is always present; one with no value is `null`, never left out. Timestamps are
 ISO-8601 strings, except a chart point's time, which is unix seconds.
+
+**Current errors.** `Status.error` is the latest unresolved operation failure. A successful retry or health check
+clears that operation’s error and reveals any other failure still standing; cancelling an operation does not imply
+recovery. Disabling memory clears its reported errors, and suppressed dry-run posts clear posting errors.
+Memory tracks learning, consolidation, maintenance, repository health, reads and evidence capture separately.
+Its status reports the same standing memory errors. Slack identity recovery restores `Status.slack` as well as
+clearing its error. Failed group lookups are retried on the next request rather than caching an empty fallback for an hour.
 
 **Computed by the daemon.** Outcomes, steps, headlines, tones, `holder`, `critiqueLine`, `ciLine`, `channelLabel`,
 `Step.detail` and the `Panel` spike fields are sent ready to render. The app never works them out from other fields,
@@ -197,6 +204,12 @@ patterns are, each at most once a day), else `null`.
 
 `settings.memory` is a boolean, enabled by default. It controls capture, recall and background learning independently
 of `autoStart`, pause and dry run. Turning it off cancels an active model job and preserves the repository and queue.
+
+`settings.models.memory` selects the provider, model and effort for both learning and consolidation. Automatic
+uses Claude Sonnet with medium effort. Each job snapshots its selection at start, so changes apply to the next job.
+Both providers can only read the supplied memory snapshot and retained evidence, and return proposed changes.
+The daemon validates and commits those changes. Learning and consolidation time out after two and five minutes;
+Claude also has $0.50 and $1 spending caps respectively.
 
 Authenticated `GET /memory` returns:
 

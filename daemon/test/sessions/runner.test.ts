@@ -87,11 +87,11 @@ describe("a new turn", () => {
         const runner = yield* SessionRunner
         const store = yield* Store
         const choice = { mode: "manual", provider: "codex", model: "custom-codex", effort: "ultra" } as const
-        yield* hub.updateSettings({ ...(yield* hub.settings), models: { monitoring: choice, reviewing: { mode: "automatic" } } })
+        yield* hub.updateSettings({ ...(yield* hub.settings), models: { monitoring: choice, reviewing: { mode: "automatic" }, memory: { mode: "automatic" } } })
         const alert = makeAlert()
         yield* store.putAlert(alert, "h")
         const queued = yield* runner.enqueue(alert)
-        yield* hub.updateSettings({ ...(yield* hub.settings), models: { monitoring: { mode: "automatic" }, reviewing: { mode: "automatic" } } })
+        yield* hub.updateSettings({ ...(yield* hub.settings), models: { monitoring: { mode: "automatic" }, reviewing: { mode: "automatic" }, memory: { mode: "automatic" } } })
         yield* store.putSession({ ...queued, status: "failed" })
         yield* runner.retry(queued.id)
         return yield* store.getSession(queued.id)

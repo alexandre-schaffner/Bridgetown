@@ -16,11 +16,13 @@ import Testing
         var edited = base
         edited.models.monitoring = .manual(provider: .codex, model: "custom-codex", effort: "ultra")
         edited.models.reviewing = .manual(provider: .claude, model: "claude-opus-4-6", effort: nil)
+        edited.models.memory = .manual(provider: .codex, model: "gpt-6.1-sol", effort: "high")
         #expect(base.changedKeys(to: edited) == [.models])
         let body = try edited.patchBody([.models])
         let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
         let models = try #require(json["models"] as? [String: [String: Any]])
         #expect(models["reviewing"]?["effort"] is NSNull)
+        #expect(models["memory"]?["provider"] as? String == "codex")
         #expect(try JSON.decoder().decode(Settings.self, from: JSON.encoder().encode(edited)) == edited)
 
         var pending = PendingSettings()
@@ -29,6 +31,13 @@ import Testing
         #expect(pending.shown(over: base).models == edited.models)
         let pendingBody = pending.beginSend()
         #expect(pendingBody == body)
+    }
+
+    @Test func previousRoleSettingsDefaultMemoryToAutomatic() throws {
+        let data = Data(#"{"monitoring":{"mode":"manual","provider":"codex","model":"custom-codex","effort":"high"},"reviewing":{"mode":"automatic"}}"#.utf8)
+        let models = try JSON.decoder().decode(ModelSettings.self, from: data)
+        #expect(models.monitoring == .manual(provider: .codex, model: "custom-codex", effort: "high"))
+        #expect(models.memory == .automatic)
     }
 
     @Test func codexTakeoverUsesItsSavedConfigurationAndEscapesPaths() {

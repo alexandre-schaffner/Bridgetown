@@ -2,7 +2,8 @@ import { Database } from "bun:sqlite"
 import { describe, expect, test } from "bun:test"
 import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import type { MemoryModelShape } from "../../src/memory/model.ts"
+import { claudeMemoryResult, type MemoryModelShape, type MemoryResult } from "../../src/memory/model.ts"
+import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { Effect, Fiber } from "effect"
 import { Actions } from "../../src/actions/actions.ts"
 import { route } from "../../src/api/server.ts"
@@ -27,11 +28,12 @@ import { makeWorld } from "../support/world.ts"
 const memoryAgent = (proposal: () => unknown) => {
   const state: { jobs: number; prompts: Array<string> } = { jobs: 0, prompts: [] }
   const agent: MemoryModelShape = {
-    query: (params) => {
+    run: (params) => {
       return (async function* () {
+        if (params.abort.signal.aborted) throw new Error("Memory provider was already cancelled")
         state.jobs++
-        for await (const message of params.prompt) if (typeof message.message.content === "string") state.prompts.push(message.message.content)
-        yield { ...result("memory-test", RESULT, 0), structured_output: proposal() }
+        state.prompts.push(params.prompt)
+        yield { output: proposal(), error: null, costUsd: 0 }
       })()
     },
   }
@@ -39,6 +41,124 @@ const memoryAgent = (proposal: () => unknown) => {
 }
 
 describe("persistent learning", () => {
+  test("provider cleanup cancels only its own attempt while corrections retain the remaining budget", async () => {
+    const controllers: Array<AbortController> = []
+    const budgets: Array<number> = []
+    const agent: MemoryModelShape = { run: async function* (job) {
+      expect(job.abort.signal.aborted).toBe(false)
+      controllers.push(job.abort)
+      budgets.push(job.budgetUsd)
+      try {
+        yield { output: { changes: controllers.length === 1 ? [{ path: "MEMORY.md", content: "# Memory\n\n## Index\n- [[missing]]\n" }] : [] }, error: null, costUsd: 0.1 }
+      } finally { job.abort.abort() }
+    } }
+    const world = makeWorld({ memoryModel: agent })
+    try {
+      await world.runPromise(Effect.gen(function* () {
+        yield* (yield* Store).captureMemory("user", "user", "A durable preference")
+        const memory = yield* Memory
+        yield* memory.tick
+        expect(yield* memory.status).toMatchObject({ state: "idle", pending: 0, error: null })
+      }))
+      expect(controllers).toHaveLength(2)
+      expect(controllers[0]).not.toBe(controllers[1])
+      expect(controllers.every((controller) => controller.signal.aborted)).toBe(true)
+      expect(budgets).toEqual([0.5, 0.4])
+    } finally { await world.dispose() }
+  })
+
+  test("a missing topic gets validation feedback and repairs before evidence is acknowledged", async () => {
+    const id = "multicall-repair"
+    const home = scratchDir("bt-memory-repair-")
+    const prompts: Array<string> = []
+    const budgets: Array<number> = []
+    const agent: MemoryModelShape = { run: async function* (job) {
+      expect(job.abort.signal.aborted).toBe(false)
+      prompts.push(job.prompt)
+      budgets.push(job.budgetUsd)
+      if (prompts.length === 1) {
+        yield { output: { changes: [{ path: "MEMORY.md", content: "# Memory\n\n## Index\n- [[operations/multicall-alerts]]\n" }] }, error: null, costUsd: 0.1 }
+        return
+      }
+      expect(job.prompt).toContain("Broken memory link: operations/multicall-alerts")
+      expect(readFileSync(join(home, "memory/MEMORY.md"), "utf8")).not.toContain("multicall-alerts")
+      yield { output: { changes: [
+        { path: "MEMORY.md", content: "# Memory\n\n## Index\n- [[operations/multicall-alerts]]\n" },
+        { path: "operations/multicall-alerts.md", content: `- The agent recommends reviewing multicall alerts [source: ${evidenceRef(id)}; added: 2026-10-08; evidence: agent claim]` },
+      ] }, error: null, costUsd: 0 }
+    } }
+    const world = makeWorld({ home, memoryModel: agent })
+    try {
+      await world.runPromise(Effect.gen(function* () {
+        const store = yield* Store
+        const memory = yield* Memory
+        yield* store.captureMemory("finding", "bridgetown:session/multicall", "Agent recommends reviewing multicall alerts", id)
+        yield* memory.tick
+        expect(yield* memory.status).toMatchObject({ state: "idle", error: null, pending: 0 })
+        expect(yield* memory.read("operations/multicall-alerts.md")).toContain("evidence: agent claim")
+      }))
+      expect(prompts).toHaveLength(2)
+      expect(budgets).toEqual([0.5, 0.4])
+    } finally { await world.dispose() }
+  })
+
+  test("a rejected proposal cannot spend beyond the remaining Claude job budget", async () => {
+    let jobs = 0
+    const agent: MemoryModelShape = { run: async function* () {
+      jobs++
+      yield { output: { changes: [{ path: "MEMORY.md", content: "# Memory\n\n## Index\n- [[missing]]\n" }] }, error: null, costUsd: 0.5 }
+    } }
+    const world = makeWorld({ memoryModel: agent })
+    try {
+      await world.runPromise(Effect.gen(function* () {
+        const store = yield* Store
+        const memory = yield* Memory
+        yield* store.captureMemory("finding", "agent", "Check this finding")
+        yield* memory.tick
+        expect(yield* memory.status).toMatchObject({ state: "error", pending: 1, lastLearnedAt: null })
+      }))
+      expect(jobs).toBe(1)
+    } finally { await world.dispose() }
+  })
+
+  test("invalid corrections stop after three attempts and leave evidence pending", async () => {
+    const fake = memoryAgent(() => ({ changes: [{ path: "MEMORY.md", content: "# Memory\n\n## Index\n- [[missing]]\n" }] }))
+    const world = makeWorld({ memoryModel: fake.agent })
+    try {
+      await world.runPromise(Effect.gen(function* () {
+        const store = yield* Store
+        const memory = yield* Memory
+        yield* store.captureMemory("finding", "agent", "Check this finding")
+        yield* memory.tick
+        expect(yield* memory.status).toMatchObject({ state: "error", error: "Broken memory link: missing", pending: 1, lastLearnedAt: null })
+        expect(yield* memory.read("MEMORY.md")).not.toContain("[[missing]]")
+      }))
+      expect(fake.state.jobs).toBe(3)
+    } finally { await world.dispose() }
+  })
+
+  test("a labeled navigation entry commits with its supported topic fact and acknowledges evidence", async () => {
+    const id = "multicall-finding"
+    const fake = memoryAgent(() => ({ changes: [
+      { path: "MEMORY.md", content: "# Bridgetown memory\n\n## Index\n\n- Multicall retry warning semantics and alerting: [[operations/multicall-alerts]]\n" },
+      { path: "operations/multicall-alerts.md", content: `# Multicall alerts\n\n- The agent recommends changing the multicall warning alert [source: ${evidenceRef(id)}; added: 2026-10-08; evidence: agent claim]` },
+    ] }))
+    const world = makeWorld({ memoryModel: fake.agent })
+    try {
+      await world.runPromise(Effect.gen(function* () {
+        const store = yield* Store
+        const memory = yield* Memory
+        yield* store.captureMemory("finding", "bridgetown:session/multicall", "Agent recommends changing the multicall warning alert", id)
+        yield* memory.tick
+        expect(yield* store.pendingMemoryCount).toBe(0)
+        expect(yield* memory.status).toMatchObject({ state: "idle", error: null })
+        expect(yield* memory.read("MEMORY.md")).toContain("- [[operations/multicall-alerts]]")
+        expect(yield* memory.read("MEMORY.md")).not.toContain("warning semantics")
+        expect(yield* memory.read("operations/multicall-alerts.md")).toContain("evidence: agent claim; origin: bridgetown:session/multicall")
+      }))
+    } finally { await world.dispose() }
+  })
+
   test("an accepted preference is learned, recalled by triage and a new agent, and preserved after daemon restart", async () => {
     const home = scratchDir("bt-memory-restart-")
     const ordinary = playingAgent([{ kind: "result", output: RESULT }])
@@ -159,7 +279,7 @@ describe("persistent learning", () => {
         expect(yield* store.pendingMemoryCount).toBe(1)
         expect((yield* memory.status).error).toContain("uncommitted")
       }))
-      expect(fake.state.jobs).toBe(1)
+      expect(fake.state.jobs).toBe(3)
     } finally { await world.dispose() }
   })
 
@@ -184,10 +304,10 @@ describe("persistent learning", () => {
 
   test("disabling memory cancels an active model job without acknowledging its evidence", async () => {
     let started = false
-    const agent: MemoryModelShape = { query: ({ options }) => (async function* () {
+    const agent: MemoryModelShape = { run: ({ abort }) => (async function* () {
       started = true
-      await new Promise<void>((resolve) => options.abortController?.signal.addEventListener("abort", () => resolve(), { once: true }))
-      yield { ...result("cancelled", RESULT, 0), structured_output: { changes: [] } }
+      await new Promise<void>((resolve) => abort.signal.addEventListener("abort", () => resolve(), { once: true }))
+      yield { output: { changes: [] }, error: null, costUsd: 0 }
     })() }
     const world = makeWorld({ memoryModel: agent })
     try {
@@ -204,8 +324,8 @@ describe("persistent learning", () => {
   })
 
   test("model failures leave evidence pending and report a recoverable memory problem", async () => {
-    const agent: MemoryModelShape = { query: () => (async function* () {
-      yield { ...result("failed", RESULT, 0), structured_output: { changes: [] } }
+    const agent: MemoryModelShape = { run: () => (async function* () {
+      yield { output: { changes: [] }, error: null, costUsd: 0 }
       throw new Error("model unavailable")
     })() }
     const world = makeWorld({ memoryModel: agent })
@@ -221,12 +341,51 @@ describe("persistent learning", () => {
     } finally { await world.dispose() }
   })
 
+  test("a Claude success result flagged as an API error reports the real failure and preserves evidence", async () => {
+    const message = "Failed to authenticate: OAuth session expired and could not be refreshed"
+    const agent: MemoryModelShape = { run: () => (async function* () {
+      const { structured_output, ...response } = result("expired-login", RESULT, 0)
+      yield* memoryResponse({ ...response, is_error: true, result: message })
+    })() }
+    const world = makeWorld({ memoryModel: agent })
+    try {
+      await world.runPromise(Effect.gen(function* () {
+        const store = yield* Store
+        const memory = yield* Memory
+        yield* store.captureMemory("user", "user", "Keep this pending")
+        yield* memory.tick
+        const status = yield* memory.status
+        expect(status.state).toBe("error")
+        expect(status.error).toBe(`Memory model failed: ${message}`)
+        expect(status.lastLearnedAt).toBeNull()
+        expect(yield* store.pendingMemoryCount).toBe(1)
+      }))
+    } finally { await world.dispose() }
+  })
+
+  test("a result flagged as an error cannot acknowledge evidence even with valid structured changes", async () => {
+    const agent: MemoryModelShape = { run: () => (async function* () {
+      yield* memoryResponse({ ...result("failed-output", RESULT, 0), is_error: true, result: "Rate limit reached", structured_output: { changes: [] } })
+    })() }
+    const world = makeWorld({ memoryModel: agent })
+    try {
+      await world.runPromise(Effect.gen(function* () {
+        const store = yield* Store
+        const memory = yield* Memory
+        yield* store.captureMemory("user", "user", "Keep this pending")
+        yield* memory.tick
+        expect((yield* memory.status).error).toBe("Memory model failed: Rate limit reached")
+        expect(yield* store.pendingMemoryCount).toBe(1)
+      }))
+    } finally { await world.dispose() }
+  })
+
   test("disabling a manual learning run does not start its queued dream", async () => {
     let jobs = 0
-    const agent: MemoryModelShape = { query: ({ options }) => (async function* () {
+    const agent: MemoryModelShape = { run: ({ abort }) => (async function* () {
       jobs++
-      if (jobs === 2) await new Promise<void>((resolve) => options.abortController?.signal.addEventListener("abort", () => resolve(), { once: true }))
-      yield { ...result("manual-cancel", RESULT, 0), structured_output: { changes: [] } }
+      if (jobs === 2) await new Promise<void>((resolve) => abort.signal.addEventListener("abort", () => resolve(), { once: true }))
+      yield { output: { changes: [] }, error: null, costUsd: 0 }
     })() }
     const world = makeWorld({ memoryModel: agent })
     try {
@@ -297,3 +456,136 @@ describe("persistent learning", () => {
 function readPreference(home: string): string {
   return readFileSync(join(home, "memory", "preferences.md"), "utf8")
 }
+
+function* memoryResponse(message: SDKMessage): Generator<MemoryResult> {
+  const response = claudeMemoryResult(message)
+  if (response !== undefined) yield response
+}
+
+
+describe("memory error recovery", () => {
+  test("a committed job recovers a failed acknowledgement without rerunning the model or leaving a job error", async () => {
+    const home = scratchDir("bt-memory-ack-recovery-")
+    const fake = memoryAgent(() => ({ changes: [] }))
+    const world = makeWorld({ home, memoryModel: fake.agent })
+    let db: Database | undefined
+    try {
+      await world.runPromise(Effect.gen(function* () {
+        const store = yield* Store
+        const memory = yield* Memory
+        yield* store.captureMemory("user", "user", "A durable preference")
+        db = new Database(join(home, "bridgetown.db"))
+        db.exec("CREATE TRIGGER reject_memory_ack BEFORE UPDATE ON memory_evidence BEGIN SELECT RAISE(FAIL, 'acknowledgement unavailable'); END")
+        yield* memory.tick
+        expect(yield* memory.status).toMatchObject({ state: "error", pending: 1, lastLearnedAt: null })
+        db.exec("DROP TRIGGER reject_memory_ack")
+        yield* memory.tick
+        expect(yield* memory.status).toMatchObject({ state: "idle", error: null, pending: 0 })
+        expect(fake.state.jobs).toBe(1)
+      }))
+    } finally { db?.close(); await world.dispose() }
+  })
+
+  test("idle ticks and successful learning preserve a failed dream until dreaming succeeds", async () => {
+    let failDream = true
+    const calls: Array<string> = []
+    const model: MemoryModelShape = { run: async function* (job) {
+      calls.push(job.mode)
+      yield { output: { changes: [] }, error: job.mode === "dream" && failDream ? "Consolidation provider unavailable" : null, costUsd: 0 }
+    } }
+    const world = makeWorld({ memoryModel: model })
+    try {
+      await world.runPromise(Effect.gen(function* () {
+        const store = yield* Store
+        const memory = yield* Memory
+        yield* store.captureMemory("user", "user", "A durable preference")
+        yield* memory.tick
+        yield* memory.requestRun
+        yield* eventually(memory.status, (status) => status.state === "error" ? status : undefined)
+        expect(calls).toEqual(["learn", "dream"])
+        yield* memory.tick
+        expect(calls).toEqual(["learn", "dream"])
+        expect((yield* memory.status).error).toBe("Consolidation provider unavailable")
+        yield* store.captureMemory("user", "user", "Another preference")
+        yield* memory.tick
+        expect(calls).toEqual(["learn", "dream", "learn"])
+        expect(yield* memory.status).toMatchObject({ pending: 0, error: "Consolidation provider unavailable", lastDreamedAt: null })
+        failDream = false
+        yield* memory.requestRun
+        yield* eventually(memory.status, (status) => status.state === "idle" && status.lastDreamedAt !== null ? status : undefined)
+        expect((yield* memory.status).error).toBeNull()
+        expect(calls).toEqual(["learn", "dream", "learn", "dream"])
+      }))
+    } finally { await world.dispose() }
+  })
+
+  test("a successful read clears a failed read without clearing a learning failure", async () => {
+    const fake = memoryAgent(() => ({ changes: [{ path: "MEMORY.md", content: "# Memory\n\n## Index\n- [[missing]]\n" }] }))
+    const world = makeWorld({ memoryModel: fake.agent })
+    try {
+      await world.runPromise(Effect.gen(function* () {
+        const memory = yield* Memory
+        const hub = yield* Hub
+        expect(yield* memory.read("../escape.md")).toBe("Memory unavailable.")
+        expect((yield* memory.status).error).toContain("Invalid memory path")
+        expect(yield* memory.read("MEMORY.md")).toContain("# Bridgetown memory")
+        expect(yield* memory.status).toMatchObject({ state: "idle", error: null })
+        expect((yield* hub.status).error).toBeNull()
+        yield* (yield* Store).captureMemory("user", "user", "A preference")
+        yield* memory.tick
+        expect((yield* memory.status).error).toBe("Broken memory link: missing")
+        yield* memory.read("../escape.md")
+        yield* memory.read("MEMORY.md")
+        expect((yield* memory.status).error).toBe("Broken memory link: missing")
+        expect((yield* hub.status).error).toBe("Broken memory link: missing")
+      }))
+    } finally { await world.dispose() }
+  })
+
+  test("restoring a dirty repository clears its health error without running a model", async () => {
+    const home = scratchDir("bt-memory-health-")
+    const world = makeWorld({ home })
+    try {
+      await world.runPromise(Effect.gen(function* () {
+        const memory = yield* Memory
+        const hub = yield* Hub
+        yield* memory.status
+        const path = join(home, "memory/MEMORY.md")
+        const original = readFileSync(path, "utf8")
+        yield* hub.problem("post", "Slack post failed: ratelimited")
+        writeFileSync(path, "# Manual edit\n")
+        yield* memory.tick
+        expect((yield* memory.status).error).toContain("uncommitted")
+        writeFileSync(path, original)
+        expect(yield* memory.status).toMatchObject({ state: "idle", error: null })
+        expect((yield* hub.status).error).toBe("Slack post failed: ratelimited")
+      }))
+    } finally { await world.dispose() }
+  })
+})
+
+
+test("memory evidence capture clears its write error after SQLite recovers", async () => {
+  const home = scratchDir("bt-memory-write-")
+  const world = makeWorld({ home })
+  let db: Database | undefined
+  try {
+    await world.runPromise(Effect.gen(function* () {
+      const memory = yield* Memory
+      const hub = yield* Hub
+      yield* memory.status
+      yield* hub.problem("jev", "Jev: HTTP 502")
+      db = new Database(join(home, "bridgetown.db"))
+      db.exec("CREATE TRIGGER reject_memory BEFORE INSERT ON memory_evidence BEGIN SELECT RAISE(FAIL, 'disk unavailable'); END")
+      expect(yield* memory.remember("session", "A durable fact")).toBe(false)
+      expect((yield* memory.status).error).not.toBeNull()
+      const writeError = (yield* hub.status).error
+      yield* memory.read("MEMORY.md")
+      expect((yield* hub.status).error).toBe(writeError)
+      db.exec("DROP TRIGGER reject_memory")
+      expect(yield* memory.remember("session", "A durable fact")).toBe(true)
+      expect(yield* memory.status).toMatchObject({ state: "idle", error: null, pending: 1 })
+      expect((yield* hub.status).error).toBe("Jev: HTTP 502")
+    }))
+  } finally { db?.close(); await world.dispose() }
+})

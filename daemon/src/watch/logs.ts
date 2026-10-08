@@ -85,7 +85,27 @@ export const LogPattern = Schema.Struct({
 })
 export type LogPattern = typeof LogPattern.Type
 
-export const patternKey = (sweep: Sweep, message: string): string => `${sweep}:${String(Bun.hash(message))}`
+/** Collapse exact repeated trailing causes within text fields, retaining their wrappers and distinct causes. */
+const patternMessage = (message: string): string => message.replace(/[^"\r\n{}\[\]]+/g, (text) => {
+  const separators = [...text.matchAll(/: /g)].map((match) => match.index)
+  let end = text.length
+  while (true) {
+    // Longest first: a cause can itself contain repeated nested causes.
+    const repeated = separators.find((separator) => {
+      const length = end - separator - 2
+      if (length <= 0 || length > separator) return false
+      const start = separator - length
+      if (text.slice(start, separator) !== text.slice(separator + 2, end)) return false
+      // A wrapper may precede the first copy ("desc = out of gas"); a suffix within a different cause is distinct.
+      const wrapper = text.slice(0, start).trimEnd()
+      return wrapper === "" || /[:=]$/.test(wrapper)
+    })
+    if (repeated === undefined) return text.slice(0, end)
+    end = repeated
+  }
+})
+
+export const patternKey = (sweep: Sweep, message: string): string => `${sweep}:${String(Bun.hash(patternMessage(message)))}`
 
 export const levelOf = (sweep: Sweep) => (sweep === "errors" ? ("error" as const) : ("warning" as const))
 
@@ -166,15 +186,15 @@ export const mergeRows = (rows: ReadonlyArray<PatternRow>): ReadonlyArray<LogPat
     if (first === undefined) return []
     const recent = group.reduce((sum, row) => sum + row.recent, 0)
     const total = group.reduce((sum, row) => sum + row.total, 0)
-    const filters = busiest.map((row) => row.sourceFilter)
+    const filters = [...new Set(busiest.map((row) => row.sourceFilter))]
     const sourceFilter = filters.some((f) => f === null) ? null : filters.length === 1 ? (filters[0] ?? null) : `(${filters.join(" OR ")})`
     return [
       {
         sweep: first.sweep,
         key,
-        sources: busiest.map((row) => row.source),
+        sources: [...new Set(busiest.map((row) => row.source))],
         sourceFilter,
-        message: first.message,
+        message: patternMessage(first.message),
         example: first.example,
         versions: [...new Set(busiest.flatMap((row) => row.versions))].slice(0, 3),
         recent,

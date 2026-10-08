@@ -37,6 +37,16 @@ enum ModelSelection: Codable, Sendable, Equatable {
 struct ModelSettings: Codable, Sendable, Equatable {
     var monitoring: ModelSelection = .automatic
     var reviewing: ModelSelection = .automatic
+    var memory: ModelSelection = .automatic
+
+    enum CodingKeys: String, CodingKey { case monitoring, reviewing, memory }
+    init() {}
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        monitoring = try c.decodeIfPresent(ModelSelection.self, forKey: .monitoring) ?? .automatic
+        reviewing = try c.decodeIfPresent(ModelSelection.self, forKey: .reviewing) ?? .automatic
+        memory = try c.decodeIfPresent(ModelSelection.self, forKey: .memory) ?? .automatic
+    }
 }
 
 struct ModelCatalog: Codable, Sendable, Equatable {

@@ -8,7 +8,7 @@ import type { GrafanaShape } from "../../src/grafana/client.ts"
 import { Hub } from "../../src/hub.ts"
 import { Store } from "../../src/store/store.ts"
 import { logPatternQuestions, type LogPatternInput } from "../../src/watch/judge.ts"
-import { BATCH, behaviourOf, behaviourText, candidates, linesQuery, logFinding, mergeRows, type PatternRow, rowOf, sweepQuery } from "../../src/watch/logs.ts"
+import { BATCH, behaviourOf, behaviourText, candidates, linesQuery, logFinding, mergeRows, patternKey, type PatternRow, rowOf, sweepQuery } from "../../src/watch/logs.ts"
 import { JUDGED_KEY, loadJudged } from "../../src/watch/sweep-store.ts"
 import { Watcher } from "../../src/watch/watcher.ts"
 import { fakeJev, noGrafana } from "../support/fakes.ts"
@@ -71,6 +71,45 @@ describe("behaviour, merging and picking", () => {
     ])
     expect(rest).toHaveLength(0)
     expect(merged).toMatchObject({ sources: ["merkl-precompute-*", "merkl-compute-*"], sourceFilter: "(B OR A)", recent: 1_813, behaviour: "steady" })
+  })
+
+  test("a nested RPC error repeating its cause is one pattern without merging different causes", () => {
+    const message = 'Failed to process multicall batch: Code: CALL_EXCEPTION | error={"message":"rpc error: code = Internal desc = out of gas"}'
+    const [merged, ...rest] = mergeRows([
+      row({ sweep: "warnings", source: "merkl-api-v4", message, recent: 26, total: 176 }),
+      row({ sweep: "warnings", source: "merkl-api-v4", message: message.replace("out of gas", "out of gas: out of gas"), recent: 10, total: 64 }),
+    ])
+    expect(rest).toHaveLength(0)
+    expect(merged).toMatchObject({ message, recent: 36 })
+    expect(mergeRows([
+      row({ message }),
+      row({ message: message.replace("out of gas", "execution reverted") }),
+    ])).toHaveLength(2)
+  })
+
+  for (const cause of [
+    "CALL_EXCEPTION", "execution-reverted", "VM Exception while processing transaction", "insufficient funds for gas * price + value",
+    "execution reverted: ERC20: transfer amount exceeds balance", "this error cause has more than eight words in total",
+    "Échec de la transaction", "foo: bar: bar",
+  ]) {
+    test(`repeated complete causes normalize without alphabet or length restrictions: ${cause}`, () => {
+      const message = `RPC error: desc = ${cause}`
+      for (const copies of [2, 3, 4]) {
+        const repeated = `${message}${`: ${cause}`.repeat(copies - 1)}`
+        expect(patternKey("errors", repeated)).toBe(patternKey("errors", message))
+        const patterns = mergeRows([row({ message }), row({ message: repeated })])
+        expect(patternKey("errors", patterns[0]?.message ?? "")).toBe(patternKey("errors", message))
+        expect(patterns).toHaveLength(1)
+        expect(mergeRows([row({ message: `error={"message":"${message}"}` }), row({ message: `error={"message":"${repeated}"}` })])).toHaveLength(1)
+      }
+      expect(patternKey("errors", `${message}: ${cause} with extra details`)).not.toBe(patternKey("errors", message))
+    })
+  }
+
+  test("repetition does not merge a word suffix with a different cause", () => {
+    expect(patternKey("errors", "foobar: bar")).not.toBe(patternKey("errors", "foobar"))
+    expect(patternKey("errors", "out of gas: gas")).not.toBe(patternKey("errors", "out of gas"))
+    expect(patternKey("errors", "out of gas: nonce too low")).not.toBe(patternKey("errors", "out of gas"))
   })
 
   test("one unquotable source drops the source filter for the whole pattern", () => {

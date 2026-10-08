@@ -31,6 +31,31 @@ const setup = (scenario: string, resume = false) => {
 }
 
 describe("Codex investigation adapter", () => {
+  test("turn error notifications preserve provider details and the terminal failure", async () => {
+    const run = setup("error-fatal")
+    const events = await Array.fromAsync(codexAgent(run.request, run.cli))
+    expect(events).toContainEqual({ kind: "error", text: "Usage quota exhausted" })
+    expect(events.at(-1)).toMatchObject({ kind: "result", error: "Usage quota exhausted: retry after the reset" })
+  })
+
+  test("a failed completion with no details retains its earlier error notification", async () => {
+    const run = setup("error-no-detail")
+    const events = await Array.fromAsync(codexAgent(run.request, run.cli))
+    expect(events.at(-1)).toMatchObject({ kind: "result", error: "Usage quota exhausted" })
+  })
+
+  test("error notifications from another thread do not fail this turn", async () => {
+    const run = setup("error-unrelated")
+    const events = await Array.fromAsync(codexAgent(run.request, run.cli))
+    expect(events.map((event) => event.kind)).toEqual(["init", "result"])
+    expect(events.at(-1)).toMatchObject({ error: null })
+  })
+
+  test("a provider failure remains visible when its transport exits before completion", async () => {
+    const run = setup("error-disconnect")
+    await expect(Array.fromAsync(codexAgent(run.request, run.cli))).rejects.toThrow("Usage quota exhausted")
+  })
+
   test("MCP connection updates replace a pending startup status", async () => {
     const run = setup("mcp")
     const events = await Array.fromAsync(codexAgent(run.request, run.cli))

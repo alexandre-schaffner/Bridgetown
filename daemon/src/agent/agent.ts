@@ -97,10 +97,16 @@ const RETURN_GRACE_MS = 5_000
 export const abortOnReturn = <A>(iterable: AsyncIterable<A>, abort: AbortController): AsyncIterable<A> => ({
   [Symbol.asyncIterator]: () => {
     const iterator = iterable[Symbol.asyncIterator]()
+    let completed = false
     return {
-      next: () => iterator.next(),
+      next: async () => {
+        const result = await iterator.next()
+        if (result.done) completed = true
+        return result
+      },
       return: async (): Promise<IteratorResult<A>> => {
-        abort.abort()
+        // Stream finalizers call return even after natural completion. Only abandonment cancels the query.
+        if (!completed) abort.abort()
         if (iterator.return !== undefined) await Promise.race([iterator.return().catch(() => undefined), Bun.sleep(RETURN_GRACE_MS)])
         return { done: true, value: undefined }
       },

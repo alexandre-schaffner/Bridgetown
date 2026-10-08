@@ -25,13 +25,20 @@ describe("model configuration", () => {
   test("old settings take Automatic while keeping all existing values", () => {
     const { models: _, ...old } = DEFAULT_SETTINGS
     expect(loadSettings(JSON.stringify({ ...old, maxConcurrent: 7 }))).toMatchObject({ maxConcurrent: 7, models: DEFAULT_SETTINGS.models })
+    expect(loadSettings(JSON.stringify({ ...old, models: { monitoring: codex, reviewing: claude } })).models)
+      .toEqual({ monitoring: codex, reviewing: claude, memory: { mode: "automatic" } })
+  })
+  test("memory selection persists independently from monitoring and reviewing", async () => {
+    const settings = await Effect.runPromise(mergeSettings(DEFAULT_SETTINGS, { models: { memory: codex } }))
+    expect(loadSettings(JSON.stringify(settings)).models).toEqual({ ...DEFAULT_SETTINGS.models, memory: codex })
+    expect(Schema.decodeUnknownOption(SettingsPatch)({ models: { memory: { ...claude, effort: "ultra" } } })._tag).toBe("None")
   })
   test("role selections are atomic, independent, and survive persistence", async () => {
     const first = await Effect.runPromise(mergeSettings(DEFAULT_SETTINGS, { models: { monitoring: codex } }))
-    const second = await Effect.runPromise(mergeSettings(first, { models: { reviewing: claude } }))
-    expect(loadSettings(JSON.stringify(second)).models).toEqual({ monitoring: codex, reviewing: claude })
+    const second = await Effect.runPromise(mergeSettings(first, { models: { reviewing: claude, memory: { mode: "automatic" } } }))
+    expect(loadSettings(JSON.stringify(second)).models).toEqual({ monitoring: codex, reviewing: claude, memory: { mode: "automatic" } })
     const automatic = await Effect.runPromise(mergeSettings(second, { models: { monitoring: { mode: "automatic" } } }))
-    expect(automatic.models).toEqual({ monitoring: { mode: "automatic" }, reviewing: claude })
+    expect(automatic.models).toEqual({ monitoring: { mode: "automatic" }, reviewing: claude, memory: { mode: "automatic" } })
     const defaultEffort = await Effect.runPromise(mergeSettings(second, { models: { monitoring: { ...codex, effort: null } } }))
     expect(defaultEffort.models.monitoring).toEqual({ ...codex, effort: null })
   })

@@ -129,14 +129,18 @@ describe("status codes", () => {
   test("role selections save independently; null clears effort; invalid capabilities change nothing", async () => {
     const manual: ModelSelection = { mode: "manual", provider: "codex", model: "gpt-5.6-sol", effort: "high" }
     expect((await post("/settings", { models: { monitoring: manual } })).status).toBe(200)
-    expect((await settingsOf(call("/state"))).models).toEqual({ monitoring: manual, reviewing: { mode: "automatic" } })
+    expect((await settingsOf(call("/state"))).models).toEqual({ monitoring: manual, reviewing: { mode: "automatic" }, memory: { mode: "automatic" } })
     expect((await post("/settings", { models: { monitoring: { ...manual, effort: "ultra" } } })).status).toBe(400)
     expect((await settingsOf(call("/state"))).models.monitoring).toEqual(manual)
     const custom: ModelSelection = { mode: "manual", provider: "claude", model: "custom-claude", effort: null }
-    expect((await post("/settings", { models: { monitoring: { ...manual, effort: null }, reviewing: custom } })).status).toBe(200)
-    expect((await settingsOf(call("/state"))).models).toEqual({ monitoring: { ...manual, effort: null }, reviewing: custom })
+    expect((await post("/settings", { models: { monitoring: { ...manual, effort: null }, reviewing: custom, memory: { mode: "automatic" } } })).status).toBe(200)
+    expect((await settingsOf(call("/state"))).models).toEqual({ monitoring: { ...manual, effort: null }, reviewing: custom, memory: { mode: "automatic" } })
     expect((await post("/settings", { models: { monitoring: { mode: "automatic" } } })).status).toBe(200)
-    expect((await settingsOf(call("/state"))).models).toEqual({ monitoring: { mode: "automatic" }, reviewing: custom })
+    expect((await settingsOf(call("/state"))).models).toEqual({ monitoring: { mode: "automatic" }, reviewing: custom, memory: { mode: "automatic" } })
+    expect((await post("/settings", { models: { memory: manual } })).status).toBe(200)
+    expect((await settingsOf(call("/state"))).models.memory).toEqual(manual)
+    expect((await post("/settings", { models: { memory: { ...manual, effort: "ultra" } } })).status).toBe(400)
+    expect((await settingsOf(call("/state"))).models.memory).toEqual(manual)
   })
   test("404 for unknown ids", async () => {
     expect((await call("/alerts/C9%3A1")).status).toBe(404)

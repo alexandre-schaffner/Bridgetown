@@ -24,6 +24,23 @@ describe("the memory wiki", () => {
     expect(() => validateChanges(before, { changes: [{ path: "MEMORY.md", content: null }] }, sources)).toThrow()
   })
 
+  test("labeled index links are navigation and normalize to bare links without exempting facts", () => {
+    const labeledIndex = "# Bridgetown memory\n\n## Index\n\n- Multicall retry warning semantics and alerting: [[operations/multicall-alerts]]\n- [[preferences]] — Summary preferences\n"
+    const changes = [
+      { path: "MEMORY.md", content: labeledIndex },
+      { path: "operations/multicall-alerts.md", content: entry },
+      { path: "preferences.md", content: entry },
+    ]
+    expect(validateChanges(before, { changes }, sources)["MEMORY.md"])
+      .toBe("# Bridgetown memory\n\n## Index\n\n- [[operations/multicall-alerts]]\n- [[preferences]]\n")
+    for (const content of [
+      "# Memory\n\n## Facts\n- Bob owns billing: [[preferences]]",
+      "# Memory\n\n## Index\n- Bob owns billing",
+      `# Memory\n\n## Index\n- ${entry.slice(2).replace("user statement", "observed workflow")}`,
+    ]) expect(() => validateChanges(before, { changes: [{ path: "MEMORY.md", content }, { path: "preferences.md", content: entry }] }, sources)).toThrow("supported source")
+    expect(() => validateChanges(before, { changes: [{ path: "MEMORY.md", content: labeledIndex }] }, sources)).toThrow("Broken memory link")
+  })
+
   test("commits only validated files, records checkpoint IDs, reads dirty edits and refuses to overwrite them", async () => {
     const root = join(scratchDir("bt-memory-git-"), "memory")
     const repo = memoryRepository(root)

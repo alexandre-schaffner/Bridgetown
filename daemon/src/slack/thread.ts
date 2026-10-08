@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
 import { Context, Effect, Layer } from "effect"
 import { type Alert, type ThreadReply, threadTsOf } from "../domain/alert.ts"
+import { errorMessage } from "../domain/errors.ts"
 import { Hub } from "../hub.ts"
 import { clock } from "../lib/text.ts"
 import { Store } from "../store/store.ts"
@@ -52,14 +53,13 @@ export const SlackThreadLive = Layer.effect(SlackThread)(
       Effect.gen(function* () {
         if (yield* hub.dryRun) {
           yield* Effect.logInfo(`[dry-run] would post in ${where}: ${text}`)
-          yield* hub.problem("post", null)
           return { _tag: "NotPosted", reason: "dry_run" } as const
         }
         const ts = yield* slack.post(channel, threadTs, `${BOT_PREFIX} ${text}`)
-        yield* hub.problem("post", null)
         return { _tag: "Posted", ts } as const
       }).pipe(
-        Effect.catch((error) => hub.problem("post", `Slack post failed: ${error.message}`).pipe(Effect.as({ _tag: "NotPosted", reason: "error" } as const))),
+        hub.observe("post", (error) => `Slack post failed: ${errorMessage(error)}`),
+        Effect.orElseSucceed(() => ({ _tag: "NotPosted", reason: "error" } as const)),
       )
     const messages = (where: Pick<Alert, "channelId" | "ts" | "fields" | "source">): Effect.Effect<ReadonlyArray<SlackMessage>> =>
       where.source === "watch" ? Effect.succeed([]) : slack.replies(where.channelId, threadTsOf(where)).pipe(
@@ -73,8 +73,9 @@ export const SlackThreadLive = Layer.effect(SlackThread)(
             const source = `${identity?.url ?? "bridgetown:slack/"}archives/${where.channelId}/p${message.ts.replace(".", "")}`
             const hash = createHash("sha256").update(raw).digest("hex")
             yield* store.captureMemory("message", source, JSON.stringify({ author: message.user === identity?.user_id ? "me" : message.user ?? "bot", raw }), `thread:${where.channelId}:${message.ts}:${hash}`)
+              .pipe(hub.observe("memory-capture"))
           }
-        }).pipe(Effect.catch((error) => hub.problem("memory", error.message)))),
+        }).pipe(Effect.ignoreCause)),
         Effect.orElseSucceed(() => []),
       )
     const post = (alert: Alert, text: string): Effect.Effect<ThreadPost> =>

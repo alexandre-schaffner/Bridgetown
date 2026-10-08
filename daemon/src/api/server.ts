@@ -171,6 +171,7 @@ const postRoute = (path: string, request: Request) =>
         const models = yield* Models
         if (patch.models.monitoring !== undefined) yield* models.validate(patch.models.monitoring)
         if (patch.models.reviewing !== undefined) yield* models.validate(patch.models.reviewing)
+        if (patch.models.memory !== undefined) yield* models.validate(patch.models.memory)
       }
       return yield* thenSnapshot(hub.modifySettings((current) => mergeSettings(current, patch)).pipe(Effect.tap((settings) =>
         settings.memory ? Effect.void : Memory.pipe(Effect.flatMap((memory) => memory.cancel)),

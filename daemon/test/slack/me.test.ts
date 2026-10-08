@@ -30,10 +30,10 @@ describe("SlackMe caches", () => {
         const knownAfterFailure = yield* me.known
         const first = yield* me.identity
         const second = yield* me.identity
-        return { groupsBefore, failed: failed._tag, slack: status.slack, knownAfterFailure, same: first === second, known: yield* me.known }
+        return { groupsBefore, failed: failed._tag, slack: status.slack, knownAfterFailure, same: first === second, known: yield* me.known, recovered: yield* (yield* Hub).status }
       }),
     )
-    expect(out).toMatchObject({ groupsBefore: [], failed: "SlackApiError", slack: "error", knownAfterFailure: undefined, same: true, known: { user_id: "UME" } })
+    expect(out).toMatchObject({ groupsBefore: [], failed: "SlackApiError", slack: "error", knownAfterFailure: undefined, same: true, known: { user_id: "UME" }, recovered: { slack: "ok", error: null } })
     expect(calls.identity).toBe(2)
   })
 
@@ -48,4 +48,26 @@ describe("SlackMe caches", () => {
     expect(names).toEqual(["U2", "name of U2", "name of U2"])
     expect(calls.names).toBe(2)
   })
+})
+
+
+test("failed group lookups are retried immediately and clear only their own error", async () => {
+  let attempts = 0
+  const recovering = makeWorld({ slack: fakeSlack({ groupsOf: () => Effect.suspend(() => ++attempts === 1
+    ? Effect.fail(refused("usergroups.list"))
+    : Effect.succeed([{ id: "S1", handle: "devs" }])) }) })
+  try {
+    await recovering.runPromise(Effect.gen(function* () {
+      const me = yield* SlackMe
+      const hub = yield* Hub
+      yield* me.identity
+      yield* hub.problem("jev", "Jev: HTTP 502")
+      expect(yield* me.groups).toEqual([])
+      expect((yield* hub.status).error).toContain("Slack user groups:")
+      expect(yield* me.groups).toEqual([{ id: "S1", handle: "devs" }])
+      expect((yield* hub.status).error).toBe("Jev: HTTP 502")
+      expect(yield* me.groups).toEqual([{ id: "S1", handle: "devs" }])
+    }))
+    expect(attempts).toBe(2)
+  } finally { await recovering.dispose() }
 })

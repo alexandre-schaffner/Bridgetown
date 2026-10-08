@@ -44,7 +44,7 @@ export const appLayer = (env: Env) =>
       SlackClientLive(env.slackToken),
       JevLive(env.typesafeKey, env.jevModel),
       AgentLive(env.claudePath, env.codexPath),
-      MemoryModelLive(env.claudePath),
+      MemoryModelLive(env.claudePath, env.codexPath),
       ModelsLive(env),
       ReviewerLive(env.codexPath, env.claudePath),
       GitHubLive,

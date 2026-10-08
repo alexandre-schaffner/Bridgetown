@@ -94,7 +94,7 @@ The current integration targets `Merkl/monorepo` on `nocturlab.ghe.com`. Reposit
    open build/Bridgetown.app
    ```
 
-Open **Settings** from the app’s **…** menu. Save the Slack and TypeSafe tokens under **Accounts** (saving restarts the daemon with them), set the checkout paths under **Repos**, and choose channels and triage thresholds. Under **Models**, configure monitoring (investigation) and reviewing independently: Codex or Claude Code, a detected or custom model ID, and effort. **Automatic** keeps the existing depth-based profiles. Monitoring changes apply to new sessions; review changes apply to the next review. Jev continues triage and finding judgment. Tokens are stored in macOS Keychain; if it refuses a read, Settings says so and saves only the fields you change.
+Open **Settings** from the app’s **…** menu. Save the Slack and TypeSafe tokens under **Accounts** (saving restarts the daemon with them), set the checkout paths under **Repos**, and choose channels and triage thresholds. Under **Models**, configure monitoring (investigation), reviewing and memory independently: Codex or Claude Code, a detected or custom model ID, and effort. **Automatic** keeps the existing depth-based profiles for monitoring and reviewing, and Claude Sonnet with medium effort for memory. Monitoring changes apply to new sessions; review and memory changes apply to the next job. Jev continues triage and finding judgment. Tokens are stored in macOS Keychain; if it refuses a read, Settings says so and saves only the fields you change.
 
 **Dry run is on by default.** It suppresses Slack posts; agents can still run and prepare PRs. Turn off **Start agents automatically** under **Triage** to keep candidates waiting for your decision.
 
@@ -106,9 +106,11 @@ and actions, and agent findings and outcomes. Jev and investigation agents retri
 Existing history is not backfilled.
 
 Open **Settings → Memory** to disable memory, see pending evidence and the last successful jobs, run learning and
-consolidation now, or open the files. Learning uses Claude Sonnet about once a minute when evidence is pending;
-consolidation runs every six hours when there is new evidence. Jobs use your existing Claude authentication and are
-bounded to $0.50 / two minutes for learning and $1 / five minutes for consolidation. No remote is configured.
+consolidation now, or open the files. Learning runs about once a minute when evidence is pending;
+consolidation runs every six hours when there is new evidence. Choose the provider, model and effort under
+**Settings → Models → Memory**. Jobs use the selected provider's existing authentication and time out after two
+minutes for learning or five minutes for consolidation. Claude jobs also cap spending at $0.50 and $1 respectively;
+Codex does not report spending. No remote is configured.
 
 You can edit the Markdown notes directly. Automatic writes pause while the memory repo has uncommitted edits;
 commit your corrections to resume them. Notes retain their sources and distinguish statements and agent claims

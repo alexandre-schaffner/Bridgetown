@@ -383,7 +383,7 @@ private struct MemoryTab: View {
             Section {
                 Toggle("Remember across messages and sessions", isOn: settings.binding(\.memory))
             } footer: {
-                Text("Learns from newly watched messages, your answers and actions, and agent findings. Uses Claude Sonnet about once a minute; consolidates every six hours when there is new evidence. Each job is bounded to $0.50 for learning or $1 for consolidation.")
+                Text("Learns from newly watched messages, your answers and actions, and agent findings about once a minute; consolidates every six hours when there is new evidence. Choose its provider and model in Models → Memory. Learning stops after two minutes; consolidation after five. Claude jobs also have $0.50 and $1 spend limits, respectively.")
                     .font(.caption)
             }
             Section("Local memory") {
