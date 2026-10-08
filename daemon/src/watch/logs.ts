@@ -85,8 +85,25 @@ export const LogPattern = Schema.Struct({
 })
 export type LogPattern = typeof LogPattern.Type
 
-/** Nested RPC wrappers sometimes append the same cause again ("out of gas: out of gas"). */
-const patternMessage = (message: string): string => message.replace(/\b([a-z][a-z0-9_]*(?: [a-z][a-z0-9_]*){0,7})(?:: \1)+\b/g, "$1")
+/** Collapse exact repeated trailing causes within text fields, retaining their wrappers and distinct causes. */
+const patternMessage = (message: string): string => message.replace(/[^"\r\n{}\[\]]+/g, (text) => {
+  const separators = [...text.matchAll(/: /g)].map((match) => match.index)
+  let end = text.length
+  while (true) {
+    // Longest first: a cause can itself contain repeated nested causes.
+    const repeated = separators.find((separator) => {
+      const length = end - separator - 2
+      if (length <= 0 || length > separator) return false
+      const start = separator - length
+      if (text.slice(start, separator) !== text.slice(separator + 2, end)) return false
+      // A wrapper may precede the first copy ("desc = out of gas"); a suffix within a different cause is distinct.
+      const wrapper = text.slice(0, start).trimEnd()
+      return wrapper === "" || /[:=]$/.test(wrapper)
+    })
+    if (repeated === undefined) return text.slice(0, end)
+    end = repeated
+  }
+})
 
 export const patternKey = (sweep: Sweep, message: string): string => `${sweep}:${String(Bun.hash(patternMessage(message)))}`
 

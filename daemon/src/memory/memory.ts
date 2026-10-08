@@ -22,7 +22,7 @@ export interface MemoryShape {
 }
 export class Memory extends Context.Service<Memory, MemoryShape>()("Memory") {}
 
-const MEMORY_PROBLEMS = ["memory", "memory-repository", "memory-read", "memory-capture"] as const
+const MEMORY_PROBLEMS = ["memory", "memory-learn", "memory-dream", "memory-repository", "memory-read", "memory-capture"] as const
 const SIX_HOURS = 6 * 60 * 60_000
 const fail = (message: string) => new AdapterError({ adapter: "memory", operation: "learn", message, cause: null })
 export const MemoryLive = Layer.effect(Memory)(Effect.gen(function* () {
@@ -84,11 +84,6 @@ export const MemoryLive = Layer.effect(Memory)(Effect.gen(function* () {
       const event = await runPromise(store.memoryEvidence(id))
       return scrub(JSON.stringify(event) ?? "Evidence no longer retained")
     }
-    const abort = yield* Effect.acquireRelease(Effect.sync(() => {
-      const abort = new AbortController()
-      controller = abort
-      return abort
-    }), (abort) => Effect.sync(() => { abort.abort(); if (controller === abort) controller = undefined }))
     const prompt = [
       `${mode === "learn" ? "Learn useful durable facts from the new evidence" : "Consolidate the wiki: merge duplicates, update outdated entries, resolve contradictions only when sources support it, and repair links"}.`,
       "Keep MEMORY.md under 4096 UTF-8 bytes with essentials and an index, and topic files under 16384 UTF-8 bytes. Topic files hold details. Use root-relative [[path]] links without .md.",
@@ -111,14 +106,21 @@ export const MemoryLive = Layer.effect(Memory)(Effect.gen(function* () {
       for (let attempt = 0; attempt < 3; attempt++) {
         if (!(yield* hub.settings).memory || startedIn !== generation) return
         const result: { message?: MemoryResult } = {}
-        const stream = model.run({ mode, profile, cwd: repo.root, prompt: attemptPrompt, budgetUsd, abort, read, evidence: evidenceById })
-        yield* Stream.fromAsyncIterable(abortOnReturn(stream, abort), (cause) => fail(errorMessage(cause))).pipe(
-          Stream.runForEach((message: MemoryResult) => Effect.gen(function* () {
-            if (message.error !== null) return yield* fail(message.error)
-            if (profile.provider === "claude") budgetUsd -= message.costUsd ?? budgetUsd
-            result.message = message
-          })),
-        )
+        yield* Effect.gen(function* () {
+          const abort = yield* Effect.acquireRelease(Effect.sync(() => {
+            const abort = new AbortController()
+            controller = abort
+            return abort
+          }), (abort) => Effect.sync(() => { abort.abort(); if (controller === abort) controller = undefined }))
+          const stream = model.run({ mode, profile, cwd: repo.root, prompt: attemptPrompt, budgetUsd, abort, read, evidence: evidenceById })
+          yield* Stream.fromAsyncIterable(abortOnReturn(stream, abort), (cause) => fail(errorMessage(cause))).pipe(
+            Stream.runForEach((message: MemoryResult) => Effect.gen(function* () {
+              if (message.error !== null) return yield* fail(message.error)
+              if (profile.provider === "claude") budgetUsd -= message.costUsd ?? budgetUsd
+              result.message = message
+            })),
+          )
+        }).pipe(Effect.scoped)
         if (result.message === undefined) return yield* fail("Memory model exited without a proposal")
         const checked = yield* Effect.try({
           try: () => {
@@ -144,26 +146,30 @@ export const MemoryLive = Layer.effect(Memory)(Effect.gen(function* () {
     )
     if (proposal === undefined || !(yield* hub.settings).memory || startedIn !== generation) return
     yield* repo.apply(before, proposal, { mode, events: evidence.map((event) => event.id), at: new Date().toISOString(), input }, sources)
-    yield* recover
-  }, Effect.scoped)
+  }, Effect.scoped, (effect, mode) => effect.pipe(observe(mode === "learn" ? "memory-learn" : "memory-dream")))
 
   const tick = Effect.gen(function* () {
     if (!(yield* hub.settings).memory || (yield* Ref.getAndSet(running, true))) return
     yield* Effect.gen(function* () {
       yield* checkRepository
-      yield* Effect.gen(function* () {
-        yield* recover
-        const pending = yield* store.pendingMemory()
-        let length = 0
-        const batch = pending.filter((event) => { length += event.text.length; return length <= 60_000 })
-        if (batch.length > 0) yield* runJob("learn", batch, "")
-        const learned = yield* store.getKv("memory_last_learning_head")
-        const dreamedInput = yield* store.getKv("memory_last_dream_input")
-        const lastDream = (yield* store.getKv("memory_last_dream")) ?? (yield* store.getKv("memory_activated_at"))
-        const manual = yield* Ref.get(requested)
-        if (learned !== undefined && (manual || (learned !== dreamedInput && (lastDream === undefined || Date.now() - Date.parse(lastDream) >= SIX_HOURS)))) yield* runJob("dream", [], learned)
-        yield* store.pruneMemory
-      }).pipe(observe("memory"))
+      const pending = yield* recover.pipe(Effect.andThen(store.pendingMemory()), observe("memory"))
+      let length = 0
+      const batch = pending.filter((event) => { length += event.text.length; return length <= 60_000 })
+      if (batch.length > 0) {
+        yield* runJob("learn", batch, "")
+        yield* recover.pipe(observe("memory"))
+      }
+      const [learned, dreamedInput, dreamedAt, activatedAt] = yield* Effect.all([
+        store.getKv("memory_last_learning_head"), store.getKv("memory_last_dream_input"),
+        store.getKv("memory_last_dream"), store.getKv("memory_activated_at"),
+      ]).pipe(observe("memory"))
+      const lastDream = dreamedAt ?? activatedAt
+      const manual = yield* Ref.get(requested)
+      if (learned !== undefined && (manual || (learned !== dreamedInput && (lastDream === undefined || Date.now() - Date.parse(lastDream) >= SIX_HOURS)))) {
+        yield* runJob("dream", [], learned)
+        yield* recover.pipe(observe("memory"))
+      }
+      yield* store.pruneMemory.pipe(observe("memory"))
     }).pipe(
       Effect.ignoreCause,
       Effect.ensuring(Effect.gen(function* () {

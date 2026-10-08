@@ -127,8 +127,9 @@ const addCommand = Effect.fn("addCommand")(function* (repoPath: string, branch: 
 export const bunMismatchOf = Effect.fn("bunMismatchOf")(function* (repoPath: string) {
   const pinned = pinnedBunVersion(repoPath)
   if (pinned === undefined) return null
-  const local = (yield* run(["bun", "--version"]).pipe(Effect.orElseSucceed(() => ({ exitCode: 1, stdout: "", stderr: "" })))).stdout.trim()
-  return local !== "" && pinned !== local
+  const local = (yield* runOk(["bun", "--version"])).trim()
+  if (local === "") return yield* new AdapterError({ adapter: "bun", operation: "version", message: "bun --version returned no version", cause: null })
+  return pinned !== local
     ? `The repo pins bun ${pinned} but this machine has bun ${local}. Run \`bun upgrade\` if installs or builds misbehave.`
     : null
 })
@@ -158,7 +159,7 @@ const create = Effect.fn("Worktrees.create")(function* (repoPath: string, branch
     if (existsSync(path)) yield* deleteDir(path)
     yield* runOk(yield* addCommand(repoPath, branch, path), { cwd: repoPath })
   }
-  const bunMismatch = yield* bunMismatchOf(repoPath)
+  const bunMismatch = yield* bunMismatchOf(repoPath).pipe(Effect.orElseSucceed((error) => `Bun readiness check failed: ${error.message}`))
   if (bunMismatch !== null) warnings.push(bunMismatch)
   warnings.push(...(yield* install(path)))
   const worktree: Worktree = { path, warnings, bunMismatch }

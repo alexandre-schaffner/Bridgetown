@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect"
+import { errorMessage } from "./domain/errors.ts"
 import { Grafana } from "./grafana/client.ts"
 import { Hub } from "./hub.ts"
 import { bunMismatchOf } from "./sessions/worktree.ts"
@@ -28,6 +29,9 @@ export const HealthLive = Layer.effect(Health)(
       probeBun: hub.settings.pipe(
         Effect.flatMap((settings) => Effect.forEach([...new Set([settings.monorepoPath, settings.deploymentRepoPath].filter((path) => path !== ""))], bunMismatchOf)),
         Effect.flatMap((warnings) => hub.problem("setup", warnings.find((warning) => warning !== null) ?? null)),
+        Effect.catch((error) => hub.problemFor("setup").pipe(Effect.flatMap((standing) =>
+          standing === null ? hub.problem("setup", `Bun readiness check failed: ${errorMessage(error)}`) : Effect.void,
+        ))),
       ),
     }
   }),

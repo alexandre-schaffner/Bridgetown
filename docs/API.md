@@ -131,10 +131,11 @@ Read wire.ts for the fields; what follows is what their names don't say.
 ISO-8601 strings, except a chart point's time, which is unix seconds.
 
 **Current errors.** `Status.error` is the latest unresolved operation failure. A successful retry or health check
-clears that operation’s error and reveals any other failure still standing; cancellation does not imply recovery.
-Memory tracks learning, repository health, reads and evidence capture separately, and its status reports the same
-standing memory errors. Slack identity recovery restores `Status.slack` as well as clearing its error. Failed group
-lookups are retried on the next request rather than caching an empty fallback for an hour.
+clears that operation’s error and reveals any other failure still standing; cancelling an operation does not imply
+recovery. Disabling memory clears its reported errors, and suppressed dry-run posts clear posting errors.
+Memory tracks learning, consolidation, maintenance, repository health, reads and evidence capture separately.
+Its status reports the same standing memory errors. Slack identity recovery restores `Status.slack` as well as
+clearing its error. Failed group lookups are retried on the next request rather than caching an empty fallback for an hour.
 
 **Computed by the daemon.** Outcomes, steps, headlines, tones, `holder`, `critiqueLine`, `ciLine`, `channelLabel`,
 `Step.detail` and the `Panel` spike fields are sent ready to render. The app never works them out from other fields,

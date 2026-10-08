@@ -30,6 +30,16 @@ lines.on("line", (line) => {
     case "mcpServerStatus/list": send({ id: request.id, result: { data: scenario === "mcp" ? [{ name: "merkl", runtimeStatus: "starting" }] : [], nextCursor: null } }); break
     case "turn/start":
       send({ id: request.id, result: { turn: { id: "turn-1" } } })
+      if (scenario?.startsWith("error-")) {
+        const retryable = scenario === "error-retryable"
+        const unrelated = scenario === "error-unrelated"
+        const message = retryable ? "Stream disconnected, reconnecting" : "Usage quota exhausted"
+        event("error", { threadId: unrelated ? "another-thread" : "codex-conversation", turnId: "turn-1", error: { message }, willRetry: retryable })
+        if (scenario === "error-disconnect") { setTimeout(() => process.exit(1), 20); break }
+        event("item/completed", { item: { type: "agentMessage", text: '{"changes":[]}', phase: "final_answer" } })
+        event("turn/completed", { turn: { status: retryable || unrelated ? "completed" : "failed", error: scenario === "error-fatal" ? { message: "Usage quota exhausted: retry after the reset" } : null } })
+        break
+      }
       if (scenario === "hold") break
       if (scenario === "rerouted") { event("model/rerouted", {}); break }
       if (scenario === "bad-result" || scenario === "race") { complete(); break }

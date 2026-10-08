@@ -30,6 +30,7 @@ const memoryAgent = (proposal: () => unknown) => {
   const agent: MemoryModelShape = {
     run: (params) => {
       return (async function* () {
+        if (params.abort.signal.aborted) throw new Error("Memory provider was already cancelled")
         state.jobs++
         state.prompts.push(params.prompt)
         yield { output: proposal(), error: null, costUsd: 0 }
@@ -40,12 +41,39 @@ const memoryAgent = (proposal: () => unknown) => {
 }
 
 describe("persistent learning", () => {
+  test("provider cleanup cancels only its own attempt while corrections retain the remaining budget", async () => {
+    const controllers: Array<AbortController> = []
+    const budgets: Array<number> = []
+    const agent: MemoryModelShape = { run: async function* (job) {
+      expect(job.abort.signal.aborted).toBe(false)
+      controllers.push(job.abort)
+      budgets.push(job.budgetUsd)
+      try {
+        yield { output: { changes: controllers.length === 1 ? [{ path: "MEMORY.md", content: "# Memory\n\n## Index\n- [[missing]]\n" }] : [] }, error: null, costUsd: 0.1 }
+      } finally { job.abort.abort() }
+    } }
+    const world = makeWorld({ memoryModel: agent })
+    try {
+      await world.runPromise(Effect.gen(function* () {
+        yield* (yield* Store).captureMemory("user", "user", "A durable preference")
+        const memory = yield* Memory
+        yield* memory.tick
+        expect(yield* memory.status).toMatchObject({ state: "idle", pending: 0, error: null })
+      }))
+      expect(controllers).toHaveLength(2)
+      expect(controllers[0]).not.toBe(controllers[1])
+      expect(controllers.every((controller) => controller.signal.aborted)).toBe(true)
+      expect(budgets).toEqual([0.5, 0.4])
+    } finally { await world.dispose() }
+  })
+
   test("a missing topic gets validation feedback and repairs before evidence is acknowledged", async () => {
     const id = "multicall-repair"
     const home = scratchDir("bt-memory-repair-")
     const prompts: Array<string> = []
     const budgets: Array<number> = []
     const agent: MemoryModelShape = { run: async function* (job) {
+      expect(job.abort.signal.aborted).toBe(false)
       prompts.push(job.prompt)
       budgets.push(job.budgetUsd)
       if (prompts.length === 1) {
@@ -436,6 +464,61 @@ function* memoryResponse(message: SDKMessage): Generator<MemoryResult> {
 
 
 describe("memory error recovery", () => {
+  test("a committed job recovers a failed acknowledgement without rerunning the model or leaving a job error", async () => {
+    const home = scratchDir("bt-memory-ack-recovery-")
+    const fake = memoryAgent(() => ({ changes: [] }))
+    const world = makeWorld({ home, memoryModel: fake.agent })
+    let db: Database | undefined
+    try {
+      await world.runPromise(Effect.gen(function* () {
+        const store = yield* Store
+        const memory = yield* Memory
+        yield* store.captureMemory("user", "user", "A durable preference")
+        db = new Database(join(home, "bridgetown.db"))
+        db.exec("CREATE TRIGGER reject_memory_ack BEFORE UPDATE ON memory_evidence BEGIN SELECT RAISE(FAIL, 'acknowledgement unavailable'); END")
+        yield* memory.tick
+        expect(yield* memory.status).toMatchObject({ state: "error", pending: 1, lastLearnedAt: null })
+        db.exec("DROP TRIGGER reject_memory_ack")
+        yield* memory.tick
+        expect(yield* memory.status).toMatchObject({ state: "idle", error: null, pending: 0 })
+        expect(fake.state.jobs).toBe(1)
+      }))
+    } finally { db?.close(); await world.dispose() }
+  })
+
+  test("idle ticks and successful learning preserve a failed dream until dreaming succeeds", async () => {
+    let failDream = true
+    const calls: Array<string> = []
+    const model: MemoryModelShape = { run: async function* (job) {
+      calls.push(job.mode)
+      yield { output: { changes: [] }, error: job.mode === "dream" && failDream ? "Consolidation provider unavailable" : null, costUsd: 0 }
+    } }
+    const world = makeWorld({ memoryModel: model })
+    try {
+      await world.runPromise(Effect.gen(function* () {
+        const store = yield* Store
+        const memory = yield* Memory
+        yield* store.captureMemory("user", "user", "A durable preference")
+        yield* memory.tick
+        yield* memory.requestRun
+        yield* eventually(memory.status, (status) => status.state === "error" ? status : undefined)
+        expect(calls).toEqual(["learn", "dream"])
+        yield* memory.tick
+        expect(calls).toEqual(["learn", "dream"])
+        expect((yield* memory.status).error).toBe("Consolidation provider unavailable")
+        yield* store.captureMemory("user", "user", "Another preference")
+        yield* memory.tick
+        expect(calls).toEqual(["learn", "dream", "learn"])
+        expect(yield* memory.status).toMatchObject({ pending: 0, error: "Consolidation provider unavailable", lastDreamedAt: null })
+        failDream = false
+        yield* memory.requestRun
+        yield* eventually(memory.status, (status) => status.state === "idle" && status.lastDreamedAt !== null ? status : undefined)
+        expect((yield* memory.status).error).toBeNull()
+        expect(calls).toEqual(["learn", "dream", "learn", "dream"])
+      }))
+    } finally { await world.dispose() }
+  })
+
   test("a successful read clears a failed read without clearing a learning failure", async () => {
     const fake = memoryAgent(() => ({ changes: [{ path: "MEMORY.md", content: "# Memory\n\n## Index\n- [[missing]]\n" }] }))
     const world = makeWorld({ memoryModel: fake.agent })

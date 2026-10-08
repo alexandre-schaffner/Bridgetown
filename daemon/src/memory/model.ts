@@ -112,9 +112,9 @@ export const memoryModel = (claudePath: string | undefined, codexPath?: string, 
             sandbox: "read-only", schema: Output, tools: codexTools,
             instructions: `${INSTRUCTIONS} Use only memory_read(path) and memory_search(query) to read the supplied snapshot and evidence; query is a supplied event ID. Built-in tools and subagents are unauthorized.`,
           })
+          // Error notifications can be followed by a provider retry. The terminal result decides the outcome.
           for await (const event of stream) {
             if (event.kind === "result") yield { output: event.output, error: event.error === null ? null : `Memory model failed: ${event.error}`, costUsd: event.costUsd }
-            if (event.kind === "error") throw new Error(event.text)
           }
         } finally { await rm(dir, { recursive: true, force: true }) }
       }

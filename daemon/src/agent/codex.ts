@@ -2,6 +2,7 @@ import { Schema } from "effect"
 import { hasCodexGuards, prepareCodexHome } from "./codex-home.ts"
 import { CodexRpc, type RpcMessage } from "./codex-rpc.ts"
 import { providerEnv } from "../secrets.ts"
+import { errorMessage } from "../domain/errors.ts"
 import type { AgentEvent, AgentInput, CodexRequest } from "./protocol.ts"
 import { SESSION_RESULT_JSON_SCHEMA } from "./result.ts"
 import { callTool, CODEX_TOOLS } from "./tools.ts"
@@ -12,6 +13,7 @@ const Item = Schema.Struct({ item: Schema.Record(Schema.String, Schema.Unknown) 
 const Completed = Schema.Struct({ turn: Schema.Struct({ status: Schema.String, error: Schema.optional(Schema.NullOr(Schema.Struct({ message: Schema.String }))) }) })
 const DynamicCall = Schema.Struct({ tool: Schema.String, arguments: Schema.Unknown })
 const McpUpdate = Schema.Struct({ threadId: Schema.NullOr(Schema.String), name: Schema.String, status: Schema.String, failureReason: Schema.NullOr(Schema.String) })
+const TurnError = Schema.Struct({ threadId: Schema.String, turnId: Schema.String, error: Schema.Struct({ message: Schema.String }), willRetry: Schema.Boolean })
 
 /** No approval can enlarge the write roots or grant permissions beyond the session sandbox. */
 const serverRequest = async (rpc: CodexRpc, message: RpcMessage, request: CodexRequest): Promise<void> => {
@@ -55,6 +57,7 @@ export async function* codexAgent(request: CodexRequest, codexPath?: string, opt
   let finalText = ""
   let threadId = ""
   let turnId = ""
+  let turnError: string | undefined
   const undelivered = new Map<number, AgentInput>()
   let deliverySequence = 0
   try {
@@ -124,11 +127,19 @@ export async function* codexAgent(request: CodexRequest, codexPath?: string, opt
         const completed = Schema.decodeUnknownSync(Completed)(message.params).turn
         let output: unknown
         try { output = JSON.parse(finalText) } catch { output = undefined }
-        yield { kind: "result", text: finalText, output, costUsd: null, error: completed.status === "completed" ? null : completed.error?.message ?? completed.status }
+        yield { kind: "result", text: finalText, output, costUsd: null, error: completed.status === "completed" ? null : completed.error?.message ?? turnError ?? completed.status }
         return
       }
-      if (message.method === "error") yield { kind: "error", text: "Codex reported an error while running this turn." }
+      if (message.method === "error") {
+        const notification = Schema.decodeUnknownSync(TurnError)(message.params)
+        if (notification.threadId !== threadId || notification.turnId !== turnId) continue
+        if (!notification.willRetry) turnError = notification.error.message
+        yield { kind: "error", text: notification.error.message }
+      }
     }
+  } catch (cause) {
+    if (turnError !== undefined) throw new Error(`${turnError}\n${errorMessage(cause)}`)
+    throw cause
   } finally {
     // Closing the child interrupts all outstanding tool calls. No process survives a stopped turn.
     rpc.close()

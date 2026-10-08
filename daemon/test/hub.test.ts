@@ -118,7 +118,7 @@ describe("settings", () => {
 describe("operation error lifecycle", () => {
   const world = makeWorld()
   afterAll(() => world.dispose())
-  const sources: ReadonlyArray<ProblemSource> = ["slack", "poll", "inbox", "groups", "post", "jev", "mcp", "ci", "setup", "memory", "memory-repository", "memory-read", "memory-capture"]
+  const sources: ReadonlyArray<ProblemSource> = ["slack", "poll", "inbox", "groups", "post", "jev", "mcp", "ci", "setup", "memory", "memory-learn", "memory-dream", "memory-repository", "memory-read", "memory-capture"]
 
   for (const source of sources) test(`${source} clears on success and preserves failures from other operations`, async () => {
     await world.runPromise(Effect.gen(function* () {
