@@ -73,8 +73,9 @@ export const SlackThreadLive = Layer.effect(SlackThread)(
             const source = `${identity?.url ?? "bridgetown:slack/"}archives/${where.channelId}/p${message.ts.replace(".", "")}`
             const hash = createHash("sha256").update(raw).digest("hex")
             yield* store.captureMemory("message", source, JSON.stringify({ author: message.user === identity?.user_id ? "me" : message.user ?? "bot", raw }), `thread:${where.channelId}:${message.ts}:${hash}`)
+              .pipe(hub.observe("memory-capture"))
           }
-        }).pipe(hub.observe("memory-capture"), Effect.ignoreCause)),
+        }).pipe(Effect.ignoreCause)),
         Effect.orElseSucceed(() => []),
       )
     const post = (alert: Alert, text: string): Effect.Effect<ThreadPost> =>
