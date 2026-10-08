@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import os
 import Testing
@@ -23,7 +24,8 @@ import Testing
     static func json(tag: String = "v1.2.0", assets: String? = nil) -> Data {
         let assets = assets ?? """
         [{"name": "SHA256SUMS", "browser_download_url": "https://example.com/SHA256SUMS", "digest": "sha256:00"},
-         {"name": "Bridgetown.dmg", "browser_download_url": "https://example.com/Bridgetown.dmg", "digest": "sha256:ABCDEF"}]
+         {"name": "Bridgetown.dmg", "browser_download_url": "https://example.com/Bridgetown.dmg", "digest": "sha256:ABCDEF"},
+         {"name": "Bridgetown.dmg.sig", "browser_download_url": "https://example.com/Bridgetown.dmg.sig", "digest": "sha256:01"}]
         """
         return Data("""
         {"tag_name": "\(tag)", "html_url": "https://github.com/o/r/releases/tag/\(tag)", "draft": false, "assets": \(assets)}
@@ -36,6 +38,7 @@ import Testing
         #expect(release.dmg.absoluteString == "https://example.com/Bridgetown.dmg")
         #expect(release.page.absoluteString == "https://github.com/o/r/releases/tag/v1.2.0")
         #expect(release.sha256 == "abcdef")
+        #expect(release.signature.absoluteString == "https://example.com/Bridgetown.dmg.sig")
     }
 
     @Test func aReleaseWithoutTheDMGOrItsDigestIsNotOneToInstall() {
@@ -44,6 +47,9 @@ import Testing
         }
         #expect(throws: UpdateError("Bridgetown 1.2.0 has no checksum for its download")) {
             try Release(json: Self.json(assets: #"[{"name": "Bridgetown.dmg", "browser_download_url": "https://example.com/d"}]"#))
+        }
+        #expect(throws: UpdateError("Bridgetown 1.2.0 isn't signed for updates")) {
+            try Release(json: Self.json(assets: #"[{"name": "Bridgetown.dmg", "browser_download_url": "https://example.com/d", "digest": "sha256:ab"}]"#))
         }
         #expect(throws: UpdateError("The latest release, v2-rc, isn't a version")) {
             try Release(json: Self.json(tag: "v2-rc"))
@@ -65,7 +71,10 @@ import Testing
         _ current: String?, installs: Bool = false, defaults: UserDefaults? = nil,
         feed: @escaping Updater.Feed = { UpdaterTests.release }
     ) -> Updater {
-        let installer = UpdateInstaller(destination: URL(fileURLWithPath: "/Applications/Bridgetown.app"), bundleIdentifier: "xyz.merkl.bridgetown")
+        let installer = UpdateInstaller(
+            destination: URL(fileURLWithPath: "/Applications/Bridgetown.app"), bundleIdentifier: "xyz.merkl.bridgetown",
+            publicKeys: [Curve25519.Signing.PrivateKey().publicKey]
+        )
         return Updater(
             current: current.flatMap(AppVersion.init),
             installer: installs ? .success(installer) : .failure(UpdateError("Move Bridgetown to Applications to update it from here.")),
@@ -147,6 +156,8 @@ import Testing
 /// then "Resource busy".
 @MainActor @Suite(.serialized) struct UpdateInstallerTests {
     static let identifier = "xyz.merkl.bridgetown.tests"
+    /// The release workflow's key, as far as these tests go.
+    static let releaseKey = Curve25519.Signing.PrivateKey()
 
     private let root = FileManager.default.temporaryDirectory.appending(path: "bt-update-tests-\(UUID().uuidString)")
 
@@ -173,6 +184,25 @@ import Testing
         return dmg
     }
 
+    /// `image` over loopback as a release, signed with `key`.
+    private func serve(_ image: URL, signedWith key: Curve25519.Signing.PrivateKey = releaseKey) async throws -> (Release, StubDaemon) {
+        let bytes = try Data(contentsOf: image)
+        let signature = Data(try key.signature(for: bytes).base64EncodedString().utf8)
+        let stub = try StubDaemon(snapshot: Data("{}".utf8)) { request in
+            .init(body: request.path.hasSuffix(".sig") ? signature : bytes)
+        }
+        let base = "http://127.0.0.1:\(try await stub.start().port)"
+        let release = Release.sample(
+            "1.2.0", dmg: URL(string: "\(base)/Bridgetown.dmg")!, sha256: try UpdateInstaller.sha256(of: image),
+            signature: URL(string: "\(base)/Bridgetown.dmg.sig")!
+        )
+        return (release, stub)
+    }
+
+    private func installer(_ destination: URL) -> UpdateInstaller {
+        UpdateInstaller(destination: destination, bundleIdentifier: Self.identifier, publicKeys: [Curve25519.Signing.PrivateKey().publicKey, Self.releaseKey.publicKey])
+    }
+
     private func version(_ app: URL) -> String? {
         NSDictionary(contentsOf: app.appending(path: "Contents/Info.plist"))?["CFBundleShortVersionString"] as? String
     }
@@ -181,15 +211,10 @@ import Testing
         defer { try? FileManager.default.removeItem(at: root) }
         let installed = try await app("1.1.0", in: "Applications")
         let image = try await dmg(try await app("1.2.0", in: "build"))
-        let bytes = try Data(contentsOf: image)
-        let stub = try StubDaemon(snapshot: Data("{}".utf8)) { _ in .init(body: bytes) }
-        let endpoint = try await stub.start()
+        let (release, stub) = try await serve(image)
         defer { stub.stop() }
-
-        let release = Release.sample("1.2.0", dmg: URL(string: "http://127.0.0.1:\(endpoint.port)/Bridgetown.dmg")!, sha256: try UpdateInstaller.sha256(of: image))
         let progress = OSAllocatedUnfairLock(initialState: [Int]())
-        let work = try await UpdateInstaller(destination: installed, bundleIdentifier: Self.identifier)
-            .install(release) { percent in progress.withLock { $0.append(percent) } }
+        let work = try await installer(installed).install(release) { percent in progress.withLock { $0.append(percent) } }
 
         #expect(version(installed) == "1.2.0")
         #expect(version(work.appending(path: UpdateInstaller.previous)) == "1.1.0")
@@ -208,15 +233,53 @@ import Testing
     @Test func aDownloadThatDoesntMatchItsChecksumIsRefused() async throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let installed = try await app("1.1.0", in: "Applications")
-        let stub = try StubDaemon(snapshot: Data("{}".utf8)) { _ in .init(body: Data("not a disk image".utf8)) }
-        let endpoint = try await stub.start()
+        let junk = root.appending(path: "junk.dmg")
+        try Data("not a disk image".utf8).write(to: junk)
+        let (signed, stub) = try await serve(junk)
         defer { stub.stop() }
 
-        let release = Release.sample("1.2.0", dmg: URL(string: "http://127.0.0.1:\(endpoint.port)/Bridgetown.dmg")!, sha256: String(repeating: "0", count: 64))
+        let release = Release.sample("1.2.0", dmg: signed.dmg, sha256: String(repeating: "0", count: 64), signature: signed.signature)
         await #expect(throws: UpdateError("The download doesn't match its checksum")) {
-            _ = try await UpdateInstaller(destination: installed, bundleIdentifier: Self.identifier).install(release) { _ in }
+            _ = try await installer(installed).install(release) { _ in }
         }
         #expect(version(installed) == "1.1.0")
+    }
+
+    /// Published some other way than the release workflow: GitHub's digest matches, the key
+    /// doesn't.
+    @Test func aDownloadNotSignedByTheReleaseKeyIsRefused() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let installed = try await app("1.1.0", in: "Applications")
+        let image = try await dmg(try await app("1.2.0", in: "build"))
+        let (release, stub) = try await serve(image, signedWith: Curve25519.Signing.PrivateKey())
+        defer { stub.stop() }
+
+        await #expect(throws: UpdateError("The download isn't signed by Bridgetown's release key")) {
+            _ = try await installer(installed).install(release) { _ in }
+        }
+        #expect(version(installed) == "1.1.0")
+    }
+
+    /// The keys ship in Info.plist; a build without a good one offers the download instead.
+    @Test func anAppWithoutTheReleaseKeysCantInstall() throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let key = Self.releaseKey.publicKey.rawRepresentation.base64EncodedString()
+        let next = Curve25519.Signing.PrivateKey().publicKey.rawRepresentation.base64EncodedString()
+        let entries: [(Any?, Int?)] = [(nil, nil), ([String](), nil), (key, nil), ([key, "not base64"], nil), ([key], 1), ([key, next], 2)]
+        for (entry, count) in entries {
+            let app = root.appending(path: "Applications/\(UUID().uuidString)/Bridgetown.app")
+            try FileManager.default.createDirectory(at: app.appending(path: "Contents"), withIntermediateDirectories: true)
+            var info: [String: Any] = ["CFBundleIdentifier": Self.identifier, "CFBundlePackageType": "APPL"]
+            info[UpdateInstaller.publicKeysEntry] = entry
+            try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+                .write(to: app.appending(path: "Contents/Info.plist"))
+            let installer = UpdateInstaller.of(try #require(Bundle(url: app)))
+            if let count {
+                #expect(try installer.get().publicKeys.count == count)
+            } else {
+                #expect(throws: UpdateError("This build of Bridgetown can't check an update's signature.")) { try installer.get() }
+            }
+        }
     }
 
     enum Impostor: CaseIterable {
@@ -226,7 +289,7 @@ import Testing
     @Test(arguments: Impostor.allCases)
     func anAppOfAnotherVersionOrIdentifierOrWithABrokenSealIsRefused(_ impostor: Impostor) async throws {
         defer { try? FileManager.default.removeItem(at: root) }
-        let installer = UpdateInstaller(destination: root.appending(path: "Applications/Bridgetown.app"), bundleIdentifier: Self.identifier)
+        let installer = installer(root.appending(path: "Applications/Bridgetown.app"))
         let app: URL
         let refusal: UpdateError
         switch impostor {

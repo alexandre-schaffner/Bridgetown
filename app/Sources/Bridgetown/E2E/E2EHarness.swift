@@ -1,5 +1,6 @@
 #if DEBUG
 import AppKit
+import CryptoKit
 
 /// The app driven without a person, debug builds only. `make e2e` (scripts/e2e.sh) runs:
 ///
@@ -115,7 +116,7 @@ final class E2EHarness {
         // the user's app: the bundle it would replace is one that isn't there.
         app.updater = Updater(
             current: AppVersion("1.1.0"),
-            installer: .success(UpdateInstaller(destination: options.out.appending(path: "Bridgetown.app"), bundleIdentifier: "xyz.merkl.bridgetown")),
+            installer: .success(UpdateInstaller(destination: options.out.appending(path: "Bridgetown.app"), bundleIdentifier: "xyz.merkl.bridgetown", publicKeys: [Curve25519.Signing.PrivateKey().publicKey])),
             feed: { Release.sample() }
         )
         app.island.offscreen = true
