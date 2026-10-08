@@ -149,20 +149,15 @@ struct AppMenu: View {
         Button("Open logs", action: openLogs)
     }
 
-    /// Installs the newer release once one is known; until then, checks for one.
+    /// What the update notice's button does (`Updater.action`), or what is under way.
     @ViewBuilder
     private var updateItem: some View {
-        let state = updater.state
-        if let release = state.release, updater.canInstall {
-            Button(state.isBusy ? "Installing \(release.version.description)…" : "Install Bridgetown \(release.version.description)") { updater.install() }
-                .disabled(state.isBusy)
-        } else if let release = state.release {
-            Button("Download Bridgetown \(release.version.description)") { SystemActions.open(release.dmg.absoluteString) }
+        if let action = updater.action {
+            Button(action.title) { updater.perform(action) }
+        } else if let release = updater.state.release {
+            Button("Installing Bridgetown \(release.version.description)…") {}.disabled(true)
         } else {
-            Button(state == .checking ? "Checking for updates…" : "Check for updates") {
-                Task { await updater.check(manual: true) }
-            }
-            .disabled(state.isBusy)
+            Button("Checking for updates…") {}.disabled(true)
         }
     }
 

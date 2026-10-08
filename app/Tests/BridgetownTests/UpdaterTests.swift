@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import Bridgetown
 
@@ -51,10 +52,7 @@ import Testing
 }
 
 @MainActor @Suite struct UpdaterTests {
-    nonisolated static let release = Release(
-        version: AppVersion("1.2.0")!, page: URL(string: "https://example.com/r")!,
-        dmg: URL(string: "https://example.com/Bridgetown.dmg")!, sha256: ""
-    )
+    nonisolated static let release = Release.sample("1.2.0")
 
     private func defaults() -> UserDefaults {
         let name = "bridgetown.tests.updater.\(UUID().uuidString)"
@@ -63,28 +61,31 @@ import Testing
         return defaults
     }
 
-    private func updater(_ current: String?, defaults: UserDefaults, feed: @escaping Updater.Feed = { UpdaterTests.release }) -> Updater {
-        Updater(current: current.flatMap(AppVersion.init), destination: nil, defaults: defaults, feed: feed)
+    private func updater(
+        _ current: String?, installs: Bool = false, defaults: UserDefaults? = nil,
+        feed: @escaping Updater.Feed = { UpdaterTests.release }
+    ) -> Updater {
+        let installer = UpdateInstaller(destination: URL(fileURLWithPath: "/Applications/Bridgetown.app"), bundleIdentifier: "xyz.merkl.bridgetown")
+        return Updater(
+            current: current.flatMap(AppVersion.init),
+            installer: installs ? .success(installer) : .failure(UpdateError("Move Bridgetown to Applications to update it from here.")),
+            defaults: defaults ?? self.defaults(), feed: feed
+        )
     }
 
-    @Test func aNewerReleaseIsAnnouncedOncePerVersionAcrossLaunches() async {
-        let defaults = defaults()
-        var announced: [String] = []
-        let first = updater("1.1.0", defaults: defaults)
-        first.onAvailable = { announced.append($0.version.description) }
-        await first.check(manual: false)
-        await first.check(manual: false)
-        #expect(first.state == .available(Self.release))
-
-        let relaunched = updater("1.1.0", defaults: defaults)
-        relaunched.onAvailable = { announced.append($0.version.description) }
-        await relaunched.check(manual: false)
-        #expect(relaunched.state == .available(Self.release))
-        #expect(announced == ["1.2.0"])
+    /// Each check that finds it says so; the notifier says it once (NotifierTests).
+    @Test func everyCheckThatFindsANewerReleaseSaysSo() async {
+        var found: [String] = []
+        let updater = updater("1.1.0")
+        updater.onAvailable = { found.append($0.version.description) }
+        await updater.check(manual: false)
+        await updater.check(manual: false)
+        #expect(updater.state == .available(Self.release))
+        #expect(found == ["1.2.0", "1.2.0"])
     }
 
     @Test func onlyACheckYouAskedForSaysThereIsNothingNewer() async {
-        let latest = updater("1.2.0", defaults: defaults())
+        let latest = updater("1.2.0")
         await latest.check(manual: false)
         #expect(latest.state == .idle)
         await latest.check(manual: true)
@@ -92,15 +93,16 @@ import Testing
     }
 
     @Test func onlyACheckYouAskedForSaysItFailed() async {
-        let offline = updater("1.1.0", defaults: defaults()) { throw URLError(.notConnectedToInternet) }
+        let offline = updater("1.1.0") { throw URLError(.notConnectedToInternet) }
         await offline.check(manual: false)
         #expect(offline.state == .idle)
         await offline.check(manual: true)
-        #expect(offline.state == .failed("GitHub isn't reachable", nil))
+        #expect(offline.state == .checkFailed("GitHub not reachable"))
+        #expect(offline.action == .check)
     }
 
     @Test func aDebugBinaryNeverChecks() async {
-        let debug = updater(nil, defaults: defaults()) {
+        let debug = updater(nil) {
             Issue.record("checked")
             return UpdaterTests.release
         }
@@ -108,11 +110,42 @@ import Testing
         await debug.check(manual: true)
         #expect(debug.state == .idle)
     }
+
+    /// The notice's button and the menu's item are the same action.
+    @Test func aNewerReleaseInstallsHereOrIsDownloaded() async {
+        let here = updater("1.1.0", installs: true)
+        await here.check(manual: false)
+        #expect(here.action == .install(Self.release))
+
+        let elsewhere = updater("1.1.0")
+        await elsewhere.check(manual: false)
+        #expect(elsewhere.action == .download(Self.release))
+    }
+
+    /// Relaunched onto the old version: the new one didn't open, and the relaunch put this
+    /// one back. That stays up through the next check, and the old app's folder goes.
+    @Test func aLaunchStillOnTheOldVersionSaysTheInstallDidntTake() async throws {
+        let defaults = defaults()
+        let work = FileManager.default.temporaryDirectory.appending(path: "bt-update-work-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: work.appending(path: "Failed.app"), withIntermediateDirectories: true)
+        struct Pending: Encodable { let work: String; let release: Release }
+        defaults.set(try JSONEncoder().encode(Pending(work: work.path, release: Self.release)), forKey: "updatePending")
+
+        let updater = updater("1.1.0", installs: true, defaults: defaults)
+        updater.start()
+        for _ in 0..<1_000 where FileManager.default.fileExists(atPath: work.path) { await Task.yield() }
+        for _ in 0..<100 { await Task.yield() }
+        #expect(updater.state == .installFailed(Self.release, "Bridgetown 1.2.0 didn't open, so 1.1.0 is back"))
+        #expect(updater.action == .install(Self.release))
+        #expect(!FileManager.default.fileExists(atPath: work.path))
+        #expect(defaults.data(forKey: "updatePending") == nil)
+    }
 }
 
 /// The installer against real bundles and disk images: a minimal signed app, built into a
-/// DMG and served over loopback.
-@MainActor @Suite struct UpdateInstallerTests {
+/// DMG and served over loopback. One at a time: hdiutil run alongside itself is now and
+/// then "Resource busy".
+@MainActor @Suite(.serialized) struct UpdateInstallerTests {
     static let identifier = "xyz.merkl.bridgetown.tests"
 
     private let root = FileManager.default.temporaryDirectory.appending(path: "bt-update-tests-\(UUID().uuidString)")
@@ -136,7 +169,7 @@ import Testing
     /// The image `make dmg` would build around `app`.
     private func dmg(_ app: URL) async throws -> URL {
         let dmg = app.deletingLastPathComponent().appending(path: "Bridgetown.dmg")
-        try await UpdateInstaller.run("/usr/bin/hdiutil", ["create", "-quiet", "-volname", "Bridgetown", "-srcfolder", app.path, "-format", "UDZO", "-ov", dmg.path], failure: "hdiutil create")
+        try await UpdateInstaller.run("/usr/bin/hdiutil", ["create", "-quiet", "-volname", "Bridgetown", "-srcfolder", app.path, "-format", "UDZO", "-ov", dmg.path], failure: "hdiutil create", attempts: 3)
         return dmg
     }
 
@@ -153,21 +186,23 @@ import Testing
         let endpoint = try await stub.start()
         defer { stub.stop() }
 
-        let release = Release(
-            version: AppVersion("1.2.0")!, page: URL(string: "https://example.com")!,
-            dmg: URL(string: "http://127.0.0.1:\(endpoint.port)/Bridgetown.dmg")!, sha256: try UpdateInstaller.sha256(of: image)
-        )
-        let progress = Progress()
-        let leftover = try await UpdateInstaller(destination: installed, bundleIdentifier: Self.identifier)
-            .install(release) { fraction in progress.completedUnitCount = Int64(fraction * 100) }
+        let release = Release.sample("1.2.0", dmg: URL(string: "http://127.0.0.1:\(endpoint.port)/Bridgetown.dmg")!, sha256: try UpdateInstaller.sha256(of: image))
+        let progress = OSAllocatedUnfairLock(initialState: [Int]())
+        let work = try await UpdateInstaller(destination: installed, bundleIdentifier: Self.identifier)
+            .install(release) { percent in progress.withLock { $0.append(percent) } }
 
         #expect(version(installed) == "1.2.0")
-        #expect(version(leftover.appending(path: "Previous.app")) == "1.1.0")
-        #expect(progress.completedUnitCount == 100)
+        #expect(version(work.appending(path: UpdateInstaller.previous)) == "1.1.0")
+        // Rising, in whole percents, and 100 only once the file is in place.
+        let percents = progress.withLock { $0 }
+        #expect(percents.last == 100)
+        #expect(percents == percents.sorted() && Set(percents).count == percents.count)
+        #expect(!UpdateInstaller.isMountPoint(work.appending(path: "mount")))
         // Never quarantined, so the new app opens without Gatekeeper's prompt.
         let quarantined = getxattr(installed.path, "com.apple.quarantine", nil, 0, 0, 0) >= 0
         #expect(!quarantined)
-        try? FileManager.default.removeItem(at: leftover)
+        await UpdateInstaller.discard(work)
+        #expect(!FileManager.default.fileExists(atPath: work.path))
     }
 
     @Test func aDownloadThatDoesntMatchItsChecksumIsRefused() async throws {
@@ -177,10 +212,7 @@ import Testing
         let endpoint = try await stub.start()
         defer { stub.stop() }
 
-        let release = Release(
-            version: AppVersion("1.2.0")!, page: URL(string: "https://example.com")!,
-            dmg: URL(string: "http://127.0.0.1:\(endpoint.port)/Bridgetown.dmg")!, sha256: String(repeating: "0", count: 64)
-        )
+        let release = Release.sample("1.2.0", dmg: URL(string: "http://127.0.0.1:\(endpoint.port)/Bridgetown.dmg")!, sha256: String(repeating: "0", count: 64))
         await #expect(throws: UpdateError("The download doesn't match its checksum")) {
             _ = try await UpdateInstaller(destination: installed, bundleIdentifier: Self.identifier).install(release) { _ in }
         }
@@ -191,7 +223,6 @@ import Testing
         case otherVersion, otherIdentifier, brokenSeal
     }
 
-    /// Each in parallel: a disk image takes seconds to build.
     @Test(arguments: Impostor.allCases)
     func anAppOfAnotherVersionOrIdentifierOrWithABrokenSealIsRefused(_ impostor: Impostor) async throws {
         defer { try? FileManager.default.removeItem(at: root) }
@@ -211,17 +242,39 @@ import Testing
             refusal = UpdateError("The new app's signature doesn't hold")
         }
         let image = try await dmg(app)
+        let work = root.appending(path: "work")
         await #expect(throws: refusal) {
-            _ = try await installer.stage(image, version: AppVersion("1.2.0")!, in: root.appending(path: "work"))
+            _ = try await installer.stage(image, version: AppVersion("1.2.0")!, in: work)
         }
+        #expect(!UpdateInstaller.isMountPoint(work.appending(path: "mount")))
     }
 
-    @Test func aTranslocatedOrUnwritableAppCantReplaceItself() throws {
+    /// An image still mounted in the work folder would keep it from being removed.
+    @Test func discardingTheWorkFolderLetsGoOfItsImage() async throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        let image = try await dmg(try await app("1.2.0", in: "build"))
+        let work = root.appending(path: "work")
+        let mount = work.appending(path: "mount")
+        try FileManager.default.createDirectory(at: mount, withIntermediateDirectories: true)
+        try await UpdateInstaller.run("/usr/bin/hdiutil", ["attach", image.path, "-nobrowse", "-readonly", "-mountpoint", mount.path], failure: "attach", attempts: 3)
+        let disk = try #require(UpdateInstaller.disk(mountedAt: mount))
+        await UpdateInstaller.discard(work)
+        #expect(!UpdateInstaller.isMountPoint(mount))
+        #expect(!FileManager.default.fileExists(atPath: work.path))
+        // The image itself, not only its volume.
+        #expect(!FileManager.default.fileExists(atPath: disk))
+    }
+
+    @Test func aTranslocatedOrUnwritableAppSaysWhyItCantReplaceItself() throws {
         defer { try? FileManager.default.removeItem(at: root) }
         let writable = root.appending(path: "Applications/Bridgetown.app")
         try FileManager.default.createDirectory(at: writable, withIntermediateDirectories: true)
-        #expect(UpdateInstaller.canReplace(writable))
-        #expect(!UpdateInstaller.canReplace(URL(fileURLWithPath: "/private/var/folders/x/AppTranslocation/ABC/d/Bridgetown.app")))
-        #expect(!UpdateInstaller.canReplace(URL(fileURLWithPath: "/System/Applications/Bridgetown.app")))
+        #expect(UpdateInstaller.obstacle(to: writable) == nil)
+        #expect(UpdateInstaller.obstacle(to: URL(fileURLWithPath: "/private/var/folders/x/AppTranslocation/ABC/d/Bridgetown.app"))
+            == UpdateError("Move Bridgetown to Applications to update it from here."))
+        #expect(UpdateInstaller.obstacle(to: URL(fileURLWithPath: "/Volumes/Bridgetown/Bridgetown.app"))
+            == UpdateError("Move Bridgetown to Applications to update it from here."))
+        #expect(UpdateInstaller.obstacle(to: URL(fileURLWithPath: "/System/Applications/Bridgetown.app"))
+            == UpdateError("You can't change apps in /System/Applications, so Bridgetown can't replace itself."))
     }
 }

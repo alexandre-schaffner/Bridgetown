@@ -8,11 +8,27 @@ struct BridgetownApp: App {
     // No menu bar item: the island in the notch is the app.
     var body: some Scene {
         SwiftUI.Settings {
-            SettingsView()
-                .environment(app.store)
-                .environment(app.daemon)
-                .environment(\.openURL, SystemActions.openLink)
+            SettingsView().services(app.services)
         }
+    }
+}
+
+/// What every window's views find in their environment: the store, the daemon and the
+/// updater, and links opened the app's way (`SystemActions.openLink`).
+@MainActor
+struct AppServices {
+    let store: Store
+    let daemon: DaemonProcess
+    let updater: Updater
+}
+
+extension View {
+    /// Set at each window's root: the island's panel, Settings, an e2e run's surfaces.
+    func services(_ services: AppServices) -> some View {
+        environment(services.store)
+            .environment(services.daemon)
+            .environment(services.updater)
+            .environment(\.openURL, SystemActions.openLink)
     }
 }
 
@@ -21,8 +37,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = Store()
     let daemon = DaemonProcess()
     let notifier = Notifier()
-    let updater = Updater()
-    private(set) lazy var island = IslandController(store: store, daemon: daemon, updater: updater)
+    /// An e2e run puts its own in, before the island exists.
+    var updater = Updater()
+    var services: AppServices { AppServices(store: store, daemon: daemon, updater: updater) }
+    private(set) lazy var island = IslandController(services: services)
 
     #if DEBUG
     /// `--e2e …` or `--island-demo` (E2E/E2EHarness.swift); nil on a normal launch.
@@ -41,10 +59,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Before anything starts: a run swaps out the clock, the Keychain, side effects,
         // the daemon's environment and the island's panel, and posts no notifications.
         harness?.configure(self)
-        if harness == nil { notifier.start() }
-        #else
-        notifier.start()
         #endif
+        if isLive { notifier.start() }
         notifier.onOpen = { [weak self] in self?.island.open() }
         // Each new "Needs you" is both a notification and a banner under the notch.
         store.onSnapshot = { [weak self] next in
@@ -59,19 +75,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         island.start()
 
         // A newer release is a notification, once, and a line in the open island.
-        notifier.withdrawUpdate()
         updater.onAvailable = { [weak self] release in self?.notifier.post(update: release) }
-        #if DEBUG
-        if harness == nil { updater.start() }
-        #else
-        updater.start()
-        #endif
+        if isLive { updater.start() }
 
         #if DEBUG
         // It starts the daemon itself, once it has shown the app connecting.
         if let harness { return harness.start(self) }
         #endif
         startDaemon()
+    }
+
+    /// A normal launch: not an e2e run, which posts no notifications and checks for no updates.
+    private var isLive: Bool {
+        #if DEBUG
+        harness == nil
+        #else
+        true
+        #endif
     }
 
     func startDaemon() {

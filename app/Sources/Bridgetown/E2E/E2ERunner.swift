@@ -49,7 +49,7 @@ final class E2ERunner {
         self.options = options
         startDaemon = { [weak app] in app?.startDaemon() }
         appearances = suite.appearances
-        surfaces = E2ESurfaces(store: app.store, daemon: app.daemon, updater: app.updater, island: app.island, defaults: defaults)
+        surfaces = E2ESurfaces(services: app.services, island: app.island, defaults: defaults)
         report = E2EReport(
             run: options.out.lastPathComponent, commit: commit,
             os: ProcessInfo.processInfo.operatingSystemVersionString, now: suite.now, suite: suiteName

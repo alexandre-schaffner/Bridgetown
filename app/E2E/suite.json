@@ -46,6 +46,8 @@
     {"shot": "update-downloading"},
     {"update": "failed"},
     {"shot": "update-failed"},
+    {"update": "installed"},
+    {"shot": "update-installed"},
     {"update": "upToDate"},
     {"shot": "update-up-to-date"},
     {"surface": "open", "preset": "narrow"},

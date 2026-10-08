@@ -8,11 +8,11 @@ struct UpdateNotice: View {
 
     var body: some View {
         let state = updater.state
-        if state != .idle {
+        if let title = title(state) {
             HStack(alignment: .center, spacing: 10) {
                 mark(state)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title(state))
+                    Text(title)
                         .font(Typo.strong)
                         .foregroundStyle(.primary)
                     if let detail = detail(state) {
@@ -37,11 +37,11 @@ struct UpdateNotice: View {
         switch state {
         case .checking, .downloading, .installing:
             ProgressView().controlSize(.mini).frame(width: 14)
-        case .upToDate:
+        case .upToDate, .installed:
             symbol("checkmark.circle.fill", Ink.green)
         case .available:
             symbol("arrow.down.circle.fill", Ink.blue)
-        case .failed:
+        case .checkFailed, .installFailed:
             symbol("exclamationmark.triangle.fill", Ink.amber)
         case .idle:
             EmptyView()
@@ -55,27 +55,31 @@ struct UpdateNotice: View {
             .frame(width: 14)
     }
 
-    private func title(_ state: Updater.State) -> String {
+    /// Nil while there is nothing to say.
+    private func title(_ state: Updater.State) -> String? {
         switch state {
-        case .idle, .checking: "Checking for updates…"
+        case .idle: nil
+        case .checking: "Checking for updates…"
         case .upToDate: "Bridgetown \(updater.current.map { "\($0) " } ?? "")is up to date"
         case let .available(r): "Bridgetown \(r.version) is available"
-        case let .downloading(r, progress): "Downloading \(r.version) · \(Int(progress * 100))%"
+        case let .downloading(r, percent): "Downloading \(r.version) · \(percent)%"
         case let .installing(r): "Installing \(r.version)…"
-        case .failed(_, .some): "Couldn't update Bridgetown"
-        case .failed(_, nil): "Couldn't check for updates"
+        case let .installed(r): "Bridgetown \(r.version) is installed"
+        case .installFailed: "Couldn't update Bridgetown"
+        case .checkFailed: "Couldn't check for updates"
         }
     }
 
     private func detail(_ state: Updater.State) -> String? {
         switch state {
-        case .available where !updater.canInstall:
-            "Move Bridgetown to Applications to update it from here."
         case .available:
-            updater.current.map { "You have \($0). Bridgetown quits, and opens again on the new version." }
+            if case let .failure(obstacle) = updater.installer { obstacle.message }
+            else { updater.current.map { "You have \($0). Installing relaunches the app." } }
         case .installing:
             "Bridgetown opens again in a moment."
-        case let .failed(message, _):
+        case .installed:
+            "Quit Bridgetown and open it again to finish."
+        case let .checkFailed(message), let .installFailed(_, message):
             message
         case .idle, .checking, .upToDate, .downloading:
             nil
@@ -84,29 +88,28 @@ struct UpdateNotice: View {
 
     @ViewBuilder
     private func controls(_ state: Updater.State) -> some View {
-        switch state {
-        case let .available(r):
+        // Up to date, checking again is the menu's.
+        if let action = updater.action, state != .upToDate {
             HStack(spacing: 10) {
-                TextLink("What's new", opening: r.page.absoluteString)
-                if updater.canInstall {
-                    Button("Install") { updater.install() }
-                        .buttonStyle(.stage(.secondary))
-                        .help("Download Bridgetown \(r.version.description), replace this app with it, and open it again")
-                        .accessibilityIdentifier("update.install")
-                } else {
-                    Button("Download") { SystemActions.open(r.dmg.absoluteString) }
-                        .buttonStyle(.stage(.secondary))
+                if case let .available(r) = state {
+                    TextLink("What's new", opening: r.page.absoluteString)
                 }
+                Button(label(action, state)) { updater.perform(action) }
+                    .buttonStyle(.stage(.secondary))
+                    .help(action.title)
+                    .accessibilityIdentifier("update.action")
             }
             .fixedSize()
-        case let .failed(_, r):
-            Button("Retry") {
-                if r != nil { updater.install() } else { Task { await updater.check(manual: true) } }
-            }
-            .buttonStyle(.stage(.secondary))
-            .fixedSize()
-        case .idle, .checking, .upToDate, .downloading, .installing:
-            EmptyView()
+        }
+    }
+
+    private func label(_ action: Updater.Action, _ state: Updater.State) -> String {
+        switch (action, state) {
+        case (_, .checkFailed), (_, .installFailed): "Retry"
+        case (.check, _): "Check"
+        case (.install, _): "Install"
+        case (.download, _): "Download"
+        case (.quit, _): "Quit"
         }
     }
 }

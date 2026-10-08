@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import os
 
 /// Puts a newer release in place of this app, the way you would by hand, with checks a
 /// person skips:
@@ -11,31 +12,53 @@ import Foundation
 ///    identifier, another version than the release's, or a signature that doesn't hold;
 /// 4. swaps it in for the running app, putting the old one back if the second rename fails.
 ///
-/// `relaunch` then waits for this process to quit, removes what is left and opens the new app.
-/// The download is never quarantined (URLSession doesn't set the flag), so the new app
-/// opens without Gatekeeper's "Open Anyway".
+/// What this proves is that the app is the one GitHub lists for the release, intact. It
+/// doesn't prove who built it: releases are signed ad hoc, so the signature only says the
+/// bundle hasn't changed since it was signed.
+///
+/// `relaunch` then waits for this process to quit and opens the new app, which removes the
+/// old one once it is up (`discard`); if it never comes up, the old one goes back. The
+/// download is never quarantined (URLSession doesn't set the flag), so the new app opens
+/// without Gatekeeper's "Open Anyway".
 struct UpdateInstaller: Sendable {
     /// The app bundle to replace.
     let destination: URL
     /// What the new bundle must call itself.
     let bundleIdentifier: String
 
-    /// Whether `bundle` can be swapped for another: not translocated (run from where it was
-    /// downloaded, on a read-only mirror), and its folder writable.
-    static func canReplace(_ bundle: URL) -> Bool {
-        let fm = FileManager.default
-        return !bundle.path.contains("/AppTranslocation/")
-            && fm.isWritableFile(atPath: bundle.deletingLastPathComponent().path)
-            && fm.isWritableFile(atPath: bundle.path)
+    private static let log = Logger(subsystem: "xyz.merkl.bridgetown", category: "update")
+
+    /// The installer for the app in `bundle`, or why it can't replace itself.
+    static func of(_ bundle: Bundle) -> Result<UpdateInstaller, UpdateError> {
+        guard let identifier = bundle.bundleIdentifier, bundle.bundleURL.pathExtension == "app" else {
+            return .failure(UpdateError("Bridgetown isn't running from its app"))
+        }
+        if let obstacle = obstacle(to: bundle.bundleURL) { return .failure(obstacle) }
+        return .success(UpdateInstaller(destination: bundle.bundleURL, bundleIdentifier: identifier))
     }
 
-    /// Installs `release` over `destination`. `progress` hears the download's fraction.
-    /// Returns the folder holding the old app, for `relaunch` to remove once this one quits.
-    func install(_ release: Release, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+    /// Why `bundle` can't be swapped for another, if it can't: translocated (run from where
+    /// it was downloaded, on a read-only mirror), on a read-only volume, or in a folder you
+    /// can't write to.
+    static func obstacle(to bundle: URL) -> UpdateError? {
         let fm = FileManager.default
+        let folder = bundle.deletingLastPathComponent()
+        let translocated = bundle.path.contains("/AppTranslocation/")
+        if !translocated, fm.isWritableFile(atPath: folder.path), fm.isWritableFile(atPath: bundle.path) { return nil }
+        // Installed, but by someone else: moving it wouldn't help.
+        if !translocated, folder.lastPathComponent == "Applications" {
+            return UpdateError("You can't change apps in \(folder.path), so Bridgetown can't replace itself.")
+        }
+        return UpdateError("Move Bridgetown to Applications to update it from here.")
+    }
+
+    /// Installs `release` over `destination`. `progress` hears the download's percentage,
+    /// rising, and 100 once it is all here. Returns the folder holding the old app, which the
+    /// new app removes once it is up (`discard`).
+    func install(_ release: Release, progress: @escaping @Sendable (Int) -> Void) async throws -> URL {
         let work: URL
         do {
-            work = try fm.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: destination, create: true)
+            work = try FileManager.default.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: destination, create: true)
         } catch {
             throw UpdateError("Couldn't make room next to \(destination.lastPathComponent)")
         }
@@ -49,7 +72,7 @@ struct UpdateInstaller: Sendable {
             try swap(in: staged, keepingOldIn: work)
             return work
         } catch {
-            try? fm.removeItem(at: work)
+            await Self.discard(work)
             throw error
         }
     }
@@ -60,14 +83,15 @@ struct UpdateInstaller: Sendable {
         let staged = work.appending(path: "Bridgetown.app")
         try FileManager.default.createDirectory(at: mount, withIntermediateDirectories: true)
         // The checksum covered the whole image already; hdiutil's own pass would take seconds.
-        try await Self.run("/usr/bin/hdiutil", ["attach", dmg.path, "-nobrowse", "-readonly", "-noautoopen", "-noverify", "-mountpoint", mount.path], failure: "Couldn't open the download")
+        try await Self.run("/usr/bin/hdiutil", ["attach", dmg.path, "-nobrowse", "-readonly", "-noautoopen", "-noverify", "-mountpoint", mount.path], failure: "Couldn't open the download", attempts: 3)
+        var copyFailure: Error?
         do {
             try await Self.run("/usr/bin/ditto", [mount.appending(path: "Bridgetown.app").path, staged.path], failure: "Couldn't copy the new app")
         } catch {
-            try? await Self.run("/usr/bin/hdiutil", ["detach", mount.path, "-force"], failure: "")
-            throw error
+            copyFailure = error
         }
-        try? await Self.run("/usr/bin/hdiutil", ["detach", mount.path, "-force"], failure: "")
+        await Self.detach(mount)
+        if let copyFailure { throw copyFailure }
 
         let info = NSDictionary(contentsOf: staged.appending(path: "Contents/Info.plist"))
         guard info?["CFBundleIdentifier"] as? String == bundleIdentifier else {
@@ -83,7 +107,7 @@ struct UpdateInstaller: Sendable {
     /// Two renames on one volume: the running app aside into `work`, the new one in its place.
     func swap(in staged: URL, keepingOldIn work: URL) throws {
         let fm = FileManager.default
-        let old = work.appending(path: "Previous.app")
+        let old = work.appending(path: Self.previous)
         do {
             try fm.moveItem(at: destination, to: old)
         } catch {
@@ -97,16 +121,28 @@ struct UpdateInstaller: Sendable {
         }
     }
 
-    /// Opens `app` once this process has gone, and removes `leftover`. The shell outlives
-    /// us: quitting doesn't take its children with it.
-    static func relaunch(_ app: URL, removing leftover: URL) throws {
+    /// Where `swap` keeps the old app, in `work`.
+    static let previous = "Previous.app"
+
+    /// Opens `app` once this process has gone. The new app removes `work` once it is up
+    /// (`discard`); if it hasn't within a minute and isn't running, it didn't make it, and the
+    /// old app in `work` goes back in its place and opens. The shell outlives us: quitting
+    /// doesn't take its children with it.
+    static func relaunch(_ app: URL, keptIn work: URL) throws {
+        let executable = Bundle(url: app)?.executableURL?.path ?? app.appending(path: "Contents/MacOS/Bridgetown").path
+        let script = #"""
+        trap '' HUP
+        while /bin/kill -0 "$0" 2>/dev/null; do /bin/sleep 0.2; done
+        /usr/bin/open "$2"
+        i=0
+        while [ -d "$1" ] && [ $i -lt 300 ]; do /bin/sleep 0.2; i=$((i + 1)); done
+        [ -d "$1" ] || exit 0
+        /bin/ps -axo comm= | /usr/bin/grep -qxF "$3" && exit 0
+        /bin/mv "$2" "$1/Failed.app" && /bin/mv "$1/\#(previous)" "$2" && /usr/bin/open "$2"
+        """#
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/sh")
-        p.arguments = [
-            "-c",
-            #"trap '' HUP; while /bin/kill -0 "$0" 2>/dev/null; do /bin/sleep 0.2; done; /bin/rm -rf "$1"; /usr/bin/open "$2""#,
-            "\(ProcessInfo.processInfo.processIdentifier)", leftover.path, app.path,
-        ]
+        p.arguments = ["-c", script, "\(ProcessInfo.processInfo.processIdentifier)", work.path, app.path, executable]
         p.standardInput = FileHandle.nullDevice
         p.standardOutput = FileHandle.nullDevice
         p.standardError = FileHandle.nullDevice
@@ -115,7 +151,7 @@ struct UpdateInstaller: Sendable {
 
     // MARK: Steps
 
-    static func download(_ url: URL, to file: URL, progress: @escaping @Sendable (Double) -> Void) async throws {
+    static func download(_ url: URL, to file: URL, progress: @escaping @Sendable (Int) -> Void) async throws {
         let delegate = DownloadDelegate(file: file, progress: progress)
         let session = URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
@@ -123,6 +159,7 @@ struct UpdateInstaller: Sendable {
             delegate.done = done
             session.downloadTask(with: url).resume()
         }
+        progress(100)
     }
 
     static func sha256(of file: URL) throws -> String {
@@ -135,42 +172,83 @@ struct UpdateInstaller: Sendable {
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
-    /// Runs a tool to the end without holding a thread; throws `failure` if it fails.
-    static func run(_ tool: String, _ arguments: [String], failure: String) async throws {
-        let status: Int32 = try await withCheckedThrowingContinuation { done in
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: tool)
-            p.arguments = arguments
-            p.standardInput = FileHandle.nullDevice
-            p.standardOutput = FileHandle.nullDevice
-            p.standardError = FileHandle.nullDevice
-            p.terminationHandler = { done.resume(returning: $0.terminationStatus) }
+    /// Runs `tool`, `attempts` times at most a second apart (hdiutil is sometimes "Resource
+    /// busy" for a moment); throws `failure` if it never succeeds. What the tool said goes
+    /// to the log.
+    static func run(_ tool: String, _ arguments: [String], failure: String, attempts: Int = 1) async throws {
+        for attempt in 1...attempts {
+            let output: Subprocess.Output
             do {
-                try p.run()
+                output = try await Subprocess.run(tool, arguments)
             } catch {
-                done.resume(throwing: error)
+                log.error("\(tool, privacy: .public) didn't start: \(error.localizedDescription, privacy: .public)")
+                throw UpdateError(failure)
             }
+            if output.succeeded { return }
+            log.error("\(tool, privacy: .public) \(arguments.first ?? "", privacy: .public) exited \(output.status): \(output.errors, privacy: .public)")
+            if attempt < attempts { try? await Task.sleep(for: .seconds(1)) }
         }
-        guard status == 0 else { throw UpdateError(failure) }
+        throw UpdateError(failure)
+    }
+
+    /// Lets go of the image mounted at `mount`, if one is: politely, then by force, a few
+    /// times (Spotlight may hold it a moment). By its disk, not its mount point: an image
+    /// unmounted but still attached has none, and would stay until a restart.
+    static func detach(_ mount: URL) async {
+        guard let disk = disk(mountedAt: mount) else { return }
+        for force in [false, true, true] {
+            let output = try? await Subprocess.run("/usr/bin/hdiutil", ["detach", disk] + (force ? ["-force"] : []))
+            if output?.succeeded == true || !FileManager.default.fileExists(atPath: disk) { return }
+            try? await Task.sleep(for: .seconds(1))
+        }
+        log.error("couldn't detach \(disk, privacy: .public): \(mount.path, privacy: .public)")
+    }
+
+    /// The disk of the volume mounted at `mount` (/dev/disk12 for /dev/disk12s1), if one is.
+    /// Detaching it lets go of the whole image.
+    static func disk(mountedAt mount: URL) -> String? {
+        var fs = statfs()
+        guard isMountPoint(mount), statfs(mount.path, &fs) == 0 else { return nil }
+        let device = withUnsafeBytes(of: fs.f_mntfromname) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+        return device.firstMatch(of: #/^/dev/disk\d+/#).map { String($0.output) }
+    }
+
+    /// Detaches the image in `work`, if still there, and removes `work`.
+    static func discard(_ work: URL) async {
+        await detach(work.appending(path: "mount"))
+        try? FileManager.default.removeItem(at: work)
+    }
+
+    /// Whether a volume is mounted at `url`: it is on another device than its folder.
+    static func isMountPoint(_ url: URL) -> Bool {
+        var own = stat(), parent = stat()
+        guard stat(url.path, &own) == 0, stat(url.deletingLastPathComponent().path, &parent) == 0 else { return false }
+        return own.st_dev != parent.st_dev
     }
 }
 
-/// One download's delegate: progress as it comes, the file moved into place before
-/// URLSession deletes it, then the outcome. Called on the session's serial queue only.
+/// One download's delegate: progress as it comes, in whole percents, the file moved into
+/// place before URLSession deletes it, then the outcome. Called on the session's serial
+/// queue only.
 private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     let file: URL
-    let progress: @Sendable (Double) -> Void
+    let progress: @Sendable (Int) -> Void
     var done: CheckedContinuation<Void, Error>?
     private var failure: Error?
+    private var percent = -1
 
-    init(file: URL, progress: @escaping @Sendable (Double) -> Void) {
+    init(file: URL, progress: @escaping @Sendable (Int) -> Void) {
         self.file = file
         self.progress = progress
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData _: Int64, totalBytesWritten written: Int64, totalBytesExpectedToWrite expected: Int64) {
         guard expected > 0 else { return }
-        progress(Double(written) / Double(expected))
+        // 100 once the file is in place, not when the last byte comes.
+        let now = min(99, Int(written * 100 / expected))
+        guard now > percent else { return }
+        percent = now
+        progress(now)
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {

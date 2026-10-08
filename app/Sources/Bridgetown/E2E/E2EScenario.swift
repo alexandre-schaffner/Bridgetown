@@ -201,7 +201,7 @@ enum E2EStep {
     case mock(E2EJSON)
     /// The mock exits with this code, as a crash would; the app does what it does about it.
     case crash(Int)
-    /// The update notice in this state, with a made-up release; its buttons do nothing.
+    /// The update notice in this state, with a made-up release; its buttons are side effects.
     case update(Updater.State)
     /// The app stops its daemon and leaves it down, until a `restart`.
     case stopDaemon
@@ -331,15 +331,13 @@ enum E2EStep {
                 throw bad("mock takes \"status\", \"settings\" or \"crash\"")
             }
         } else if let update = json["update"]?.string {
-            let release = Release(
-                version: AppVersion("1.2.0")!, page: URL(string: "https://github.com/\(Updater.repository)/releases/tag/v1.2.0")!,
-                dmg: URL(string: "https://github.com/\(Updater.repository)/releases/download/v1.2.0/Bridgetown.dmg")!, sha256: ""
-            )
+            let release = Release.sample()
             let states: [String: Updater.State] = [
                 "none": .idle, "checking": .checking, "upToDate": .upToDate, "available": .available(release),
-                "downloading": .downloading(release, progress: 0.42), "installing": .installing(release),
-                "failed": .failed("The download doesn't match its checksum", release),
-                "checkFailed": .failed("GitHub isn't reachable", nil),
+                "downloading": .downloading(release, percent: 42), "installing": .installing(release),
+                "installed": .installed(release),
+                "failed": .installFailed(release, "The download doesn't match its checksum"),
+                "checkFailed": .checkFailed("GitHub not reachable"),
             ]
             guard let state = states[update] else { throw bad("update is one of \(states.keys.sorted())") }
             self = .update(state)

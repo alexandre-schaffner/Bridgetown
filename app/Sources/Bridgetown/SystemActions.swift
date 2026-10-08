@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Side effects outside the app: URLs, the log file, Terminal takeover, the Settings window,
-/// the clipboard.
+/// the clipboard, quitting.
 @MainActor
 enum SystemActions {
     /// URLs from the daemon originate partly with agents, so only web, Slack and Revv
@@ -18,7 +18,7 @@ enum SystemActions {
 
     #if DEBUG
     enum Effect: String, Codable {
-        case openURL, openLogs, takeOver, openSettings, copy
+        case openURL, openLogs, takeOver, openSettings, copy, installUpdate, quit
     }
 
     /// While set, every side effect is handed here instead of happening: an e2e run
@@ -68,6 +68,13 @@ enum SystemActions {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
+    static func quit() {
+        #if DEBUG
+        if let sink { return sink(.quit, "") }
+        #endif
+        NSApp.terminate(nil)
+    }
+
     /// `takeOverCommand` in a new Terminal window. Returns an error message on failure.
     static func takeOver(_ session: Session) async -> String? {
         guard let id = session.agentSessionId else { return "No agent session to resume yet" }
@@ -108,22 +115,11 @@ enum SystemActions {
     /// holds the main thread until the script ends: the first takeover waits on the
     /// Automation prompt, and any on Terminal launching, and the island would freeze.
     nonisolated static func runAppleScript(_ source: String) async -> String? {
-        await withCheckedContinuation { done in
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-            p.arguments = ["-e", source]
-            let errors = Pipe()
-            p.standardError = errors
-            p.standardOutput = FileHandle.nullDevice
-            p.terminationHandler = { p in
-                let stderr = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-                done.resume(returning: p.terminationStatus == 0 ? nil : scriptError(stderr))
-            }
-            do {
-                try p.run()
-            } catch {
-                done.resume(returning: error.userMessage)
-            }
+        do {
+            let output = try await Subprocess.run("/usr/bin/osascript", ["-e", source])
+            return output.succeeded ? nil : scriptError(output.errors)
+        } catch {
+            return error.userMessage
         }
     }
 
