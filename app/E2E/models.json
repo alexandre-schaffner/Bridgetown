@@ -11,13 +11,13 @@
     {"shot": "models-automatic"},
     {"mock": {"settings": {"models": {
       "monitoring": {"mode": "manual", "provider": "codex", "model": "gpt-6.1-sol", "effort": "ultra"},
-      "reviewing": {"mode": "manual", "provider": "claude", "model": "claude-opus-4-6", "effort": "max"},
+      "reviewing": {"mode": "manual", "provider": "claude", "model": "claude-opus-5-5", "effort": "max"},
       "memory": {"mode": "manual", "provider": "codex", "model": "gpt-6.1-sol", "effort": "high"}
     }}}},
     {"shot": "models-selected"},
     {"mock": {"settings": {"models": {
       "monitoring": {"mode": "manual", "provider": "claude", "model": "my-custom-model", "effort": null},
-      "reviewing": {"mode": "manual", "provider": "codex", "model": "gpt-5.6-sol", "effort": null},
+      "reviewing": {"mode": "manual", "provider": "codex", "model": "gpt-6-luna", "effort": null},
       "memory": {"mode": "manual", "provider": "codex", "model": "gpt-6.1-sol", "effort": "high"}
     }}}},
     {"shot": "models-custom"},
@@ -26,7 +26,7 @@
     {"wait": "settled"},
     {"expect": {"models": {
       "monitoring": {"mode": "manual", "provider": "claude", "model": "my-updated-model", "effort": null},
-      "reviewing": {"mode": "manual", "provider": "codex", "model": "gpt-5.6-sol", "effort": null},
+      "reviewing": {"mode": "manual", "provider": "codex", "model": "gpt-6-luna", "effort": null},
       "memory": {"mode": "manual", "provider": "codex", "model": "gpt-6.1-sol", "effort": "high"}
     }}},
     {"surface": "settings", "tab": "models"},
@@ -42,7 +42,7 @@
     {"wait": "settled"},
     {"expect": {"models": {
       "monitoring": {"mode": "automatic"},
-      "reviewing": {"mode": "manual", "provider": "codex", "model": "gpt-5.6-sol", "effort": null},
+      "reviewing": {"mode": "manual", "provider": "codex", "model": "gpt-6-luna", "effort": null},
       "memory": {"mode": "manual", "provider": "claude", "model": "my-updated-memory-model", "effort": null}
     }}},
     {"shot": "models-memory-saved"}

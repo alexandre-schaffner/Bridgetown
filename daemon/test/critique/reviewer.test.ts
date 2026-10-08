@@ -9,7 +9,7 @@ import { scratchDir } from "../support/tmp.ts"
 describe("automatic reviewing", () => {
   test("retains the Codex depth profiles", () => {
     for (const reviewer of Object.values(REVIEWERS)) expect(reviewer.vendor).not.toBe("claude")
-    expect(REVIEWERS.deep).toEqual({ vendor: "codex", model: "gpt-5.6-sol", effort: "xhigh" })
+    expect(REVIEWERS.deep).toEqual({ vendor: "codex", model: "gpt-6.1-sol", effort: "xhigh" })
   })
 })
 

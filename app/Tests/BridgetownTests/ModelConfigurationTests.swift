@@ -15,7 +15,7 @@ import Testing
         let base = try Fixture.snapshot().settings
         var edited = base
         edited.models.monitoring = .manual(provider: .codex, model: "custom-codex", effort: "ultra")
-        edited.models.reviewing = .manual(provider: .claude, model: "claude-opus-4-6", effort: nil)
+        edited.models.reviewing = .manual(provider: .claude, model: "claude-opus-5-5", effort: nil)
         edited.models.memory = .manual(provider: .codex, model: "gpt-6.1-sol", effort: "high")
         #expect(base.changedKeys(to: edited) == [.models])
         let body = try edited.patchBody([.models])

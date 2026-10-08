@@ -26,9 +26,9 @@ export interface ReviewerProfile {
  * Default reviewer per triage depth. Explicit model settings can choose either provider.
  */
 export const REVIEWERS: Readonly<Record<Depth, ReviewerProfile>> = {
-  quick: { vendor: "codex", model: "gpt-5.6-sol", effort: "medium" },
-  standard: { vendor: "codex", model: "gpt-5.6-sol", effort: "high" },
-  deep: { vendor: "codex", model: "gpt-5.6-sol", effort: "xhigh" },
+  quick: { vendor: "codex", model: "gpt-6.1-sol", effort: "medium" },
+  standard: { vendor: "codex", model: "gpt-6.1-sol", effort: "high" },
+  deep: { vendor: "codex", model: "gpt-6.1-sol", effort: "xhigh" },
 }
 
 /** Explicit choices override the depth-based defaults independently of the investigator. */
