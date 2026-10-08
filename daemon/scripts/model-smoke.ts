@@ -30,23 +30,22 @@ try {
   rpc = new CodexRpc([Bun.which("codex") ?? "codex", "--dangerously-bypass-hook-trust", "app-server", "--listen", "stdio://"], abort.signal, { CODEX_HOME: dir }, dir)
   await rpc.initialize()
   const response = Schema.decodeUnknownSync(Schema.Struct({ config: Schema.Record(Schema.String, Schema.Unknown) }))(await rpc.request("config/read", { includeLayers: false }))
-  if (!hasCodexGuards(response.config, request)) throw new Error("Codex did not load the required hooks")
+  if (!hasCodexGuards(response.config)) throw new Error("Codex did not load the required hooks")
   console.log("codex: required guard configuration loaded")
   const model = catalog.providers.find((p) => p.provider === "codex")?.models[0]?.id
   Schema.decodeUnknownSync(Schema.Struct({ thread: Schema.Struct({ id: Schema.String }) }))(await rpc.request("thread/start", {
     cwd: home, model, sandbox: "workspace-write", approvalPolicy: "never", allowProviderModelFallback: false, dynamicTools: CODEX_TOOLS,
-    config: { mcp_servers: {}, sandbox_workspace_write: { network_access: true } },
+    config: { mcp_servers: {}, sandbox_workspace_write: { network_access: false } },
   }))
   console.log("codex: thread configured without inference")
-  for (const [command, decision] of [["git status", "allow"], ["git push origin main", "deny"]]) {
-    const hook = Bun.spawn(["/bin/sh", "-c", codexHookCommand(request)], { cwd: home, stdin: "pipe", stdout: "pipe", stderr: "pipe" })
-    hook.stdin.write(JSON.stringify({ tool_name: "Bash", tool_input: { command }, cwd: home }))
+  for (const [tool, decision] of [["bt_read_file", "allow"], ["Bash", "deny"], ["read_file", "deny"]]) {
+    const hook = Bun.spawn(["/bin/sh", "-c", codexHookCommand()], { cwd: home, stdin: "pipe", stdout: "pipe", stderr: "pipe" })
+    hook.stdin.write(JSON.stringify({ tool_name: tool, tool_input: {}, cwd: home }))
     hook.stdin.end()
-    const verdict = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({ hookSpecificOutput: Schema.Struct({ permissionDecision: Schema.String, updatedInput: Schema.optional(Schema.Struct({ command: Schema.String })) }) })))(await new Response(hook.stdout).text())
-    if (await hook.exited !== 0 || verdict.hookSpecificOutput.permissionDecision !== decision) throw new Error(`The guard command failed to ${decision} ${command}`)
-    if (decision === "allow" && !verdict.hookSpecificOutput.updatedInput?.command.includes(" || exit\n")) throw new Error("The guard did not pin the checked working directory")
+    const verdict = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({ hookSpecificOutput: Schema.Struct({ permissionDecision: Schema.String }) })))(await new Response(hook.stdout).text())
+    if (await hook.exited !== 0 || verdict.hookSpecificOutput.permissionDecision !== decision) throw new Error(`The guard command failed to ${decision} ${tool}`)
   }
-  console.log("codex: hook runner allowed a read and denied a protected branch push")
+  console.log("codex: hook runner allowed a broker read and denied built-in tools")
 } finally {
   clearTimeout(timer)
   rpc?.close()

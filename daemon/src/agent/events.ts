@@ -12,12 +12,15 @@ import { ownPrUrl } from "../ship/pr.ts"
 import type { AgentEvent } from "./protocol.ts"
 import { SessionResult } from "./result.ts"
 import { TOOL_SERVER } from "./tools.ts"
+import { redactSecrets } from "../security/policy.ts"
 
 /** The schema lists phases in flow order. */
 const PHASE_ORDER: ReadonlyArray<Phase> = Phase.literals
 
 /** The phase a tool call implies, for agents that forget to call `report`. Phases only move forward. */
 export const impliedPhase = (name: string, input: unknown): Phase | undefined => {
+  if (name.endsWith("bt_submit_fix")) return "pr"
+  if (name.endsWith("bt_write_file")) return "fix"
   if (WRITE_TOOLS.includes(name)) return "fix"
   if (name !== "Bash") return undefined
   const command = commandOf(input) ?? ""
@@ -36,7 +39,7 @@ const describeTool = (name: string, input: unknown): string => {
     const value = record[key]
     return typeof value === "string" ? value : undefined
   }
-  const detail = pick("command") ?? pick("file_path") ?? pick("pattern") ?? pick("description") ?? pick("url") ?? ""
+  const detail = pick("command") ?? pick("path") ?? pick("title") ?? pick("file_path") ?? pick("pattern") ?? pick("description") ?? pick("url") ?? ""
   return truncate(`${name.replace(/^mcp__/, "")} ${detail}`.trim(), 160)
 }
 
@@ -89,30 +92,33 @@ export const handleEvent = (id: string, event: AgentEvent, sink: EventSink): Eff
       }
       case "mcp": return yield* reportMcp(id, event.servers, sink)
       case "text":
-        if (event.text.trim() !== "") yield* repo.log(id, "text", event.text, { activity: true })
+        if (event.text.trim() !== "") yield* repo.log(id, "text", redactSecrets(event.text), { activity: true })
         return
       case "tool": {
-        if (event.name.startsWith(`mcp__${TOOL_SERVER}__`) || event.name === "StructuredOutput") return
-        yield* repo.log(id, "tool", describeTool(event.name, event.input), { activity: true })
-        const phase = impliedPhase(event.name, event.input)
+        const prefix = `mcp__${TOOL_SERVER}__`
+        const name = event.name.startsWith(prefix) ? event.name.slice(prefix.length) : event.name
+        if (["report", "ask", "slack_context", "StructuredOutput"].includes(name)) return
+        yield* repo.log(id, "tool", redactSecrets(describeTool(name, event.input)), { activity: true })
+        const phase = impliedPhase(name, event.input)
         if (phase !== undefined) yield* repo.modify(id, (s) => laterPhase(s.phase, phase) ? { ...s, phase } : undefined)
         return
       }
       case "error":
-        yield* repo.log(id, "error", event.text)
+        yield* repo.log(id, "error", redactSecrets(event.text))
         return
       case "result": {
         sink.closeInput()
         yield* repo.modify(id, (s) => ({ ...s, costUsd: event.costUsd === null || s.costUsd === null ? null : s.costUsd + event.costUsd }), { evenIfFinished: true })
         if (event.error !== null) {
-          yield* repo.log(id, "error", event.error)
-          return yield* sink.onEnd({ _tag: "Failed", reason: `Agent stopped: ${event.error}` })
+          yield* repo.log(id, "error", redactSecrets(event.error))
+          return yield* sink.onEnd({ _tag: "Failed", reason: `Agent stopped: ${redactSecrets(event.error)}` })
         }
-        yield* repo.log(id, "result", event.text)
+        yield* repo.log(id, "result", redactSecrets(event.text))
         const decoded = Schema.decodeUnknownOption(SessionResult)(event.output)
         if (decoded._tag === "None") return yield* sink.onEnd({ _tag: "Failed", reason: "Agent finished without a structured result" })
+        if (redactSecrets(JSON.stringify(decoded.value)) !== JSON.stringify(decoded.value)) return yield* sink.onEnd({ _tag: "Failed", reason: "Agent result contains credential-like content; publication was refused" })
         const prUrl = ownPrUrl(decoded.value.prUrl)
-        if (decoded.value.prUrl !== null && prUrl === null) yield* repo.log(id, "error", `Ignored the PR link ${truncate(decoded.value.prUrl, 200)}: not a pull request on ${GHE_REPO}`)
+        if (decoded.value.prUrl !== null && prUrl === null) yield* repo.log(id, "error", `Ignored the PR link ${truncate(redactSecrets(decoded.value.prUrl), 200)}: not a pull request on ${GHE_REPO}`)
         return yield* sink.onEnd({ _tag: "Result", result: { ...decoded.value, prUrl } })
       }
     }

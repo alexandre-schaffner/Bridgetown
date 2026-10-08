@@ -1,13 +1,10 @@
 import { Effect } from "effect"
 import { bind, serve } from "./api/server.ts"
-import { gitOverHttpsEnv } from "./config.ts"
 import { Hub } from "./hub.ts"
 import { appLayer } from "./layers.ts"
 import { readLaunch, runDaemon } from "./launch.ts"
 import { Scheduler } from "./scheduler.ts"
 import { recoverInterrupted } from "./sessions/recovery.ts"
-
-Object.assign(process.env, gitOverHttpsEnv(process.env))
 
 const launch = await readLaunch()
 const { env } = launch

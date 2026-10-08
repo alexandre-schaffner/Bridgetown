@@ -86,7 +86,7 @@ The current integration targets `Merkl/monorepo` on `nocturlab.ghe.com`. Reposit
 1. **Slack:** create a personal Slack app from [slack-app-manifest.yml](slack-app-manifest.yml), install it, and copy the `xoxp-…` user token.
 2. **Jev:** get a TypeSafe API key for triage.
 3. **Agent tools:** install and sign in to `claude`, `codex`, and `gh`. Verify GitHub Enterprise access with `gh auth status --hostname nocturlab.ghe.com`. Set `BRIDGETOWN_CODEX_PATH` if Codex isn’t on the app’s PATH.
-4. **MCP:** run `claude mcp login merkl`. For production signals and logs, run `bun grafana:mcp` in the Merkl monorepo.
+4. **Observability:** run `bun grafana:mcp` in the Merkl monorepo. Investigators use Bridgetown’s fixed, read-only Grafana broker; repository MCP configurations are ignored.
 5. **Build:** stop the demo daemon, then assemble and open the app:
 
    ```sh
@@ -102,7 +102,7 @@ Open **Settings** from the app’s **…** menu. Save the Slack and TypeSafe tok
 
 Bridgetown keeps a local [Agent Memory Repo](https://cognition.com/agent-memory-repo): linked Markdown notes in a
 separate Git repository under `BRIDGETOWN_HOME/memory`. It learns from newly watched Slack messages, your answers
-and actions, and agent findings and outcomes. Jev and Claude retrieve relevant context on later messages and sessions.
+and actions, and agent findings and outcomes. Jev and investigation agents retrieve relevant context on later messages and sessions.
 Existing history is not backfilled.
 
 Open **Settings → Memory** to disable memory, see pending evidence and the last successful jobs, run learning and
@@ -116,11 +116,11 @@ from observed workflow outcomes. See [memory storage and corrections](docs/WORKF
 
 ## You keep the controls
 
-Each agent gets its own Git worktree and a named set of tools, and one gate checks every tool call: it keeps commands off production, lets an agent push only its own branch and run only the `gh` commands a fix needs, and keeps file edits in the worktree. `gh`, `git`, and the other risky tools are checked again as they run, whatever started them. The daemon takes its tokens only over stdin and passes none to an agent.
+Each agent gets its own Git worktree and scoped broker tools. Generated commands and file operations run in a macOS OS sandbox with no network, no credentials, and restricted filesystem access. GitHub and Grafana reads go through fixed broker capabilities. Publishing scans an immutable snapshot, pushes only the session’s own branch to the configured repository, and creates or updates a draft PR.
 
-Merging, cutting releases, and sending prepared replies require your click. Production environment approval remains with the reviewer team. Slack content is treated as untrusted input.
+Merging, cutting releases, and sending prepared replies require your click. Production environment approval remains with the reviewer team. External content is labelled as untrusted evidence; known credential patterns are redacted or rejected.
 
-The guard has limits: a program that runs a binary by its absolute path goes around the second check, and files written by shell commands aren't confined. [The workflow reference](docs/WORKFLOW.md#safety-model) documents the boundaries and backstops, and [what Bridgetown keeps on your Mac, and for how long](docs/WORKFLOW.md#storage-and-retention).
+The inference client remains a trusted host process with its own login. This is a native process sandbox, with documented lifecycle and detection limits. See the [safety model](docs/WORKFLOW.md#safety-model) and [local storage policy](docs/WORKFLOW.md#storage-and-retention).
 
 ## Develop
 
@@ -208,7 +208,7 @@ It writes `.context/e2e/<UTC time>/` (`latest` points at it; the newest five sta
 | `BRIDGETOWN_ATTACH=1` | app | Start no daemon; attach to a running one with `BRIDGETOWN_API_TOKEN`. `make dev-app` sets both |
 | `BRIDGETOWN_LOG_DIR` | app | Where `daemon.log` goes (`~/Library/Logs/Bridgetown`) |
 | `BRIDGETOWN_PORT` | app, daemon | The daemon's loopback port (47621) |
-| `BRIDGETOWN_HOME` | daemon | The store, the guard's shims, and the worktrees of a repo without `.shared/` (`~/Library/Application Support/Bridgetown`) |
+| `BRIDGETOWN_HOME` | daemon | The store, isolated provider configuration, and the worktrees of a repo without `.shared/` (`~/Library/Application Support/Bridgetown`) |
 | `BRIDGETOWN_CLAUDE_PATH`, `BRIDGETOWN_CODEX_PATH` | daemon | The `claude` and `codex` to run, instead of the ones on the PATH (from source, the SDK's own `claude`) |
 | `CLAUDE_CONFIG_DIR` | daemon | Where the Claude CLI keeps conversations (`~/.claude`), for housekeeping |
 | `BRIDGETOWN_DRY_RUN=1`, `--dry-run` | daemon | Never post to Slack, whatever Settings say |
@@ -230,6 +230,7 @@ To update the README visuals, see the [screenshot capture guide](docs/images/REA
 | [site/](site/) | Astro landing page, three.js visuals, and product recordings |
 | [docs/API.md](docs/API.md) | Local HTTP/SSE contract between the app and daemon |
 | [docs/WORKFLOW.md](docs/WORKFLOW.md) | Decision policy, safety boundaries, storage and retention, and Slack posting behavior |
+| [docs/FEATURE-MAP.md](docs/FEATURE-MAP.md) | Current capabilities, workflow connections, human decisions, and control boundaries |
 | [PRODUCT.md](PRODUCT.md) | Product purpose and design principles |
 | [.github/workflows/](.github/workflows/) | CI, releases, and the landing-page deploy |
 

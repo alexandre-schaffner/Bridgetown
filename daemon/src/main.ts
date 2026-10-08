@@ -1,18 +1,40 @@
-/**
- * The daemon binary's entry. `--guard-exec` is the exec-time guard that the shims on a
- * session's PATH run before every gh, git, kubectl… (guard/exec.ts). It runs on every
- * git call, so it loads the guard alone. Anything else is the daemon.
- */
-if (process.argv[2] === "--guard-exec") {
-  const { guardExecMain } = await import("./guard/exec.ts")
-  guardExecMain(process.argv.slice(3))
+/** CLI helpers run independently of daemon startup and never load worktree hooks or credentials. */
+if (process.argv[2] === "--sandbox-run") {
+  try {
+    const { sandboxRunMain } = await import("./security/sandbox.ts")
+    await sandboxRunMain(process.argv[3] ?? "")
+  } catch {
+    console.error("Bridgetown's OS sandbox could not run this command. No unrestricted fallback was used.")
+    process.exitCode = 126
+  }
+} else if (process.argv[2] === "--changed-files") {
+  try {
+    const { changedPathsMain } = await import("./security/changes.ts")
+    await changedPathsMain()
+  } catch { process.exitCode = 126 }
+} else if (process.argv[2] === "--check-command") {
+  try {
+    const { commandPolicyMain } = await import("./security/commands.ts")
+    commandPolicyMain(process.argv[3] ?? "")
+  } catch { process.exitCode = 126 }
+} else if (process.argv[2] === "--snapshot-files") {
+  try {
+    const { snapshotFilesMain } = await import("./security/files.ts")
+    snapshotFilesMain(process.argv[3] ?? "")
+  } catch { process.exitCode = 126 }
+} else if (process.argv[2] === "--file-tool") {
+  try {
+    const { fileToolMain } = await import("./security/files.ts")
+    fileToolMain(process.argv[3] ?? "")
+  } catch { process.exitCode = 126 }
+} else if (process.argv[2] === "--guard-exec") {
+  console.error("The legacy exec guard has been replaced by the OS sandbox and broker.")
+  process.exitCode = 126
 } else if (process.argv[2] === "--guard-codex") {
   const { codexHookVerdict } = await import("./guard/codex.ts")
-  const { readScript } = await import("./guard/bash.ts")
-  const [port = "0", branch = "", worktree = ""] = process.argv.slice(3)
   let raw: unknown
   try { raw = JSON.parse(await new Response(Bun.stdin.stream()).text()) } catch { raw = null }
-  process.stdout.write(JSON.stringify(codexHookVerdict(raw, { daemonPort: Number(port), branch, cwd: worktree, worktree, readFile: readScript })))
+  process.stdout.write(JSON.stringify(codexHookVerdict(raw)))
 } else {
   await import("./daemon.ts")
 }

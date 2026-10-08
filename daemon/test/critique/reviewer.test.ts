@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { existsSync, mkdirSync, utimesSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { Effect, Schema } from "effect"
-import { codexArgs, execFailure, REVIEWERS, sweepReviewSandboxes, Verdict, VERDICT_JSON_SCHEMA } from "../../src/critique/reviewer.ts"
+import { execFailure, REVIEWERS, sweepReviewSandboxes, Verdict, VERDICT_JSON_SCHEMA } from "../../src/critique/reviewer.ts"
 import { ReviewFinding } from "../../src/domain/critique.ts"
 import { scratchDir } from "../support/tmp.ts"
 
@@ -13,15 +13,7 @@ describe("automatic reviewing", () => {
   })
 })
 
-describe("codex exec", () => {
-  test("read-only, ephemeral, without the user's config, with Bridgetown's model and output schema", () => {
-    const args = codexArgs("/opt/homebrew/bin/codex", { worktree: "/w", head: "aaaa111", profile: REVIEWERS.standard, prompt: "review it" }, "/t/schema.json", "/t/out.json")
-    expect(args).toEqual([
-      "/opt/homebrew/bin/codex", "exec", "--ephemeral", "--ignore-user-config", "--sandbox", "read-only", "--cd", "/w",
-      "--model", "gpt-5.6-sol", "--config", 'model_reasoning_effort="high"', "--output-schema", "/t/schema.json",
-      "--output-last-message", "/t/out.json", "--color", "never", "review it",
-    ])
-  })
+describe("brokered Codex review", () => {
   test("the verdict schema is strict and has no severity tier", () => {
     const item = VERDICT_JSON_SCHEMA.properties.findings.items
     expect(item.additionalProperties).toBe(false)

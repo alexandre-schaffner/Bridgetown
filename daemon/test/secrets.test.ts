@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { sessionEnv } from "../src/agent/options.ts"
 import { run } from "../src/lib/proc.ts"
-import { childEnv, decodeSecretsLine, readFirstLine, secretsFromEnv } from "../src/secrets.ts"
+import { providerEnv, childEnv, decodeSecretsLine, readFirstLine, secretsFromEnv } from "../src/secrets.ts"
 
 const streamOf = (...chunks: ReadonlyArray<string>) =>
   new ReadableStream<Uint8Array>({
@@ -83,18 +82,10 @@ describe("secrets never reach children", () => {
     TYPESAFE_API_KEY: "k",
   }
   test("child env strips BRIDGETOWN_*, SLACK_*, TYPESAFE_*", () => {
-    expect(childEnv(env)).toEqual({ PATH: "/usr/bin:/bin", HOME: "/Users/x", ANTHROPIC_API_KEY: "sk-ant" })
+    expect(childEnv(env)).toEqual({ PATH: "/usr/bin:/bin", HOME: "/Users/x" })
   })
-  test("session env adds only what sessions need: the exec-time guard's shims first on PATH, the CLI back in the worktree after each Bash call", () => {
-    expect(sessionEnv(env, { id: "s_1", branch: "fix-bt-x-1" }, "/bt/guard-bin")).toEqual({
-      PATH: "/bt/guard-bin:/usr/bin:/bin",
-      HOME: "/Users/x",
-      ANTHROPIC_API_KEY: "sk-ant",
-      GH_HOST: "nocturlab.ghe.com",
-      CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: "1",
-      BRIDGETOWN_SESSION: "s_1",
-      BRIDGETOWN_BRANCH: "fix-bt-x-1",
-    })
+  test("only the provider environment gets inference authentication, without PATH shims", () => {
+    expect(providerEnv(env)).toEqual({ PATH: "/usr/bin:/bin", HOME: "/Users/x", ANTHROPIC_API_KEY: "sk-ant" })
   })
   test("scripts run by hand read them from the environment", () => {
     expect(secretsFromEnv(env)).toEqual({ apiToken: "t", slackToken: "xoxp-1", typesafeKey: "k" })

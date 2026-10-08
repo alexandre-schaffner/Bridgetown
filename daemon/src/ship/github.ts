@@ -75,7 +75,7 @@ const viewPr = (prUrl: string) =>
     Effect.flatMap((out) => decodeOr("gh", "pr view", Schema.fromJsonString(PullRequest))(out)),
   )
 
-const mergePr = (prUrl: string) => gh(["pr", "merge", prUrl, "--squash"]).pipe(Effect.asVoid)
+const mergePr = (prUrl: string, head: string) => gh(["pr", "merge", prUrl, "--squash", "--match-head-commit", head]).pipe(Effect.asVoid)
 
 const rerunFailedJobs = (runId: string) => gh(["run", "rerun", runId, "--failed", "-R", GHE_REPO]).pipe(Effect.asVoid)
 
@@ -131,7 +131,7 @@ const reachability: Effect.Effect<Reachability> = run(["gh", "api", "user", "--h
  */
 export interface GitHubShape {
   readonly viewPr: (prUrl: string) => Effect.Effect<PullRequest, GitHubError>
-  readonly mergePr: (prUrl: string) => Effect.Effect<void, GitHubError>
+  readonly mergePr: (prUrl: string, head: string) => Effect.Effect<void, GitHubError>
   readonly rerunFailedJobs: (runId: string) => Effect.Effect<void, GitHubError>
   /** Next tag for `prefix` (e.g. `admin` → `admin-v0.6.1`), read from the remote so local clones can lag. */
   readonly nextPatchTag: (repoPath: string, prefix: string) => Effect.Effect<string, GitHubError>

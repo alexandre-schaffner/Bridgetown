@@ -6,7 +6,7 @@ import { Environment } from "../config.ts"
 import { AdapterError, attempt } from "../domain/errors.ts"
 import { isOwnBranch } from "../domain/session.ts"
 import { makeKeyedLock } from "../lib/keyed-lock.ts"
-import { git, run, runOk } from "../lib/proc.ts"
+import { git, gitWithoutFilters, run, runOk } from "../lib/proc.ts"
 
 const INSTALL_TIMEOUT_MS = 10 * 60_000
 /** A session worktree is a monorepo checkout plus its node_modules: hundreds of thousands of files to delete. */
@@ -112,10 +112,12 @@ const fetchMain = Effect.fn("fetchMain")(function* (repoPath: string) {
  * ref is here without a fetch), or from origin/main for a new session.
  */
 const addCommand = Effect.fn("addCommand")(function* (repoPath: string, branch: string, path: string) {
+  const configKeys = yield* runOk(git("config", "--null", "--list", "--name-only"), { cwd: repoPath })
+  const checkout = (...args: ReadonlyArray<string>) => attempt("git", "safe checkout", async () => gitWithoutFilters(configKeys, args))
   const has = (ref: string) => run(git("rev-parse", "--verify", "--quiet", ref), { cwd: repoPath }).pipe(Effect.map((r) => r.exitCode === 0))
-  if (yield* has(`refs/heads/${branch}`)) return git("worktree", "add", path, branch)
+  if (yield* has(`refs/heads/${branch}`)) return yield* checkout("worktree", "add", path, branch)
   const base = (yield* has(`refs/remotes/origin/${branch}`)) ? `origin/${branch}` : "origin/main"
-  return git("worktree", "add", "-b", branch, path, base)
+  return yield* checkout("worktree", "add", "-b", branch, path, base)
 })
 
 /**
@@ -139,7 +141,7 @@ const bunMismatchOf = Effect.fn("bunMismatchOf")(function* (repoPath: string) {
 const install = Effect.fn("install")(function* (path: string) {
   const modules = join(path, "node_modules")
   if (!existsSync(join(path, "package.json")) || existsSync(join(modules, INSTALLED_MARKER))) return []
-  const result = yield* run(["bun", "install"], { cwd: path, timeoutMs: INSTALL_TIMEOUT_MS })
+  const result = yield* run(["bun", "install", "--ignore-scripts"], { cwd: path, timeoutMs: INSTALL_TIMEOUT_MS })
   if (result.exitCode !== 0) return [`\`bun install\` failed (exit ${result.exitCode}); dependencies are missing:\n${tail(result.stderr || result.stdout)}`]
   mkdirSync(modules, { recursive: true })
   writeFileSync(join(modules, INSTALLED_MARKER), "")

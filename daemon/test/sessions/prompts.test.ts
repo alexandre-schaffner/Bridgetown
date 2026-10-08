@@ -57,7 +57,8 @@ describe("a failed deploy sent back", () => {
   test("after the agent's own release: a follow-up PR from a fresh branch off main", () => {
     const prompt = deployFailedPrompt(tracker, { branch: "fix-bt-admin-ab12", milestones: { ...NO_MILESTONES, merged: true, released: true } })
     expect(prompt).toContain("Your fix was merged and released")
-    expect(prompt).toContain("git checkout -b fix-bt-admin-ab12-2 origin/main")
+    expect(prompt).toContain("broker prepares a fresh follow-up branch from origin/main")
+    expect(prompt).toContain("bt_submit_fix")
   })
   test("after the re-run it recommended: not the flake it looked like, and the work stays on its own branch", () => {
     const prompt = deployFailedPrompt(tracker, { branch: "fix-bt-admin-ab12", milestones: NO_MILESTONES })

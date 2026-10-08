@@ -64,19 +64,13 @@ export const readFirstLine = async (stream: ReadableStream<Uint8Array>): Promise
   }
 }
 
-/** Prefixes of variables a child process must never inherit: the daemon's own config and every Slack/TypeSafe credential. */
-const STRIPPED_PREFIXES = ["BRIDGETOWN_", "SLACK_", "TYPESAFE_"]
+/** Trusted utility processes do not need daemon or inference-provider credentials. */
+const CHILD_VARIABLES = new Set(["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "TZ", "USER", "LOGNAME"])
+export const childEnv = (env: Record<string, string | undefined>): Record<string, string> =>
+  Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined && CHILD_VARIABLES.has(entry[0])))
 
-/**
- * The environment for anything the daemon spawns: agent sessions, `git`, `gh`,
- * `bun install`. `ANTHROPIC_API_KEY` stays: the Claude CLI authenticates with it
- * when the user is not logged in with OAuth, and it is the agent's own credential.
- */
-export const childEnv = (env: Record<string, string | undefined>): Record<string, string> => {
-  const out: Record<string, string> = {}
-  for (const [key, value] of Object.entries(env)) {
-    if (value === undefined || STRIPPED_PREFIXES.some((prefix) => key.startsWith(prefix))) continue
-    out[key] = value
-  }
-  return out
-}
+/** Authentication is only passed to the trusted inference client, never generated commands. */
+export const providerEnv = (env: Record<string, string | undefined>): Record<string, string> => ({
+  ...childEnv(env),
+  ...Object.fromEntries(["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR"].flatMap((key) => env[key] === undefined ? [] : [[key, env[key]]])),
+})

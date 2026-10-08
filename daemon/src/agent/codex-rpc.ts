@@ -2,7 +2,6 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { createInterface } from "node:readline"
 import { Schema } from "effect"
 import { VERSION } from "../config.ts"
-import { childEnv } from "../secrets.ts"
 
 const Id = Schema.Union([Schema.String, Schema.Number])
 const Envelope = Schema.Struct({
@@ -25,7 +24,7 @@ export class CodexRpc {
   constructor(command: ReadonlyArray<string>, readonly signal: AbortSignal, env: Record<string, string> = {}, cwd?: string) {
     const [executable, ...args] = command
     if (executable === undefined) throw new Error("No Codex executable")
-    this.child = spawn(executable, args, { cwd, env: { ...childEnv(process.env), ...env }, stdio: ["pipe", "pipe", "pipe"] })
+    this.child = spawn(executable, args, { cwd, env, stdio: ["pipe", "pipe", "pipe"] })
     this.child.stderr.on("data", (chunk: Buffer) => { this.stderr = (this.stderr + chunk.toString()).slice(-2000) })
     this.child.on("error", (error) => this.close(error))
     this.child.on("exit", (code) => this.close(new Error(`Codex app-server exited ${code ?? "unexpectedly"}: ${this.stderr.trim().slice(-400)}`)))
