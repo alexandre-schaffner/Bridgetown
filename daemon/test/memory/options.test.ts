@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk"
-import { memoryOptions } from "../../src/memory/memory.ts"
+import { memoryOptions } from "../../src/memory/model.ts"
 
 test("memory jobs expose only source readers, enforce budgets and reject every other tool", async () => {
   const abort = new AbortController()

@@ -138,10 +138,15 @@ The separate local repo is `$BRIDGETOWN_HOME/memory` (by default
 Source categories are user statements, source statements (including Slack alerts), observed workflow, and agent
 claims. An agent cannot upgrade its claim to an observed outcome. A dismissal is not proof of resolution or a
 lasting preference; a draft PR is not a deployment. Original links remain in the notes after raw evidence expires.
+Index bullets use bare links such as `- [[operations/alerts]]`. Labeled links under an Index heading are normalized
+to bare links, discarding descriptions; facts belong in topic files and still require source metadata.
 
-The daemon runs one memory job at a time with your existing Claude authentication. Learning batches up to 50 events
-(and 60,000 characters of evidence) once a minute; Sonnet has a $0.50/two-minute/12-turn limit. Dreaming has a
-$1/five-minute/20-turn limit and runs every six hours when evidence has changed, or after a manual **Run now**.
+The daemon runs one memory job at a time with the provider, model and effort chosen in **Settings → Models → Memory**.
+Automatic uses Claude Sonnet with medium effort. Jobs use the selected provider's existing authentication.
+Learning batches up to 50 events (and 60,000 characters of evidence) once a minute, with a two-minute timeout.
+Dreaming has a five-minute timeout and runs every six hours when evidence has changed, or after a manual **Run now**.
+Claude limits spending to $0.50 for learning and $1 for dreaming; Codex does not report spending. Each Claude
+attempt allows at most 12 learning turns or 20 consolidation turns.
 It merges duplicates, updates stale entries, and checks retained sources for contradictions. Missing evidence is
 not confirmation. Empty batches require no model call. Tests and the demo use fake adapters.
 
@@ -151,6 +156,9 @@ run shell commands, fetch URLs, edit project files, or change approvals. Git com
 restart between commit and database acknowledgement does not repeat the batch. Model, Git or validation failures
 leave evidence pending and appear in Settings; intake and agent work continue without recalled context if memory
 cannot be read. No remote is created, fetched or pushed.
+Invalid proposals receive the validation error and may be corrected twice against the same original snapshot.
+All attempts share the job's timeout and remaining Claude spending budget. Nothing is written or acknowledged
+until a complete proposal passes validation; API/authentication errors and concurrent edits stop the job immediately.
 
 Both providers use broker tools for memory search and topic reads; results are bounded, redacted and fenced as
 untrusted evidence. Generated commands and file operations run in the macOS sandbox described above, which

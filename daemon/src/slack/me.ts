@@ -1,4 +1,5 @@
 import { Cache, Context, Duration, Effect, Exit, Layer, Ref } from "effect"
+import { errorMessage } from "../domain/errors.ts"
 import { Hub } from "../hub.ts"
 import { type SlackError, type SlackIdentity, SlackClient } from "./client.ts"
 
@@ -35,13 +36,11 @@ export const SlackMeLive = Layer.effect(SlackMe)(
 
     const identity = yield* Effect.cachedWithTTL(
       slack.identity().pipe(
-        Effect.tap((found) => Ref.set(known, found).pipe(Effect.andThen(hub.problem("slack", null)))),
+        Effect.tap((found) => Ref.set(known, found).pipe(Effect.andThen(hub.patchStatus({ slack: "ok" })))),
         Effect.tapError((error) =>
-          Effect.andThen(
-            hub.patchStatus({ slack: error._tag === "MissingCredential" ? "missing_token" : "error" }),
-            hub.problem("slack", `Slack: ${error.message}`),
-          ),
+          hub.patchStatus({ slack: error._tag === "MissingCredential" ? "missing_token" : "error" }),
         ),
+        hub.observe("slack", (error) => `Slack: ${errorMessage(error)}`),
       ),
       successesOnly,
     )
@@ -50,11 +49,9 @@ export const SlackMeLive = Layer.effect(SlackMe)(
       const me = yield* Ref.get(known)
       if (me === undefined) return []
       return yield* slack.groupsOf(me.user_id).pipe(
-        Effect.tap(() => hub.problem("groups", null)),
-        Effect.tapError((error) => hub.problem("groups", `Slack user groups: ${error.message} (add the usergroups:read scope)`)),
-        Effect.orElseSucceed((): ReadonlyArray<UserGroup> => []),
+        hub.observe("groups", (error) => `Slack user groups: ${errorMessage(error)} (add the usergroups:read scope)`),
       )
-    }).pipe(Effect.cachedWithTTL(GROUPS_TTL))
+    }).pipe(Effect.cachedWithTTL((exit) => Exit.isSuccess(exit) ? GROUPS_TTL : Duration.zero))
 
     const names = yield* Cache.makeWith((userId: string) => slack.userName(userId), { capacity: NAMES_CAPACITY, timeToLive: successesOnly })
 
@@ -63,7 +60,7 @@ export const SlackMeLive = Layer.effect(SlackMe)(
       known: Ref.get(known),
       // Before the identity is known there is nobody to look groups up for, and that empty answer is not cached.
       groups: Effect.gen(function* () {
-        return (yield* Ref.get(known)) === undefined ? [] : yield* groupsOfMe
+        return (yield* Ref.get(known)) === undefined ? [] : yield* groupsOfMe.pipe(Effect.orElseSucceed((): ReadonlyArray<UserGroup> => []))
       }),
       nameOf: (userId) => Cache.get(names, userId).pipe(Effect.orElseSucceed(() => userId)),
     }

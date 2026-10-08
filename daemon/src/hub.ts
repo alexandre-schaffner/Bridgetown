@@ -1,7 +1,7 @@
-import { Context, Effect, Layer, PubSub, Ref, type Scope, Semaphore, Stream } from "effect"
+import { Cause, Context, Effect, Exit, Layer, PubSub, Ref, type Scope, Semaphore, Stream } from "effect"
 import type { Status as WireStatus } from "./api/wire.ts"
 import { Environment } from "./config.ts"
-import type { AdapterError } from "./domain/errors.ts"
+import { type AdapterError, errorMessage } from "./domain/errors.ts"
 import { loadSettings, type Settings } from "./domain/settings.ts"
 import { Store } from "./store/store.ts"
 
@@ -9,7 +9,7 @@ import { Store } from "./store/store.ts"
 export type Status = Omit<WireStatus, "dryRun">
 
 /** What can go wrong, each reported by the part that saw it, and cleared by that part once it works again. */
-export type ProblemSource = "slack" | "poll" | "inbox" | "groups" | "post" | "jev" | "mcp" | "ci" | "setup" | "memory"
+export type ProblemSource = "slack" | "poll" | "inbox" | "groups" | "post" | "jev" | "mcp" | "ci" | "setup" | "memory" | "memory-repository" | "memory-read" | "memory-capture"
 
 /** One line for a round's problems: the first, and how many more. `null` for a round with none. */
 export const problemOf = (lines: ReadonlyArray<string>): string | null => {
@@ -30,6 +30,10 @@ export interface HubShape {
   readonly patchStatus: (patch: StatusPatch) => Effect.Effect<void>
   /** `source`'s problem now, or `null` once it works again. */
   readonly problem: (source: ProblemSource, message: string | null) => Effect.Effect<void>
+  /** Latest standing problem among these operations. Recovery in one cannot clear another's failure. */
+  readonly problemFor: (...sources: ReadonlyArray<ProblemSource>) => Effect.Effect<string | null>
+  /** Reports a real failure and clears it on success, before any fallback hides the outcome. Cancellation preserves it. */
+  readonly observe: (source: ProblemSource, message?: (error: unknown) => string) => <A, E, R>(operation: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
   readonly settings: Effect.Effect<Settings>
   /** Read, change and store in one step: concurrent changes (two toggles flipped quickly) never drop each other. */
   readonly modifySettings: <E>(f: (current: Settings) => Effect.Effect<Settings, E>) => Effect.Effect<Settings, E | AdapterError>
@@ -104,6 +108,11 @@ export const HubLive = Layer.effect(Hub)(
         return [after.problems !== before.problems || JSON.stringify(after.status) !== JSON.stringify(before.status), after]
       })
 
+    const problem = (source: ProblemSource, message: string | null) =>
+      update((current) => ({ ...current, problems: withProblem(current.problems, source, message) })).pipe(
+        Effect.flatMap((changed) => (changed ? notify : Effect.void)),
+      )
+
     return {
       status: Ref.get(state).pipe(Effect.map(({ status, problems }) => ({ ...status, error: [...problems.values()].at(-1) ?? null }))),
       patchStatus: (patch) =>
@@ -119,10 +128,13 @@ export const HubLive = Layer.effect(Hub)(
           }
           yield* notify
         }),
-      problem: (source, message) =>
-        update((current) => ({ ...current, problems: withProblem(current.problems, source, message) })).pipe(
-          Effect.flatMap((changed) => (changed ? notify : Effect.void)),
-        ),
+      problem,
+      problemFor: (...sources) => Ref.get(state).pipe(Effect.map(({ problems }) => [...problems].filter(([source]) => sources.includes(source)).at(-1)?.[1] ?? null)),
+      observe: (source, message = errorMessage) => (operation) => operation.pipe(Effect.onExit((exit) =>
+        Exit.isSuccess(exit) ? problem(source, null)
+          : Cause.hasInterruptsOnly(exit.cause) ? Effect.void
+          : problem(source, message(Cause.squash(exit.cause))),
+      )),
       settings: Ref.get(settings),
       modifySettings,
       updateSettings: (next) => modifySettings(() => Effect.succeed(next)),

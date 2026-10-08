@@ -72,14 +72,25 @@ export const validateChanges = (snapshot: MemorySnapshot, proposal: Changes, sou
     if (Buffer.byteLength(content, "utf8") > fileLimit(path)) throw fail(`Memory file too large: ${path}`)
     const existing = new Set((snapshot.files[path] ?? "").split("\n"))
     const lines = content.split("\n")
+    let inIndex = false
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? ""
-      if (!line.trim() || line.startsWith("#") || /^- \[\[[\w/-]+\]\]$/.test(line)) continue
+      if (line.startsWith("#")) {
+        inIndex = /^#{1,6}\s+Index\s*#*\s*$/i.test(line)
+        continue
+      }
+      if (!line.trim() || /^- \[\[[\w/-]+\]\]$/.test(line)) continue
       if (!line.startsWith("- ")) throw fail("Memory entries must be one-line bullets")
+      // Index labels are navigation, not facts. Discard labels rather than retaining unattributed prose.
+      const indexLink = inIndex ? /^- [^\[\]]*\[\[([\w/-]+)\]\][^\[\]]*$/.exec(line) : null
+      if (indexLink !== null) {
+        lines[i] = `- [[${indexLink[1]}]]`
+        continue
+      }
       if (existing.has(line)) continue
       const metadata = /\[source: ([^;\]]+); added: \d{4}-\d{2}-\d{2}; evidence: (user statement|source statement|observed workflow|agent claim)(?:; origin: [^\]]+)?\]$/.exec(line)
       const source = metadata?.[1]
-      if (source === undefined || sources.get(source)?.category !== metadata?.[2]) throw fail("New memory entry lacks a supported source, date, or correct evidence category")
+      if (source === undefined || sources.get(source)?.category !== metadata?.[2]) throw fail(`New memory entry lacks a supported source, date, or correct evidence category (${path}:${i + 1})`)
       const origin = sources.get(source)?.origin
       if (origin !== undefined) {
         const safe = origin.replace(/[;\]\r\n]/g, (character) => encodeURIComponent(character))

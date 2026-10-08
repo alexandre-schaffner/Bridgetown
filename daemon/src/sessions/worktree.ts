@@ -122,9 +122,9 @@ const addCommand = Effect.fn("addCommand")(function* (repoPath: string, branch: 
 
 /**
  * The repo pins another bun than this machine runs, or `null`. Checked on every setup, an install skipped or not:
- * the app's problem line follows it, so a setup that did not look must not clear it.
+ * the app's problem line follows it and the periodic health check refreshes it after upgrades.
  */
-const bunMismatchOf = Effect.fn("bunMismatchOf")(function* (repoPath: string) {
+export const bunMismatchOf = Effect.fn("bunMismatchOf")(function* (repoPath: string) {
   const pinned = pinnedBunVersion(repoPath)
   if (pinned === undefined) return null
   const local = (yield* run(["bun", "--version"]).pipe(Effect.orElseSucceed(() => ({ exitCode: 1, stdout: "", stderr: "" })))).stdout.trim()

@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Fiber } from "effect"
 import { SlackApiError } from "../src/domain/errors.ts"
-import { Hub, problemOf, type StatusPatch } from "../src/hub.ts"
+import { Hub, problemOf, type StatusPatch, type ProblemSource } from "../src/hub.ts"
 import { SlackThread } from "../src/slack/thread.ts"
 import { Store } from "../src/store/store.ts"
 import { fakeSlack } from "./support/fakes.ts"
@@ -111,5 +111,42 @@ describe("settings", () => {
       }),
     )
     expect(out).toMatchObject({ autoStart: false, inbox: false })
+  })
+})
+
+
+describe("operation error lifecycle", () => {
+  const world = makeWorld()
+  afterAll(() => world.dispose())
+  const sources: ReadonlyArray<ProblemSource> = ["slack", "poll", "inbox", "groups", "post", "jev", "mcp", "ci", "setup", "memory", "memory-repository", "memory-read", "memory-capture"]
+
+  for (const source of sources) test(`${source} clears on success and preserves failures from other operations`, async () => {
+    await world.runPromise(Effect.gen(function* () {
+      const hub = yield* Hub
+      const other = source === "post" ? "jev" : "post"
+      yield* hub.problem(other, "Unrelated failure")
+      const failed = yield* Effect.fail(new Error("temporary failure")).pipe(hub.observe(source), Effect.result)
+      expect(failed._tag).toBe("Failure")
+      expect((yield* hub.status).error).toBe("temporary failure")
+      expect(yield* Effect.succeed("recovered").pipe(hub.observe(source))).toBe("recovered")
+      expect(yield* hub.problemFor(source)).toBeNull()
+      expect((yield* hub.status).error).toBe("Unrelated failure")
+      yield* hub.problem(other, null)
+    }))
+  })
+
+  test("cancelling an operation does not dismiss its previous failure; defects remain visible", async () => {
+    await world.runPromise(Effect.gen(function* () {
+      const hub = yield* Hub
+      yield* hub.problem("groups", "Still failing")
+      const fiber = yield* Effect.never.pipe(hub.observe("groups"), Effect.forkChild)
+      yield* Effect.yieldNow
+      yield* Fiber.interrupt(fiber)
+      expect(yield* hub.problemFor("groups")).toBe("Still failing")
+      yield* Effect.die(new Error("Unexpected failure")).pipe(hub.observe("groups"), Effect.ignoreCause)
+      expect(yield* hub.problemFor("groups")).toBe("Unexpected failure")
+      yield* Effect.void.pipe(hub.observe("groups"))
+      expect(yield* hub.problemFor("groups")).toBeNull()
+    }))
   })
 })

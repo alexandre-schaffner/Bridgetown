@@ -2,7 +2,7 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { Effect, Schema, Struct } from "effect"
 import { errorMessage, InvalidInput } from "./errors.ts"
-import { DEFAULT_MODELS, ModelSelection, ModelSettings } from "./models.ts"
+import { DEFAULT_MODELS, ModelSettings } from "./models.ts"
 
 export const Channel = Schema.Struct({ id: Schema.String, name: Schema.String, enabled: Schema.Boolean })
 export type Channel = typeof Channel.Type
@@ -141,7 +141,7 @@ export const SettingsPatch = Schema.Struct({
   pollSeconds: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(MIN_POLL_SECONDS))),
   thresholds: Schema.optional(Thresholds.mapFields(Struct.map(Schema.optional))),
   quietHours: Schema.optional(QuietHours.mapFields(Struct.map(Schema.optional))),
-  models: Schema.optional(Schema.Struct({ monitoring: Schema.optional(ModelSelection), reviewing: Schema.optional(ModelSelection) })),
+  models: Schema.optional(ModelSettings.mapFields(Struct.map(Schema.optional))),
 })
 export type SettingsPatch = typeof SettingsPatch.Type
 

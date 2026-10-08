@@ -85,7 +85,10 @@ export const LogPattern = Schema.Struct({
 })
 export type LogPattern = typeof LogPattern.Type
 
-export const patternKey = (sweep: Sweep, message: string): string => `${sweep}:${String(Bun.hash(message))}`
+/** Nested RPC wrappers sometimes append the same cause again ("out of gas: out of gas"). */
+const patternMessage = (message: string): string => message.replace(/\b([a-z][a-z0-9_]*(?: [a-z][a-z0-9_]*){0,7})(?:: \1)+\b/g, "$1")
+
+export const patternKey = (sweep: Sweep, message: string): string => `${sweep}:${String(Bun.hash(patternMessage(message)))}`
 
 export const levelOf = (sweep: Sweep) => (sweep === "errors" ? ("error" as const) : ("warning" as const))
 
@@ -166,15 +169,15 @@ export const mergeRows = (rows: ReadonlyArray<PatternRow>): ReadonlyArray<LogPat
     if (first === undefined) return []
     const recent = group.reduce((sum, row) => sum + row.recent, 0)
     const total = group.reduce((sum, row) => sum + row.total, 0)
-    const filters = busiest.map((row) => row.sourceFilter)
+    const filters = [...new Set(busiest.map((row) => row.sourceFilter))]
     const sourceFilter = filters.some((f) => f === null) ? null : filters.length === 1 ? (filters[0] ?? null) : `(${filters.join(" OR ")})`
     return [
       {
         sweep: first.sweep,
         key,
-        sources: busiest.map((row) => row.source),
+        sources: [...new Set(busiest.map((row) => row.source))],
         sourceFilter,
-        message: first.message,
+        message: patternMessage(first.message),
         example: first.example,
         versions: [...new Set(busiest.flatMap((row) => row.versions))].slice(0, 3),
         recent,

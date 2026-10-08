@@ -73,6 +73,20 @@ describe("behaviour, merging and picking", () => {
     expect(merged).toMatchObject({ sources: ["merkl-precompute-*", "merkl-compute-*"], sourceFilter: "(B OR A)", recent: 1_813, behaviour: "steady" })
   })
 
+  test("a nested RPC error repeating its cause is one pattern without merging different causes", () => {
+    const message = 'Failed to process multicall batch: Code: CALL_EXCEPTION | error={"message":"rpc error: code = Internal desc = out of gas"}'
+    const [merged, ...rest] = mergeRows([
+      row({ sweep: "warnings", source: "merkl-api-v4", message, recent: 26, total: 176 }),
+      row({ sweep: "warnings", source: "merkl-api-v4", message: message.replace("out of gas", "out of gas: out of gas"), recent: 10, total: 64 }),
+    ])
+    expect(rest).toHaveLength(0)
+    expect(merged).toMatchObject({ message, recent: 36 })
+    expect(mergeRows([
+      row({ message }),
+      row({ message: message.replace("out of gas", "execution reverted") }),
+    ])).toHaveLength(2)
+  })
+
   test("one unquotable source drops the source filter for the whole pattern", () => {
     expect(mergeRows([row({ sourceFilter: "A" }), row({ source: "y", sourceFilter: null })])[0]?.sourceFilter).toBeNull()
   })

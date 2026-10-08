@@ -11,12 +11,14 @@
     {"shot": "models-automatic"},
     {"mock": {"settings": {"models": {
       "monitoring": {"mode": "manual", "provider": "codex", "model": "gpt-6.1-sol", "effort": "ultra"},
-      "reviewing": {"mode": "manual", "provider": "claude", "model": "claude-opus-4-6", "effort": "max"}
+      "reviewing": {"mode": "manual", "provider": "claude", "model": "claude-opus-4-6", "effort": "max"},
+      "memory": {"mode": "manual", "provider": "codex", "model": "gpt-6.1-sol", "effort": "high"}
     }}}},
     {"shot": "models-selected"},
     {"mock": {"settings": {"models": {
       "monitoring": {"mode": "manual", "provider": "claude", "model": "my-custom-model", "effort": null},
-      "reviewing": {"mode": "manual", "provider": "codex", "model": "gpt-5.6-sol", "effort": null}
+      "reviewing": {"mode": "manual", "provider": "codex", "model": "gpt-5.6-sol", "effort": null},
+      "memory": {"mode": "manual", "provider": "codex", "model": "gpt-6.1-sol", "effort": "high"}
     }}}},
     {"shot": "models-custom"},
     {"type": {"into": "models.monitoring.custom", "text": "my-updated-model"}},
@@ -24,9 +26,25 @@
     {"wait": "settled"},
     {"expect": {"models": {
       "monitoring": {"mode": "manual", "provider": "claude", "model": "my-updated-model", "effort": null},
-      "reviewing": {"mode": "manual", "provider": "codex", "model": "gpt-5.6-sol", "effort": null}
+      "reviewing": {"mode": "manual", "provider": "codex", "model": "gpt-5.6-sol", "effort": null},
+      "memory": {"mode": "manual", "provider": "codex", "model": "gpt-6.1-sol", "effort": "high"}
     }}},
     {"surface": "settings", "tab": "models"},
-    {"shot": "models-custom-saved"}
+    {"shot": "models-custom-saved"},
+    {"mock": {"settings": {"models": {
+      "monitoring": {"mode": "automatic"},
+      "memory": {"mode": "manual", "provider": "claude", "model": "my-memory-model", "effort": null}
+    }}}},
+    {"surface": "settings", "tab": "models"},
+    {"shot": "models-memory-custom"},
+    {"type": {"into": "models.memory.custom", "text": "my-updated-memory-model"}},
+    {"press": "Use model"},
+    {"wait": "settled"},
+    {"expect": {"models": {
+      "monitoring": {"mode": "automatic"},
+      "reviewing": {"mode": "manual", "provider": "codex", "model": "gpt-5.6-sol", "effort": null},
+      "memory": {"mode": "manual", "provider": "claude", "model": "my-updated-memory-model", "effort": null}
+    }}},
+    {"shot": "models-memory-saved"}
   ]
 }

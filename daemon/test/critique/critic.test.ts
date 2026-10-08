@@ -89,13 +89,14 @@ describe("the adversarial review", () => {
       await world.runPromise(Effect.gen(function* () {
         const hub = yield* Hub
         yield* hub.updateSettings({ ...(yield* hub.settings), models: {
+          memory: { mode: "automatic" },
           monitoring: { mode: "manual", provider: "codex", model: "investigator", effort: "high" },
           reviewing: { mode: "manual", provider: "claude", model: "reviewer", effort: "max" },
         } })
         yield* seed(reviewing({ provider: "codex", model: "investigator" }))
         yield* (yield* Critic).tick
         yield* Deferred.await(started)
-        yield* hub.updateSettings({ ...(yield* hub.settings), models: { monitoring: { mode: "automatic" }, reviewing: { mode: "automatic" } } })
+        yield* hub.updateSettings({ ...(yield* hub.settings), models: { monitoring: { mode: "automatic" }, reviewing: { mode: "automatic" }, memory: { mode: "automatic" } } })
         yield* Deferred.succeed(finish, undefined)
       }))
       const session = await world.runPromise(eventually(Store.use((s) => s.getSession("s_crit")), (s) => s?.status === "ci" ? s : undefined))

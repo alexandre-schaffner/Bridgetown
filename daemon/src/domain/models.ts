@@ -14,10 +14,10 @@ export const ModelSelection = Schema.Union([
   Schema.Struct({ ...Manual, provider: Schema.Literal("codex"), effort: Schema.NullOr(Identifier) }),
 ])
 export type ModelSelection = typeof ModelSelection.Type
-export const ModelSettings = Schema.Struct({ monitoring: ModelSelection, reviewing: ModelSelection })
+export const ModelSettings = Schema.Struct({ monitoring: ModelSelection, reviewing: ModelSelection, memory: ModelSelection })
 export type ModelSettings = typeof ModelSettings.Type
 export const AUTOMATIC: ModelSelection = { mode: "automatic" }
-export const DEFAULT_MODELS: ModelSettings = { monitoring: AUTOMATIC, reviewing: AUTOMATIC }
+export const DEFAULT_MODELS: ModelSettings = { monitoring: AUTOMATIC, reviewing: AUTOMATIC, memory: AUTOMATIC }
 
 export const ModelInfo = Schema.Struct({
   id: Schema.String,

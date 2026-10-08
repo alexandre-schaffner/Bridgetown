@@ -18,13 +18,14 @@ export interface LoopTiming {
   readonly first?: Duration.Input
 }
 
-export type LoopName = "github" | "poll" | "ship" | "critique" | "inbox" | "schedule" | "grafana" | "boards" | "watch" | "logs" | "housekeeping" | "memory"
+export type LoopName = "github" | "bun" | "poll" | "ship" | "critique" | "inbox" | "schedule" | "grafana" | "boards" | "watch" | "logs" | "housekeeping" | "memory"
 
 export type SchedulerTiming = Record.ReadonlyRecord<LoopName, LoopTiming>
 
 /** The daemon's schedule. The mock daemon runs it with some loops sped up. */
 export const SCHEDULER_TIMING: SchedulerTiming = {
   github: { every: "120 seconds", first: "120 seconds" },
+  bun: { every: "60 seconds" },
   poll: { every: (s) => Duration.seconds(Math.max(MIN_POLL_SECONDS, s.pollSeconds)) },
   ship: { every: "60 seconds" },
   critique: { every: "10 seconds" },
@@ -79,6 +80,7 @@ export const SchedulerLive = Layer.effect(Scheduler)(
     })
     const loops: Record.ReadonlyRecord<LoopName, Effect.Effect<void, unknown>> = {
       github: health.probeGithub,
+      bun: health.probeBun,
       poll: alerts.poll,
       ship: shipper.tick,
       critique: critic.tick,

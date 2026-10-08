@@ -350,6 +350,9 @@
       },
       "reviewing": {
         "mode": "automatic"
+      },
+      "memory": {
+        "mode": "automatic"
       }
     },
     "channels": [

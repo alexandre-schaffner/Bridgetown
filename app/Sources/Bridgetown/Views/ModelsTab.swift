@@ -13,6 +13,9 @@ struct ModelsTab: View {
                              selection: settings.binding(\.models.monitoring), catalog: catalog, loading: loading)
             ModelRoleSection(title: "Reviewing", note: "Reviews pushed fixes before the PR leaves draft. Changes apply to the next review. Jev continues judging findings.",
                              selection: settings.binding(\.models.reviewing), catalog: catalog, loading: loading)
+            ModelRoleSection(title: "Memory", note: "Learns durable facts and consolidates local memory. Changes apply to the next memory job.",
+                             automaticNote: "Automatic uses Claude Sonnet with medium effort for learning and consolidation.",
+                             selection: settings.binding(\.models.memory), catalog: catalog, loading: loading)
             Section {
                 HStack {
                     Text(loading ? "Reading installed providers…" : "Models come from your installed Codex and Claude Code.")
@@ -39,6 +42,7 @@ struct ModelsTab: View {
 private struct ModelRoleSection: View {
     let title: String
     let note: String
+    var automaticNote = "Automatic uses the existing quick, standard and deep task profiles."
     @Binding var selection: ModelSelection
     let catalog: ModelCatalog?
     let loading: Bool
@@ -94,7 +98,7 @@ private struct ModelRoleSection: View {
             Text(title)
         } footer: {
             VStack(alignment: .leading, spacing: 6) {
-                Text(provider == "automatic" ? "Automatic uses the existing quick, standard and deep task profiles." : note)
+                Text(provider == "automatic" ? automaticNote : note)
                 if let error = available?.error { Text(error).foregroundStyle(.red) }
                 if vendor != nil && available == nil && loading { Text("Loading models. You can also enter a custom model ID.") }
                 if vendor != nil && model.isEmpty { Text("Choose a model to save this provider.") }

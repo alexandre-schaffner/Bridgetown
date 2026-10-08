@@ -64,7 +64,7 @@ export const AsksLive = Layer.effect(Asks)(
         yield* Deferred.succeed(waiting.reply, text)
         yield* repo.log(waiting.sessionId, "status", `You answered: ${text}`)
         if (response.kind === "answered") yield* store.captureMemory("user", `bridgetown:session/${waiting.sessionId}`, JSON.stringify({ question: waiting.question, answer: response.text }))
-          .pipe(Effect.catch((error) => hub.problem("memory", error.message)))
+          .pipe(hub.observe("memory-capture"), Effect.ignoreCause)
         yield* resume(waiting.sessionId, "Continuing with your answer")
       })
 
