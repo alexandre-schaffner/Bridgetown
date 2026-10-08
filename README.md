@@ -54,6 +54,10 @@ The selected reviewer checks the fix before the PR leaves draft. Blocking findin
 
 [Download the latest release](https://github.com/alexandre-schaffner/Bridgetown/releases/latest/download/Bridgetown.dmg) (Apple silicon, macOS 14 or later), open it, and drag Bridgetown to Applications. Releases aren't notarized yet: on first launch, open **System Settings → Privacy & Security** and click **Open Anyway**. Every release is signed and immutable; see [Releasing](#releasing) to verify one.
 
+### Updates
+
+Bridgetown checks GitHub for a newer release at launch and every 6 hours. A new version sends one notification and appears at the top of the prod column. Click **Install**, or use **Install Bridgetown x.y.z** in the **…** menu, to update. Bridgetown downloads the DMG and checks its SHA-256 against the digest GitHub recorded when the release was published. It then checks that the app's bundle identifier, version, and code signature are valid before swapping it in and relaunching. If any check fails, the app you have stays in place. **Check for updates** in the same menu checks right away. To update in place, Bridgetown must run from a folder you can write to, such as Applications. If it runs from somewhere else, you get a download link instead.
+
 ## Try it locally
 
 You need **macOS 14 or later**, **Swift 6 / Xcode Command Line Tools**, **Bun**, and **Git**. The demo needs no Slack token or AI account: Slack, Jev, agents, GitHub, and Grafana use local fixtures.
@@ -181,6 +185,7 @@ It writes `.context/e2e/<UTC time>/` (`latest` points at it; the newest five sta
 - `BASELINE=<run dir>` diffs against that run instead of the previous `latest`, and `BASELINE=` against none. A partial run becomes `latest` too, so pass a full run's directory while you iterate with `ONLY`.
 - `{"hover": "needsYou.row.<id>"}` drives row hover from its accessibility frame; `{"hover": false}` leaves it. Hover buttons can then be clicked by their label inside the pane (for example, `{"click": "Merge", "in": "pane.needsYou"}`). SwiftUI exposes controls inside a row's label as named accessibility actions, so use `{"action": {"on": "<row identifier>", "name": "Select"}}` or a quick reply's label rather than a pixel offset.
 - `{"see": "<label>"}` asserts that an accessibility element is present; the suite uses it to check problem banners before photographing them. `{"restart": {"exitsAtStart": true}}` exercises the daemon that keeps stopping diagnostic.
+- `{"update": "available"}` shows the update notice in a state (`none`, `checking`, `upToDate`, `available`, `downloading`, `installing`, `failed`, `checkFailed`) for a made-up 1.2.0; its buttons do nothing.
 - `{"each": "actions", "title": "<exact title>", "do": [...]}` selects stable titles and fills `$id` in each step; a missing title fails the run. The optional title filter also works for sessions and alerts.
 - `SERVE=1` keeps the app up afterwards for an agent to drive. `.context/e2e/latest/control.json` holds a loopback `url` and a `token`; send the token as `X-E2E-Token`, then `POST /step` with one suite step as JSON (it answers `{ok, shots, error}`, each shot with its PNG and issues), `GET /tree` for the screen's accessibility tree and its lint, `GET /state`, and `POST /quit`. A run that hears nothing for 10 minutes ends.
 

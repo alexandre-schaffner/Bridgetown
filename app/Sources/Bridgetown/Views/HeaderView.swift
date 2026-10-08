@@ -100,11 +100,12 @@ struct StatusSummary: View {
     }
 }
 
-/// Settings, pause, logs and quit: everything about the app itself, one click away and
-/// out of sight. ⌘Q and ⌘, work without opening it.
+/// Settings, pause, updates, logs and quit: everything about the app itself, one click
+/// away and out of sight. ⌘Q and ⌘, work without opening it.
 struct AppMenu: View {
     @Environment(Store.self) private var store
     @Environment(DaemonProcess.self) private var daemon
+    @Environment(Updater.self) private var updater
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
@@ -120,7 +121,7 @@ struct AppMenu: View {
         .buttonStyle(.stage(.quiet, iconOnly: true))
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("Settings, logs, quit")
+        .help("Settings, updates, logs, quit")
         .accessibilityLabel("Bridgetown menu")
         .accessibilityIdentifier("header.menu")
         // The same items as named actions: VoiceOver and an e2e run reach them without
@@ -144,7 +145,25 @@ struct AppMenu: View {
         if let paused = store.snapshot?.status.paused {
             Button(paused ? "Resume auto-start" : "Pause auto-start") { store.setPaused(!paused) }
         }
+        if updater.isEnabled { updateItem }
         Button("Open logs", action: openLogs)
+    }
+
+    /// Installs the newer release once one is known; until then, checks for one.
+    @ViewBuilder
+    private var updateItem: some View {
+        let state = updater.state
+        if let release = state.release, updater.canInstall {
+            Button(state.isBusy ? "Installing \(release.version.description)…" : "Install Bridgetown \(release.version.description)") { updater.install() }
+                .disabled(state.isBusy)
+        } else if let release = state.release {
+            Button("Download Bridgetown \(release.version.description)") { SystemActions.open(release.dmg.absoluteString) }
+        } else {
+            Button(state == .checking ? "Checking for updates…" : "Check for updates") {
+                Task { await updater.check(manual: true) }
+            }
+            .disabled(state.isBusy)
+        }
     }
 
     private func showSettings() {

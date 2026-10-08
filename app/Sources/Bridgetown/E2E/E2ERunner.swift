@@ -27,6 +27,7 @@ final class E2ERunner {
     private(set) var report: E2EReport
     private let store: Store
     private let daemon: DaemonProcess
+    private let updater: Updater
     private let island: IslandController
     private let suite: E2ESuite
     private let options: Options
@@ -42,12 +43,13 @@ final class E2ERunner {
     init(app: AppDelegate, suite: E2ESuite, suiteName: String, options: Options, defaults: UserDefaults, commit: String) {
         store = app.store
         daemon = app.daemon
+        updater = app.updater
         island = app.island
         self.suite = suite
         self.options = options
         startDaemon = { [weak app] in app?.startDaemon() }
         appearances = suite.appearances
-        surfaces = E2ESurfaces(store: app.store, daemon: app.daemon, island: app.island, defaults: defaults)
+        surfaces = E2ESurfaces(store: app.store, daemon: app.daemon, updater: app.updater, island: app.island, defaults: defaults)
         report = E2EReport(
             run: options.out.lastPathComponent, commit: commit,
             os: ProcessInfo.processInfo.operatingSystemVersionString, now: suite.now, suite: suiteName
@@ -189,6 +191,8 @@ final class E2ERunner {
             // Done once the app has seen it go, so a `wait` after this one waits on what the
             // app does about it, not on the moment before it noticed.
             try await until("the crashed daemon to go", timeoutMs: 5_000) { daemonPid != crashing && store.connection != .connected }
+        case let .update(state):
+            updater.preview(state)
         case .stopDaemon:
             try await wait(.settled, timeoutMs: 0)
             await withCheckedContinuation { done in

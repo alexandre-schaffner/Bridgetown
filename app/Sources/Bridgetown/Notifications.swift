@@ -2,7 +2,7 @@ import AppKit
 import UserNotifications
 
 /// Posts a user notification for each new "Needs you" action (`NewActions`), and takes it
-/// back once the action is gone.
+/// back once the action is gone. Also says when a newer Bridgetown is out (`Updater`).
 @MainActor
 final class Notifier: NSObject {
     /// Set by `start`, or by a test. UNUserNotificationCenter traps when the process has no
@@ -39,6 +39,21 @@ final class Notifier: NSObject {
         }
     }
 
+    /// Once per release, without a sound: it can wait for you.
+    func post(update release: Release) {
+        guard let center else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Bridgetown \(release.version) is available"
+        content.body = "Open Bridgetown to install it. It relaunches in a few seconds."
+        content.threadIdentifier = "update"
+        center.post(UNNotificationRequest(identifier: Self.updateIdentifier, content: content, trigger: nil))
+    }
+
+    /// At launch: what it said came before this run, perhaps before this version.
+    func withdrawUpdate() {
+        center?.remove([Self.updateIdentifier])
+    }
+
     /// Takes back every delivered notification whose action is gone: answered here or in
     /// Slack, or before a relaunch. Clicking one would open the island onto nothing.
     /// Nothing to do while the same actions stand.
@@ -51,12 +66,14 @@ final class Notifier: NSObject {
             // Kept: the actions standing once the answer is in, not when it was asked. One
             // that came up in between has just been posted, and stays.
             let keep = Set((standing ?? []).map(Self.identifier))
-            let stale = delivered.filter { !keep.contains($0) }
+            let stale = delivered.filter { $0 != Self.updateIdentifier && !keep.contains($0) }
             if !stale.isEmpty { center.remove(stale) }
         }
     }
 
     private static func identifier(_ actionId: String) -> String { "action-\(actionId)" }
+    /// One at a time: a newer release replaces the last one's.
+    static let updateIdentifier = "update"
 }
 
 /// Notification Center as `Notifier` uses it: the system's, or a test's that holds its

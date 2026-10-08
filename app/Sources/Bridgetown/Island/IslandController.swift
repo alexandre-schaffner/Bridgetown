@@ -18,6 +18,7 @@ final class IslandController {
     let model: IslandModel
     private let store: Store
     private let daemon: DaemonProcess
+    private let updater: Updater
     private var panel: IslandPanel?
     private var monitors: [Any] = []
     private var observers: [NSObjectProtocol] = []
@@ -47,9 +48,10 @@ final class IslandController {
         Easing.reduceMotion ? .easeInOut(duration: 0.2) : animation
     }
 
-    init(store: Store, daemon: DaemonProcess) {
+    init(store: Store, daemon: DaemonProcess, updater: Updater) {
         self.store = store
         self.daemon = daemon
+        self.updater = updater
         model = IslandModel(geometry: .current())
     }
 
@@ -63,6 +65,7 @@ final class IslandController {
         let root = IslandView(model: model) { [weak self] in self?.open() }
             .environment(store)
             .environment(daemon)
+            .environment(updater)
             .environment(\.openURL, SystemActions.openLink)
         let host = FirstMouseHostingView(rootView: root)
         host.sizingOptions = []

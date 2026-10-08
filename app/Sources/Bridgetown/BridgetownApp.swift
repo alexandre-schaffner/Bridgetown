@@ -21,7 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = Store()
     let daemon = DaemonProcess()
     let notifier = Notifier()
-    private(set) lazy var island = IslandController(store: store, daemon: daemon)
+    let updater = Updater()
+    private(set) lazy var island = IslandController(store: store, daemon: daemon, updater: updater)
 
     #if DEBUG
     /// `--e2e …` or `--island-demo` (E2E/E2EHarness.swift); nil on a normal launch.
@@ -56,6 +57,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             island.announce(first)
         }
         island.start()
+
+        // A newer release is a notification, once, and a line in the open island.
+        notifier.withdrawUpdate()
+        updater.onAvailable = { [weak self] release in self?.notifier.post(update: release) }
+        #if DEBUG
+        if harness == nil { updater.start() }
+        #else
+        updater.start()
+        #endif
 
         #if DEBUG
         // It starts the daemon itself, once it has shown the app connecting.
