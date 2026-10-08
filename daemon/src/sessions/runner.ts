@@ -9,6 +9,7 @@ import { type AdapterError, Conflict, errorMessage, NotFound } from "../domain/e
 import { newId } from "../domain/ids.ts"
 import { sessionStartEvent } from "../domain/progress.ts"
 import { acceptsMessages, closedResolution, holdsSlot, isActive, isFinished, type Session, withPatch } from "../domain/session.ts"
+import { Memory } from "../memory/memory.ts"
 import { Hub } from "../hub.ts"
 import { GitHub } from "../ship/github.ts"
 import { SlackThread } from "../slack/thread.ts"
@@ -122,6 +123,7 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
   Effect.gen(function* () {
     const store = yield* Store
     const hub = yield* Hub
+    const memory = yield* Memory
     const thread = yield* SlackThread
     const repo = yield* SessionRepo
     const queue = yield* ActionQueue
@@ -161,6 +163,7 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
       repo,
       asks,
       agent,
+      memory,
       onEnd: (id) => (end: TurnEnd) => (end._tag === "Failed" ? finishFailed(id, end.reason) : finish(id, end.result)),
       onFailure: (id, reason) => finishFailed(id, reason).pipe(Effect.ignore),
       daemonPort: env.port,
@@ -399,6 +402,7 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
         if (session.critiqueRounds >= MAX_CRITIQUE_ROUNDS) yield* repo.patch(sessionId, { critiqueRounds: 0 })
         const delivery = yield* deliver(sessionId, text, {}, true)
         if (delivery === "refused") return yield* new Conflict({ message: "The session no longer takes messages" })
+        yield* store.captureMemory("user", `bridgetown:session/${sessionId}`, text).pipe(Effect.catch((error) => hub.problem("memory", error.message)))
         if (delivery === "sent") yield* repo.patch(sessionId, { activity: "Read your message" })
         if (delivery === "queued") yield* repo.patch(sessionId, { activity: "Message queued for after the current step" })
       }),

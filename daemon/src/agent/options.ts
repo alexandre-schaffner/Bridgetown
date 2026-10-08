@@ -116,6 +116,14 @@ export const sdkOptions = ({ session, abort, resume, tools, onRefused, daemonPor
     disallowedTools: [...SESSION_DISALLOWED_TOOLS],
     settingSources: ["user", "project", "local"],
     permissionMode: "acceptEdits",
+    // Shell programs must not bypass memory_remember by writing the daemon-owned wiki.
+    // Existing hooks still govern commands and approvals; this sandbox adds only memory write protection.
+    sandbox: {
+      enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false,
+      excludedCommands: [],
+      filesystem: { disabled: false, allowWrite: ["/"], denyWrite: [join(home, "memory")] },
+      network: { allowedDomains: ["*"], allowAllUnixSockets: true, allowLocalBinding: true },
+    },
     canUseTool,
     strictMcpConfig: true,
     mcpServers: { ...repoMcpServers(session.repoPath), [TOOL_SERVER]: makeToolServer(tools) },

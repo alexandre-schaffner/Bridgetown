@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct SettingsView: View {
-    enum Tab: String { case accounts, channels, triage, models, repos, behaviour }
+    enum Tab: String { case accounts, channels, triage, models, repos, behaviour, memory }
 
     @ViewState private var tab: Tab
 
@@ -27,6 +27,9 @@ struct SettingsView: View {
             DaemonSettings { ReposTab(settings: $0) }
                 .tabItem { Label("Repos", systemImage: "folder") }
                 .tag(Tab.repos)
+            DaemonSettings { MemoryTab(settings: $0) }
+                .tabItem { Label("Memory", systemImage: "brain") }
+                .tag(Tab.memory)
             DaemonSettings { BehaviourTab(settings: $0) }
                 .tabItem { Label("Behaviour", systemImage: "moon") }
                 .tag(Tab.behaviour)
@@ -363,5 +366,76 @@ private struct BehaviourTab: View {
     private static func string(from date: Date) -> String {
         let c = Calendar.current.dateComponents([.hour, .minute], from: date)
         return String(format: "%02d:%02d", c.hour ?? 0, c.minute ?? 0)
+    }
+}
+
+// MARK: - Memory
+
+private struct MemoryTab: View {
+    @Environment(Store.self) private var store
+    let settings: SettingsBinding
+    @ViewState private var status: MemoryStatus?
+    @ViewState private var requestError: String?
+    @ViewState private var submitting = false
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Remember across messages and sessions", isOn: settings.binding(\.memory))
+            } footer: {
+                Text("Learns from newly watched messages, your answers and actions, and agent findings. Uses Claude Sonnet about once a minute; consolidates every six hours when there is new evidence. Each job is bounded to $0.50 for learning or $1 for consolidation.")
+                    .font(.caption)
+            }
+            Section("Local memory") {
+                if let status {
+                    LabeledContent("Status", value: settings.value.memory ? status.label : "Disabled")
+                    LabeledContent("Pending evidence", value: "\(status.pending)")
+                    LabeledContent("Last learned", value: time(status.lastLearnedAt))
+                    LabeledContent("Last consolidated", value: time(status.lastDreamedAt))
+                    Text(status.path).font(.caption).textSelection(.enabled)
+                    if let error = status.error {
+                        Text(error).font(.caption).foregroundStyle(.red)
+                    }
+                } else {
+                    Text("Reading memory status…").foregroundStyle(.secondary)
+                }
+                HStack {
+                    Button("Run now") { Task { await run() } }
+                        .disabled(!settings.value.memory || submitting || status?.isWorking == true)
+                    Button("Open memory folder") {
+                        if let path = status?.path { NSWorkspace.shared.open(URL(fileURLWithPath: path, isDirectory: true)) }
+                    }
+                    .disabled(status == nil)
+                }
+                if let requestError { Text(requestError).font(.caption).foregroundStyle(.red) }
+            }
+        }
+        .formStyle(.grouped)
+        .task {
+            while !Task.isCancelled {
+                await reload()
+                do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            }
+        }
+    }
+
+    private func time(_ date: Date?) -> String {
+        date?.formatted(date: .abbreviated, time: .shortened) ?? "Never"
+    }
+
+    @MainActor private func reload() async {
+        do {
+            status = try await store.fetch { try await $0.memoryStatus() }
+            requestError = nil
+        } catch { requestError = error.userMessage }
+    }
+
+    @MainActor private func run() async {
+        submitting = true
+        defer { submitting = false }
+        do {
+            status = try await store.fetch { try await $0.runMemory() }
+            requestError = nil
+        } catch { requestError = error.userMessage }
     }
 }

@@ -23,7 +23,7 @@ const setup = (scenario: string, resume = false) => {
   const request: AgentRequest = {
     session: { ...newSession(makeAlert(), "s", home, { mode: "manual", provider: "codex", model: "test-model", effort: "high" }), worktree: home, agentSessionId: resume ? "previous" : null },
     home, daemonPort: 47621, abort, resume, prompt: { async *[Symbol.asyncIterator]() { yield { text: "Investigate", reopen: false } } },
-    tools: { report: async (_, note) => { calls.push(note) }, ask: async (question) => { calls.push(question); return "prod" }, slackContext: async () => "context" },
+    tools: { report: async (_, note) => { calls.push(note) }, ask: async (question) => { calls.push(question); return "prod" }, slackContext: async () => "context", memorySearch: async () => "", memoryRead: async () => "", memoryRemember: async () => false },
     onRefused: (command) => { calls.push(`refused: ${command}`) }, onUndelivered: async (text) => { undelivered.push(text) },
   }
   const audit = () => readFileSync(join(dir, "audit.jsonl"), "utf8")

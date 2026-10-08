@@ -33,6 +33,8 @@ export const Settings = Schema.Struct({
   autoStart: Schema.Boolean,
   /** Watch mentions, group mentions and DMs across all of Slack, not just alert channels. */
   inbox: Schema.Boolean,
+  /** Persistent local memory across messages and sessions. */
+  memory: Schema.Boolean,
   maxConcurrent: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
   dryRun: Schema.Boolean,
   /** A different model reviews each pushed fix before the PR leaves draft. */
@@ -85,6 +87,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   autoStart: true,
   inbox: true,
+  memory: true,
   maxConcurrent: 2,
   dryRun: true,
   adversarialReview: true,

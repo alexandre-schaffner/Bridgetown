@@ -63,6 +63,8 @@ export const makeHandlers = (deps: HandlerDeps): Readonly<Record<ActionKind, Han
       const text = (response ?? action.detail).trim()
       if (text === "") return yield* new InvalidInput({ message: "The reply is empty" })
       const posted = yield* deps.thread.post(alert, toMrkdwn(text))
+      yield* deps.store.captureMemory("action", `bridgetown:action/${action.id}`, JSON.stringify({ kind: "reply", text, result: posted._tag === "Posted" ? "sent" : "not_sent", ...posted }), `${action.id}:post:${posted._tag === "Posted" ? posted.ts : posted.reason}`)
+        .pipe(Effect.catch((error) => Effect.logWarning(`Memory capture: ${error.message}`)))
       if (posted._tag === "NotPosted" && posted.reason === "error") {
         return yield* new SlackApiError({ method: "chat.postMessage", code: "not_posted", message: "The reply could not be posted; nothing was sent" })
       }

@@ -10,6 +10,7 @@ import { AdapterError, decodeOr, errorMessage } from "../domain/errors.ts"
 import { now } from "../domain/ids.ts"
 import { ACTIVE_STATUSES, Session, SessionStatus, TranscriptEntry } from "../domain/session.ts"
 import { makeKeyedLock } from "../lib/keyed-lock.ts"
+import { evidenceStore, type EvidenceStore } from "../memory/evidence.ts"
 import { migrations } from "./migrations.ts"
 
 /** What retention reads of every alert and session, without decoding their JSON. */
@@ -30,7 +31,7 @@ export type SessionRef = typeof SessionRef.Type
 /** What an alert history line records besides itself. */
 export type AlertEventChange = Partial<Pick<Alert, "claimedBy" | "sessionId">> & { readonly disposition?: Disposition["kind"] }
 
-export interface StoreShape {
+export interface StoreShape extends EvidenceStore {
   readonly getAlert: (id: string) => Effect.Effect<Alert | undefined, AdapterError>
   /**
    * Writes the alert. `contentHash` is the Slack message's, set by ingest so an
@@ -95,9 +96,12 @@ export class Store extends Context.Service<Store, StoreShape>()("Store") {}
 const sqlError = (operation: string) => (cause: unknown) =>
   new AdapterError({ adapter: "sqlite", operation, message: errorMessage(cause), cause })
 
-const StoreImpl = Layer.effect(Store)(
+const StoreImpl = (secrets: ReadonlyArray<string | undefined>) => Layer.effect(Store)(
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
+    const memory = evidenceStore(sql, secrets)
+    const [activation] = yield* sql<{ readonly value: string }>`SELECT value FROM kv WHERE key = 'memory_activated_at'`
+    const activatedAt = activation?.value ?? new Date().toISOString()
 
     /** A row that no longer decodes is logged and skipped, so one bad record cannot blank the whole app. */
     const decodeEach =
@@ -125,7 +129,7 @@ const StoreImpl = Layer.effect(Store)(
         Effect.map(first),
       )
 
-    const putAlert = (alert: Alert, contentHash?: string) =>
+    const writeAlert = (alert: Alert, contentHash?: string) =>
       (contentHash === undefined
         ? sql`
             INSERT INTO alerts (id, fingerprint, received_at, content_hash, json)
@@ -141,6 +145,13 @@ const StoreImpl = Layer.effect(Store)(
               json = excluded.json
           `
       ).pipe(Effect.asVoid, Effect.mapError(sqlError("put alert")))
+
+    const putAlert = (alert: Alert, contentHash?: string) => sql.withTransaction(Effect.gen(function* () {
+      const previous = yield* getAlert(alert.id)
+      yield* writeAlert(alert, contentHash)
+      if ((previous?.raw === alert.raw && JSON.stringify(previous.fields) === JSON.stringify(alert.fields)) || (previous === undefined && alert.receivedAt < activatedAt)) return
+      yield* memory.captureMemory("message", alert.permalink ?? `bridgetown:alert/${alert.id}`, JSON.stringify({ title: alert.title, raw: alert.raw, fields: alert.fields, source: alert.source }))
+    })).pipe(Effect.mapError(sqlError("put alert with evidence")))
 
     const modifyAlert = (id: string, f: (current: Alert | undefined) => Alert | undefined, contentHash?: string) =>
       Effect.gen(function* () {
@@ -159,6 +170,7 @@ const StoreImpl = Layer.effect(Store)(
       sql`DELETE FROM actions WHERE id = ${id}`.pipe(Effect.asVoid, Effect.mapError(sqlError("delete action")))
 
     return {
+      ...memory,
       getAlert,
       putAlert,
       modifyAlert,
@@ -199,13 +211,25 @@ const StoreImpl = Layer.effect(Store)(
           Effect.flatMap(decodeRows("decode session", Session)),
           Effect.map(first),
         ),
-      putSession: (session) =>
-        sql`
-          INSERT INTO sessions (id, status, updated_at, json)
-          VALUES (${session.id}, ${session.status}, ${session.updatedAt}, ${JSON.stringify(session)})
-          ON CONFLICT (id) DO UPDATE SET
-            status = excluded.status, updated_at = excluded.updated_at, json = excluded.json
-        `.pipe(Effect.asVoid, Effect.mapError(sqlError("put session"))),
+      putSession: (session) => sql.withTransaction(Effect.gen(function* () {
+        const [previous] = yield* sql<{ readonly json: string }>`SELECT json FROM sessions WHERE id = ${session.id}`
+        const claims = (value: Session) => JSON.stringify({ diagnosis: value.diagnosis, outcome: value.outcome, rootCauseFound: value.rootCauseFound })
+        const facts = (value: Session) => JSON.stringify({ status: value.status, resolution: value.resolution, prUrl: value.prUrl, milestones: value.milestones })
+        yield* sql`
+          INSERT INTO sessions (id, status, updated_at, json) VALUES (${session.id}, ${session.status}, ${session.updatedAt}, ${JSON.stringify(session)})
+          ON CONFLICT (id) DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at, json = excluded.json
+        `
+        if (previous === undefined) return
+        const decoded = Schema.decodeUnknownOption(Schema.fromJsonString(Session))(previous.json)
+        if (decoded._tag === "None") return
+        const before = decoded.value
+        const source = `bridgetown:session/${session.id}`
+        if (claims(before) !== claims(session)) yield* memory.captureMemory("finding", source, claims(session))
+        // Activity/phase/cost changes are not evidence. Keep agent diagnoses separate from daemon-observed state.
+        if (facts(before) !== facts(session) && (session.diagnosis !== null || ["resolved", "closed", "failed", "stopped"].includes(session.status))) {
+          yield* memory.captureMemory("outcome", source, facts(session))
+        }
+      })).pipe(Effect.asVoid, Effect.mapError(sqlError("put session with evidence"))),
       activeSessions: () =>
         sql<{ readonly json: string }>`
           SELECT json FROM sessions WHERE status IN ${sql.in(ACTIVE_STATUSES)} ORDER BY updated_at DESC
@@ -238,11 +262,10 @@ const StoreImpl = Layer.effect(Store)(
           Effect.map((doomed) => doomed.length),
         ),
       listActions,
-      appendTranscript: (sessionId, entry) =>
-        sql`INSERT INTO transcript (session_id, json) VALUES (${sessionId}, ${JSON.stringify(entry)})`.pipe(
-          Effect.asVoid,
-          Effect.mapError(sqlError("append transcript")),
-        ),
+      appendTranscript: (sessionId, entry) => sql.withTransaction(Effect.gen(function* () {
+        yield* sql`INSERT INTO transcript (session_id, json) VALUES (${sessionId}, ${JSON.stringify(entry)})`
+        if (entry.kind === "result") yield* memory.captureMemory("finding", `bridgetown:session/${sessionId}`, entry.text)
+      })).pipe(Effect.asVoid, Effect.mapError(sqlError("append transcript"))),
       transcript: (sessionId, limit) =>
         sql<{ readonly json: string }>`
           SELECT json FROM (
@@ -318,9 +341,9 @@ export const tuneStorage = Effect.gen(function* () {
   yield* sql`VACUUM`
 }).pipe(Effect.catch((error) => Effect.logWarning(`Storage tuning skipped until the next start: ${errorMessage(error)}`)))
 
-export const StoreLive = (directory: string) => {
+export const StoreLive = (directory: string, secrets: ReadonlyArray<string | undefined> = []) => {
   mkdirSync(directory, { recursive: true })
   const sqlLayer = SqliteClient.layer({ filename: join(directory, "bridgetown.db") })
   const migrationLayer = SqliteMigrator.layer({ loader: migrations, table: "bridgetown_migrations" })
-  return StoreImpl.pipe(Layer.provide(Layer.effectDiscard(tuneStorage)), Layer.provide(migrationLayer), Layer.provide(sqlLayer))
+  return StoreImpl(secrets).pipe(Layer.provide(Layer.effectDiscard(tuneStorage)), Layer.provide(migrationLayer), Layer.provide(sqlLayer))
 }

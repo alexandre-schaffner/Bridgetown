@@ -5,6 +5,9 @@ import { connectTools } from "../support/sdk.ts"
 const recordingTools = () => {
   const calls: Array<unknown> = []
   const callbacks: ToolCallbacks = {
+    memorySearch: async (query) => { calls.push({ query }); return "Memory context" },
+    memoryRead: async (path) => { calls.push({ path }); return "Memory topic" },
+    memoryRemember: async (text) => { calls.push({ text }); return true },
     report: async (phase, note, prUrl) => { calls.push({ phase, note, prUrl }) },
     ask: async (question, options) => { calls.push({ question, options }); return "staging" },
     slackContext: async (minutes) => { calls.push({ minutes }); return "Slack context" },
@@ -22,10 +25,16 @@ describe("shared investigation tools", () => {
       expect(await invoke("report", { phase: "pr", note: "Opened a fix", prUrl: "https://example.com/pull/123" })).toBe("Reported.")
       expect(await invoke("slack_context", {})).toBe("Slack context")
       expect(await invoke("ask", { question: "Which environment?" })).toBe("The user answered: staging")
+      expect(await invoke("memory_search", { query: "billing" })).toBe("Memory context")
+      expect(await invoke("memory_read", { path: "billing.md" })).toBe("Memory topic")
+      expect(await invoke("memory_remember", { text: "Billing is owned by platform" })).toBe("Finding queued for background learning.")
       expect(calls).toEqual([
         { phase: "pr", note: "Opened a fix", prUrl: null },
         { minutes: 20 },
         { question: "Which environment?", options: [] },
+        { query: "billing" },
+        { path: "billing.md" },
+        { text: "Billing is owned by platform" },
       ])
     }
   })

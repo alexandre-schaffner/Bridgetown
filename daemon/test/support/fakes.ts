@@ -6,6 +6,13 @@ import type { GrafanaShape } from "../../src/grafana/client.ts"
 import { type JevShape, makeJev } from "../../src/jev.ts"
 import type { GitHubShape } from "../../src/ship/github.ts"
 import type { SlackClientShape, SlackMessage } from "../../src/slack/client.ts"
+import type { MemoryModelShape } from "../../src/memory/model.ts"
+import { RESULT } from "./agent.ts"
+import { result } from "./sdk.ts"
+
+export const noMemoryModel: MemoryModelShape = { query: () => (async function* () {
+  yield { ...result("mock-memory", RESULT, 0), structured_output: { changes: [] } }
+})() }
 
 /**
  * The outside world, faked for the tests and the mock daemon. Each fake takes the methods a caller is about and

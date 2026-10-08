@@ -7,6 +7,7 @@ import { Housekeeping } from "./housekeeping/housekeeping.ts"
 import { Hub } from "./hub.ts"
 import { AlertChannels } from "./intake/alerts.ts"
 import { Inbox } from "./intake/inbox.ts"
+import { Memory } from "./memory/memory.ts"
 import { SessionRunner } from "./sessions/runner.ts"
 import { Shipper } from "./ship/shipper.ts"
 import { Watcher } from "./watch/watcher.ts"
@@ -17,7 +18,7 @@ export interface LoopTiming {
   readonly first?: Duration.Input
 }
 
-export type LoopName = "github" | "poll" | "ship" | "critique" | "inbox" | "schedule" | "grafana" | "boards" | "watch" | "logs" | "housekeeping"
+export type LoopName = "github" | "poll" | "ship" | "critique" | "inbox" | "schedule" | "grafana" | "boards" | "watch" | "logs" | "housekeeping" | "memory"
 
 export type SchedulerTiming = Record.ReadonlyRecord<LoopName, LoopTiming>
 
@@ -34,6 +35,7 @@ export const SCHEDULER_TIMING: SchedulerTiming = {
   watch: { every: "300 seconds", first: "90 seconds" },
   logs: { every: "600 seconds", first: "150 seconds" },
   // Well after startup's recovery and first polls; nothing it deletes is that urgent.
+  memory: { every: "60 seconds", first: "60 seconds" },
   housekeeping: { every: "1 hour", first: "2 minutes" },
 }
 
@@ -68,6 +70,7 @@ export const SchedulerLive = Layer.effect(Scheduler)(
     const boards = yield* Boards
     const watcher = yield* Watcher
     const housekeeping = yield* Housekeeping
+    const memory = yield* Memory
 
     // Sessions cannot fetch or push while GHE refuses this network, so they wait in the queue.
     const scheduleTick = Effect.gen(function* () {
@@ -86,6 +89,7 @@ export const SchedulerLive = Layer.effect(Scheduler)(
       watch: watcher.tick,
       logs: watcher.sweepLogs,
       housekeeping: housekeeping.run,
+      memory: memory.tick,
     }
     /** The wait before each next round, read again each time when it comes from the settings. */
     const spacing = ({ every }: LoopTiming): Schedule.Schedule<unknown> =>

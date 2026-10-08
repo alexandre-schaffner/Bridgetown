@@ -9,7 +9,7 @@ import { Store } from "./store/store.ts"
 export type Status = Omit<WireStatus, "dryRun">
 
 /** What can go wrong, each reported by the part that saw it, and cleared by that part once it works again. */
-export type ProblemSource = "slack" | "poll" | "inbox" | "groups" | "post" | "jev" | "mcp" | "ci" | "setup"
+export type ProblemSource = "slack" | "poll" | "inbox" | "groups" | "post" | "jev" | "mcp" | "ci" | "setup" | "memory"
 
 /** One line for a round's problems: the first, and how many more. `null` for a round with none. */
 export const problemOf = (lines: ReadonlyArray<string>): string | null => {

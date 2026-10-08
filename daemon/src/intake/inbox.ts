@@ -4,6 +4,7 @@ import { type ParsedAlert, threadTsOf } from "../domain/alert.ts"
 import type { AdapterError } from "../domain/errors.ts"
 import { tsToIso } from "../domain/ids.ts"
 import { Hub, problemOf } from "../hub.ts"
+import { Memory } from "../memory/memory.ts"
 import { Jev } from "../jev.ts"
 import { followUpPrompt } from "../sessions/prompts.ts"
 import { SessionRepo } from "../sessions/repo.ts"
@@ -36,6 +37,7 @@ export const InboxLive = Layer.effect(Inbox)(
     const slack = yield* SlackClient
     const me = yield* SlackMe
     const jev = yield* Jev
+    const memory = yield* Memory
     const repo = yield* SessionRepo
     const runner = yield* SessionRunner
     const queue = yield* ActionQueue
@@ -78,7 +80,8 @@ export const InboxLive = Layer.effect(Inbox)(
         return
       }
       const replies = toThreadReplies(yield* threads.messages(parsed), identity.user_id)
-      const judging = jev.judgeInbox({ item: parsed, thread: replies, myName: identity.user })
+      const memoryContext = yield* memory.context(`${parsed.title} ${parsed.raw}`)
+      const judging = jev.judgeInbox({ memory: memoryContext, item: parsed, thread: replies, myName: identity.user })
       const triage = triageWith(hub, judging, decideInbox, "escalate").pipe(
         // A thread is one conversation: its newest message's verdict stands, so whatever an earlier one put up goes.
         Effect.tap(() => queue.removeWhere((a) => a.fingerprint === parsed.fingerprint)),

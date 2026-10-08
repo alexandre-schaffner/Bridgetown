@@ -1,9 +1,11 @@
+import { randomUUID } from "node:crypto"
 import { Context, Effect, Layer } from "effect"
 import { type Action, cardStands, dismissCloses } from "../domain/action.ts"
 import { Conflict, type DaemonError } from "../domain/errors.ts"
 import type { Session } from "../domain/session.ts"
 import { Hub } from "../hub.ts"
 import { Intake } from "../intake/intake.ts"
+import { Asks } from "../sessions/asks.ts"
 import { SessionRepo } from "../sessions/repo.ts"
 import { SessionRunner } from "../sessions/runner.ts"
 import { Shipper } from "../ship/shipper.ts"
@@ -41,6 +43,7 @@ export const ActionsLive = Layer.effect(Actions)(
     const queue = yield* ActionQueue
     const repo = yield* SessionRepo
     const runner = yield* SessionRunner
+    const asks = yield* Asks
     const inFlight = yield* makeInFlight(hub.notify)
     const handlers = makeHandlers({
       store,
@@ -74,7 +77,12 @@ export const ActionsLive = Layer.effect(Actions)(
             yield* queue.remove(id)
             return yield* new Conflict({ message: "The session has moved on since this card was offered" })
           }
-          yield* handlers[action.kind]({ action, session, response })
+          const attemptId = randomUUID()
+          const capture = (result: string, detail?: string) => store.captureMemory("action", `bridgetown:action/${action.id}`, JSON.stringify({ kind: action.kind, title: action.title, response, result, detail }), `${attemptId}:${result}`)
+            .pipe(Effect.catch((error) => hub.problem("memory", error.message)))
+          yield* capture("attempted")
+          yield* handlers[action.kind]({ action, session, response }).pipe(Effect.tapError((error) => capture("failed", error.message)))
+          yield* capture(action.kind === "reply" ? "handled" : "completed")
           yield* queue.remove(id)
         }),
       )
@@ -83,7 +91,7 @@ export const ActionsLive = Layer.effect(Actions)(
     const dismiss = Effect.fn("Actions.dismiss")(function* (id: string) {
       yield* guarded(id, (action, session) =>
         Effect.gen(function* () {
-          if (action.kind === "answer") yield* runner.answer(id, "(The user dismissed the question. Proceed on your best judgement.)")
+          if (action.kind === "answer") yield* asks.dismiss(id)
           yield* queue.remove(id)
           if (action.sessionId === null && action.alertId !== null) {
             yield* store.appendAlertEvent(
@@ -93,6 +101,8 @@ export const ActionsLive = Layer.effect(Actions)(
             )
           }
           if (session !== undefined && dismissCloses(action, session)) yield* runner.close(session.id)
+          yield* store.captureMemory("action", `bridgetown:action/${action.id}`, JSON.stringify({ kind: action.kind, title: action.title, result: "dismissed", note: "Dismissal does not establish a general preference or prove resolution." }), `${action.id}:dismissed`)
+            .pipe(Effect.catch((error) => hub.problem("memory", error.message)))
           yield* hub.notify
         }),
       )

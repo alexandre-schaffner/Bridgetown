@@ -24,7 +24,7 @@ try {
   const request: AgentRequest = {
     session: { ...newSession(makeAlert(), "smoke", home), worktree: home, provider: "codex" }, home, daemonPort: 47621, abort, resume: false,
     prompt: { async *[Symbol.asyncIterator]() {} }, onRefused: () => {}, onUndelivered: async () => {},
-    tools: { report: async () => {}, ask: async () => undefined, slackContext: async () => "" },
+    tools: { report: async () => {}, ask: async () => undefined, slackContext: async () => "", memorySearch: async () => "", memoryRead: async () => "", memoryRemember: async () => false },
   }
   const dir = prepareCodexHome(request)
   rpc = new CodexRpc([Bun.which("codex") ?? "codex", "--dangerously-bypass-hook-trust", "app-server", "--listen", "stdio://"], abort.signal, { CODEX_HOME: dir }, dir)

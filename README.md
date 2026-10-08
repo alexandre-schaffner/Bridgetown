@@ -98,6 +98,22 @@ Open **Settings** from the app’s **…** menu. Save the Slack and TypeSafe tok
 
 **Dry run is on by default.** It suppresses Slack posts; agents can still run and prepare PRs. Turn off **Start agents automatically** under **Triage** to keep candidates waiting for your decision.
 
+## Memory across messages and sessions
+
+Bridgetown keeps a local [Agent Memory Repo](https://cognition.com/agent-memory-repo): linked Markdown notes in a
+separate Git repository under `BRIDGETOWN_HOME/memory`. It learns from newly watched Slack messages, your answers
+and actions, and agent findings and outcomes. Jev and Claude retrieve relevant context on later messages and sessions.
+Existing history is not backfilled.
+
+Open **Settings → Memory** to disable memory, see pending evidence and the last successful jobs, run learning and
+consolidation now, or open the files. Learning uses Claude Sonnet about once a minute when evidence is pending;
+consolidation runs every six hours when there is new evidence. Jobs use your existing Claude authentication and are
+bounded to $0.50 / two minutes for learning and $1 / five minutes for consolidation. No remote is configured.
+
+You can edit the Markdown notes directly. Automatic writes pause while the memory repo has uncommitted edits;
+commit your corrections to resume them. Notes retain their sources and distinguish statements and agent claims
+from observed workflow outcomes. See [memory storage and corrections](docs/WORKFLOW.md#persistent-memory).
+
 ## You keep the controls
 
 Each agent gets its own Git worktree and a named set of tools, and one gate checks every tool call: it keeps commands off production, lets an agent push only its own branch and run only the `gh` commands a fix needs, and keeps file edits in the worktree. `gh`, `git`, and the other risky tools are checked again as they run, whatever started them. The daemon takes its tokens only over stdin and passes none to an agent.

@@ -279,3 +279,30 @@ import Testing
         #expect(p[2].verdictLine == nil)
     }
 }
+
+@Suite struct MemoryDecoding {
+    @Test func decodesTheDaemonContract() throws {
+        let status = try Fixture.decode(MemoryStatus.self, "memory")
+        #expect(status.enabled)
+        #expect(status.path.hasSuffix("/memory"))
+        #expect(status.pending == 3)
+        #expect(status.lastLearnedAt != nil)
+        #expect(status.lastDreamedAt == nil)
+        #expect(status.error == nil)
+        #expect(status.label == "Ready")
+        #expect(!status.isWorking)
+        #expect(try Fixture.snapshot().settings.memory)
+    }
+
+    @Test func memoryToggleIsAnIndependentSettingsPatch() throws {
+        var settings = try Fixture.snapshot().settings
+        let before = settings
+        settings.memory = false
+        #expect(before.changedKeys(to: settings) == [.memory])
+        let object = try JSONSerialization.jsonObject(with: settings.patchBody([.memory])) as? [String: Bool]
+        #expect(object == ["memory": false])
+        let decoded = try JSON.decoder().decode(Settings.self, from: JSON.encoder().encode(settings))
+        #expect(decoded == settings)
+        #expect(!decoded.memory)
+    }
+}

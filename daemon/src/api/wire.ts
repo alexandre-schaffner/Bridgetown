@@ -321,3 +321,14 @@ export interface Health {
   readonly ok: true
   readonly version: string
 }
+
+/** GET /memory and POST /memory/run. */
+export interface MemoryStatus {
+  readonly enabled: boolean
+  readonly path: string
+  readonly state: "disabled" | "idle" | "queued" | "learning" | "dreaming" | "error"
+  readonly pending: number
+  readonly lastLearnedAt: string | null
+  readonly lastDreamedAt: string | null
+  readonly error: string | null
+}
