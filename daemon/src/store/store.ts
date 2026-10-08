@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
 import * as SqliteClient from "@effect/sql-sqlite-bun/SqliteClient"
@@ -264,17 +263,8 @@ const StoreImpl = (secrets: ReadonlyArray<string | undefined>) => Layer.effect(S
         ),
       listActions,
       appendTranscript: (sessionId, entry) => sql.withTransaction(Effect.gen(function* () {
-        const id = randomUUID()
         yield* sql`INSERT INTO transcript (session_id, json) VALUES (${sessionId}, ${JSON.stringify(entry)})`
-        if (entry.kind === "result" || (entry.kind === "status" && entry.text.startsWith("You answered:") && !entry.text.includes("(The user dismissed"))) {
-          let text = entry.text
-          if (entry.kind === "status") {
-            const [asked] = yield* sql<{ readonly json: string }>`SELECT json FROM transcript WHERE session_id = ${sessionId} AND CASE WHEN json_valid(json) THEN json_extract(json, '$.text') END LIKE 'Asked:%' ORDER BY seq DESC LIMIT 1`
-            const question = Schema.decodeUnknownOption(Schema.fromJsonString(TranscriptEntry))(asked?.json)
-            if (question._tag === "Some") text = `${question.value.text}\n${text}`
-          }
-          yield* memory.captureMemory(entry.kind === "result" ? "finding" : "user", `bridgetown:session/${sessionId}`, text, id)
-        }
+        if (entry.kind === "result") yield* memory.captureMemory("finding", `bridgetown:session/${sessionId}`, entry.text)
       })).pipe(Effect.asVoid, Effect.mapError(sqlError("append transcript"))),
       transcript: (sessionId, limit) =>
         sql<{ readonly json: string }>`

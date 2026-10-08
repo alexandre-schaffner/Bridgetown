@@ -5,6 +5,7 @@ import { Conflict, type DaemonError } from "../domain/errors.ts"
 import type { Session } from "../domain/session.ts"
 import { Hub } from "../hub.ts"
 import { Intake } from "../intake/intake.ts"
+import { Asks } from "../sessions/asks.ts"
 import { SessionRepo } from "../sessions/repo.ts"
 import { SessionRunner } from "../sessions/runner.ts"
 import { Shipper } from "../ship/shipper.ts"
@@ -42,6 +43,7 @@ export const ActionsLive = Layer.effect(Actions)(
     const queue = yield* ActionQueue
     const repo = yield* SessionRepo
     const runner = yield* SessionRunner
+    const asks = yield* Asks
     const inFlight = yield* makeInFlight(hub.notify)
     const handlers = makeHandlers({
       store,
@@ -89,7 +91,7 @@ export const ActionsLive = Layer.effect(Actions)(
     const dismiss = Effect.fn("Actions.dismiss")(function* (id: string) {
       yield* guarded(id, (action, session) =>
         Effect.gen(function* () {
-          if (action.kind === "answer") yield* runner.answer(id, "(The user dismissed the question. Proceed on your best judgement.)")
+          if (action.kind === "answer") yield* asks.dismiss(id)
           yield* queue.remove(id)
           if (action.sessionId === null && action.alertId !== null) {
             yield* store.appendAlertEvent(

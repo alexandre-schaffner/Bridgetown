@@ -57,7 +57,67 @@ test("question answers retain the question and dismissals do not become user sta
       const users = (yield* store.pendingMemory()).filter((event) => event.kind === "user")
       expect(users).toHaveLength(1)
       expect(users[0]?.text).toContain("Which summary format do you prefer?")
-      expect(users[0]?.text).toContain("You answered: Bullets")
+      expect(JSON.parse(users[0]?.text ?? "null")).toEqual({ question: "Which summary format do you prefer?", answer: "Bullets" })
+    }))
+  } finally { await world.dispose() }
+})
+
+test("concurrent questions retain each answer's original question", async () => {
+  const world = makeWorld()
+  try {
+    await world.runPromise(Effect.gen(function* () {
+      const store = yield* Store
+      const asks = yield* Asks
+      const session = makeSession("running")
+      yield* store.putSession(session)
+      const first = yield* asks.ask(session, "Which summary format?", ["Bullets"]).pipe(Effect.forkChild)
+      const firstCard = yield* eventually(store.listActions(), (cards) => cards.find((card) => card.title === "Which summary format?"))
+      const second = yield* asks.ask(session, "Which deployment day?", ["Friday"]).pipe(Effect.forkChild)
+      const secondCard = yield* eventually(store.listActions(), (cards) => cards.find((card) => card.title === "Which deployment day?"))
+      yield* asks.answer(firstCard.id, "Bullets")
+      yield* asks.answer(secondCard.id, "Friday")
+      yield* Fiber.join(first)
+      yield* Fiber.join(second)
+      const users = (yield* store.pendingMemory()).filter((event) => event.kind === "user")
+      expect(users.map((event) => JSON.parse(event.text))).toEqual([
+        { question: "Which summary format?", answer: "Bullets" },
+        { question: "Which deployment day?", answer: "Friday" },
+      ])
+    }))
+  } finally { await world.dispose() }
+})
+
+test("answer text is captured even when it contains the old dismissal marker", async () => {
+  const world = makeWorld()
+  try {
+    await world.runPromise(Effect.gen(function* () {
+      const store = yield* Store
+      const asks = yield* Asks
+      const session = makeSession("running")
+      yield* store.putSession(session)
+      const pending = yield* asks.ask(session, "Which log message should we preserve?", []).pipe(Effect.forkChild)
+      const card = yield* eventually(store.listActions(), (cards) => cards.find((card) => card.kind === "answer"))
+      const answer = "Keep the '(The user dismissed' message."
+      yield* asks.answer(card.id, answer)
+      yield* Fiber.join(pending)
+      const users = (yield* store.pendingMemory()).filter((event) => event.kind === "user")
+      expect(users).toHaveLength(1)
+      expect(JSON.parse(users[0]?.text ?? "null")).toEqual({ question: card.title, answer })
+    }))
+  } finally { await world.dispose() }
+})
+
+test("JSON credentials in watched messages are scrubbed before evidence is persisted", async () => {
+  const world = makeWorld()
+  try {
+    await world.runPromise(Effect.gen(function* () {
+      const store = yield* Store
+      const raw = JSON.stringify({ password: 'hunter"2', api_key: "generic-service-key-123", authorization: "Bearer generic-access-token" })
+      yield* store.putAlert(makeAlert({ receivedAt: new Date().toISOString(), raw }))
+      const events = yield* store.pendingMemory()
+      expect(events).toHaveLength(1)
+      const captured = JSON.parse(events[0]?.text ?? "null")
+      expect(JSON.parse(captured.raw)).toEqual({ password: "[redacted]", api_key: "[redacted]", authorization: "[redacted]" })
     }))
   } finally { await world.dispose() }
 })

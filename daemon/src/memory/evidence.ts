@@ -23,10 +23,27 @@ export interface EvidenceStore {
 /** Scrub launch credentials and common credential formats before evidence crosses the storage/model boundary. */
 export const redact = (text: string, secrets: ReadonlyArray<string | undefined> = []): string => {
   let clean = text
+  // Capture often wraps message text in JSON, so decode before scrubbing nested strings and keys.
+  if (/^\s*[\[{]/.test(text)) {
+    const scrubJson = (value: unknown): unknown => {
+      if (typeof value === "string") return redact(value, secrets)
+      if (Array.isArray(value)) return value.map(scrubJson)
+      if (typeof value === "object" && value !== null) return Object.fromEntries(Object.entries(value).map(([key, value]) =>
+        [key, /^(?:authorization|password|api[_-]?key|access[_-]?token|secret)$/i.test(key) ? "[redacted]" : scrubJson(value)],
+      ))
+      return value
+    }
+    try {
+      const value: unknown = JSON.parse(text)
+      const scrubbed = JSON.stringify(scrubJson(value))
+      if (scrubbed !== JSON.stringify(value)) clean = scrubbed
+    } catch { /* Prose and partial JSON still pass through the text rules below. */ }
+  }
   for (const secret of secrets) if (secret !== undefined && secret.length >= 4) clean = clean.split(secret).join("[redacted]")
   return clean
     .replace(/\b(?:xox[baprs]-[\w-]+|sk-(?:ant-)?[\w-]{10,}|gh[pousr]_[\w]{10,}|github_pat_[\w]{10,})\b/g, "[redacted]")
     .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g, "[redacted private key]")
+    .replace(/("(?:authorization|password|api[_-]?key|access[_-]?token|secret)"\s*:\s*)"(?:\\.|[^"\\])*"/gi, '$1"[redacted]"')
     .replace(/\b(authorization\s*[:=]\s*bearer\s+|(?:password|api[_-]?key|access[_-]?token|secret)\s*[:=]\s*)[^\s,;]+/gi, "$1[redacted]")
 }
 

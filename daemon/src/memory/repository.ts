@@ -15,6 +15,7 @@ export const Changes = Schema.Struct({ changes: Schema.Array(Schema.Struct({ pat
 export type Changes = typeof Changes.Type
 const MARKER = "Bridgetown-Memory: "
 const INITIAL = "# Bridgetown memory\n\n## Index\n"
+const fileLimit = (path: string) => path === "MEMORY.md" ? 4_096 : 16_384
 
 const fail = (message: string) => new AdapterError({ adapter: "memory", operation: "repository", message, cause: null })
 const filesystem = <A>(f: () => A) => Effect.try({ try: f, catch: (cause) => fail(errorMessage(cause)) })
@@ -41,9 +42,10 @@ const readFiles = (root: string): Record<string, string> => {
       if (entry.isDirectory()) visit(path)
       else if (entry.isFile() && path.endsWith(".md")) {
         const file = memoryPath(root, path)
-        if (lstatSync(file).size > (path === "MEMORY.md" ? 4_096 : 16_384)) throw fail(`Memory file exceeds 16 KB: ${path}`)
+        const bytes = lstatSync(file).size
+        if (bytes > fileLimit(path)) throw fail(`Memory file exceeds ${fileLimit(path)} UTF-8 bytes: ${path}`)
         const content = readFileSync(file, "utf8")
-        size += content.length
+        size += bytes
         if (size > 2_000_000 || Object.keys(files).length >= 128) throw fail("Memory repo exceeds its read budget")
         files[path] = content
       }
@@ -67,7 +69,7 @@ export const validateChanges = (snapshot: MemorySnapshot, proposal: Changes, sou
       delete next[path]
       continue
     }
-    if (content.length > 16_384 || (path === "MEMORY.md" && content.length > 4_096)) throw fail(`Memory file too large: ${path}`)
+    if (Buffer.byteLength(content, "utf8") > fileLimit(path)) throw fail(`Memory file too large: ${path}`)
     const existing = new Set((snapshot.files[path] ?? "").split("\n"))
     const lines = content.split("\n")
     for (let i = 0; i < lines.length; i++) {
@@ -85,7 +87,7 @@ export const validateChanges = (snapshot: MemorySnapshot, proposal: Changes, sou
       }
     }
     const normalized = lines.join("\n")
-    if (normalized.length > (path === "MEMORY.md" ? 4_096 : 16_384)) throw fail(`Memory file too large after source attribution: ${path}`)
+    if (Buffer.byteLength(normalized, "utf8") > fileLimit(path)) throw fail(`Memory file too large after source attribution: ${path}`)
     next[path] = normalized
   }
   if (next["MEMORY.md"] === undefined) throw fail("MEMORY.md is required")
@@ -93,7 +95,7 @@ export const validateChanges = (snapshot: MemorySnapshot, proposal: Changes, sou
     const linked = `${match[1]}.md`
     if (next[linked] === undefined) throw fail(`Broken memory link: ${match[1]}`)
   }
-  if (Object.keys(next).length > 128 || Object.values(next).reduce((sum, text) => sum + text.length, 0) > 2_000_000) throw fail("Memory repo exceeds its read budget")
+  if (Object.keys(next).length > 128 || Object.values(next).reduce((sum, text) => sum + Buffer.byteLength(text, "utf8"), 0) > 2_000_000) throw fail("Memory repo exceeds its read budget")
   return next
 }
 

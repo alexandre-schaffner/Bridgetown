@@ -119,7 +119,7 @@ export const MemoryLive = Layer.effect(Memory)(Effect.gen(function* () {
     }), (abort) => Effect.sync(() => { abort.abort(); if (controller === abort) controller = undefined }))
     const prompt = [
       `${mode === "learn" ? "Learn useful durable facts from the new evidence" : "Consolidate the wiki: merge duplicates, update outdated entries, resolve contradictions only when sources support it, and repair links"}.`,
-      "Keep MEMORY.md under 4096 characters with essentials and an index. Topic files hold details. Use root-relative [[path]] links without .md.",
+      "Keep MEMORY.md under 4096 UTF-8 bytes with essentials and an index, and topic files under 16384 UTF-8 bytes. Topic files hold details. Use root-relative [[path]] links without .md.",
       "Entries are single-line bullets ending in [source: <one supplied source>; added: YYYY-MM-DD; evidence: <user statement / source statement / observed workflow / agent claim>].",
       "Keep claims attributed and tentative unless confirmed by observed outcomes. A PR or CI success does not mean deployed. A dismissal does not mean resolved or establish a lasting preference.",
       "Attribute facts and preferences to the speaker named in evidence. A teammate saying I does not establish the Bridgetown user's preference. For user events, the speaker is the Bridgetown user.",

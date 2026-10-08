@@ -2,7 +2,9 @@ import { Context, Deferred, Duration, Effect, Layer, Option, SynchronizedRef } f
 import { ActionQueue } from "../actions/queue.ts"
 import type { AdapterError } from "../domain/errors.ts"
 import type { Session } from "../domain/session.ts"
+import { Hub } from "../hub.ts"
 import { truncate } from "../lib/text.ts"
+import { Store } from "../store/store.ts"
 import { SessionRepo } from "./repo.ts"
 
 const ASK_TIMEOUT = Duration.minutes(30)
@@ -21,6 +23,8 @@ export interface AsksShape {
   readonly ask: (session: Session, question: string, options: ReadonlyArray<string>) => Effect.Effect<string | undefined>
   /** The answer card's button: hands the reply to the blocked call (the caller removes the card). False when nobody waits on it. */
   readonly answer: (actionId: string, text: string) => Effect.Effect<boolean, AdapterError>
+  /** Dismisses the question without treating the generated continuation as a user statement. */
+  readonly dismiss: (actionId: string) => Effect.Effect<boolean, AdapterError>
   /** Your message to a session blocked on `ask` answers it, card and all. False when the session asked nothing. */
   readonly answerSession: (sessionId: string, text: string) => Effect.Effect<boolean, AdapterError>
 }
@@ -30,6 +34,7 @@ export class Asks extends Context.Service<Asks, AsksShape>()("Asks") {}
 interface Pending {
   readonly actionId: string
   readonly sessionId: string
+  readonly question: string
   readonly reply: Deferred.Deferred<string | undefined>
 }
 
@@ -37,6 +42,8 @@ export const AsksLive = Layer.effect(Asks)(
   Effect.gen(function* () {
     const repo = yield* SessionRepo
     const queue = yield* ActionQueue
+    const store = yield* Store
+    const hub = yield* Hub
     /** By answer-card id. */
     const pending = yield* SynchronizedRef.make<ReadonlyMap<string, Pending>>(new Map())
 
@@ -51,10 +58,13 @@ export const AsksLive = Layer.effect(Asks)(
     const resume = (sessionId: string, activity: string) =>
       repo.modify(sessionId, (current) => (current.status === "waiting" ? { ...current, status: "running", activity } : undefined))
 
-    const reply = (waiting: Pending, text: string) =>
+    const reply = (waiting: Pending, response: { readonly kind: "answered"; readonly text: string } | { readonly kind: "dismissed" }) =>
       Effect.gen(function* () {
+        const text = response.kind === "answered" ? response.text : "(The user dismissed the question. Proceed on your best judgement.)"
         yield* Deferred.succeed(waiting.reply, text)
         yield* repo.log(waiting.sessionId, "status", `You answered: ${text}`)
+        if (response.kind === "answered") yield* store.captureMemory("user", `bridgetown:session/${waiting.sessionId}`, JSON.stringify({ question: waiting.question, answer: response.text }))
+          .pipe(Effect.catch((error) => hub.problem("memory", error.message)))
         yield* resume(waiting.sessionId, "Continuing with your answer")
       })
 
@@ -73,7 +83,7 @@ export const AsksLive = Layer.effect(Asks)(
           sessionId: session.id,
           alertId: session.alertId,
         })
-        const waiting: Pending = { actionId: card.id, sessionId: session.id, reply: yield* Deferred.make<string | undefined>() }
+        const waiting: Pending = { actionId: card.id, sessionId: session.id, question, reply: yield* Deferred.make<string | undefined>() }
         yield* SynchronizedRef.update(pending, (current) => new Map([...current, [card.id, waiting]]))
         return waiting
       })
@@ -107,7 +117,14 @@ export const AsksLive = Layer.effect(Asks)(
         Effect.gen(function* () {
           const [waiting] = yield* take((w) => w.actionId === actionId)
           if (waiting === undefined) return false
-          yield* reply(waiting, text)
+          yield* reply(waiting, { kind: "answered", text })
+          return true
+        }),
+      dismiss: (actionId) =>
+        Effect.gen(function* () {
+          const [waiting] = yield* take((w) => w.actionId === actionId)
+          if (waiting === undefined) return false
+          yield* reply(waiting, { kind: "dismissed" })
           return true
         }),
       answerSession: (sessionId, text) =>
@@ -115,7 +132,7 @@ export const AsksLive = Layer.effect(Asks)(
           const taken = yield* take((w) => w.sessionId === sessionId)
           for (const waiting of taken) {
             yield* queue.remove(waiting.actionId)
-            yield* reply(waiting, text)
+            yield* reply(waiting, { kind: "answered", text })
           }
           return taken.length > 0
         }),
