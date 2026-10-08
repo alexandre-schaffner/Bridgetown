@@ -60,3 +60,16 @@ describe("proc", () => {
     expect(await gone(pid)).toBe(true)
   })
 })
+
+test("a hard output budget stops unbounded output", async () => {
+  const failed = await Effect.runPromise(run(["sh", "-c", "while :; do printf 1234567890; done"], { maxOutputBytes: 100, timeoutMs: 2000 }).pipe(Effect.flip))
+  expect(failed.message).toContain("output exceeded")
+})
+
+test("trusted Git has only Bridgetown's HTTPS/auth configuration without inheriting arbitrary Git environment", async () => {
+  const home = scratchDir("bt-git-env-")
+  const helper = await Effect.runPromise(runOk(["git", "config", "--get-all", "credential.https://nocturlab.ghe.com.helper"], { env: { HOME: home } }))
+  expect(helper.trim()).toBe("!gh auth git-credential")
+  const rewrite = await Effect.runPromise(runOk(["git", "config", "--get-all", "url.https://nocturlab.ghe.com/.insteadOf"], { env: { HOME: home } }))
+  expect(rewrite).toContain("nocturlab@nocturlab.ghe.com:")
+})

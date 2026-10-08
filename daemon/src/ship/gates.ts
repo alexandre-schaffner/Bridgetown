@@ -9,7 +9,7 @@ import type { Session } from "../domain/session.ts"
  */
 
 export interface MergePorts {
-  readonly merge: (prUrl: string) => Effect.Effect<void, GitHubError>
+  readonly merge: (prUrl: string) => Effect.Effect<void, GitHubError | Conflict>
   readonly isMerged: (prUrl: string) => Effect.Effect<boolean, GitHubError>
 }
 

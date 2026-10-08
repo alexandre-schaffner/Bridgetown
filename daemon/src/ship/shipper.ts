@@ -7,6 +7,7 @@ import { releaseState } from "../domain/release.ts"
 import { type SentBack, type Session, withPatch } from "../domain/session.ts"
 import { Hub, problemOf } from "../hub.ts"
 import { cannotResume, makeHandOff } from "../sessions/hand-off.ts"
+import { passedAt } from "../domain/critique.ts"
 import { ciFailedPrompt, deployFailedPrompt, reviewChangesPrompt } from "../sessions/prompts.ts"
 import { SessionRepo } from "../sessions/repo.ts"
 import { SessionRunner } from "../sessions/runner.ts"
@@ -343,7 +344,13 @@ export const ShipperLive = Layer.effect(Shipper)(
       const claimed = yield* atGate(sessionId, "awaiting_merge", { activity: `Merging ${prLabel(prUrl)}…` })
       if (claimed === undefined) return yield* movedOn("to merge")
       const merged = yield* mergeOnce(claimed, prUrl, {
-        merge: github.mergePr,
+        merge: (url) => Effect.gen(function* () {
+          const live = yield* github.viewPr(url)
+          if (live.mergedAt !== null) return
+          if (live.isDraft === true || ciState(live)._tag !== "Green" || live.reviewDecision === "CHANGES_REQUESTED" || live.reviewDecision === "REVIEW_REQUIRED") return yield* new Conflict({ message: "The PR is no longer ready to merge. Refresh its checks and review." })
+          if ((yield* hub.settings).adversarialReview && claimed.critique !== null && !passedAt(claimed.critique, live.headRefOid)) return yield* new Conflict({ message: "The PR head no longer matches its passed review." })
+          yield* github.mergePr(url, live.headRefOid)
+        }),
         isMerged: (url) => github.viewPr(url).pipe(Effect.map((pr) => pr.mergedAt !== null)),
       }).pipe(Effect.tapError(() => atGate(sessionId, "awaiting_merge", { activity: session.activity })))
       if (merged) yield* onMerged(sessionId)

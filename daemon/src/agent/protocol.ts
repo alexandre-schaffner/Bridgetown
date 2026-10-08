@@ -19,3 +19,8 @@ export interface AgentRequest extends TurnSetup {
   readonly prompt: AsyncIterable<AgentInput>
   readonly onUndelivered: (input: AgentInput) => Promise<void>
 }
+
+/** A provider conversation needs identity and profile, not an entire persisted investigation. */
+export interface CodexRequest extends Omit<AgentRequest, "session"> {
+  readonly session: Pick<AgentRequest["session"], "id" | "branch" | "worktree" | "repoPath" | "model" | "effort" | "agentConfigDir" | "agentSessionId">
+}

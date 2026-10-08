@@ -1,5 +1,8 @@
+import { StringDecoder } from "node:string_decoder"
+import { spawn } from "node:child_process"
 import { Effect } from "effect"
-import { AdapterError, attempt, errorMessage } from "../domain/errors.ts"
+import { AdapterError, errorMessage } from "../domain/errors.ts"
+import { gitOverHttpsEnv } from "../config.ts"
 import { childEnv } from "../secrets.ts"
 
 export interface CommandResult {
@@ -12,6 +15,8 @@ export interface RunOptions {
   readonly cwd?: string
   readonly env?: Record<string, string>
   readonly timeoutMs?: number
+  readonly maxOutputBytes?: number
+  readonly stdin?: string
 }
 
 const DEFAULT_TIMEOUT_MS = 60_000
@@ -26,47 +31,67 @@ const operationOf = (command: ReadonlyArray<string>) => command.filter((arg, i) 
  */
 export const git = (...args: ReadonlyArray<string>): ReadonlyArray<string> => ["git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", ...args]
 
+/** Checkout can run clean/smudge/process drivers even when working bytes are unchanged. */
+export const gitWithoutFilters = (configKeys: string, command: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const drivers = new Set(configKeys.split("\0").flatMap((key) => {
+    const driver = /^filter\.([\s\S]+)\.(?:clean|smudge|process|required)$/i.exec(key)?.[1]
+    // Git -c splits at the first '='; such a subsection cannot be overridden safely.
+    if (driver?.includes("=")) throw new Error("Unsupported Git filter name. Ask the user to prepare this checkout.")
+    return driver === undefined ? [] : [driver]
+  }))
+  return git(...[...drivers].flatMap((driver) => [
+    "-c", `filter.${driver}.clean=`, "-c", `filter.${driver}.smudge=`,
+    "-c", `filter.${driver}.process=`, "-c", `filter.${driver}.required=false`,
+  ]), ...command)
+}
+
 /** For `git diff`: the plain diff, never a driver from the repo's config. */
 export const DIFF_FLAGS = ["--no-ext-diff", "--no-textconv"] as const
 
-/** The child lives as long as the scope: closing it (done, timed out, interrupted) kills a child that is still running. */
-const spawn = (command: ReadonlyArray<string>, options: RunOptions) =>
-  Effect.acquireRelease(
-    Effect.try({
-      try: () =>
-        Bun.spawn([...command], {
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          env: { ...childEnv(process.env), ...options.env },
-          stdout: "pipe",
-          stderr: "pipe",
-          stdin: "ignore",
-        }),
-      catch: (cause) => new AdapterError({ adapter: "subprocess", operation: operationOf(command), message: errorMessage(cause), cause }),
-    }),
-    (child) => Effect.sync(() => (child.exitCode === null ? child.kill() : undefined)),
-  )
+/** Capture a process with a hard output budget and kill its process group on every exit path. */
+export const captureCommand = (command: ReadonlyArray<string>, options: RunOptions, signal: AbortSignal): Promise<CommandResult> => {
+  const executable = command[0]
+  if (executable === undefined || signal.aborted) return Promise.reject(new Error("Command unavailable or interrupted."))
+  return new Promise((resolve, reject) => {
+    const child = spawn(executable, command.slice(1), { cwd: options.cwd, env: options.env, stdio: [options.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"], detached: true })
+    if (options.stdin !== undefined) { child.stdin?.on("error", () => {}); child.stdin?.end(options.stdin) }
+    const outDecoder = new StringDecoder("utf8"), errDecoder = new StringDecoder("utf8")
+    let stdout = "", stderr = "", bytes = 0
+    let failure: Error | undefined
+    const kill = () => {
+      if (child.pid !== undefined) { try { process.kill(-child.pid, "SIGKILL") } catch { child.kill("SIGKILL") } }
+    }
+    const stop = (error: Error) => { failure ??= error; kill() }
+    const abort = () => stop(new Error("Command interrupted."))
+    const timer = setTimeout(() => stop(new Error("Timed out: command.")), options.timeoutMs ?? DEFAULT_TIMEOUT_MS)
+    signal.addEventListener("abort", abort, { once: true })
+    for (const [stream, kind] of [[child.stdout, "out"], [child.stderr, "err"]] as const) {
+      stream?.on("data", (chunk: Buffer) => {
+        bytes += chunk.length
+        if (bytes > (options.maxOutputBytes ?? 4 * 1024 * 1024)) return stop(new Error("Command output exceeded its limit. Narrow the request."))
+        if (kind === "out") stdout += outDecoder.write(chunk)
+        else stderr += errDecoder.write(chunk)
+      })
+    }
+    child.on("error", (error) => { failure = error })
+    // Background children must die before waiting for their inherited output pipes to close.
+    child.on("exit", kill)
+    child.on("close", (code) => {
+      clearTimeout(timer)
+      signal.removeEventListener("abort", abort)
+      if (failure !== undefined) reject(failure)
+      else resolve({ exitCode: code ?? 1, stdout: stdout + outDecoder.end(), stderr: stderr + errDecoder.end() })
+    })
+    if (signal.aborted) abort()
+  })
+}
 
-/**
- * Bounded subprocess: a hung `git fetch` or `gh` call must not stall a loop
- * forever. Interrupting the effect (a timeout, a stopped session, shutdown)
- * kills the child. Children never inherit a credential (see `childEnv`).
- */
+/** Time, output and cancellation bounds for trusted utilities; generated commands additionally use the OS sandbox. */
 export const run = (command: ReadonlyArray<string>, options: RunOptions = {}): Effect.Effect<CommandResult, AdapterError> =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const child = yield* spawn(command, options)
-      const [exitCode, stdout, stderr] = yield* attempt("subprocess", operationOf(command), () =>
-        Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]),
-      )
-      return { exitCode, stdout, stderr }
-    }),
-  ).pipe(
-    Effect.timeoutOrElse({
-      duration: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-      orElse: () =>
-        Effect.fail(new AdapterError({ adapter: "subprocess", operation: operationOf(command), message: `Timed out: ${operationOf(command)}`, cause: null })),
-    }),
-  )
+  Effect.tryPromise({
+    try: (signal) => captureCommand(command, { ...options, env: { ...childEnv(process.env), ...(command[0] === "git" ? gitOverHttpsEnv({}) : {}), ...options.env } }, signal),
+    catch: (cause) => new AdapterError({ adapter: "subprocess", operation: operationOf(command), message: errorMessage(cause), cause }),
+  })
 
 /** Like `run`, but a non-zero exit is a failure carrying stderr. */
 export const runOk = (command: ReadonlyArray<string>, options: RunOptions = {}): Effect.Effect<string, AdapterError> =>

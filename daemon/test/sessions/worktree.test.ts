@@ -14,6 +14,32 @@ const worktrees = <A, E>(f: (w: Worktrees["Service"]) => Effect.Effect<A, E>) =>
 const FAILING = { name: "x", private: true, packageManager: "bun@0.0.1", dependencies: { "bridgetown-no-such-package-xyz": "9.9.9" } }
 
 describe("worktree setup", () => {
+  test("a filter name ambiguous in Git command-line overrides refuses checkout", async () => {
+    const repo = scratchRepo()
+    writeFileSync(join(repo, "source.txt"), "source bytes")
+    writeFileSync(join(repo, ".gitattributes"), "*.txt filter=a=b")
+    sh("git add source.txt .gitattributes", repo);commit("source", repo)
+    sh("git push origin main", repo)
+    const marker = join(scratchDir("bt-ambiguous-filter-"), "host-marker")
+    sh(`git config filter.a=b.smudge 'touch ${marker}; cat'`, repo)
+    await expect(worktrees((w) => w.create(repo, "fix-bt-ambiguous-filter"))).rejects.toThrow("Unsupported Git filter name")
+    expect(existsSync(marker)).toBe(false)
+  }, 60_000)
+
+  test("initial checkout disables repository clean, smudge and process converters", async () => {
+    const repo = scratchRepo()
+    writeFileSync(join(repo, "source.txt"), "source bytes")
+    writeFileSync(join(repo, ".gitattributes"), "*.txt filter=probe")
+    sh("git add source.txt .gitattributes", repo);commit("source", repo)
+    sh("git push origin main", repo)
+    const marker = join(scratchDir("bt-bootstrap-filter-"), "host-marker")
+    for (const kind of ["clean", "smudge", "process"]) sh(`git config filter.probe.${kind} 'touch ${marker}; cat'`, repo)
+    sh("git config filter.probe.required true", repo)
+    const worktree = await worktrees((w) => w.create(repo, "fix-bt-no-filter"))
+    expect(existsSync(marker)).toBe(false)
+    expect(await Bun.file(join(worktree.path, "source.txt")).text()).toBe("source bytes")
+  }, 60_000)
+
   test("a failing install is a warning, not a failure, and an install cut short runs again", async () => {
     const repo = scratchRepo(FAILING)
     const worktree = await worktrees((w) => w.create(repo, "fix-bt-test"))

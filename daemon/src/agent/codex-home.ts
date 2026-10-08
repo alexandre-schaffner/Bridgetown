@@ -3,8 +3,7 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { Schema } from "effect"
-import type { AgentRequest } from "./protocol.ts"
-import { repoMcpServers } from "./options.ts"
+import type { CodexRequest } from "./protocol.ts"
 
 export const codexUserHome = (): string => process.env.CODEX_HOME ?? join(homedir(), ".codex")
 
@@ -18,10 +17,10 @@ export const linkCodexAuth = (dir: string): void => {
 export const codexSessionHome = (home: string, id: string): string => join(home, "codex", encodeURIComponent(id))
 const quote = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`
 
-export const codexHookCommand = (request: AgentRequest): string => {
+export const codexHookCommand = (): string => {
   const runner = import.meta.url.includes("$bunfs") ? [process.execPath] : [process.execPath, fileURLToPath(new URL("../main.ts", import.meta.url))]
-  const command = [...runner, "--guard-codex", String(request.daemonPort), request.session.branch ?? "", request.session.worktree ?? ""].map(quote).join(" ")
-  // As with the exec shims, repository preloads and environment must not reach the guard.
+  const command = [...runner, "--guard-codex"].map(quote).join(" ")
+  // Repository preloads and environment must not reach the trusted hook.
   return `cd / && exec /usr/bin/env -i PATH=${quote(process.env.PATH ?? "/usr/bin:/bin")} ${command}`
 }
 
@@ -34,27 +33,25 @@ const LoadedGuards = Schema.Struct({
 })
 
 /** A supported feature flag alone is insufficient: the actual synchronous guard must be loaded. */
-export const hasCodexGuards = (config: unknown, request: AgentRequest): boolean => {
+export const hasCodexGuards = (config: unknown): boolean => {
   const decoded = Schema.decodeUnknownOption(LoadedGuards)(config)
   if (decoded._tag === "None" || !decoded.value.features.hooks) return false
   return decoded.value.hooks.PreToolUse.some((entry) => entry.matcher == null && entry.hooks.some((hook) =>
-    hook.type === "command" && hook.command === codexHookCommand(request) && hook.async !== true))
+    hook.type === "command" && hook.command === codexHookCommand() && hook.async !== true))
 }
 
-export const prepareCodexHome = (request: AgentRequest): string => {
+export const prepareCodexHome = (request: CodexRequest): string => {
   const dir = request.session.agentConfigDir ?? codexSessionHome(request.home, request.session.id)
   linkCodexAuth(dir)
   if (!existsSync(join(dir, "auth.json"))) throw new Error(`Codex login is unavailable. Run CODEX_HOME=${quote(dir)} codex login, then retry.`)
   const config = [
     'cli_auth_credentials_store = "file"',
-    ...Object.entries(repoMcpServers(request.session.repoPath)).flatMap(([name, server]) => server.type === "http"
-      ? [`[mcp_servers.${JSON.stringify(name)}]`, `url = ${JSON.stringify(server.url)}`] : []),
     `[projects.${JSON.stringify(request.session.worktree ?? request.session.repoPath)}]`, 'trust_level = "untrusted"',
     ...(request.session.worktree === request.session.repoPath ? [] : [`[projects.${JSON.stringify(request.session.repoPath)}]`, 'trust_level = "untrusted"']),
     '[features]', 'hooks = true', 'multi_agent = false', 'multi_agent_v2 = false',
     'code_mode = false', 'code_mode_only = false', 'shell_snapshot = false',
     '[hooks]', '[[hooks.PreToolUse]]', '[[hooks.PreToolUse.hooks]]',
-    'type = "command"', `command = ${JSON.stringify(codexHookCommand(request))}`, 'timeout = 10',
+    'type = "command"', `command = ${JSON.stringify(codexHookCommand())}`, 'timeout = 10',
   ].join("\n") + "\n"
   const path = join(dir, "config.toml")
   if (!existsSync(path) || readFileSync(path, "utf8") !== config) writeFileSync(path, config, { mode: 0o600 })

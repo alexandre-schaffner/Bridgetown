@@ -82,6 +82,46 @@ describe("the merge gate is read again every tick", () => {
     }
   })
 
+  test("a merge click refuses a head that no longer matches the independent review", async () => {
+    const { github, calls } = prGitHub({ current: { headRefOid: "new-head" } })
+    const world = makeWorld({ github })
+    try {
+      const failure = await world.runPromise(seed(shipping("awaiting_merge", { critique: { reviewer: "codex", sha: "reviewed-head", findings: [], response: null } }), [mergeCard()]).pipe(
+        Effect.andThen(Effect.gen(function* () { return yield* (yield* Shipper).merge("s_m").pipe(Effect.flip) })),
+      ))
+      expect(failure._tag).toBe("Conflict")
+      expect(failure.message).toContain("passed review")
+      expect(calls.merge).toBe(0)
+    } finally { await world.dispose() }
+  })
+
+  test("explicitly disabling model review allows a new head despite historical critique", async () => {
+    const state: { current: Partial<PullRequest> } = { current: { headRefOid: "new-head" } }
+    const { github } = prGitHub(state)
+    let merged = false
+    const world = makeWorld({ github: { ...github, mergePr: () => Effect.sync(() => { merged = true;state.current = { mergedAt: "now" } }) } })
+    try {
+      await world.runPromise(Effect.gen(function* () {
+        const hub = yield* Hub
+        yield* hub.updateSettings({ ...(yield* hub.settings), adversarialReview: false })
+        yield* seed(shipping("awaiting_merge", { critique: { reviewer: "codex", sha: "old-head", findings: [], response: null } }), [mergeCard()])
+        yield* (yield* Shipper).merge("s_m")
+      }))
+      expect(merged).toBe(true)
+    } finally { await world.dispose() }
+  })
+
+  test("merges match the exact live head whose checks were verified", async () => {
+    const state: { current: Partial<PullRequest> } = { current: {} }
+    const { github } = prGitHub(state)
+    let mergedHead: string | undefined
+    const world = makeWorld({ github: { ...github, mergePr: (_url, head) => Effect.sync(() => { mergedHead = head;state.current = { mergedAt: "now", state: "MERGED" } }) } })
+    try {
+      await world.runPromise(seed(shipping("awaiting_merge"), [mergeCard()]).pipe(Effect.andThen(Effect.gen(function* () { yield* (yield* Shipper).merge("s_m") }))))
+      expect(mergedHead).toBe("aaaa111")
+    } finally { await world.dispose() }
+  })
+
   test("waiting to merge with no card (nothing GitHub took): the card is put back; one GitHub took is left to it", async () => {
     const { github } = prGitHub({ current: {} })
     const world = makeWorld({ github })

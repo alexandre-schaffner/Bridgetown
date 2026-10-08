@@ -148,7 +148,7 @@ const slowGitHub = (release: Deferred.Deferred<void>, options: { readonly create
     viewPr: (url) =>
       Effect.succeed({
         number: 3338, title: "fix", state: state.merged ? "MERGED" : "OPEN", mergedAt: state.merged ? "now" : null, headRefOid: "aaaa111", url,
-        reviewDecision: "APPROVED", latestReviews: [], statusCheckRollup: [],
+        reviewDecision: "APPROVED", latestReviews: [], statusCheckRollup: [{ name: "checks", status: "COMPLETED", conclusion: "SUCCESS" }],
       }),
     mergePr: () => Effect.sync(() => void calls.merge++).pipe(Effect.andThen(Deferred.await(release)), Effect.andThen(Effect.sync(() => void (state.merged = true)))),
     nextPatchTag: (_repo, prefix) => Effect.succeed(`${prefix}-v0.4.3`),

@@ -36,7 +36,7 @@ Decision policy, session boundaries, what Bridgetown keeps, and what it posts to
 - **Policy** (`daemon/src/triage/policy.ts`) turns probabilities into a decision: auto, suggest, escalate, ignore or filtered. You can tune the
   thresholds in Settings. Each verdict is stored with its numbers.
 - **Models are configured per role.** Settings → Models selects Codex or Claude Code, model and effort independently for monitoring (investigation) and reviewing. Automatic monitoring keeps `quick` Sonnet/medium, `standard` Opus/high and `deep` Opus/max; Automatic reviewing keeps Codex at medium/high/xhigh. New sessions snapshot their monitoring choice; retries and follow-ups retain it. Each new review reads the current reviewing choice, and an in-flight review retains its profile. Jev still chooses depth and judges findings.
-- **A reviewer checks every fix.** Agents open PRs as drafts. Before a pushed fix goes to CI, the selected model reviews the diff adversarially without write tools (`daemon/src/critique/`). Codex uses its read-only sandbox; Claude Code gets only Read, Glob and Grep, with no shell, MCP or subagents. The same provider may investigate and review. Jev
+- **A reviewer checks every fix.** Agents open PRs as drafts. Before a pushed fix goes to CI, the selected model reviews the diff adversarially without write tools (`daemon/src/critique/`). Both providers get only scoped commit-file reads, with no shell, direct network access or subagents. The same provider may investigate and review. Jev
   judges each finding (`real_defect`, `blocking`, and from round 2 whether the agent's reply already `rebutted` it) and the policy
   drops the nitpicks. Blocking findings go back to the same agent conversation; it fixes them or rebuts them with evidence, and the
   new head is reviewed again, up to 4 rounds before it is handed to you. Once a review passes, Bridgetown takes the PR out of draft
@@ -65,86 +65,26 @@ Decision policy, session boundaries, what Bridgetown keeps, and what it posts to
 
 ## Safety model
 
-Sessions are headless, so `monorepo/AGENTS.md`'s prod-safety hard rule applies in full:
+Sessions are headless. Their authority comes from typed broker capabilities, not instructions found in alerts or repository files.
 
-- **No secrets in reach.** The daemon takes its tokens only on its stdin, from the app or `make dev` (see
-  [API.md](API.md#launch)), never from the environment, where any process of yours could read them back. Every process
-  it spawns, sessions included, gets an environment without `BRIDGETOWN_*`, `SLACK_*` or `TYPESAFE_*`.
-- **Named Claude tools only.** Claude sessions get an explicit list of built-in tools (Bash, Read, Glob, Grep, Edit, Write, NotebookEdit,
-  WebSearch, WebFetch, TodoWrite) rather than the CLI's preset, and `Task` is taken away, so a newer tool that runs
-  commands or reaches the network (subagents, Monitor, Cron, RemoteTrigger, Workflow) is never offered
-  (`daemon/src/agent/options.ts`).
-- **One gate over every Claude tool call.** A matcher-less `PreToolUse` hook, with `canUseTool` behind it
-  (`daemon/src/guard/hook.ts`), checks each call: a tool that runs a command goes through the command policy, a write
-  tool through the worktree boundary, WebFetch's URL through the same host rules as a network command. A call it
-  cannot check is refused.
-- **Codex investigations stay sandboxed.** Its required `PreToolUse` hook checks shell commands and patches with the
-  same command and write policies. Each shell command starts in the directory the hook checked; an explicit `cd`
-  inside the command is checked too. The workspace-write sandbox has approvals disabled, and Bridgetown refuses
-  requests to expand its permissions. Input to an existing process stays in that process's sandbox.
-- **The command policy** (`daemon/src/guard/bash.ts`, `guard/vcs.ts`) parses each command (`guard/shell.ts`: lists,
-  pipes, subshells, `$(…)`, backticks, heredocs, function and `coproc` bodies, bash 5.3 `${ …; }`) and checks every
-  command it would run, through wrappers (`env`, `time`, `xargs`, `timeout`, `nice`, `bash -c`, `eval`, `find -exec`,
-  `trap`, `mapfile -C`…), path prefixes and `git -C/-c` options. A script run with `bash`, `sh`, `source` or `./` is
-  checked by its content, and a `package.json` script run by bun, npm, pnpm or yarn (`run <name>` or bare) by its
-  body, with its `pre` and `post` scripts, from the nearest `package.json`. It refuses all of the following and tells
-  the agent what to do instead:
-  - `gh` beyond an allowlist: read-only `pr`, `run`, `workflow`, `issue`, `repo` and `search` commands, `gh api` GETs
-    and GraphQL queries written inline, and the PR writes a fix needs (opening one as a draft, commenting, editing one
-    without touching its base or reviewers). So `gh pr merge`, watching checks, re-running or cancelling runs,
-    `gh workflow run`, releases, API writes and mutations are out, and so is a computed word where a flag could hide.
-  - tags (`git tag` creating or deleting one however its flags are written, `mktag`, `update-ref refs/tags/*`,
-    pushing tags), force pushes, deleting remote branches, and pushes anywhere but `origin` and the session's own
-    `fix-bt-*` branch (or its `-N` follow-ups)
-  - git commands that run another command (`rebase --exec`, `submodule foreach`, `filter-branch`, `difftool -x`,
-    `bisect run`), git config judged by its value (a pager, editor, ssh command, credential helper or hooks path that
-    runs something, `push.followTags`, an alias; `-c core.pager=` is fine), and `git credential`
-  - kubectl, helm, argocd, kargo, gcloud, gsutil, bq and `op`, Keychain reads with `security`, `sudo`, `su` and
-    `doas`, and reading a process's environment (`ps -E`, `ps eww`, `/proc/*/environ`)
-  - migrations, `cast send`, network calls to `*.internal.merkl.xyz`, Slack or the daemon's own port, and `curl`/`wget`
-    writes to the GitHub API
-  - variables that change what a later program runs, set as a prefix, through `env`, `export` or `declare`:
-    `BASH_ENV`, `ZDOTDIR`, `CDPATH`, `NODE_OPTIONS`, `BUN_OPTIONS`, `GIT_EXEC_PATH`, `LD_PRELOAD`, exported bash
-    functions, Bridgetown's own, and pagers, editors, ssh and askpass commands unless they run nothing
-    (`GIT_EDITOR=true`, `PAGER=cat`)
-  - interactive shells, commands handed to `at`, `crontab`, `launchctl`, `systemd-run`, `tmux` or `screen`, alias
-    definitions, piping into a shell, and commands named through a variable, a substitution or a glob, which it cannot
-    check
-- **Exec-time guard.** Every session's PATH starts with read-only shims for gh, git, kubectl, helm, argocd, kargo,
-  gcloud, gsutil, bq, op, sudo, su, doas, cast, curl and wget (`daemon/src/guard/exec.ts`, put back before every turn).
-  Each runs the same policy on the real, fully expanded argv through the daemon's `--guard-exec`, and refuses with
-  exit 126 and the reason. That catches what the command line doesn't show: Makefile and package recipes, commands a
-  program spawns (`bun x.ts`, `node -e`), a command held in a variable, the gh a git hook runs, an alias from your own
-  shell config. `security` has no shim, since the Claude CLI keeps its own login with `security -i`. Every Bash call
-  starts in the worktree, whatever the last one `cd`'d to.
-- **Writes stay in the worktree.** Edit, Write, MultiEdit and NotebookEdit are refused outside the session's worktree.
-  The path is read as the CLI reads it (trimmed, `~` expanded, relative to the worktree), then followed through every
-  symlink, dangling ones included; `..` and NUL bytes are refused. Reads stay open.
-- **What the guard cannot see.** A program that runs a binary by its absolute path, or with a PATH of its own, goes
-  around the shims, and so does the git that git runs for a hook or credential helper (git puts its own directory
-  first on its children's PATH). The exec-time guard takes the session's branch from its environment, so an
-  interpreter that changes it before running git can move the push check. What has no shim (`nc`, `socat`, `security`,
-  `prisma`, a read of `/proc`) is checked only on the command line, so not when a runner the guard doesn't know
-  (`flock`, `ionice`, `ssh`, a quoted `parallel` string) or interpreted code runs it. Files written by Bash commands
-  aren't confined. The real backstops are the missing credentials (a session has no daemon, Slack or TypeSafe token to
-  use or dump) and GitHub's branch protection and `production` environment approval.
-- **MCP servers.** Only `merkl` and `grafana` load from the repo's `.mcp.json`, plus Bridgetown's in-process `report`,
-  `ask` and `slack_context` tools.
-- **Human gates.** Merging, cutting releases, re-running approved pipelines and sending replies to teammates are always your click. GitHub's
-  `production` environment approval stays with the reviewer team.
-- **Slack text is untrusted.** Jev's criteria and the agent prompts fence it off as data, not instructions, and label
-  each thread message `[the user]`, `[a teammate]` or `[a bot or Bridgetown]`.
-- **Isolation.** Each session works in its own worktree under `monorepo/.shared/worktrees/fix-bt-*`, per the repo's
-  worktree convention. Housekeeping removes it, and the branch, once the session is over (below).
-- **Dry run.** `--dry-run`, `BRIDGETOWN_DRY_RUN=1` or the Settings toggle stops every Slack post.
+- **Trusted inference clients.** Claude and Codex authenticate on the host. Built-in shell, file, web, subagent and arbitrary MCP tools are refused; only Bridgetown’s broker tools are authorized. User/repository settings are excluded. Codex must load the required synchronous hook or the turn stops. The provider CLI and its hooks remain trusted software, not an OS-isolated inference process.
+- **OS sandbox for generated code and file operations.** Every local command, source read, source write and publication snapshot uses a separate macOS Seatbelt sandbox via the pinned sandbox runtime. It permits the worktree, per-command scratch and required system runtime reads, denies network access (including direct loopback and arbitrary Unix sockets), and blocks Keychain IPC and shared-memory IPC. Protected credentials, Git metadata, agent settings and CI workflow writes are denied. Absolute binary paths and interpreted code inherit the same restrictions. Unsupported platforms or launch failures refuse the operation; there is no unrestricted fallback. Source-mode file/policy helpers additionally read the trusted daemon package to resolve dependencies; generated commands never get this grant.
+- **Credential separation.** Generated processes receive an explicit minimal environment and scratch HOME. Provider authentication is passed only to the inference client. Git authentication belongs to trusted host utilities; Slack, TypeSafe and daemon API tokens are not inherited. The app supplies daemon secrets over stdin. Known token/private-key patterns are redacted from evidence/transcripts or rejected before publication; this is heuristic detection, not complete data-loss prevention.
+- **Brokered network capabilities.** `bt_github` reads selected PR/run/issue/history information from `nocturlab.ghe.com/Merkl/monorepo`. `bt_observe` calls only the two approved Grafana read operations at `127.0.0.1:8000/mcp`: Prometheus range queries and a fixed VictoriaLogs GET endpoint. Reads span at most three hours within three hours of the investigation’s start, with at most 100 log rows. Tools have strict argument schemas, output budgets and cancellation/time limits. Repository `.mcp.json`, direct Merkl MCP access, endpoint probes, arbitrary API calls and arbitrary tool selection are unavailable.
+- **Immutable fix publication.** `bt_submit_fix` verifies the trusted worktree registration and session branch, refuses protected changes and captures bounded UTF-8 regular files under the OS sandbox. Changed-file discovery compares raw working bytes to immutable tree entries inside the sandbox, without host clean filters; existing protected credential entries are preserved without reading their contents. It scans those exact bytes, writes Git objects without filters, builds a separate index, commits with an expected-parent comparison, and pushes that exact object ID to the fixed HTTPS repository and session ref. Mutable files are never passed to `git add`. Existing PRs return to draft before their head moves; new PRs are drafts. The broker prepares follow-up branches from main after merged fixes. Binary/oversized changes and protected configuration edits require a human.
+- **Read-only review.** Both providers receive the same bounded diff tied to the pushed commit and only `bt_read_file` / `bt_list_files` afterward, reading immutable Git objects at that exact commit rather than mutable working files. Reviewers have no shell, network, Slack, write or publication capability. Built-in tools and arbitrary MCP calls are denied.
+- **Untrusted evidence.** Slack messages, alerts, repository reads, diffs and tool results are labelled as data and fenced against delimiter breakout. This helps the model identify instructions but cannot guarantee prompt-injection resistance. Broker capabilities limit what a manipulated model can do. Scoped source and operational evidence still reach the chosen model provider, and permitted fixes can still contain sensitive business data that does not match a secret pattern.
+- **Human gates.** Merges, releases, approved pipeline re-runs and teammate replies require your click. A merge rechecks current checks, draft state and review before using GitHub’s expected-head condition; a recorded independent review must match that head when model reviewing is enabled. GitHub branch protections and production environment approval remain external backstops.
+- **Operational limits.** Each command has a five-minute timeout and a combined 64 KiB output budget. Ordinary child process groups are killed on completion, timeout and cancellation. A process that deliberately creates a new session can outlive the command while retaining its OS restrictions and continue modifying the worktree. Immutable publication prevents those later writes from entering a scanned fix. This is not VM isolation or a complete CPU/memory/fork-bomb boundary; use a disposable VM for hostile code needing stronger lifecycle isolation.
+- **Dependency bootstrap.** Initial checkout and follow-up branch switching disable every configured Git clean, smudge and process driver, along with hooks and fsmonitor. Working files use raw committed bytes; repositories requiring Git LFS or other transformations need human preparation. The trusted preparation step uses `bun install --ignore-scripts`, without provider credentials. Downloads still run on the host and use trusted package-manager configuration. Lifecycle scripts must be inspected and run explicitly within the sandbox; commands needing downloads or local servers require a human.
+- **Dry run.** `--dry-run`, `BRIDGETOWN_DRY_RUN=1` or the Settings toggle stops Slack posts. It does not prevent draft PR publication.
 
 ## Storage and retention
 
 Everything stays on your Mac:
 
 - **The store:** `~/Library/Application Support/Bridgetown/bridgetown.db` (SQLite, moved by `BRIDGETOWN_HOME`): alerts,
-  sessions with their transcripts, cards and settings. The exec-time guard's shims live beside it, in
-  `guard-bin/<port>/`.
+  sessions with their transcripts, cards and settings. Isolated Codex configuration and conversation state live under `codex/<session>/`.
 - **Schema baseline:** `008_initial` creates a fresh store in one migration. Stores already upgraded through
   version 8 keep their data and migration record; `009_agent_provider` preserves their Claude conversation IDs
   under the provider-neutral session fields. Earlier database versions are
@@ -212,9 +152,10 @@ restart between commit and database acknowledgement does not repeat the batch. M
 leave evidence pending and appear in Settings; intake and agent work continue without recalled context if memory
 cannot be read. No remote is created, fetched or pushed.
 
-Agent sessions use the Claude SDK's OS sandbox to deny shell writes to the memory folder, including commands run
-by project scripts. The existing command guards and approval gates still apply. Sessions fail closed if the OS
-sandbox is unavailable; agents submit new notes through `memory_remember` instead of editing the wiki.
+Both providers use broker tools for memory search and topic reads; results are bounded, redacted and fenced as
+untrusted evidence. Generated commands and file operations run in the macOS sandbox described above, which
+denies access to the daemon-owned memory folder outside the session worktree, including through symlinks.
+Agents submit attributed claims through `memory_remember`; they cannot edit the wiki or override approvals.
 
 **Correcting memory.** Use **Open memory folder**, edit the Markdown files, then commit the files you changed:
 

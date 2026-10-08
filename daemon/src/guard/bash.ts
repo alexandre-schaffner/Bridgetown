@@ -81,16 +81,6 @@ const MAX_DEPTH = 4
  */
 const MAX_NESTED = 64
 
-/**
- * The commands the exec-time guard (exec.ts) stands in front of: those this
- * policy refuses or restricts by name that reach production, a remote or a
- * credential. Not `security`: the Claude CLI reads its own login through it by name
- * and saves a refreshed one with `security -i`, its commands on stdin where a shim
- * can't see them, so a shim could only pass every call or break the CLI's login. A
- * Keychain read on the command line is still refused.
- */
-export const EXEC_GUARDED: ReadonlyArray<string> = ["gh", "git", ...CLUSTER, ...GCP, "op", "sudo", "su", "doas", "cast", "curl", "wget"]
-
 interface Scope extends GuardContext {
   /** Unknown after a `cd` to a computed directory. */
   readonly cwdKnown: boolean
@@ -105,12 +95,6 @@ const outermost = (context: GuardContext, source: string): Scope => ({ ...contex
 
 /** Why this command is refused, or `undefined` when it may run. */
 export const refusal = (command: string, context: GuardContext): string | undefined => check(command, outermost(context, command))
-
-/** Why the exec-time guard refuses `name args…`: the argv a program is about to run with, every expansion done, so nothing in it is dynamic. */
-export const execRefusal = (name: string, args: ReadonlyArray<string>, context: GuardContext): string | undefined => {
-  const word = (text: string): Word => ({ text, dynamic: false, splits: false, quoted: true })
-  return commandRefusal(name, word(name), args.map(word), outermost(context, [name, ...args].join(" ")))
-}
 
 const check = (source: string, scope: Scope): string | undefined => {
   if (scope.depth > MAX_DEPTH) return REASONS.nesting

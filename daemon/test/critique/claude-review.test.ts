@@ -19,13 +19,14 @@ describe("Claude reviewing", () => {
     let closed = false
     const actual = await Effect.runPromise(claudeReview(request, "/fake/claude", ({ prompt, options }) => {
       expect(prompt).toContain("+export const fixed = true")
-      expect(options).toMatchObject({ model: "custom-reviewer", effort: "max", tools: ["Read", "Glob", "Grep"], permissionMode: "dontAsk", persistSession: false, mcpServers: {}, strictMcpConfig: true, settingSources: [] })
+      expect(options).toMatchObject({ model: "custom-reviewer", effort: "max", tools: [], permissionMode: "dontAsk", persistSession: false, strictMcpConfig: true, settingSources: [] })
+      expect(Object.keys(options?.mcpServers ?? {})).toEqual(["bridgetown"])
       return {
         close: () => { closed = true },
         async *[Symbol.asyncIterator]() {
           const hook = options?.hooks?.PreToolUse?.[0]?.hooks[0]
           if (hook === undefined) throw new Error("missing reviewer guard")
-          for (const tool_name of ["Bash", "Write", "Edit", "Agent", "Task", "mcp__external__write"]) {
+          for (const tool_name of ["Bash", "Write", "Edit", "Agent", "Task", "mcp__external__write", "Read", "Grep", "Glob", "mcp__bridgetown__bt_run"]) {
             expect(await hook({ hook_event_name: "PreToolUse", tool_name, tool_input: {}, tool_use_id: "t", session_id: "s", transcript_path: "", cwd: worktree }, undefined, { signal: new AbortController().signal }))
               .toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } })
           }

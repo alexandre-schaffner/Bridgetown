@@ -6,6 +6,7 @@ import { Context, Layer } from "effect"
 import type { AgentEvent, AgentRequest } from "./protocol.ts"
 import { sdkOptions } from "./options.ts"
 import { codexAgent } from "./codex.ts"
+import { makeBroker } from "../security/broker.ts"
 
 /** The Claude Agent SDK's `query`, as a service so tests can run turns without a CLI. */
 export interface AgentShape {
@@ -63,7 +64,10 @@ export const AgentLive = (claudePath: string | undefined, codexPath?: string) =>
     const executable = claudeExecutable(claudePath)
     return query({ prompt, options: executable === undefined ? options : { ...options, pathToClaudeCodeExecutable: executable } })
   })
-  return Layer.succeed(Agent)({ run: (request) => request.session.provider === "codex" ? codexAgent(request, codexPath) : claude.run(request) })
+  return Layer.succeed(Agent)({ run: (request) => {
+    const brokered = { ...request, tools: { ...request.tools, broker: makeBroker(request) } }
+    return request.session.provider === "codex" ? codexAgent(brokered, codexPath) : claude.run(brokered)
+  } })
 }
 
 /**
