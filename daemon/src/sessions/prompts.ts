@@ -62,7 +62,7 @@ const sharedRules = (branch: string): ReadonlyArray<string> => [
   `- Use \`GH_HOST=${GH_HOST}\` for every \`gh\` command.`,
   `- You are in a fresh worktree on branch \`${branch}\` (from origin/main). Commit there and push with \`git push -u origin ${branch}\`.`,
   "- Pull request titles match `^(fix|clean|chore|feat|docs)(\\(.+\\))?!?:` (lowercase, imperative, no trailing period, e.g. `fix(app-admin): pin vite to 6.3`).",
-  "- Open pull requests as drafts (`gh pr create --draft`). An independent reviewer (a model from another vendor) checks every fix you push, and Bridgetown takes the PR out of draft once the review passes; `gh pr ready` is not yours to run.",
+  "- Open pull requests as drafts (`gh pr create --draft`). An independent reviewer (using your configured review model) checks every fix you push, and Bridgetown takes the PR out of draft once the review passes; `gh pr ready` is not yours to run.",
   "- Call the `report` tool at each phase change so the user can follow along. Use `ask` only when truly blocked.",
 ]
 

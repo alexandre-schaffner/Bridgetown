@@ -3,6 +3,7 @@ import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { Context, Effect, Layer } from "effect"
 import { claudeProjectDir } from "../agent/agent.ts"
+import { codexSessionHome } from "../agent/codex-home.ts"
 import { Environment } from "../config.ts"
 import { sweepReviewSandboxes } from "../critique/reviewer.ts"
 import { type AdapterError, attempt } from "../domain/errors.ts"
@@ -34,7 +35,7 @@ export const HousekeepingLive = Layer.effect(Housekeeping)(
     const runner = yield* SessionRunner
     const worktrees = yield* Worktrees
     const hub = yield* Hub
-    const { claudeConfigDir } = yield* Environment
+    const { claudeConfigDir, home } = yield* Environment
 
     const warn = (what: string) => (error: AdapterError) => Effect.logWarning(`Housekeeping: ${what}: ${error.message}`)
 
@@ -63,7 +64,10 @@ export const HousekeepingLive = Layer.effect(Housekeeping)(
       Effect.gen(function* () {
         if (!isSessionBranch(ref.branch)) return
         yield* worktrees.remove(ref.repoPath, ref.branch, { deleteBranch: true })
-        const conversation = claudeProjectDir(claudeConfigDir, worktrees.path(ref.repoPath, ref.branch))
+        const session = yield* store.getSession(ref.id)
+        const conversation = session?.provider === "codex"
+          ? codexSessionHome(home, ref.id)
+          : claudeProjectDir(claudeConfigDir, worktrees.path(ref.repoPath, ref.branch))
         yield* attempt("fs", "remove conversation", () => rm(conversation, { recursive: true, force: true }))
       })
 

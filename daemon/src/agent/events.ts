@@ -1,7 +1,7 @@
-import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { Effect, Schema } from "effect"
 import { GHE_REPO } from "../config.ts"
 import type { AdapterError } from "../domain/errors.ts"
+import type { AgentProvider } from "../domain/models.ts"
 import { Phase } from "../domain/session.ts"
 import { commandOf } from "../guard/bash.ts"
 import { WRITE_TOOLS } from "../guard/confine.ts"
@@ -9,6 +9,7 @@ import type { HubShape } from "../hub.ts"
 import { truncate } from "../lib/text.ts"
 import type { SessionRepoShape } from "../sessions/repo.ts"
 import { ownPrUrl } from "../ship/pr.ts"
+import type { AgentEvent } from "./protocol.ts"
 import { SessionResult } from "./result.ts"
 import { TOOL_SERVER } from "./tools.ts"
 
@@ -43,8 +44,14 @@ const describeTool = (name: string, input: unknown): string => {
  * What to tell the user about an MCP server sessions couldn't use. merkl and grafana
  * come from the monorepo's `.mcp.json`, so `claude mcp login` only finds them there.
  */
-export const mcpProblem = (name: string, status: string): string => {
+export const mcpProblem = (name: string, status: string, provider: AgentProvider = "claude", configDir?: string | null): string => {
   if (name === "grafana") return "grafana MCP · sessions: not reachable. Run `bun grafana:mcp` in the monorepo."
+  if (provider === "codex") {
+    const command = `${configDir ? `CODEX_HOME='${configDir.replaceAll("'", `'\\''`)}' ` : ""}codex mcp`
+    return status === "needs-auth"
+      ? `${name} MCP · sessions: needs a login. Run \`${command} login ${name}\`.`
+      : `${name} MCP · sessions: ${status}. Check \`${command} get ${name}\`.`
+  }
   if (status === "needs-auth") return `${name} MCP · sessions: needs a login. Run \`claude mcp login ${name}\` in the monorepo.`
   return `${name} MCP · sessions: ${status}. Check \`claude mcp get ${name}\` in the monorepo.`
 }
@@ -62,53 +69,51 @@ export interface EventSink {
   readonly onEnd: (end: TurnEnd) => Effect.Effect<void, AdapterError>
 }
 
-/** Turns one SDK message into transcript lines, status, and (for the result) the end of the turn. */
-export const handleMessage = (id: string, message: SDKMessage, sink: EventSink): Effect.Effect<void, AdapterError> =>
+const reportMcp = (id: string, servers: ReadonlyArray<{ readonly name: string; readonly status: string }>, { repo, hub }: EventSink) =>
   Effect.gen(function* () {
-    const { repo, hub } = sink
-    switch (message.type) {
-      case "system":
-        if (message.subtype === "init") {
-          yield* repo.patch(id, { claudeSessionId: message.session_id })
-          const servers = message.mcp_servers.filter((server) => server.name !== TOOL_SERVER)
-          const down = servers.filter((server) => server.status !== "connected")
-          yield* repo.log(
-            id,
-            down.length === 0 ? "status" : "error",
-            `MCP: ${servers.map((server) => `${server.name} ${server.status}`).join(", ") || "none configured"}`,
-          )
-          // Every server connected: a problem an earlier session reported is fixed now.
-          yield* hub.problem("mcp", down.length === 0 ? null : down.map((server) => mcpProblem(server.name, server.status)).join(" "))
-        }
+    const wanted = servers.filter((server) => server.name !== TOOL_SERVER)
+    const down = wanted.filter((server) => server.status !== "connected" && server.status !== "starting")
+    yield* repo.log(id, down.length === 0 ? "status" : "error", `MCP: ${wanted.map((s) => `${s.name} ${s.status}`).join(", ") || "none configured"}`)
+    const session = down.length === 0 ? undefined : yield* repo.get(id)
+    yield* hub.problem("mcp", down.length === 0 ? null : down.map((s) => mcpProblem(s.name, s.status, session?.provider, session?.agentConfigDir)).join(" "))
+  })
+
+/** Applies normalized provider events to the session. */
+export const handleEvent = (id: string, event: AgentEvent, sink: EventSink): Effect.Effect<void, AdapterError> =>
+  Effect.gen(function* () {
+    const { repo } = sink
+    switch (event.kind) {
+      case "init": {
+        yield* repo.patch(id, { agentSessionId: event.conversationId, agentConfigDir: event.configDir ?? null })
+        return yield* reportMcp(id, event.servers, sink)
+      }
+      case "mcp": return yield* reportMcp(id, event.servers, sink)
+      case "text":
+        if (event.text.trim() !== "") yield* repo.log(id, "text", event.text, { activity: true })
         return
-      case "assistant":
-        for (const block of message.message.content) {
-          if (block.type === "text" && block.text.trim() !== "") yield* repo.log(id, "text", block.text, { activity: true })
-          if (block.type === "tool_use" && !block.name.startsWith(`mcp__${TOOL_SERVER}__`) && block.name !== "StructuredOutput") {
-            yield* repo.log(id, "tool", describeTool(block.name, block.input), { activity: true })
-            const phase = impliedPhase(block.name, block.input)
-            if (phase !== undefined) {
-              yield* repo.modify(id, (current) => (laterPhase(current.phase, phase) ? { ...current, phase } : undefined))
-            }
-          }
-        }
+      case "tool": {
+        if (event.name.startsWith(`mcp__${TOOL_SERVER}__`) || event.name === "StructuredOutput") return
+        yield* repo.log(id, "tool", describeTool(event.name, event.input), { activity: true })
+        const phase = impliedPhase(event.name, event.input)
+        if (phase !== undefined) yield* repo.modify(id, (s) => laterPhase(s.phase, phase) ? { ...s, phase } : undefined)
+        return
+      }
+      case "error":
+        yield* repo.log(id, "error", event.text)
         return
       case "result": {
         sink.closeInput()
-        // What the turn cost is recorded even when the session was stopped meanwhile.
-        yield* repo.modify(id, (current) => ({ ...current, costUsd: current.costUsd + message.total_cost_usd }), { evenIfFinished: true })
-        if (message.subtype !== "success") {
-          yield* repo.log(id, "error", message.errors.join("\n") || message.subtype)
-          return yield* sink.onEnd({ _tag: "Failed", reason: `Agent stopped: ${message.subtype}` })
+        yield* repo.modify(id, (s) => ({ ...s, costUsd: event.costUsd === null || s.costUsd === null ? null : s.costUsd + event.costUsd }), { evenIfFinished: true })
+        if (event.error !== null) {
+          yield* repo.log(id, "error", event.error)
+          return yield* sink.onEnd({ _tag: "Failed", reason: `Agent stopped: ${event.error}` })
         }
-        yield* repo.log(id, "result", message.result)
-        const decoded = Schema.decodeUnknownOption(SessionResult)(message.structured_output)
+        yield* repo.log(id, "result", event.text)
+        const decoded = Schema.decodeUnknownOption(SessionResult)(event.output)
         if (decoded._tag === "None") return yield* sink.onEnd({ _tag: "Failed", reason: "Agent finished without a structured result" })
         const prUrl = ownPrUrl(decoded.value.prUrl)
         if (decoded.value.prUrl !== null && prUrl === null) yield* repo.log(id, "error", `Ignored the PR link ${truncate(decoded.value.prUrl, 200)}: not a pull request on ${GHE_REPO}`)
         return yield* sink.onEnd({ _tag: "Result", result: { ...decoded.value, prUrl } })
       }
-      default:
-        return
     }
   })

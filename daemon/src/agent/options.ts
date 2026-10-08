@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import type { CanUseTool, McpServerConfig, Options } from "@anthropic-ai/claude-agent-sdk"
 import { Schema } from "effect"
+import { ClaudeEffort } from "../domain/models.ts"
 import { GH_HOST } from "../config.ts"
 import type { Session } from "../domain/session.ts"
 import { readScript } from "../guard/bash.ts"
@@ -108,7 +109,7 @@ export const sdkOptions = ({ session, abort, resume, tools, onRefused, daemonPor
   return {
     ...(session.worktree === null ? {} : { cwd: session.worktree }),
     model: session.model,
-    effort: session.effort,
+    ...(session.effort === null ? {} : { effort: Schema.decodeUnknownSync(ClaudeEffort)(session.effort) }),
     abortController: abort,
     systemPrompt: { type: "preset", preset: "claude_code" },
     tools: [...SESSION_TOOLS],
@@ -133,6 +134,6 @@ export const sdkOptions = ({ session, abort, resume, tools, onRefused, daemonPor
     persistSession: true,
     maxTurns: MAX_TURNS,
     env: sessionEnv(process.env, session, shims),
-    ...(resume && session.claudeSessionId !== null ? { resume: session.claudeSessionId } : {}),
+    ...(resume && session.agentSessionId !== null ? { resume: session.agentSessionId } : {}),
   }
 }

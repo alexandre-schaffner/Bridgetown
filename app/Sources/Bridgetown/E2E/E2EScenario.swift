@@ -321,10 +321,12 @@ enum E2EStep {
         } else if let mock = json["mock"] {
             if let status = mock["status"] {
                 self = .mock(.object(["mock": .string("status"), "patch": status]))
+            } else if let settings = mock["settings"] {
+                self = .mock(.object(["mock": .string("settings"), "patch": settings]))
             } else if let code = mock["crash"]?.number {
                 self = .crash(Int(code))
             } else {
-                throw bad("mock takes \"status\" or \"crash\"")
+                throw bad("mock takes \"status\", \"settings\" or \"crash\"")
             }
         } else if let daemon = json["daemon"] {
             guard daemon.string == "stop" else { throw bad("daemon takes \"stop\"") }

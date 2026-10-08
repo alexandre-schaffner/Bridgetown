@@ -123,7 +123,7 @@ export interface SessionView {
   readonly channelLabel: string
   /**
    * resolved: a verified outcome (deployed, merged with nothing to ship, a confirmed no-op) · closed: closed without a
-   * fix, never a success · critiquing: another vendor's model reviews the pushed fix, the PR a draft until it passes.
+   * fix, never a success · critiquing: the selected reviewer checks the pushed fix, the PR a draft until it passes.
    */
   readonly status: SessionStatus
   /** Always six, in order, from evidence. */
@@ -147,10 +147,12 @@ export interface SessionView {
   readonly prUrl: string | null
   readonly branch: string | null
   readonly worktree: string | null
-  readonly claudeSessionId: string | null
+  readonly provider: "claude" | "codex"
+  readonly agentSessionId: string | null
+  readonly agentConfigDir: string | null
   readonly model: string
   readonly ciRounds: number
-  readonly costUsd: number
+  readonly costUsd: number | null
   readonly slackThreadUrl: string | null
   /** `POST /sessions/:id/message` is allowed: live, or finished and handed back with its worktree intact. */
   readonly acceptsMessages: boolean

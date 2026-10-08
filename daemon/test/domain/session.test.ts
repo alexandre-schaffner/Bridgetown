@@ -3,11 +3,11 @@ import { acceptsMessages, closedResolution, NO_MILESTONES, type Session, type Se
 import { makeSession } from "../support/records.ts"
 
 const session = (status: SessionStatus, overrides: Partial<Session> = {}): Session =>
-  makeSession(status, { prUrl: "https://ghe/pull/1", claudeSessionId: "c", ...overrides })
+  makeSession(status, { prUrl: "https://ghe/pull/1", agentSessionId: "c", ...overrides })
 
 describe("contract rules", () => {
   test("acceptsMessages: live or handed back with a worktree and an agent session", () => {
-    expect(acceptsMessages(session("running", { claudeSessionId: null }))).toBe(true)
+    expect(acceptsMessages(session("running", { agentSessionId: null }))).toBe(true)
     expect(acceptsMessages(session("waiting"))).toBe(true)
     expect(acceptsMessages(session("ci"))).toBe(true)
     expect(acceptsMessages(session("failed"))).toBe(true)
@@ -16,7 +16,7 @@ describe("contract rules", () => {
     expect(acceptsMessages(session("preparing"))).toBe(false)
     expect(acceptsMessages(session("resolved"))).toBe(false)
     expect(acceptsMessages(session("waiting", { worktree: null }))).toBe(false)
-    expect(acceptsMessages(session("failed", { claudeSessionId: null }))).toBe(false)
+    expect(acceptsMessages(session("failed", { agentSessionId: null }))).toBe(false)
   })
   test("closing without a fix says how far it got, never 'resolved'", () => {
     expect(closedResolution(session("failed"))).toBe("agent failed")

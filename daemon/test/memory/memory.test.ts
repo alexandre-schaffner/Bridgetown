@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite"
 import { describe, expect, test } from "bun:test"
 import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import type { AgentShape } from "../../src/agent/agent.ts"
+import type { MemoryModelShape } from "../../src/memory/model.ts"
 import { Effect, Fiber } from "effect"
 import { Actions } from "../../src/actions/actions.ts"
 import { route } from "../../src/api/server.ts"
@@ -24,11 +24,10 @@ import { scratchDir } from "../support/tmp.ts"
 import { eventually } from "../support/wait.ts"
 import { makeWorld } from "../support/world.ts"
 
-const memoryAgent = (proposal: () => unknown, ordinary?: AgentShape) => {
+const memoryAgent = (proposal: () => unknown) => {
   const state: { jobs: number; prompts: Array<string> } = { jobs: 0, prompts: [] }
-  const agent: AgentShape = {
+  const agent: MemoryModelShape = {
     query: (params) => {
-      if (params.options.mcpServers?.memory === undefined && ordinary !== undefined) return ordinary.query(params)
       return (async function* () {
         state.jobs++
         for await (const message of params.prompt) if (typeof message.message.content === "string") state.prompts.push(message.message.content)
@@ -47,13 +46,13 @@ describe("persistent learning", () => {
     const fake = memoryAgent(() => ({ changes: [
       { path: "MEMORY.md", content: "# Memory\n\n## Index\n- [[preferences]]\n" },
       { path: "preferences.md", content: `- Prefers concise bullet-point summaries [source: ${source}; added: 2026-10-07; evidence: user statement]` },
-    ] }), ordinary.agent)
-    const world = makeWorld({ home, agent: fake.agent })
+    ] }))
+    const world = makeWorld({ home, memoryModel: fake.agent, agent: ordinary.agent })
     try {
       await world.runPromise(Effect.gen(function* () {
         const store = yield* Store
         const runner = yield* SessionRunner
-        const session = makeSession("waiting", { id: "s_preference", worktree: "/w", claudeSessionId: "previous", outcome: "needs_human" })
+        const session = makeSession("waiting", { id: "s_preference", worktree: "/w", agentSessionId: "previous", outcome: "needs_human" })
         yield* store.putAlert(makeAlert({ id: session.alertId, sessionId: session.id }))
         yield* store.putSession(session)
         yield* runner.message(session.id, "I prefer concise bullet-point summaries.")
@@ -135,7 +134,7 @@ describe("persistent learning", () => {
       await Effect.runPromise(repo.apply(snapshot, { changes: [] }, { mode: "learn", events: ["completed"], at: new Date().toISOString(), input: "" }, new Map()))
     } finally { await world.dispose() }
     const fake = memoryAgent(() => ({ changes: [] }))
-    const reopened = makeWorld({ home, agent: fake.agent })
+    const reopened = makeWorld({ home, memoryModel: fake.agent })
     try {
       await reopened.runPromise(Memory.use((memory) => memory.tick))
       expect(await reopened.runPromise(Store.use((store) => store.pendingMemoryCount))).toBe(0)
@@ -146,7 +145,7 @@ describe("persistent learning", () => {
   test("malformed proposals and dirty files preserve pending evidence", async () => {
     const home = scratchDir("bt-memory-error-")
     const fake = memoryAgent(() => ({ changes: [{ path: "../escape.md", content: "bad" }] }))
-    const world = makeWorld({ home, agent: fake.agent })
+    const world = makeWorld({ home, memoryModel: fake.agent })
     try {
       await world.runPromise(Effect.gen(function* () {
         const store = yield* Store
@@ -166,7 +165,7 @@ describe("persistent learning", () => {
 
   test("manual runs coalesce, dream after learning, and use only bounded read tools", async () => {
     const fake = memoryAgent(() => ({ changes: [] }))
-    const world = makeWorld({ agent: fake.agent })
+    const world = makeWorld({ memoryModel: fake.agent })
     try {
       await world.runPromise(Effect.gen(function* () {
         const store = yield* Store
@@ -185,12 +184,12 @@ describe("persistent learning", () => {
 
   test("disabling memory cancels an active model job without acknowledging its evidence", async () => {
     let started = false
-    const agent: AgentShape = { query: ({ options }) => (async function* () {
+    const agent: MemoryModelShape = { query: ({ options }) => (async function* () {
       started = true
       await new Promise<void>((resolve) => options.abortController?.signal.addEventListener("abort", () => resolve(), { once: true }))
       yield { ...result("cancelled", RESULT, 0), structured_output: { changes: [] } }
     })() }
-    const world = makeWorld({ agent })
+    const world = makeWorld({ memoryModel: agent })
     try {
       await world.runPromise(Store.use((store) => store.captureMemory("user", "user", "Keep this pending")))
       const running = world.runPromise(Memory.use((memory) => memory.tick))
@@ -205,11 +204,11 @@ describe("persistent learning", () => {
   })
 
   test("model failures leave evidence pending and report a recoverable memory problem", async () => {
-    const agent: AgentShape = { query: () => (async function* () {
+    const agent: MemoryModelShape = { query: () => (async function* () {
       yield { ...result("failed", RESULT, 0), structured_output: { changes: [] } }
       throw new Error("model unavailable")
     })() }
-    const world = makeWorld({ agent })
+    const world = makeWorld({ memoryModel: agent })
     try {
       await world.runPromise(Effect.gen(function* () {
         const store = yield* Store
@@ -224,12 +223,12 @@ describe("persistent learning", () => {
 
   test("disabling a manual learning run does not start its queued dream", async () => {
     let jobs = 0
-    const agent: AgentShape = { query: ({ options }) => (async function* () {
+    const agent: MemoryModelShape = { query: ({ options }) => (async function* () {
       jobs++
       if (jobs === 2) await new Promise<void>((resolve) => options.abortController?.signal.addEventListener("abort", () => resolve(), { once: true }))
       yield { ...result("manual-cancel", RESULT, 0), structured_output: { changes: [] } }
     })() }
-    const world = makeWorld({ agent })
+    const world = makeWorld({ memoryModel: agent })
     try {
       await world.runPromise(Effect.gen(function* () {
         const store = yield* Store
@@ -255,7 +254,7 @@ describe("persistent learning", () => {
     const original = "https://merkl.slack.com/archives/C1/p123"
     const ref = evidenceRef("fact")
     const fake = memoryAgent(() => ({ changes: [{ path: "MEMORY.md", content: `# Memory\n\n- Billing launches on Friday [source: ${ref}; added: 2026-10-07; evidence: user statement]\n\n## Index\n` }] }))
-    const world = makeWorld({ home, agent: fake.agent })
+    const world = makeWorld({ home, memoryModel: fake.agent })
     try {
       await world.runPromise(Effect.gen(function* () {
         const store = yield* Store

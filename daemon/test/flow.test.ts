@@ -44,7 +44,7 @@ describe("deliver respects status and maxConcurrent (M6, L2)", () => {
         const runner = yield* SessionRunner
         const hub = yield* Hub
         yield* hub.updateSettings({ ...(yield* hub.settings), maxConcurrent: 1 })
-        const handedBack = { worktree: "/w", claudeSessionId: "c", prUrl: "https://ghe/pull/1" }
+        const handedBack = { worktree: "/w", agentSessionId: "c", prUrl: "https://ghe/pull/1" }
         yield* seed(makeSession("running", { id: "s_busy", alertId: "C1:busy", ...handedBack }))
         yield* seed(makeSession("resolved", { id: "s_done", alertId: "C1:done", ...handedBack, worktree: null }))
         yield* seed(makeSession("stopped", { id: "s_stopped", alertId: "C1:stopped", ...handedBack }))

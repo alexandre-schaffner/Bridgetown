@@ -1,5 +1,6 @@
 import { Effect, Schema } from "effect"
 import { escapeRegExp } from "../lib/text.ts"
+import { AgentProvider, ClaudeEffort } from "./models.ts"
 import { Critique } from "./critique.ts"
 import { ReleaseState } from "./release.ts"
 import { nullByDefault } from "./schema.ts"
@@ -31,7 +32,7 @@ export const Recommendation = Schema.Literals(["rerun_failed_jobs", "revert", "n
 export type Recommendation = typeof Recommendation.Type
 
 /** How hard the agent thinks, as the Claude SDK takes it. */
-export const Effort = Schema.Literals(["low", "medium", "high", "xhigh", "max"])
+export const Effort = ClaudeEffort
 export type Effort = typeof Effort.Type
 
 /** What Bridgetown sent the agent back to fix while shipping: red CI, a reviewer's requested changes, a failed deploy. */
@@ -64,11 +65,13 @@ export const Session = Schema.Struct({
   branch: Schema.NullOr(Schema.String),
   worktree: Schema.NullOr(Schema.String),
   repoPath: Schema.String,
-  claudeSessionId: Schema.NullOr(Schema.String),
+  provider: AgentProvider.pipe(Schema.withDecodingDefaultKey(Effect.succeed("claude"))),
+  agentSessionId: nullByDefault(Schema.String),
+  agentConfigDir: nullByDefault(Schema.String),
   model: Schema.String,
-  effort: Effort,
+  effort: Schema.NullOr(Schema.String),
   ciRounds: Schema.Number,
-  costUsd: Schema.Number,
+  costUsd: Schema.NullOr(Schema.Number),
   slackThreadUrl: Schema.NullOr(Schema.String),
   /** What is known to have happened, each set only on evidence. Drives the stepper. */
   milestones: Schema.Struct({
@@ -108,6 +111,7 @@ export const Session = Schema.Struct({
   critiqueRounds: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0))),
   /** The last adversarial review of the pushed head, and the agent's reply to it. */
   critique: nullByDefault(Critique),
+  reviewProfile: nullByDefault(Schema.Struct({ vendor: AgentProvider, model: Schema.String, effort: Schema.NullOr(Schema.String) })),
   /**
    * The release this session ships: the tag it is cutting or cut (set before `gh release create`, so a repeat reuses
    * it and never cuts a second one; `milestones.released` says it was cut), or the one a re-run it recommended follows.
@@ -187,7 +191,7 @@ export const acceptsMessages = (session: Session): boolean => {
     case "running":
       return session.worktree !== null
     default:
-      return session.worktree !== null && session.claudeSessionId !== null
+      return session.worktree !== null && session.agentSessionId !== null
   }
 }
 

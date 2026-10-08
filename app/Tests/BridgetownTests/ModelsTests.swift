@@ -301,5 +301,8 @@ import Testing
         #expect(before.changedKeys(to: settings) == [.memory])
         let object = try JSONSerialization.jsonObject(with: settings.patchBody([.memory])) as? [String: Bool]
         #expect(object == ["memory": false])
+        let decoded = try JSON.decoder().decode(Settings.self, from: JSON.encoder().encode(settings))
+        #expect(decoded == settings)
+        #expect(!decoded.memory)
     }
 }

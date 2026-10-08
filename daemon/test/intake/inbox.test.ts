@@ -98,7 +98,7 @@ describe("a follow-up in a thread an agent is handling", () => {
       Effect.gen(function* () {
         const store = yield* Store
         yield* store.putAlert(makeAlert({ id: parent, channelId: "C9", ts: THREAD, sessionId: "s_thread" }))
-        yield* store.putSession(makeSession("waiting", { id: "s_thread", alertId: parent, claudeSessionId: null }))
+        yield* store.putSession(makeSession("waiting", { id: "s_thread", alertId: parent, agentSessionId: null }))
       }),
     )
     const ts = ago(5)

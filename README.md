@@ -4,7 +4,7 @@
 
 **From Slack alert to reviewed fix. Right in your Mac’s notch.**
 
-Claude investigates. Codex reviews. You make the call.
+Choose your investigator and reviewer. You make the call.
 
 [Try the demo](#try-it-locally) · [Set it up](#connect-your-workspace) · [How it works](docs/WORKFLOW.md)
 
@@ -12,7 +12,7 @@ Claude investigates. Codex reviews. You make the call.
 
 ![Bridgetown overview showing production signals, decisions waiting on you, and active agents](docs/images/bridgetown-overview.png)
 
-Bridgetown is a macOS notch app. It watches Slack alerts, mentions, and DMs, gives the work an agent can handle to Claude, and brings the decisions that need you to the surface. Agents investigate in separate worktrees, prepare fixes, and follow them through review, CI, and deployment. You approve merges, releases, and replies.
+Bridgetown is a macOS notch app. It watches Slack alerts, mentions, and DMs, gives the work an agent can handle to Codex or Claude Code, and brings the decisions that need you to the surface. Agents investigate in separate worktrees, prepare fixes, and follow them through review, CI, and deployment. You approve merges, releases, and replies.
 
 Built for macOS with SwiftUI and a local Bun + Effect daemon. Currently tailored to Merkl’s Slack, GitHub Enterprise, and Grafana workflows.
 
@@ -35,16 +35,16 @@ Slack alerts + mentions + DMs     Grafana metrics + logs
               └──────────────────┬──────────────────┘
                            Rules + Jev
                                 │
-                      Claude in its own worktree
+                      Agent in its own worktree
                                 │
-                      Draft PR → Codex review → CI
+                      Draft PR → Model review → CI
                                 │
                       You: merge → cut release
                                 │
                       Track the production deploy
 ```
 
-Codex reviews the fix before the PR leaves draft. Blocking findings return to the same Claude session for a fix or an evidence-backed rebuttal; red CI, requested changes, and a failed deploy go back to it too, up to three rounds, before they come to you. A decision is withdrawn as soon as its session moves past it ([how long each lasts](docs/API.md#cards)). The app keeps resolved, closed without a fix (a PR closed on GitHub included), failed, and stopped sessions distinct.
+The selected reviewer checks the fix before the PR leaves draft. Blocking findings return to the same agent session for a fix or an evidence-backed rebuttal; red CI, requested changes, and a failed deploy go back to it too, up to three rounds, before they come to you. A decision is withdrawn as soon as its session moves past it ([how long each lasts](docs/API.md#cards)). The app keeps resolved, closed without a fix (a PR closed on GitHub included), failed, and stopped sessions distinct.
 
 ![Bridgetown session with a reviewed pull request ready to merge and production charts beside it](docs/images/bridgetown-session.png)
 
@@ -94,7 +94,7 @@ The current integration targets `Merkl/monorepo` on `nocturlab.ghe.com`. Reposit
    open build/Bridgetown.app
    ```
 
-Open **Settings** from the app’s **…** menu. Save the Slack and TypeSafe tokens under **Accounts** (saving restarts the daemon with them), set the checkout paths under **Repos**, and choose channels and triage thresholds. Tokens are stored in macOS Keychain; if it refuses a read, Settings says so and saves only the fields you change.
+Open **Settings** from the app’s **…** menu. Save the Slack and TypeSafe tokens under **Accounts** (saving restarts the daemon with them), set the checkout paths under **Repos**, and choose channels and triage thresholds. Under **Models**, configure monitoring (investigation) and reviewing independently: Codex or Claude Code, a detected or custom model ID, and effort. **Automatic** keeps the existing depth-based profiles. Monitoring changes apply to new sessions; review changes apply to the next review. Jev continues triage and finding judgment. Tokens are stored in macOS Keychain; if it refuses a read, Settings says so and saves only the fields you change.
 
 **Dry run is on by default.** It suppresses Slack posts; agents can still run and prepare PRs. Turn off **Start agents automatically** under **Triage** to keep candidates waiting for your decision.
 
@@ -226,7 +226,7 @@ To update the README visuals, see the [screenshot capture guide](docs/images/REA
 | Path | What lives here |
 | --- | --- |
 | [app/](app/) | SwiftUI app, notch interface, Keychain storage, daemon lifecycle |
-| [daemon/](daemon/) | Slack ingestion, triage, agent sessions, Codex review, shipping, Grafana monitoring |
+| [daemon/](daemon/) | Slack ingestion, triage, agent sessions, model review, shipping, Grafana monitoring |
 | [site/](site/) | Astro landing page, three.js visuals, and product recordings |
 | [docs/API.md](docs/API.md) | Local HTTP/SSE contract between the app and daemon |
 | [docs/WORKFLOW.md](docs/WORKFLOW.md) | Decision policy, safety boundaries, storage and retention, and Slack posting behavior |

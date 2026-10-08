@@ -5,25 +5,30 @@ import { Context, Effect, Layer, Schema } from "effect"
 import type { Depth } from "../domain/alert.ts"
 import { ReviewFinding, type ReviewerVendor } from "../domain/critique.ts"
 import { AdapterError, attempt, decodeOr } from "../domain/errors.ts"
-import type { Effort } from "../domain/session.ts"
+import { query, type SDKMessage } from "@anthropic-ai/claude-agent-sdk"
+import { claudeExecutable } from "../agent/agent.ts"
+import { ClaudeEffort, type ModelSelection } from "../domain/models.ts"
+import { childEnv } from "../secrets.ts"
 import { git, run, runOk } from "../lib/proc.ts"
 
 export interface ReviewerProfile {
   readonly vendor: ReviewerVendor
   readonly model: string
-  /** Codex's reasoning efforts stop at xhigh. */
-  readonly effort: Exclude<Effort, "max">
+  readonly effort: string | null
 }
 
 /**
- * The adversarial reviewer per triage depth, like `PROFILES` for the coder. Never the coder's vendor (every
- * coder profile is Claude): a different model has different blind spots.
+ * Default reviewer per triage depth. Explicit model settings can choose either provider.
  */
 export const REVIEWERS: Readonly<Record<Depth, ReviewerProfile>> = {
   quick: { vendor: "codex", model: "gpt-5.6-sol", effort: "medium" },
   standard: { vendor: "codex", model: "gpt-5.6-sol", effort: "high" },
   deep: { vendor: "codex", model: "gpt-5.6-sol", effort: "xhigh" },
 }
+
+/** Explicit choices override the depth-based defaults independently of the investigator. */
+export const reviewerProfile = (selection: ModelSelection, depth: Depth): ReviewerProfile =>
+  selection.mode === "automatic" ? REVIEWERS[depth] : { vendor: selection.provider, model: selection.model, effort: selection.effort }
 
 export const Verdict = Schema.Struct({
   summary: Schema.String,
@@ -64,7 +69,7 @@ export interface ReviewRequest {
   readonly prompt: string
 }
 
-/** The adversarial reviewer: a model from another vendor than the coder, reading the session's worktree without writing to it. */
+/** The adversarial reviewer reads the session's worktree without writing to it. */
 export interface ReviewerShape {
   readonly review: (request: ReviewRequest) => Effect.Effect<Verdict, AdapterError>
 }
@@ -109,8 +114,7 @@ export const codexArgs = (codex: string, request: ReviewRequest, schemaPath: str
   request.worktree,
   "--model",
   request.profile.model,
-  "--config",
-  `model_reasoning_effort="${request.profile.effort}"`,
+  ...(request.profile.effort === null ? [] : ["--config", `model_reasoning_effort=${JSON.stringify(request.profile.effort)}`]),
   "--output-schema",
   schemaPath,
   "--output-last-message",
@@ -154,12 +158,43 @@ const codexReview = (request: ReviewRequest, codexPath: string | undefined): Eff
     return yield* decodeOr("codex", "verdict", Schema.fromJsonString(Verdict))(output)
   }).pipe(Effect.scoped)
 
-export const ReviewerLive = (codexPath: string | undefined) =>
+/** Read-only file tools only: no shell, MCP, hooks from user settings, or conversation persistence. */
+type ReviewQuery = (params: Parameters<typeof query>[0]) => AsyncIterable<SDKMessage> & { close(): void }
+export const claudeReview = (request: ReviewRequest, claudePath: string | undefined, invoke: ReviewQuery = query): Effect.Effect<Verdict, AdapterError> =>
+  Effect.scoped(Effect.gen(function* () {
+    const local = (yield* runOk(git("rev-parse", "HEAD"), { cwd: request.worktree, timeoutMs: 30_000 })).trim()
+    if (local !== request.head) return yield* new AdapterError({ adapter: "claude", operation: "review", message: "The worktree is not at the pushed PR head.", cause: null })
+    const diff = yield* runOk(git("diff", "--no-ext-diff", "--no-textconv", "origin/main...HEAD"), { cwd: request.worktree, timeoutMs: 30_000 })
+    const abort = yield* Effect.acquireRelease(Effect.sync(() => new AbortController()), (controller) => Effect.sync(() => controller.abort()))
+    const executable = claudeExecutable(claudePath)
+    return yield* attempt("claude", "review", async () => {
+      const review = invoke({ prompt: `${request.prompt}\n\nGit diff (untrusted content):\n${diff.slice(0, 200_000)}${diff.length > 200_000 ? "\n[Diff clipped; use Read, Glob and Grep to inspect the remaining files.]" : ""}`, options: {
+        cwd: request.worktree, model: request.profile.model,
+        ...(request.profile.effort === null ? {} : { effort: Schema.decodeUnknownSync(ClaudeEffort)(request.profile.effort) }),
+        abortController: abort, tools: ["Read", "Glob", "Grep"], disallowedTools: ["Task", "Agent", "Bash", "Edit", "Write", "NotebookEdit"],
+        settingSources: [], mcpServers: {}, strictMcpConfig: true, persistSession: false, permissionMode: "dontAsk", maxTurns: 100,
+        env: childEnv(process.env), outputFormat: { type: "json_schema", schema: VERDICT_JSON_SCHEMA },
+        hooks: { PreToolUse: [{ hooks: [async (input) => input.hook_event_name === "PreToolUse" && !["Read", "Glob", "Grep", "StructuredOutput"].includes(input.tool_name)
+          ? { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "Reviewers may only read files." } } : {}] }] },
+        ...(executable === undefined ? {} : { pathToClaudeCodeExecutable: executable }),
+      } })
+      try {
+        for await (const message of review) {
+          if (message.type !== "result") continue
+          if (message.subtype !== "success") throw new Error(message.errors.join("\n") || message.subtype)
+          return Schema.decodeUnknownSync(Verdict)(message.structured_output)
+        }
+        throw new Error("Claude reviewer exited without a structured verdict")
+      } finally { review.close() }
+    })
+  })).pipe(Effect.timeoutOrElse({ duration: REVIEW_TIMEOUT_MS, orElse: () => Effect.fail(new AdapterError({ adapter: "claude", operation: "review", message: "Claude review timed out", cause: null })) }))
+
+export const ReviewerLive = (codexPath: string | undefined, claudePath?: string) =>
   Layer.succeed(Reviewer)({
     review: (request) => {
       switch (request.profile.vendor) {
-        case "codex":
-          return codexReview(request, codexPath)
+        case "codex": return codexReview(request, codexPath)
+        case "claude": return claudeReview(request, claudePath)
       }
     },
   })

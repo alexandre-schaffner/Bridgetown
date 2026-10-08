@@ -325,10 +325,12 @@ struct Session: Codable, Sendable, Equatable, Identifiable {
     var prUrl: String?
     var branch: String?
     var worktree: String?
-    var claudeSessionId: String?
+    var provider: AgentProvider
+    var agentSessionId: String?
+    var agentConfigDir: String?
     var model: String
     var ciRounds: Int
-    var costUsd: Double
+    var costUsd: Double?
     var slackThreadUrl: String?
     /// `POST /sessions/:id/message` is allowed: live, or finished and handed back with
     /// its worktree intact.
@@ -418,7 +420,7 @@ struct Settings: Codable, Sendable, Equatable {
     /// `thresholds` and `quietHours` key by key.
     enum CodingKeys: String, CodingKey, CaseIterable, Sendable {
         case channels, thresholds, autoStart, inbox, memory, maxConcurrent, dryRun, adversarialReview, watchProd, pollSeconds
-        case monorepoPath, deploymentRepoPath, quietHours
+        case monorepoPath, deploymentRepoPath, quietHours, models
     }
 
     var channels: [Channel]
@@ -429,7 +431,7 @@ struct Settings: Codable, Sendable, Equatable {
     var memory: Bool = true
     var maxConcurrent: Int
     var dryRun: Bool
-    /// Another vendor's model reviews each pushed fix before the PR leaves draft.
+    /// The selected reviewer checks each pushed fix before the PR leaves draft.
     var adversarialReview: Bool
     /// Watch prod signals in Grafana and investigate one that rises before any alert (one Jev
     /// doubts is only suggested).
@@ -439,9 +441,27 @@ struct Settings: Codable, Sendable, Equatable {
     var monorepoPath: String
     var deploymentRepoPath: String
     var quietHours: QuietHours
+    var models: ModelSettings = ModelSettings()
 }
 
 extension Settings {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        channels = try c.decode([Channel].self, forKey: .channels)
+        thresholds = try c.decode(Thresholds.self, forKey: .thresholds)
+        autoStart = try c.decode(Bool.self, forKey: .autoStart)
+        inbox = try c.decode(Bool.self, forKey: .inbox)
+        memory = try c.decodeIfPresent(Bool.self, forKey: .memory) ?? true
+        maxConcurrent = try c.decode(Int.self, forKey: .maxConcurrent)
+        dryRun = try c.decode(Bool.self, forKey: .dryRun)
+        adversarialReview = try c.decode(Bool.self, forKey: .adversarialReview)
+        watchProd = try c.decode(Bool.self, forKey: .watchProd)
+        pollSeconds = try c.decode(Int.self, forKey: .pollSeconds)
+        monorepoPath = try c.decode(String.self, forKey: .monorepoPath)
+        deploymentRepoPath = try c.decode(String.self, forKey: .deploymentRepoPath)
+        quietHours = try c.decode(QuietHours.self, forKey: .quietHours)
+        models = try c.decodeIfPresent(ModelSettings.self, forKey: .models) ?? ModelSettings()
+    }
     /// Copies one top-level field from `other`.
     mutating func take(_ key: CodingKeys, from other: Settings) {
         switch key {
@@ -458,6 +478,7 @@ extension Settings {
         case .monorepoPath: monorepoPath = other.monorepoPath
         case .deploymentRepoPath: deploymentRepoPath = other.deploymentRepoPath
         case .quietHours: quietHours = other.quietHours
+        case .models: models = other.models
         }
     }
 

@@ -42,7 +42,19 @@ export const migrations = SqliteMigrator.fromRecord({
     yield* sql`CREATE INDEX transcript_session ON transcript (session_id, seq)`
     yield* sql`CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)`
   }),
-  "009_memory": Effect.gen(function* () {
+  "009_agent_provider": Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`
+      UPDATE sessions
+      SET json = json_set(
+        json_remove(json, '$.claudeSessionId'),
+        '$.provider', 'claude',
+        '$.agentSessionId', json_extract(json, '$.claudeSessionId')
+      )
+      WHERE json_type(json, '$.claudeSessionId') IS NOT NULL
+    `
+  }),
+  "010_memory": Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     yield* sql`CREATE TABLE memory_evidence (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, json TEXT NOT NULL, at TEXT NOT NULL, processed_at TEXT)`
     yield* sql`CREATE INDEX memory_pending ON memory_evidence (processed_at, seq)`

@@ -140,7 +140,7 @@ struct SessionDetailView: View {
                     Text(session.critiqueLine)
                         .foregroundStyle(.secondary)
                 }
-                .help("Another vendor's model reviews each fix the agent pushes; Jev drops the nitpicks. The PR leaves draft once it passes.")
+                .help("The selected reviewer checks each fix the agent pushes; Jev drops the nitpicks. The PR leaves draft once it passes.")
 
                 keyValue("CI") {
                     Text(session.ciLine)
@@ -241,8 +241,8 @@ struct SessionDetailView: View {
             Label("Take over in Terminal", systemImage: "terminal")
         }
         .buttonStyle(.stage(.secondary))
-        .disabled(session.claudeSessionId == nil)
-        .help(session.claudeSessionId == nil ? "No Claude session yet" : "claude --resume in the worktree")
+        .disabled(session.agentSessionId == nil)
+        .help(session.agentSessionId == nil ? "No agent session yet" : "Resume \(session.provider.name) in the worktree")
 
         Spacer(minLength: 0)
 

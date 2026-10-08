@@ -4,7 +4,7 @@ import type { Session, SessionStatus } from "../../src/domain/session.ts"
 import { makeSession } from "../support/records.ts"
 
 const session = (status: SessionStatus, overrides: Partial<Session> = {}): Session =>
-  makeSession(status, { prUrl: "https://ghe/pull/1", claudeSessionId: "c", ...overrides })
+  makeSession(status, { prUrl: "https://ghe/pull/1", agentSessionId: "c", ...overrides })
 
 describe("contract rules", () => {
   const action = (kind: Action["kind"], retry = false): Action => ({

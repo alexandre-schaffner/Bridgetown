@@ -37,6 +37,7 @@ import { Actions } from "../../src/actions/actions.ts"
 import { bind, serve } from "../../src/api/server.ts"
 import { readEnv } from "../../src/config.ts"
 import type { Alert, Stage } from "../../src/domain/alert.ts"
+import { mergeSettings, SettingsPatch } from "../../src/domain/settings.ts"
 import { now } from "../../src/domain/ids.ts"
 import { GrafanaLive } from "../../src/grafana/client.ts"
 import { Health } from "../../src/health.ts"
@@ -154,6 +155,7 @@ const Control = Schema.Union([
     }),
   }),
   Schema.Struct({ mock: Schema.Literal("crash"), code: Schema.Int }),
+  Schema.Struct({ mock: Schema.Literal("settings"), patch: SettingsPatch }),
 ])
 const decodeControl = Schema.decodeUnknownOption(Schema.fromJsonString(Control))
 
@@ -173,6 +175,10 @@ const steer = (input: ReturnType<typeof Bun.stdin.stream>) =>
         const command = decodeControl(line)
         if (command._tag === "None") continue
         if (command.value.mock === "crash") process.exit(command.value.code)
+        if (command.value.mock === "settings") {
+          yield* hub.updateSettings(yield* mergeSettings(yield* hub.settings, command.value.patch))
+          continue
+        }
         const { error, ...status } = command.value.patch
         yield* hub.patchStatus(status)
         // Only a problem sets the status's error: this one stands as a failed poll's would, until a line clears it
@@ -282,7 +288,7 @@ const program = Effect.gen(function* () {
         Effect.gen(function* () {
           for (const session of yield* store.activeSessions()) {
             if (session.status !== "running") continue
-            yield* repo.modify(session.id, (current) => (current.status === "running" ? { ...current, costUsd: Math.round((current.costUsd + 0.03) * 100) / 100 } : undefined))
+            yield* repo.modify(session.id, (current) => (current.status === "running" ? { ...current, costUsd: Math.round(((current.costUsd ?? 0) + 0.03) * 100) / 100 } : undefined))
           }
         }),
         Schedule.spaced("6 seconds"),

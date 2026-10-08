@@ -1,15 +1,18 @@
 import { join } from "node:path"
 import { type Context, Layer } from "effect"
 import { Agent, type AgentShape } from "../../src/agent/agent.ts"
+import { Models, type ModelsShape } from "../../src/agent/models.ts"
 import type { Env } from "../../src/config.ts"
 import { Reviewer, type ReviewerShape } from "../../src/critique/reviewer.ts"
 import { Grafana, type GrafanaShape } from "../../src/grafana/client.ts"
 import { Jev, type JevShape } from "../../src/jev.ts"
 import { appLayerWith } from "../../src/layers.ts"
+import { MemoryModel, type MemoryModelShape } from "../../src/memory/model.ts"
 import { GitHub, type GitHubShape } from "../../src/ship/github.ts"
 import { SlackClient, type SlackClientShape } from "../../src/slack/client.ts"
 import { StoreLive } from "../../src/store/store.ts"
-import { fakeGitHub, fakeSlack, noAgent, noGrafana, noJev, noReviewer } from "./fakes.ts"
+import { fakeGitHub, fakeSlack, noAgent, noGrafana, noJev, noMemoryModel, noReviewer } from "./fakes.ts"
+import { fakeModels } from "./models.ts"
 
 /**
  * The daemon's services over a store, the outside world faked. Free of `bun:test`, so the mock daemon and the
@@ -23,6 +26,8 @@ export interface WorldOptions {
   readonly slack?: Adapter<SlackClient, SlackClientShape>
   readonly jev?: Adapter<Jev, JevShape>
   readonly agent?: Adapter<Agent, AgentShape>
+  readonly memoryModel?: Adapter<MemoryModel, MemoryModelShape>
+  readonly models?: Adapter<Models, ModelsShape>
   readonly reviewer?: Adapter<Reviewer, ReviewerShape>
   readonly github?: Adapter<GitHub, GitHubShape>
   readonly grafana?: Adapter<Grafana, GrafanaShape>
@@ -62,9 +67,10 @@ export const worldLayer = (home: string, options: WorldOptions = {}) =>
       adapter(SlackClient, options.slack, fakeSlack()),
       adapter(Jev, options.jev, noJev),
       adapter(Agent, options.agent, noAgent),
+      adapter(MemoryModel, options.memoryModel, noMemoryModel),
+      adapter(Models, options.models, fakeModels()),
       adapter(Reviewer, options.reviewer, noReviewer),
       adapter(GitHub, options.github, fakeGitHub()),
       adapter(Grafana, options.grafana, noGrafana),
     ),
   )
-

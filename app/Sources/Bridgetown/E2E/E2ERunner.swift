@@ -597,6 +597,7 @@ final class E2ERunner {
             "alerts": .number(Double(store.snapshot?.alerts.count ?? 0)),
             "shots": .number(Double(report.shots.count)),
             "reduceMotion": .bool(Easing.reduceMotion),
+            "models": (try? JSON.decoder().decode(E2EJSON.self, from: JSON.encoder().encode(store.snapshot?.settings.models))) ?? .null,
         ]
     }
 }

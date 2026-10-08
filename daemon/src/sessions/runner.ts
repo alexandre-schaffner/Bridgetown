@@ -20,7 +20,7 @@ import { makeFinish } from "./finish.ts"
 import { newSession } from "./new-session.ts"
 import { inboxPrompt, initialPrompt, RETRY_PROMPT, setupNotes } from "./prompts.ts"
 import { type ModifyOptions, SessionRepo } from "./repo.ts"
-import { makeTurnInput, makeTurns, type TurnInput, userMessage } from "./turn.ts"
+import { makeTurnInput, makeTurns, type TurnInput } from "./turn.ts"
 import { Worktrees } from "./worktree.ts"
 
 /**
@@ -60,7 +60,7 @@ export interface SessionRunnerShape {
 
 export class SessionRunner extends Context.Service<SessionRunner, SessionRunnerShape>()("SessionRunner") {}
 
-interface FollowUp {
+export interface FollowUp {
   readonly text: string
   readonly patch: TurnPatch
   readonly reopen: boolean
@@ -232,7 +232,7 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
       Effect.gen(function* () {
         let turn: Claimed | undefined = first
         while (turn !== undefined) {
-          yield* runTurn(id, turn.session, turn.input, turn.resume)
+          yield* runTurn(id, turn.session, turn.input, turn.resume, turn.followUps)
           turn = yield* handOver(id, first.followUps)
         }
       }).pipe(Effect.ensuring(SynchronizedRef.update(turns, (state) => dropLive(state, id, first.followUps))))
@@ -269,7 +269,7 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
     /** A retried session picks its conversation back up; a new one gets the alert. Its claim in Slack went out before it was queued (`Claims`). */
     const firstPrompt = (ready: Session, warnings: ReadonlyArray<string>) =>
       Effect.gen(function* () {
-        if (ready.claudeSessionId !== null) return { text: `${RETRY_PROMPT}${setupNotes(warnings)}`, resume: true }
+        if (ready.agentSessionId !== null) return { text: `${RETRY_PROMPT}${setupNotes(warnings)}`, resume: true }
         const alert = yield* store.getAlert(ready.alertId)
         if (alert === undefined) {
           yield* finishFailed(ready.id, "Its alert is gone")
@@ -307,7 +307,7 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
             // Only plain text joins a running turn. Text that comes with a patch (a send-back, a review round) asks for
             // a result of its own, and the running turn's may already be out: it waits for the next turn, whose claim
             // writes the patch, so only the result that answers it reads (and clears) `sentBack`.
-            if (Object.keys(patch).length === 0 && (yield* Queue.offer(live.input, userMessage(text, "next")))) return ["sent", state] as const
+            if (Object.keys(patch).length === 0 && (yield* Queue.offer(live.input, { text, reopen }))) return ["sent", state] as const
             yield* Queue.offer(live.followUps, { text, patch, reopen })
             yield* repo.log(id, "status", "Queued for after the current turn")
             return ["queued", state] as const
@@ -369,7 +369,7 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
       enqueue: Effect.fn("SessionRunner.enqueue")(function* (alert: Alert) {
         const settings = yield* hub.settings
         const id = newId("s")
-        const session = newSession(alert, id, settings.monorepoPath)
+        const session = newSession(alert, id, settings.monorepoPath, settings.models.monitoring)
         yield* repo.create(session)
         yield* store.appendAlertEvent(alert.id, sessionStartEvent(session), { sessionId: id })
         yield* hub.notify

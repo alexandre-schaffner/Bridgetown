@@ -4,13 +4,14 @@ import { createSdkMcpServer, tool, type Options, type SDKMessage } from "@anthro
 import { Context, Effect, FiberSet, Layer, Ref, Schema, Stream } from "effect"
 import { z } from "zod"
 import type { MemoryStatus } from "../api/wire.ts"
-import { Agent, abortOnReturn } from "../agent/agent.ts"
+import { abortOnReturn } from "../agent/agent.ts"
 import { Environment } from "../config.ts"
 import { AdapterError, errorMessage } from "../domain/errors.ts"
 import { Hub } from "../hub.ts"
 import { childEnv } from "../secrets.ts"
 import { Store } from "../store/store.ts"
 import { evidenceRef, redact, type Evidence } from "./evidence.ts"
+import { MemoryModel } from "./model.ts"
 import { Changes, type Checkpoint, type MemorySource, memoryPath, memoryRepository, recall } from "./repository.ts"
 
 export interface MemoryShape {
@@ -56,7 +57,7 @@ export const MemoryLive = Layer.effect(Memory)(Effect.gen(function* () {
   const env = yield* Environment
   const store = yield* Store
   const hub = yield* Hub
-  const agent = yield* Agent
+  const model = yield* MemoryModel
   const repo = memoryRepository(join(env.home, "memory"))
   const jobs = yield* FiberSet.make<void>()
   const running = yield* Ref.make(false)
@@ -135,7 +136,7 @@ export const MemoryLive = Layer.effect(Memory)(Effect.gen(function* () {
     async function* messages() {
       yield { type: "user", message: { role: "user", content: prompt }, parent_tool_use_id: null } satisfies import("@anthropic-ai/claude-agent-sdk").SDKUserMessage
     }
-    const stream = agent.query({ prompt: messages(), options: memoryOptions(abort, mode, repo.root, server) })
+    const stream = model.query({ prompt: messages(), options: memoryOptions(abort, mode, repo.root, server) })
     yield* Stream.fromAsyncIterable(abortOnReturn(stream, abort), (cause) => fail(errorMessage(cause))).pipe(
       Stream.runForEach((message: SDKMessage) => Effect.gen(function* () {
         if (message.type !== "result") return

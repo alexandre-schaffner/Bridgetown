@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto"
 import { Cause, Data, Effect, Stream } from "effect"
+import { Models } from "../agent/models.ts"
 import { Actions } from "../actions/actions.ts"
 import { VERSION } from "../config.ts"
 import { type DaemonError, errorMessage, NotFound, statusOf } from "../domain/errors.ts"
@@ -17,7 +18,7 @@ import { MessageBody, pathId, PauseBody, readBody, ResolveBody } from "./request
 import { snapshotEvents, SSE_TIMING, type SseTiming } from "./sse.ts"
 import { alertDetail, boardView, logSweep, snapshot } from "./views.ts"
 
-type Services = Store | Hub | Actions | Intake | SessionRunner | Boards | SlackMe | Watcher | Memory
+type Services = Models | Store | Hub | Actions | Intake | SessionRunner | Boards | SlackMe | Watcher | Memory
 
 const isOverviewView = (value: string): value is OverviewView => OVERVIEW_VIEWS.some((view) => view === value)
 
@@ -99,9 +100,10 @@ const events = (timing: SseTiming) =>
     return new Response(body, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } })
   })
 
-const getRoute = (path: string, options: ServerOptions) =>
+const getRoute = (path: string, options: ServerOptions, refreshModels = false) =>
   Effect.gen(function* () {
     if (path === "/memory") return json(yield* (yield* Memory).status)
+    if (path === "/models") return json(yield* (yield* Models).catalog(refreshModels))
     if (path === "/state") return json(yield* snapshot)
     if (path === "/events") return yield* events(options.sse ?? SSE_TIMING)
     if (path === "/logs") return json(yield* logSweep)
@@ -165,6 +167,11 @@ const postRoute = (path: string, request: Request) =>
     const hub = yield* Hub
     if (path === "/settings") {
       const patch = yield* readBody(request, SettingsPatch)
+      if (patch.models !== undefined) {
+        const models = yield* Models
+        if (patch.models.monitoring !== undefined) yield* models.validate(patch.models.monitoring)
+        if (patch.models.reviewing !== undefined) yield* models.validate(patch.models.reviewing)
+      }
       return yield* thenSnapshot(hub.modifySettings((current) => mergeSettings(current, patch)).pipe(Effect.tap((settings) =>
         settings.memory ? Effect.void : Memory.pipe(Effect.flatMap((memory) => memory.cancel)),
       )))
@@ -182,7 +189,7 @@ export const route = (request: Request, options: ServerOptions): Effect.Effect<R
     const path = new URL(request.url).pathname
     if (path === "/health") return json({ ok: true, version: VERSION })
     yield* gate(request, options.token)
-    if (request.method === "GET") return yield* getRoute(path, options)
+    if (request.method === "GET") return yield* getRoute(path, options, new URL(request.url).searchParams.has("refresh"))
     if (request.method === "POST") return yield* postRoute(path, request)
     return yield* new Refused({ status: 405, message: "method not allowed" })
   })
