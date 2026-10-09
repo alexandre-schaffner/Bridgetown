@@ -9,9 +9,13 @@ extension Snapshot {
     var watchedChannelCount: Int { settings.channels.filter(\.enabled).count }
 
     /// Active sessions with no card in "Needs you": a card already stands for the rest.
+    /// Newest started first, and only that: the daemon lists them by their last update, so
+    /// every step an agent took would move its row.
     var inFlightSessions: [Session] {
         let carded = Set(actions.compactMap(\.sessionId))
-        return activeSessions.filter { !carded.contains($0.id) }
+        return activeSessions
+            .filter { !carded.contains($0.id) }
+            .sorted { ($0.startedAt, $0.id) > ($1.startedAt, $1.id) }
     }
 
     /// Alerts that aren't on screen already, as a card or as an active session.
@@ -26,12 +30,19 @@ extension Snapshot {
 
 // MARK: Sections
 
-/// What is picked in each of the overview's lists, held above them so one Escape clears
-/// every list at once rather than one a press.
+/// What is picked in the overview's lists, held above them so that one list picks at a
+/// time: starting a pick in one clears the others, so only one selection header is ever
+/// up, and its actions can only mean those rows. Escape clears it.
 struct OverviewPicks: Equatable {
-    var needsYou = RowSelection()
-    var agents = RowSelection()
-    var recent = RowSelection()
+    var needsYou = RowSelection() {
+        didSet { if !needsYou.isEmpty { agents.clear(); recent.clear() } }
+    }
+    var agents = RowSelection() {
+        didSet { if !agents.isEmpty { needsYou.clear(); recent.clear() } }
+    }
+    var recent = RowSelection() {
+        didSet { if !recent.isEmpty { needsYou.clear(); agents.clear() } }
+    }
 
     var isEmpty: Bool { needsYou.isEmpty && agents.isEmpty && recent.isEmpty }
 }
@@ -110,7 +121,7 @@ struct NeedsYouSection: View {
     private var bulkActions: some View {
         let picked = picked
         let closes = picked.filter(\.dismissCloses).count
-        Button(closes > 0 ? "Close…" : "Dismiss") {
+        Button(closes > 0 ? selection.label("Close", acting: picked.count, asks: true) : selection.label("Dismiss", acting: picked.count)) {
             if closes > 0 { confirmingClose = true } else { finish { picked.forEach(store.dismiss) } }
         }
         .accessibilityIdentifier("needsYou.dismissPicked")
@@ -118,7 +129,7 @@ struct NeedsYouSection: View {
         .disabled(picked.isEmpty)
         .help(closes > 0 ? "Some of these close their session without a fix" : "Dismiss the selected cards")
         if let label = picked.sharedPrimary {
-            Button("\(label) \(picked.count)") {
+            Button(selection.label(label, acting: picked.count)) {
                 finish { picked.forEach { store.resolve($0) } }
             }
             .buttonStyle(.stage(.primary))
@@ -198,9 +209,11 @@ struct AgentsSection: View {
             PickingHeader(selection: $selection, order: order, confirming: $confirmingStop) {
                 SectionHeader(title: "Agents", count: running.count)
             } actions: {
-                Button("Stop…") { confirmingStop = true }
+                Button(selection.label("Stop", acting: picked.count, asks: true)) { confirmingStop = true }
                     .buttonStyle(.stage(.secondary))
                     .disabled(picked.isEmpty)
+                    .help("Stop the selected sessions")
+                    .accessibilityIdentifier("agents.stopPicked")
             } prompt: {
                 let picked = picked
                 ConfirmPrompt(
@@ -222,18 +235,22 @@ struct AgentsSection: View {
 }
 
 /// Alerts that have settled (finished sessions, teammates' claims, dismissed cards), newest
-/// first, as a log: when on the left, what happened beside it. Past the first eight, a row
-/// shows the rest. Alerts nothing was done about (filtered by a rule, ignored by Jev) fold
-/// into one row at the end, there to check Jev's calls. Nothing at all while none have
-/// settled.
+/// first, as a log. Past the first eight, a row shows the rest. Alerts nothing was done
+/// about (filtered by a rule, ignored by Jev) fold into one row at the end, there to check
+/// Jev's calls. Clear sweeps them all off the overview, picked rows go the same way, and
+/// Undo brings the last sweep back for a few seconds. Nothing at all while none are left.
 struct RecentSection: View {
     @Environment(Store.self) private var store
     let snapshot: Snapshot
     @Binding var selection: RowSelection
+    @AppStorage("recentSweep") private var swept = RecentSweep()
     @ViewState private var showAll = false
     @ViewState private var showQuiet = false
+    /// The last sweep, while it can be undone.
+    @ViewState private var lastSweep: [AlertView] = []
 
     private static let limit = 8
+    private static let undoFor: Duration = .seconds(8)
 
     /// A line of the table: an alert, or a fold that shows more of them.
     private enum Row: Identifiable {
@@ -252,10 +269,14 @@ struct RecentSection: View {
         }
     }
 
-    private var rows: [Row] {
-        let settled = snapshot.settledAlerts
-        let loud = settled.filter { !$0.outcome.isQuiet }
-        let quiet = settled.filter(\.outcome.isQuiet)
+    /// Settled and not swept.
+    private var listed: [AlertView] {
+        snapshot.settledAlerts.filter { !swept.contains($0) }
+    }
+
+    private func rows(_ listed: [AlertView]) -> [Row] {
+        let loud = listed.filter { !$0.outcome.isQuiet }
+        let quiet = listed.filter(\.outcome.isQuiet)
         var rows = (showAll ? loud : Array(loud.prefix(Self.limit))).map(Row.alert)
         if loud.count > Self.limit { rows.append(.more(hidden: loud.count - Self.limit)) }
         if !quiet.isEmpty { rows.append(.quiet(count: quiet.count)) }
@@ -264,52 +285,123 @@ struct RecentSection: View {
     }
 
     var body: some View {
-        let rows = rows
+        let listed = listed
+        let rows = rows(listed)
         let order = rows.compactMap { row -> String? in
             if case let .alert(alert) = row { alert.id } else { nil }
         }
-        if !rows.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                PickingHeader(selection: $selection, order: order) {
-                    SectionHeader(title: "Recent")
-                } actions: {
-                    bulkActions
-                }
-                .padding(.horizontal, Metrics.inset)
-                RowList(data: rows) { row in
-                    switch row {
-                    case let .alert(alert):
-                        AlertRow(alert: alert, session: snapshot.session(id: alert.sessionId), pick: $selection.pick(alert.id, in: order))
-                    case let .more(hidden):
-                        FoldRow(title: showAll ? "Show fewer" : "Show \(hidden) more", open: showAll, leading: AlertRow.glyphColumn) {
-                            withAnimation(Easing.state) { showAll.toggle() }
+        Group {
+            if !rows.isEmpty || !lastSweep.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    PickingHeader(selection: $selection, order: order) {
+                        SectionHeader(title: "Recent", count: listed.count) {
+                            sweepLink(listed)
                         }
-                        .accessibilityIdentifier("recent.showMore")
-                    case let .quiet(count):
-                        FoldRow(title: count == 1 ? "1 filtered or ignored" : "\(count) filtered or ignored", open: showQuiet, leading: AlertRow.glyphColumn) {
-                            withAnimation(Easing.state) { showQuiet.toggle() }
+                    } actions: {
+                        bulkActions
+                    }
+                    .padding(.horizontal, Metrics.inset)
+                    if rows.isEmpty {
+                        Text("Cleared. Alerts land here again as they settle.")
+                            .font(Typo.body)
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, Metrics.inset)
+                            .padding(.vertical, 4)
+                    } else {
+                        RowList(data: rows) { row in
+                            self.row(row, order: order)
                         }
-                        .accessibilityLabel(showQuiet ? "Hide \(count) filtered or ignored alerts" : "Show \(count) filtered or ignored alerts")
-                        .accessibilityIdentifier("recent.quietFold")
                     }
                 }
             }
         }
+        // The daemon lists the last 30 alerts; what it no longer lists needs no sweeping.
+        .onChange(of: snapshot.alerts, initial: true) { _, alerts in
+            var kept = swept
+            kept.keep(only: alerts)
+            if kept != swept { swept = kept }
+        }
+        .task(id: lastSweep.map(\.id)) {
+            guard !lastSweep.isEmpty else { return }
+            try? await Task.sleep(for: Self.undoFor)
+            if !Task.isCancelled { lastSweep = [] }
+        }
     }
 
-    /// Start agents on selected alerts, whatever Jev decided.
+    @ViewBuilder
+    private func row(_ row: Row, order: [String]) -> some View {
+        switch row {
+        case let .alert(alert):
+            AlertRow(
+                alert: alert,
+                session: snapshot.session(id: alert.sessionId),
+                pick: $selection.pick(alert.id, in: order),
+                sweep: { sweep([alert]) }
+            )
+        case let .more(hidden):
+            FoldRow(title: showAll ? "Show fewer" : "Show \(hidden) more", open: showAll, leading: AlertRow.textColumn) {
+                withAnimation(Easing.state) { showAll.toggle() }
+            }
+            .accessibilityIdentifier("recent.showMore")
+        case let .quiet(count):
+            FoldRow(title: count == 1 ? "1 filtered or ignored" : "\(count) filtered or ignored", open: showQuiet, leading: AlertRow.textColumn) {
+                withAnimation(Easing.state) { showQuiet.toggle() }
+            }
+            .accessibilityLabel(showQuiet ? "Hide \(count) filtered or ignored alerts" : "Show \(count) filtered or ignored alerts")
+            .accessibilityIdentifier("recent.quietFold")
+        }
+    }
+
+    /// Clear, or Undo while the last sweep can be taken back.
+    @ViewBuilder
+    private func sweepLink(_ listed: [AlertView]) -> some View {
+        if !lastSweep.isEmpty {
+            TextLink("Undo") { undoSweep() }
+                .font(Typo.label)
+                .help(lastSweep.count == 1 ? "Bring the cleared alert back" : "Bring the \(lastSweep.count) cleared alerts back")
+                .accessibilityIdentifier("recent.undoSweep")
+        } else if !listed.isEmpty {
+            TextLink("Clear") { sweep(listed) }
+                .font(Typo.label)
+                .help("Clear every alert from Recent. New ones still come in.")
+                .accessibilityIdentifier("recent.sweep")
+        }
+    }
+
+    /// Investigate the picked alerts whatever Jev decided, or clear them.
     @ViewBuilder
     private var bulkActions: some View {
-        let picked = snapshot.alerts.filter { selection.contains($0.id) && !store.isBusy($0.id) }
-        let investigable = picked.filter { snapshot.session(id: $0.sessionId)?.isActive != true }
-        if !investigable.isEmpty {
-            Button("Investigate \(investigable.count)") {
-                investigable.forEach(store.investigate)
-                Haptics.perform(.alignment, "recent.bulk")
-                selection.clear()
-            }
+        let picked = listed.filter { selection.contains($0.id) }
+        let investigable = picked.filter { !store.isBusy($0.id) && snapshot.session(id: $0.sessionId)?.isActive != true }
+        Button(selection.label("Clear", acting: picked.count)) { sweep(picked) }
             .buttonStyle(.stage(.secondary))
-            .help("Start an agent on each, whatever Jev decided")
+            .disabled(picked.isEmpty)
+            .help("Clear the selected alerts from Recent")
+            .accessibilityIdentifier("recent.sweepPicked")
+        Button(selection.label("Investigate", acting: investigable.count)) {
+            investigable.forEach(store.investigate)
+            Haptics.perform(.alignment, "recent.bulk")
+            selection.clear()
+        }
+        .buttonStyle(.stage(.secondary))
+        .disabled(investigable.isEmpty)
+        .help("Start an agent on each, whatever Jev decided")
+    }
+
+    private func sweep(_ alerts: [AlertView]) {
+        guard !alerts.isEmpty else { return }
+        Haptics.perform(.alignment, "recent.sweep")
+        withAnimation(Easing.state) {
+            swept.sweep(alerts)
+            lastSweep = alerts
+        }
+        selection.clear()
+    }
+
+    private func undoSweep() {
+        withAnimation(Easing.state) {
+            swept.restore(lastSweep)
+            lastSweep = []
         }
     }
 }

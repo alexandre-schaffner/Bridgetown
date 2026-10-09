@@ -16,6 +16,11 @@ import SwiftUI
 ///
 /// With `followsEnd`, a pane scrolled to its end stays there as its content grows, as a
 /// terminal follows its output: for a pane that grows where it ends, not where it is read.
+///
+/// The scroll area keeps to whole points, giving up a sliver of an edge when the pane
+/// lands between two. AppKit puts the scroll view's clip on whole points anyway: offset
+/// half a point to match a pane that isn't, it would snap back on the first scroll, and
+/// every row would jump sideways under the fingers.
 struct PaneScrollView<Content: View>: View {
     var followsEnd = false
     @ViewBuilder var content: Content
@@ -25,7 +30,9 @@ struct PaneScrollView<Content: View>: View {
     @ViewState private var tracker = ScrollTracker()
 
     var body: some View {
-        GeometryReader { viewport in
+        GeometryReader { pane in
+            let snap = WholePoints(pane.frame(in: .global))
+            let viewport = snap.height
             ScrollView(.vertical) {
                 content
                     .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -41,12 +48,12 @@ struct PaneScrollView<Content: View>: View {
             .scrollBounceBehavior(.basedOnSize)
             .onPreferenceChange(ContentFrameKey.self) { frame in
                 let follow = followsEnd && tracker.follows(growingTo: frame.height)
-                tracker.update(offset: -frame.minY, content: frame.height, viewport: viewport.size.height)
+                tracker.update(offset: -frame.minY, content: frame.height, viewport: viewport)
                 // Once AppKit has the scroll view's new height.
                 if follow { DispatchQueue.main.async { tracker.scroll(to: .infinity) } }
                 let next = ScrollEdges(
                     above: frame.minY < -1,
-                    below: frame.maxY > viewport.size.height + 1
+                    below: frame.maxY > viewport + 1
                 )
                 if next != edges { withAnimation(Easing.quick) { edges = next } }
             }
@@ -64,8 +71,26 @@ struct PaneScrollView<Content: View>: View {
             }
             .overlay(alignment: .topTrailing) { ScrollThumb(tracker: tracker) }
             .onHover { tracker.hovering = $0 }
+            .padding(snap.insets)
         }
         .frame(maxHeight: .infinity, alignment: .top)
+    }
+}
+
+/// The insets that bring a frame's edges in to the nearest whole points: none for a frame
+/// already on them.
+private struct WholePoints {
+    let insets: EdgeInsets
+    let height: CGFloat
+
+    init(_ frame: CGRect) {
+        // Within a hair of a whole point is on it: layout arithmetic leaves crumbs.
+        func up(_ x: CGFloat) -> CGFloat { max(0, (x - 0.01).rounded(.up) - x) }
+        func down(_ x: CGFloat) -> CGFloat { max(0, x - (x + 0.01).rounded(.down)) }
+        let top = up(frame.minY)
+        let bottom = down(frame.maxY)
+        insets = EdgeInsets(top: top, leading: up(frame.minX), bottom: bottom, trailing: down(frame.maxX))
+        height = max(0, frame.height - top - bottom)
     }
 }
 

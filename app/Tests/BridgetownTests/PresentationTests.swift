@@ -26,20 +26,17 @@ import Testing
     @Test func sessionStatusRefinesTheGlyph() throws {
         #expect(OutcomeGlyph(outcome(.session), session: try session(.closed)).symbol == "minus.circle")
         #expect(OutcomeGlyph(outcome(.session, .failure), session: try session(.failed)).symbol == "xmark.octagon")
-        #expect(OutcomeGlyph(outcome(.session), session: try session(.stopped)).dimmed)
+        #expect(OutcomeGlyph(outcome(.session), session: try session(.stopped)).symbol == "stop.circle")
         #expect(OutcomeGlyph(outcome(.session, .live), session: try session(.running)).symbol == "bolt.fill")
     }
 
     @Test func kindsWithoutASession() {
-        #expect(OutcomeGlyph(outcome(.filtered), session: nil).dimmed)
-        #expect(OutcomeGlyph(outcome(.ignored), session: nil).dimmed)
-        #expect(OutcomeGlyph(outcome(.dismissed), session: nil).dimmed)
-        #expect(!OutcomeGlyph(outcome(.waiting, .waiting), session: nil).dimmed)
+        #expect(OutcomeGlyph(outcome(.filtered), session: nil).symbol == "line.3.horizontal.decrease")
+        #expect(OutcomeGlyph(outcome(.ignored), session: nil).symbol == "minus.circle")
+        #expect(OutcomeGlyph(outcome(.dismissed), session: nil).symbol == "xmark.circle")
         #expect(OutcomeGlyph(outcome(.waiting, .waiting), session: nil).symbol != OutcomeGlyph(outcome(.suggested), session: nil).symbol)
         // A teammate's alert is worth reading, but it is neither a success nor waiting on you.
-        let teammate = OutcomeGlyph(outcome(.teammate), session: nil)
-        #expect(!teammate.dimmed)
-        #expect(teammate.symbol == "person.fill")
+        #expect(OutcomeGlyph(outcome(.teammate), session: nil).symbol == "person.fill")
     }
 }
 
