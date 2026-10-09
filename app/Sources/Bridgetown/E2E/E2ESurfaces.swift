@@ -28,16 +28,14 @@ final class E2ESurfaces {
             : NotchGeometry(top: 982, centerX: 756, notch: CGSize(width: 185, height: 32), openWidth: open.width, openHeight: open.height)
     }
 
-    private let store: Store
-    private let daemon: DaemonProcess
+    private let services: AppServices
     private let island: IslandController
     let defaults: UserDefaults
     let hover = E2EHover()
     private(set) var current: Shown?
 
-    init(store: Store, daemon: DaemonProcess, island: IslandController, defaults: UserDefaults) {
-        self.store = store
-        self.daemon = daemon
+    init(services: AppServices, island: IslandController, defaults: UserDefaults) {
+        self.services = services
         self.island = island
         self.defaults = defaults
     }
@@ -67,7 +65,7 @@ final class E2ESurfaces {
             size = CGSize(width: 480, height: 400)
             name = "settings/\(tab.rawValue)"
         }
-        let host = NSHostingView(rootView: AnyView(root.modifier(E2EEnvironment(store: store, daemon: daemon, defaults: defaults, hover: hover))))
+        let host = NSHostingView(rootView: AnyView(root.modifier(E2EEnvironment(services: services, defaults: defaults, hover: hover))))
         // Settings is as tall as its tab's content, as its own window is; the island's are fixed.
         host.sizingOptions = spec.isStage ? [] : [.intrinsicContentSize]
         let window = NSWindow(
@@ -131,8 +129,7 @@ private extension E2EStep.Surface {
 /// once (a spring's last sub-pixel steps would settle a shot a hair early, differently
 /// each run), and Reduce Motion stills what loops on the clock (pulses, shimmer).
 private struct E2EEnvironment: ViewModifier {
-    let store: Store
-    let daemon: DaemonProcess
+    let services: AppServices
     let defaults: UserDefaults
     let hover: E2EHover
 
@@ -140,9 +137,7 @@ private struct E2EEnvironment: ViewModifier {
         content
             .coordinateSpace(name: "e2e")
             .environment(\.e2eHoverPoint, hover.point)
-            .environment(store)
-            .environment(daemon)
-            .environment(\.openURL, SystemActions.openLink)
+            .services(services)
             .environment(\.controlActiveState, .key)
             .environment(\._accessibilityReduceMotion, true)
             .environment(\.displayScale, E2ECapture.scale)

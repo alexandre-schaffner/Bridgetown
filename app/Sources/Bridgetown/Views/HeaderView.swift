@@ -100,11 +100,12 @@ struct StatusSummary: View {
     }
 }
 
-/// Settings, pause, logs and quit: everything about the app itself, one click away and
-/// out of sight. ⌘Q and ⌘, work without opening it.
+/// Settings, pause, updates, logs and quit: everything about the app itself, one click
+/// away and out of sight. ⌘Q and ⌘, work without opening it.
 struct AppMenu: View {
     @Environment(Store.self) private var store
     @Environment(DaemonProcess.self) private var daemon
+    @Environment(Updater.self) private var updater
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
@@ -120,7 +121,7 @@ struct AppMenu: View {
         .buttonStyle(.stage(.quiet, iconOnly: true))
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("Settings, logs, quit")
+        .help("Settings, updates, logs, quit")
         .accessibilityLabel("Bridgetown menu")
         .accessibilityIdentifier("header.menu")
         // The same items as named actions: VoiceOver and an e2e run reach them without
@@ -144,7 +145,20 @@ struct AppMenu: View {
         if let paused = store.snapshot?.status.paused {
             Button(paused ? "Resume auto-start" : "Pause auto-start") { store.setPaused(!paused) }
         }
+        if updater.isEnabled { updateItem }
         Button("Open logs", action: openLogs)
+    }
+
+    /// What the update notice's button does (`Updater.action`), or what is under way.
+    @ViewBuilder
+    private var updateItem: some View {
+        if let action = updater.action {
+            Button(action.title) { updater.perform(action) }
+        } else if let release = updater.state.release {
+            Button("Installing Bridgetown \(release.version.description)…") {}.disabled(true)
+        } else {
+            Button("Checking for updates…") {}.disabled(true)
+        }
     }
 
     private func showSettings() {

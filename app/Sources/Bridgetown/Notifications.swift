@@ -2,7 +2,8 @@ import AppKit
 import UserNotifications
 
 /// Posts a user notification for each new "Needs you" action (`NewActions`), and takes it
-/// back once the action is gone.
+/// back once the action is gone. Also says when a newer Bridgetown is out (`Updater`), once
+/// per version.
 @MainActor
 final class Notifier: NSObject {
     /// Set by `start`, or by a test. UNUserNotificationCenter traps when the process has no
@@ -12,9 +13,12 @@ final class Notifier: NSObject {
     private var standing: Set<String>?
     /// Clicking a notification opens the island.
     var onOpen: (() -> Void)?
+    /// Remembers the last release announced, across launches.
+    private let defaults: UserDefaults
 
-    init(center: (any NotificationShelf)? = nil) {
+    init(center: (any NotificationShelf)? = nil, defaults: UserDefaults = .standard) {
         self.center = center
+        self.defaults = defaults
     }
 
     func start() {
@@ -22,6 +26,8 @@ final class Notifier: NSObject {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
         self.center = center
+        // What it said about a release came before this launch, perhaps before this version.
+        center.remove([Self.updateIdentifier])
         // Posting doesn't wait on the answer: allowed later in System Settings, it works
         // from then on, and until then the system drops what we post.
         Task { _ = try? await center.requestAuthorization(options: [.alert, .sound]) }
@@ -39,6 +45,23 @@ final class Notifier: NSObject {
         }
     }
 
+    /// Once per release, without a sound: it can wait for you. Not until notifications are
+    /// allowed: one posted while the first launch still asks is dropped, and the next check
+    /// says it again.
+    func post(update release: Release) {
+        let version = release.version.description
+        guard let center, defaults.string(forKey: Self.announcedKey) != version else { return }
+        Task {
+            guard await center.isAuthorized(), defaults.string(forKey: Self.announcedKey) != version else { return }
+            defaults.set(version, forKey: Self.announcedKey)
+            let content = UNMutableNotificationContent()
+            content.title = "Bridgetown \(version) is available"
+            content.body = "Open Bridgetown to install it. It relaunches in a few seconds."
+            content.threadIdentifier = Self.updateIdentifier
+            center.post(UNNotificationRequest(identifier: Self.updateIdentifier, content: content, trigger: nil))
+        }
+    }
+
     /// Takes back every delivered notification whose action is gone: answered here or in
     /// Slack, or before a relaunch. Clicking one would open the island onto nothing.
     /// Nothing to do while the same actions stand.
@@ -51,12 +74,15 @@ final class Notifier: NSObject {
             // Kept: the actions standing once the answer is in, not when it was asked. One
             // that came up in between has just been posted, and stays.
             let keep = Set((standing ?? []).map(Self.identifier))
-            let stale = delivered.filter { !keep.contains($0) }
+            let stale = delivered.filter { $0.hasPrefix(Self.identifier("")) && !keep.contains($0) }
             if !stale.isEmpty { center.remove(stale) }
         }
     }
 
     private static func identifier(_ actionId: String) -> String { "action-\(actionId)" }
+    /// One at a time: a newer release replaces the last one's.
+    private static let updateIdentifier = "update"
+    private static let announcedKey = "updateAnnounced"
 }
 
 /// Notification Center as `Notifier` uses it: the system's, or a test's that holds its
@@ -67,6 +93,8 @@ protocol NotificationShelf: AnyObject {
     /// The identifiers of the notifications still shown.
     func delivered() async -> [String]
     func remove(_ identifiers: [String])
+    /// Whether what is posted is shown: allowed, provisionally or for good.
+    func isAuthorized() async -> Bool
 }
 
 extension UNUserNotificationCenter: NotificationShelf {
@@ -77,6 +105,10 @@ extension UNUserNotificationCenter: NotificationShelf {
     }
 
     func remove(_ identifiers: [String]) { removeDeliveredNotifications(withIdentifiers: identifiers) }
+
+    func isAuthorized() async -> Bool {
+        [.authorized, .provisional].contains(await notificationSettings().authorizationStatus)
+    }
 }
 
 extension Notifier: UNUserNotificationCenterDelegate {

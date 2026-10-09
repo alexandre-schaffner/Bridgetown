@@ -11,7 +11,7 @@ struct IslandOpenView: View {
     let model: IslandModel
     @ViewState private var picks = OverviewPicks()
 
-    /// The prod column: what's wrong, if anything, then the prod board.
+    /// The prod column: a newer Bridgetown, what's wrong, if anything, then the prod board.
     static let prodWidth: CGFloat = 380
     /// The status line's inset from the band's left edge, and its gap before the wings.
     private static let bandInset: CGFloat = 16
@@ -56,6 +56,7 @@ struct IslandOpenView: View {
     private var status: some View {
         PaneScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                UpdateNotice()
                 ProblemList()
                 // Before the first snapshot the main column says what's happening.
                 if store.snapshot != nil {

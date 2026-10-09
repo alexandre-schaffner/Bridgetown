@@ -2,9 +2,11 @@
 #
 #   release-please  opens or updates the release PR; once it merges, cuts the tag and a *draft*
 #   build           macOS, read-only: builds and checks the DMG, writes SHA256SUMS
-#   publish         signs SHA256SUMS (cosign, keyless), attests the DMG's provenance, uploads to
-#                   the draft, then publishes it. Release immutability (a repo setting) freezes
-#                   the assets and the tag from then on, so nothing is uploaded after this.
+#   publish         signs the DMG for in-app updates (Ed25519, the `release` environment's
+#                   UPDATE_SIGNING_KEY) and SHA256SUMS (cosign, keyless), attests the DMG's
+#                   provenance, uploads to the draft, then publishes it. Release immutability (a
+#                   repo setting) freezes the assets and the tag from then on, so nothing is
+#                   uploaded after this.
 #   deploy-site     rebuilds the landing page, whose download button names the new version
 #
 # The build runs third-party toolchains and dependencies, so it gets no write scope, no OIDC
@@ -136,6 +138,8 @@ jobs:
     if: ${{ !cancelled() && !failure() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # UPDATE_SIGNING_KEY lives there, and the environment only deploys from main.
+    environment: release
     permissions:
       contents: write # uploading to and publishing the draft
       id-token: write # cosign's and the attestation's keyless signing certificates
@@ -158,6 +162,39 @@ jobs:
       - name: Check the checksums
         working-directory: dist
         run: sha256sum -c SHA256SUMS
+
+      # What the app checks before it installs an update (app/Sources/Bridgetown/UpdateInstaller.swift):
+      # the DMG's bytes, signed with a key whose public half every release ships in Info.plist.
+      - name: Sign the DMG for in-app updates
+        working-directory: dist
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          [ -n "$UPDATE_SIGNING_KEY" ] || { echo "no UPDATE_SIGNING_KEY in the release environment" >&2; exit 1; }
+          umask 077
+          key="$RUNNER_TEMP/update-signing-key.pem"
+          printf '%s\n' "$UPDATE_SIGNING_KEY" > "$key"
+          openssl pkeyutl -sign -inkey "$key" -rawin -in Bridgetown.dmg -out "$RUNNER_TEMP/dmg.sig"
+          rm -f "$key"
+          base64 -w0 "$RUNNER_TEMP/dmg.sig" > Bridgetown.dmg.sig
+
+      # Against the keys in the tagged source, not ones the build could have swapped: a secret that
+      # drifted from Info.plist would publish a release no installed app can update to.
+      - name: Check the signature against the app's keys
+        working-directory: dist
+        run: |
+          gh api -H "Accept: application/vnd.github.raw" "repos/$GH_REPO/contents/app/Info.plist?ref=$TAG" \
+            | python3 -c 'import plistlib, sys; print("\n".join(plistlib.load(sys.stdin.buffer)["BridgetownUpdatePublicKeys"]))' > "$RUNNER_TEMP/public-keys"
+          base64 -d Bridgetown.dmg.sig > "$RUNNER_TEMP/dmg.sig"
+          while read -r key; do
+            # An Ed25519 SubjectPublicKeyInfo is this prefix, then the key's 32 bytes.
+            { printf '302a300506032b6570032100' | xxd -r -p; printf '%s' "$key" | base64 -d; } > "$RUNNER_TEMP/public-key.der"
+            if openssl pkeyutl -verify -pubin -keyform DER -inkey "$RUNNER_TEMP/public-key.der" -rawin -in Bridgetown.dmg -sigfile "$RUNNER_TEMP/dmg.sig"; then
+              exit 0
+            fi
+          done < "$RUNNER_TEMP/public-keys"
+          echo "UPDATE_SIGNING_KEY matches none of BridgetownUpdatePublicKeys in app/Info.plist at $TAG" >&2
+          exit 1
 
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
@@ -192,7 +229,7 @@ jobs:
 
       # --clobber only ever replaces assets on the draft (checked above), e.g. after a re-run.
       - name: Upload to the draft
-        run: gh release upload "$TAG" dist/Bridgetown.dmg dist/SHA256SUMS dist/SHA256SUMS.sigstore.json --clobber
+        run: gh release upload "$TAG" dist/Bridgetown.dmg dist/Bridgetown.dmg.sig dist/SHA256SUMS dist/SHA256SUMS.sigstore.json --clobber
 
       - name: Publish
         run: gh release edit "$TAG" --notes-file notes.md --draft=false --latest

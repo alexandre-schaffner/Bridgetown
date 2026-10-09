@@ -22,6 +22,11 @@
 	<string>6.0</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
+	<!-- The Ed25519 keys a release DMG may be signed with (release.yml); an update has to verify against one. More than one only while rotating (README, Releasing). -->
+	<key>BridgetownUpdatePublicKeys</key>
+	<array>
+		<string>l65SiOl+YTo+Y+8Mmhl0jZwOkoVPvfRnf7Sv2vnuA7U=</string>
+	</array>
 	<key>LSUIElement</key>
 	<true/>
 	<key>LSApplicationCategoryType</key>

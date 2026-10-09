@@ -31,11 +31,14 @@ enum DaemonError: LocalizedError {
 
 extension Error {
     /// One line for the UI: what went wrong, in the app's words.
-    var userMessage: String {
+    var userMessage: String { userMessage(peer: "Daemon") }
+
+    /// The same, about talking to `peer` ("Daemon", "GitHub").
+    func userMessage(peer: String) -> String {
         if let e = self as? URLError {
             switch e.code {
-            case .cannotConnectToHost, .networkConnectionLost, .cannotFindHost: return "Daemon not reachable"
-            case .timedOut: return "Daemon timed out"
+            case .cannotConnectToHost, .networkConnectionLost, .cannotFindHost, .notConnectedToInternet: return "\(peer) not reachable"
+            case .timedOut: return "\(peer) timed out"
             default: return e.localizedDescription
             }
         }

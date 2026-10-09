@@ -16,8 +16,7 @@ import SwiftUI
 @MainActor
 final class IslandController {
     let model: IslandModel
-    private let store: Store
-    private let daemon: DaemonProcess
+    private let services: AppServices
     private var panel: IslandPanel?
     private var monitors: [Any] = []
     private var observers: [NSObjectProtocol] = []
@@ -47,9 +46,8 @@ final class IslandController {
         Easing.reduceMotion ? .easeInOut(duration: 0.2) : animation
     }
 
-    init(store: Store, daemon: DaemonProcess) {
-        self.store = store
-        self.daemon = daemon
+    init(services: AppServices) {
+        self.services = services
         model = IslandModel(geometry: .current())
     }
 
@@ -61,9 +59,7 @@ final class IslandController {
         let panel = IslandPanel()
         panel.onCancel = { [weak self] in self?.close() }
         let root = IslandView(model: model) { [weak self] in self?.open() }
-            .environment(store)
-            .environment(daemon)
-            .environment(\.openURL, SystemActions.openLink)
+            .services(services)
         let host = FirstMouseHostingView(rootView: root)
         host.sizingOptions = []
         panel.contentView = host
@@ -96,7 +92,7 @@ final class IslandController {
         guard model.presentation != .open else { return }
         bannerTask?.cancel()
         resignTask?.cancel()
-        if model.presentation == .banner { store.back() }
+        if model.presentation == .banner { services.store.back() }
         withAnimation(Self.opening) {
             model.presentation = .open
             model.hovering = false
@@ -147,7 +143,7 @@ final class IslandController {
 
     private func observeGlance() {
         let next = withObservationTracking {
-            Glance(store: store, daemon: daemon)
+            Glance(store: services.store, daemon: services.daemon)
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeGlance() }
         }

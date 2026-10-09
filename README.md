@@ -54,6 +54,10 @@ The selected reviewer checks the fix before the PR leaves draft. Blocking findin
 
 [Download the latest release](https://github.com/alexandre-schaffner/Bridgetown/releases/latest/download/Bridgetown.dmg) (Apple silicon, macOS 14 or later), open it, and drag Bridgetown to Applications. Releases aren't notarized yet: on first launch, open **System Settings → Privacy & Security** and click **Open Anyway**. Every release is signed and immutable; see [Releasing](#releasing) to verify one.
 
+### Updates
+
+Bridgetown checks GitHub for a newer release at launch and every 6 hours. A new version sends one notification and appears at the top of the prod column. Click **Install**, or use **Install Bridgetown x.y.z** in the **…** menu, to update. Bridgetown downloads the DMG and checks its SHA-256 against the digest GitHub recorded when the release was published. It then checks the DMG's Ed25519 signature against a public key built into the app you have. Only the release workflow holds the private key, so a DMG published any other way is refused before it is opened. Last, it checks that the app inside has Bridgetown's bundle identifier and the release's version, and that its code signature is intact, before swapping it in and relaunching. If any check fails, the app you have stays in place. If the new version doesn't open within a minute, the previous one goes back and opens instead. **Check for updates** in the same menu checks right away. To update in place, Bridgetown must run from a folder you can write to, such as Applications. If it runs from somewhere else, you get a download link instead.
+
 ## Try it locally
 
 You need **macOS 14 or later**, **Swift 6 / Xcode Command Line Tools**, **Bun**, and **Git**. The demo needs no Slack token or AI account: Slack, Jev, agents, GitHub, and Grafana use local fixtures.
@@ -181,6 +185,7 @@ It writes `.context/e2e/<UTC time>/` (`latest` points at it; the newest five sta
 - `BASELINE=<run dir>` diffs against that run instead of the previous `latest`, and `BASELINE=` against none. A partial run becomes `latest` too, so pass a full run's directory while you iterate with `ONLY`.
 - `{"hover": "needsYou.row.<id>"}` drives row hover from its accessibility frame; `{"hover": false}` leaves it. Hover buttons can then be clicked by their label inside the pane (for example, `{"click": "Merge", "in": "pane.needsYou"}`). SwiftUI exposes controls inside a row's label as named accessibility actions, so use `{"action": {"on": "<row identifier>", "name": "Select"}}` or a quick reply's label rather than a pixel offset.
 - `{"see": "<label>"}` asserts that an accessibility element is present; the suite uses it to check problem banners before photographing them. `{"restart": {"exitsAtStart": true}}` exercises the daemon that keeps stopping diagnostic.
+- `{"update": "available"}` shows the update notice in a state (`none`, `checking`, `upToDate`, `available`, `downloading`, `installing`, `installed`, `failed`, `checkFailed`) for a made-up 1.2.0, over an installed 1.1.0; **Install** and **Quit** are recorded as side effects, and **Check for updates** finds that 1.2.0.
 - `{"each": "actions", "title": "<exact title>", "do": [...]}` selects stable titles and fills `$id` in each step; a missing title fails the run. The optional title filter also works for sessions and alerts.
 - `SERVE=1` keeps the app up afterwards for an agent to drive. `.context/e2e/latest/control.json` holds a loopback `url` and a `token`; send the token as `X-E2E-Token`, then `POST /step` with one suite step as JSON (it answers `{ok, shots, error}`, each shot with its PNG and issues), `GET /tree` for the screen's accessibility tree and its lint, `GET /state`, and `POST /quit`. A run that hears nothing for 10 minutes ends.
 
@@ -248,7 +253,7 @@ On `main`, [release-please](https://github.com/googleapis/release-please) keeps 
 
 1. release-please tags the version and opens a draft release.
 2. A read-only macOS job builds the DMG and checks it with `scripts/verify-bundle.sh`.
-3. A separate job signs `SHA256SUMS` with cosign (keyless), attests the DMG's build provenance, uploads both to the draft, and publishes it. From then on the release and its tag are immutable.
+3. A separate job, in the `release` environment, signs the DMG for in-app updates (`Bridgetown.dmg.sig`) and checks that signature against the public keys in the tagged `app/Info.plist`. It then signs `SHA256SUMS` with cosign (keyless), attests the DMG's build provenance, uploads everything to the draft, and publishes it. From then on the release and its tag are immutable.
 4. The landing page redeploys so its download button names the new version.
 
 Verify a download:
@@ -260,5 +265,7 @@ cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 gh attestation verify Bridgetown.dmg -R alexandre-schaffner/Bridgetown
 ```
+
+In-app updates trust the Ed25519 keys listed in `BridgetownUpdatePublicKeys` in `app/Info.plist`, normally one. The private half is the `UPDATE_SIGNING_KEY` secret (PEM) in the `release` environment, which only deploys from `main`. GitHub can't give a secret back, so keep a backup elsewhere. To rotate the key, for example after it leaks or is lost, generate a new one (`openssl genpkey -algorithm ed25519`) and add its public half to the list. Once a release with both keys is out, replace the secret, and drop the old key in a later release. An app that can't check a signature (no key, or a broken one) offers the download instead of installing.
 
 If a build or publish fails, the draft and tag stay put: re-run the failed jobs, or run `release.yml` by hand with the draft's tag. The landing page also deploys on its own when `site/` changes on `main`, using Cloudflare repository secrets passed explicitly by the release workflow and the `production` environment to restrict deployment to `main`. That is the only way it ships: `bun run deploy` refuses to run outside GitHub Actions, so a working tree that was never committed can't go live and then vanish at the next deploy. To redeploy without a change, run `gh workflow run deploy-site.yml`.

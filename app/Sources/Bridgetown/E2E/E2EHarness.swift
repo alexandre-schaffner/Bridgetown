@@ -1,5 +1,6 @@
 #if DEBUG
 import AppKit
+import CryptoKit
 
 /// The app driven without a person, debug builds only. `make e2e` (scripts/e2e.sh) runs:
 ///
@@ -110,6 +111,14 @@ final class E2EHarness {
         AppClock.override = suite.now
         Haptics.muted = true
         Easing.reduceMotionOverride = true
+        // Before the island takes it: 1.1.0, able to replace itself, with 1.2.0 out. Its
+        // install and quit go to `SystemActions.sink`, and nothing checks on its own. Never
+        // the user's app: the bundle it would replace is one that isn't there.
+        app.updater = Updater(
+            current: AppVersion("1.1.0"),
+            installer: .success(UpdateInstaller(destination: options.out.appending(path: "Bridgetown.app"), bundleIdentifier: "xyz.merkl.bridgetown", publicKeys: [Curve25519.Signing.PrivateKey().publicKey])),
+            feed: { Release.sample() }
+        )
         app.island.offscreen = true
         // Unbundled, the debug binary launches as a regular app and SwiftUI opens its one
         // scene, Settings, on the user's screen. A run draws Settings off screen itself.

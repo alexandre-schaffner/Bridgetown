@@ -9,6 +9,7 @@ import UserNotifications
     final class Shelf: NotificationShelf {
         private(set) var shown: [String] = []
         private(set) var asked = 0
+        var authorized = true
         private var waiting: [CheckedContinuation<Void, Never>] = []
 
         func post(_ request: UNNotificationRequest) { shown.append(request.identifier) }
@@ -20,6 +21,8 @@ import UserNotifications
         }
 
         func remove(_ identifiers: [String]) { shown.removeAll { identifiers.contains($0) } }
+
+        func isAuthorized() async -> Bool { authorized }
 
         /// Once `count` callers wait on `delivered`, answers them all and lets them finish.
         func answer(_ count: Int) async {
@@ -47,6 +50,64 @@ import UserNotifications
         #expect(shelf.shown == ["action-b"])
         notifier.withdraw(allBut: ["b"])
         #expect(shelf.asked == 1)
+    }
+
+    private func defaults() -> UserDefaults {
+        let name = "bridgetown.tests.notifier.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defaults.removePersistentDomain(forName: name)
+        return defaults
+    }
+
+    private func settle() async {
+        for _ in 0..<100 { await Task.yield() }
+    }
+
+    @Test func aNewerReleaseIsAnnouncedOncePerVersionAcrossLaunches() async {
+        let defaults = defaults()
+        let shelf = Shelf()
+        let first = Notifier(center: shelf, defaults: defaults)
+        first.post(update: .sample("1.2.0"))
+        await settle()
+        first.post(update: .sample("1.2.0"))
+        await settle()
+        #expect(shelf.shown == ["update"])
+
+        shelf.remove(["update"])
+        let relaunched = Notifier(center: shelf, defaults: defaults)
+        relaunched.post(update: .sample("1.2.0"))
+        await settle()
+        #expect(shelf.shown.isEmpty)
+        relaunched.post(update: .sample("1.3.0"))
+        await settle()
+        #expect(shelf.shown == ["update"])
+    }
+
+    /// Posted before you allow notifications, it would be dropped: it waits for a check
+    /// after you have.
+    @Test func aReleaseIsntCountedAnnouncedUntilNotificationsAreAllowed() async {
+        let shelf = Shelf()
+        shelf.authorized = false
+        let notifier = Notifier(center: shelf, defaults: defaults())
+        notifier.post(update: .sample("1.2.0"))
+        await settle()
+        #expect(shelf.shown.isEmpty)
+        shelf.authorized = true
+        notifier.post(update: .sample("1.2.0"))
+        await settle()
+        #expect(shelf.shown == ["update"])
+    }
+
+    /// Taking back the cards gone leaves the update's notification alone.
+    @Test func takingBackActionsLeavesTheUpdateAlone() async throws {
+        let shelf = Shelf()
+        let notifier = Notifier(center: shelf, defaults: defaults())
+        notifier.post(update: .sample("1.2.0"))
+        await settle()
+        notifier.post([try action("a")])
+        notifier.withdraw(allBut: [])
+        await shelf.answer(1)
+        #expect(shelf.shown == ["update"])
     }
 
     /// A card that comes up while Notification Center is asked what it shows is posted

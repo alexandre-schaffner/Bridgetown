@@ -201,6 +201,8 @@ enum E2EStep {
     case mock(E2EJSON)
     /// The mock exits with this code, as a crash would; the app does what it does about it.
     case crash(Int)
+    /// The update notice in this state, with a made-up release; its buttons are side effects.
+    case update(Updater.State)
     /// The app stops its daemon and leaves it down, until a `restart`.
     case stopDaemon
     case restart(world: String?, tokenMismatch: Bool, exitsAtStart: Bool)
@@ -328,6 +330,17 @@ enum E2EStep {
             } else {
                 throw bad("mock takes \"status\", \"settings\" or \"crash\"")
             }
+        } else if let update = json["update"]?.string {
+            let release = Release.sample()
+            let states: [String: Updater.State] = [
+                "none": .idle, "checking": .checking, "upToDate": .upToDate, "available": .available(release),
+                "downloading": .downloading(release, percent: 42), "installing": .installing(release),
+                "installed": .installed(release),
+                "failed": .installFailed(release, "The download doesn't match its checksum"),
+                "checkFailed": .checkFailed("GitHub not reachable"),
+            ]
+            guard let state = states[update] else { throw bad("update is one of \(states.keys.sorted())") }
+            self = .update(state)
         } else if let daemon = json["daemon"] {
             guard daemon.string == "stop" else { throw bad("daemon takes \"stop\"") }
             self = .stopDaemon
