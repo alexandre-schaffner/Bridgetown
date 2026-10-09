@@ -21,17 +21,19 @@ struct IslandOpenView: View {
         let geometry = model.geometry
         // Only schedules the redraw: the time itself is the app's clock.
         TimelineView(.periodic(from: .now, by: 30)) { _ in
+            // The hairlines lie over the panes rather than between them, so every pane
+            // starts on a whole point (`PaneScrollView`).
             VStack(spacing: 0) {
                 band(geometry)
-                Hairline()
                 HStack(alignment: .top, spacing: 0) {
                     status
                         .frame(width: Self.prodWidth)
-                    Hairline(vertical: true)
                     main
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .clipped()
+                        .overlay(alignment: .leading) { Hairline(vertical: true) }
                 }
+                .overlay(alignment: .top) { Hairline() }
             }
             .environment(\.now, AppClock.now)
             .environment(\.showsLastUpdate, store.connection != .connected)
@@ -78,6 +80,8 @@ struct IslandOpenView: View {
     private var overview: some View {
         if let snap = store.snapshot {
             let running = snap.inFlightSessions
+            // Half the main column, on a whole point.
+            let needsYouWidth = ((model.geometry.openWidth - Self.prodWidth) / 2).rounded(.down)
             if snap.isQuiet {
                 EmptyState(snapshot: snap)
                     .frame(maxHeight: .infinity)
@@ -94,8 +98,8 @@ struct IslandOpenView: View {
                         // Vertical only: the sections' rows run to the column's edges.
                         .padding(.vertical, Metrics.inset)
                     }
+                    .frame(width: needsYouWidth)
                     .accessibilityIdentifier("pane.needsYou")
-                    Hairline(vertical: true)
                     PaneScrollView {
                         VStack(alignment: .leading, spacing: 24) {
                             if running.isEmpty {
@@ -111,6 +115,7 @@ struct IslandOpenView: View {
                         .padding(.vertical, Metrics.inset)
                     }
                     .accessibilityIdentifier("pane.agents")
+                    .overlay(alignment: .leading) { Hairline(vertical: true) }
                 }
                 .background {
                     // Escape clears what is picked, in every list at once. Draws nothing.

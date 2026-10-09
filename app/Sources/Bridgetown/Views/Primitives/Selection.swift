@@ -50,6 +50,14 @@ struct RowSelection: Equatable {
         if let a = anchor, !present.contains(a) { anchor = nil }
     }
 
+    /// A bulk action's label: the verb alone when it acts on every picked row, since the
+    /// selection header already says how many; its own count when it acts on only some
+    /// (in flight, already running). "…" when it asks first.
+    func label(_ verb: String, acting count: Int, asks: Bool = false) -> String {
+        let label = count == self.count || count == 0 ? verb : "\(verb) \(count)"
+        return asks ? "\(label)…" : label
+    }
+
     /// A click on row `id`. Returns whether it picked: with ⌘ or ⇧ held, or while
     /// something is already picked. Otherwise the row does what a click does.
     mutating func click(_ id: String, in order: [String], modifiers: NSEvent.ModifierFlags) -> Bool {

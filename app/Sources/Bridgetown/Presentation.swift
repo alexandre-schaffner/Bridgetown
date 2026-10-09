@@ -126,27 +126,26 @@ extension AlertOutcome {
 }
 
 /// The glyph for an alert's outcome in Recent. The daemon's `outcome.kind` decides; for a
-/// session, its status refines it. The green check is reserved for `resolved`.
+/// session, its status refines it. The green check is reserved for `resolved`; a glyph for
+/// nothing done (filtered, ignored, dismissed, stopped) is the faintest grey.
 struct OutcomeGlyph {
     let symbol: String
     let style: AnyShapeStyle
-    /// Nothing happened worth reading (filtered, ignored, dismissed, stopped).
-    let dimmed: Bool
 
     init(_ outcome: AlertOutcome, session: Session?) {
         switch outcome.kind {
-        case .filtered: self.init("line.3.horizontal.decrease", .tertiary, dimmed: true)
-        case .ignored: self.init("minus.circle", .tertiary, dimmed: true)
+        case .filtered: self.init("line.3.horizontal.decrease", .tertiary)
+        case .ignored: self.init("minus.circle", .tertiary)
         case .suggested: self.init("hand.raised", .secondary)
         case .escalated: self.init("person.fill.questionmark", .secondary)
         case .waiting: self.init("hand.raised.fill", Ink.amber)
-        case .dismissed: self.init("xmark.circle", .tertiary, dimmed: true)
+        case .dismissed: self.init("xmark.circle", .tertiary)
         case .opened: self.init("arrow.up.right.circle", .secondary)
-        case .withdrawn: self.init("arrow.uturn.backward.circle", .tertiary, dimmed: true)
+        case .withdrawn: self.init("arrow.uturn.backward.circle", .tertiary)
         // Someone else owns it: worth reading, not yours to act on.
         case .teammate: self.init("person.fill", .secondary)
         case .session: self.init(session: session, tone: outcome.tone)
-        case .unknown: self.init("questionmark.circle", .tertiary, dimmed: true)
+        case .unknown: self.init("questionmark.circle", .tertiary)
         }
     }
 
@@ -156,7 +155,7 @@ struct OutcomeGlyph {
         // Closed by the user without a fix: neutral, never a success mark.
         case .closed?: self.init("minus.circle", .secondary)
         case .failed?: self.init("xmark.octagon", Ink.red)
-        case .stopped?: self.init("stop.circle", .secondary, dimmed: true)
+        case .stopped?: self.init("stop.circle", .secondary)
         case nil, .unknown?:
             // The session has aged out of the snapshot: only its tone is known. Success is
             // the daemon's word for a verified outcome, the same fact as `resolved`.
@@ -172,10 +171,9 @@ struct OutcomeGlyph {
         }
     }
 
-    private init<S: ShapeStyle>(_ symbol: String, _ style: S, dimmed: Bool = false) {
+    private init<S: ShapeStyle>(_ symbol: String, _ style: S) {
         self.symbol = symbol
         self.style = AnyShapeStyle(style)
-        self.dimmed = dimmed
     }
 }
 
