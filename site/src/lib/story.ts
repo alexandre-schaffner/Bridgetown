@@ -1,8 +1,6 @@
-// The facts the page shows and the launch film (dev/launch.astro) shows again: one alert's path
-// to production, how a session ends, the signal Bridgetown watches. Kept in one place so the
-// two never tell them differently.
-
-import { series } from "./spark";
+// The facts the page tells: one alert's path to production, how a session ends. They follow
+// the app's demo data (app/E2E/showcase.json), whose screens the page shows (src/assets/app/),
+// so the words and the screens never tell them differently.
 
 /** An alert's path, Diagnose to Deploy. Two of its steps are yours. */
 export const PATH = [
@@ -17,18 +15,22 @@ export const PATH = [
   { step: "Deploy" },
 ];
 
-/** The 5xx on the broken route over the last hour, rising once the bad deploy landed. */
-export const RISE = [...series(40, 12, 3, 9), 14, 22, 41, 63, 71, 69, 74, 72];
+/** The failed release build the agent starts from: each line's kind, and its text. */
+export const BUILD_LOG: ["" | "ok" | "err", string][] = [
+  ["", "vite v6.3.5 building for production..."],
+  ["ok", "✓ 2418 modules transformed."],
+  ["err", "✗ Build failed in 14.2s"],
+  ["err", '[vite]: Rollup failed to resolve import "d3-shape/src/curve" from "apps/app/src/components/Sparkline.tsx".'],
+];
 
 /** The agent's fix: each line's number, whether it goes or comes, and its text. */
 export const FIX: [number, "" | "del" | "add", string][] = [
-  [41, "", "  const query = parseQuery(req)"],
-  [42, "del", "- const region = Number(query.region)"],
-  [42, "add", "+ if (!query.region) {"],
-  [43, "add", '+   return badRequest("region is required")'],
-  [44, "add", "+ }"],
-  [45, "add", "+ const region = Number(query.region)"],
-  [46, "", "  const orders = await findOrders(region)"],
+  [1, "", '  import { scaleLinear } from "d3-scale"'],
+  [2, "del", '- import { line } from "d3-shape"'],
+  [3, "del", '- import { curveMonotoneX } from "d3-shape/src/curve"'],
+  [2, "add", '+ import { curveMonotoneX, line } from "d3-shape"'],
+  [3, "", ""],
+  [4, "", "  export function Sparkline({ values }: Props) {"],
 ];
 
 /**
@@ -36,19 +38,8 @@ export const FIX: [number, "" | "del" | "add", string][] = [
  * (app/Sources/Bridgetown/Presentation.swift), so no two ends share a mark.
  */
 export const OUTCOMES = [
-  { word: "Resolved", glyph: "circle-check", tint: "green", evidence: "Deployed api v1.35.12. The release tracker confirmed it at 10:31." },
+  { word: "Resolved", glyph: "circle-check", tint: "green", evidence: "Deployed app-v2.15.1. The release tracker confirmed it at 10:31." },
   { word: "Closed", glyph: "circle-minus", tint: "grey", evidence: "Root cause not found. Nothing shipped, and the card says so." },
   { word: "Failed", glyph: "octagon-x", tint: "red", evidence: "e2e failed twice after the fix. Handed back to you with the logs." },
   { word: "Stopped", glyph: "circle-stop", tint: "faint", evidence: "You stopped it during Fix. Its worktree is kept for you." },
 ];
-
-const steady = series(33, 11, 2.6, 3);
-/** Three hours of API 5xx in five-minute steps: steady, then a rise no alert covers. */
-export const SIGNAL = {
-  values: [...steady, 38, 64, 71],
-  /** Its usual level: the 90th percentile of the steady stretch. */
-  usual: [...steady].sort((a, b) => a - b)[Math.floor(steady.length * 0.9)]!,
-};
-
-/** What the header watches, a dot each. */
-export const SERVICES = ["Slack", "Jev", "GitHub", "Grafana"];

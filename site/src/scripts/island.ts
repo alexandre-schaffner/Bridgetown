@@ -1,7 +1,8 @@
 // Drives the island in the notch chapter. The shape is NotchShape, sprung between layouts
 // with IslandController's springs; each presentation's layer is revealed the way the app's
 // `.reveal` transition does it (a blur-fade that trails the shape, out quickly before it
-// closes). Scroll picks a step; each step plays in time, like the real thing would.
+// closes). Open, it shows the app's real screens, and the pointer works them where their
+// buttons really are. Scroll picks a step; each step plays in time, like the real thing would.
 
 import {
   BOX_W,
@@ -94,14 +95,11 @@ export function createIsland(
   const layers = Object.fromEntries(
     [...island.querySelectorAll<HTMLElement>(".layer")].map((el) => [el.dataset.layer!, el]),
   ) as Record<"wings" | "banner" | "open", HTMLElement>;
-  const bandFoot = island.querySelector<HTMLElement>("[data-layer='band-foot']")!;
   const glyph = island.querySelector<HTMLElement>("[data-wing-glyph]")!;
   const wingDot = island.querySelector<HTMLElement>("[data-wing-dot]")!;
   const wingNumber = island.querySelector<HTMLElement>("[data-wing-number]")!;
-  const needsCount = island.querySelector<HTMLElement>("[data-needs-count]")!;
-  const needsBadge = island.querySelector<HTMLElement>("[data-needs-badge]")!;
-  const mergeRow = island.querySelector<HTMLElement>("[data-action='merge']")!;
-  const mergeBtn = island.querySelector<HTMLElement>("[data-btn='merge']")!;
+  const press = island.querySelector<HTMLElement>("[data-press]")!;
+  const mergeTarget = island.querySelector<HTMLButtonElement>("[data-target='merge']")!;
   const cursor = root.querySelector<SVGElement>("[data-cursor]")!;
   const hit = island.querySelector<HTMLButtonElement>("[data-island-hit]")!;
   const steps = [...root.querySelectorAll<HTMLElement>("[data-step]")];
@@ -228,8 +226,18 @@ export function createIsland(
     reveal("wings", p === "wings" || p === "open");
     reveal("banner", p === "banner");
     reveal("open", p === "open");
-    bandFoot.classList.toggle("on", p === "open");
   };
+
+  /**
+   * Which real screen the open island shows: the overview, or the session the tour opens,
+   * before and after its merge. They cross-fade, as a detail replaces the last two columns.
+   */
+  type View = "overview" | "merge" | "merged";
+  const show = (view: View) => {
+    island.dataset.view = view;
+    if (view !== "merge") press.classList.remove("hover", "press");
+  };
+  show("overview");
 
   // MARK: Glance
 
@@ -253,22 +261,6 @@ export function createIsland(
     }
   };
 
-  const setNeeds = (n: number) => {
-    for (const el of [needsCount, needsBadge]) {
-      if (el.textContent === String(n)) continue;
-      el.textContent = String(n);
-      if (!reducedMotion) {
-        el.animate(
-          [
-            { transform: "translateY(-50%)", opacity: 0, filter: "blur(3px)" },
-            { transform: "none", opacity: 1, filter: "blur(0)" },
-          ],
-          { duration: 420, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
-        );
-      }
-    }
-  };
-
   // MARK: Cursor
 
   let cursorAt = { x: 1100, y: 420 };
@@ -286,7 +278,7 @@ export function createIsland(
     await anim.finished;
   };
   const click = async (signal: AbortSignal) => {
-    cursor.animate([{ scale: 1 }, { scale: 0.82 }, { scale: 1 }], { duration: 220, easing: "ease-out" });
+    if (!reducedMotion) cursor.animate([{ scale: 1 }, { scale: 0.82 }, { scale: 1 }], { duration: 220, easing: "ease-out" });
     await sleep(120, signal);
   };
   /** Where an element in the island sits, in the screen's unscaled coordinates. */
@@ -303,41 +295,47 @@ export function createIsland(
   let current = -1;
   let controller = new AbortController();
 
-  const restoreMerge = () => {
-    for (const row of island.querySelectorAll(".action")) row.classList.remove("settled");
-    mergeBtn.classList.remove("hover", "press");
-    setNeeds(3);
+  // Six agents at work and, once the merge below is yours, twelve things waiting: what the
+  // open screens say. Merging leaves twelve, since cutting the release takes its place.
+  const WORKING = 6;
+  const WAITING = 12;
+
+  /** Merge, pressed: the button gives, and the session says it merged. */
+  const merge = async (signal: AbortSignal) => {
+    press.classList.add("press");
+    await sleep(140, signal);
+    show("merged");
   };
 
   const scripts: ((signal: AbortSignal) => Promise<void>)[] = [
-    // Wings: two agents at work, nothing waiting yet.
+    // Wings: the agents at work, and what already waits on you.
     async (signal) => {
       showCursor(false);
-      restoreMerge();
+      show("overview");
       if (presentation === "hidden") await sleep(250, signal);
-      glance(2, 0);
+      glance(WORKING, WAITING - 1);
       present("wings");
     },
-    // A banner drops for a merge that just became yours, then tucks back into an amber count.
+    // A banner drops for a merge that just became yours, then tucks back into the count.
     async (signal) => {
       showCursor(false);
-      restoreMerge();
-      glance(2, 0);
+      show("overview");
+      glance(WORKING, WAITING - 1);
       present("wings");
       await sleep(350, signal);
       present("banner");
       await sleep(2600, signal);
-      glance(2, 3);
+      glance(WORKING, WAITING);
       present("wings");
     },
     // The pointer comes up to the wing and clicks: the whole app unfolds.
     async (signal) => {
-      restoreMerge();
-      glance(2, 3);
-      if (presentation === "open") {
+      glance(WORKING, WAITING);
+      if (presentation === "open" && island.dataset.view === "overview") {
         showCursor(false);
         return;
       }
+      show("overview");
       present("wings");
       cursorAt = { x: 1040, y: 380 };
       cursor.animate([{ transform: `translate(${cursorAt.x}px, ${cursorAt.y}px)` }], { duration: 0, fill: "forwards" });
@@ -349,31 +347,33 @@ export function createIsland(
       await sleep(300, signal);
       await moveCursor(rightWing.x + 120, 300, 700, signal);
     },
-    // Merge, from the island: the row settles, counts go down, the island folds away.
+    // Merge, from the island: the session with the merge opens in place of the overview's
+    // last two columns (in the app, from its row under Ship, below what the screen shows), the
+    // pointer presses Merge, the session says merged, and the island folds away.
     async (signal) => {
-      glance(2, 3);
-      restoreMerge();
+      glance(WORKING, WAITING);
+      show("overview");
       if (presentation !== "open") {
         present("open");
         await sleep(450, signal);
       }
+      await sleep(250, signal);
+      show("merge");
       showCursor(true);
-      await sleep(150, signal);
-      const target = pointOf(mergeBtn);
-      await moveCursor(target.x, target.y, 900, signal);
-      mergeBtn.classList.add("hover");
+      await sleep(400, signal);
+      const target = pointOf(mergeTarget);
+      await moveCursor(target.x, target.y, 800, signal);
+      press.classList.add("hover");
       await sleep(260, signal);
-      mergeBtn.classList.add("press");
       await click(signal);
-      await sleep(120, signal);
-      mergeBtn.classList.remove("press");
-      mergeRow.classList.add("settled");
-      setNeeds(2);
-      await sleep(1300, signal);
+      await merge(signal);
+      // Off the release button that takes Merge's place, which is the next decision, not this one.
       await moveCursor(target.x + 160, target.y + 220, 600, signal);
+      await sleep(900, signal);
       showCursor(false);
-      glance(2, 2);
       present("wings");
+      await sleep(400, signal);
+      show("overview");
     },
   ];
 
@@ -399,42 +399,32 @@ export function createIsland(
     hovering = false;
     if (presentation === "wings") shape("wings");
   });
+  // It opens on the session the tour opened, its merge waiting again for you to press.
   hit.addEventListener("click", () => {
     controller.abort();
     showCursor(false);
     hovering = false;
+    if (presentation !== "open") show("merge");
     present(presentation === "open" ? "wings" : "open");
   });
 
-  // Its buttons work too: each settles its row, and the island folds once nothing is left.
-  for (const btn of island.querySelectorAll<HTMLElement>("[data-btn]")) {
-    btn.addEventListener("click", async () => {
-      if (presentation !== "open") return;
-      controller.abort();
-      controller = new AbortController();
-      const signal = controller.signal;
-      showCursor(false);
-      const row = btn.closest(".action")!;
-      btn.classList.add("press");
-      try {
-        await sleep(140, signal);
-        btn.classList.remove("press");
-        row.classList.add("settled");
-        const left = island.querySelectorAll(".action:not(.settled)").length;
-        setNeeds(left);
-        glance(2, left);
-        if (left === 0) {
-          await sleep(900, signal);
-          present("wings");
-          await sleep(1800, signal);
-          restoreMerge();
-          glance(2, 3);
-        }
-      } catch {
-        // Interrupted by the next step.
-      }
-    });
-  }
+  // Its Merge works too: the session says merged, and the island folds back to work.
+  mergeTarget.addEventListener("pointerenter", () => press.classList.add("hover"));
+  mergeTarget.addEventListener("pointerleave", () => press.classList.remove("hover"));
+  mergeTarget.addEventListener("click", async () => {
+    if (presentation !== "open") return;
+    controller.abort();
+    controller = new AbortController();
+    const signal = controller.signal;
+    showCursor(false);
+    try {
+      await merge(signal);
+      await sleep(1300, signal);
+      present("wings");
+    } catch {
+      // Interrupted by the next step.
+    }
+  });
 
   draw();
 

@@ -7,10 +7,8 @@ export interface FilmRig {
   done: boolean;
   /** In seconds. */
   duration: number;
-  /** The launch film's score cues, by time. */
-  cues?: { t: number; kind: string; v?: number; n?: number; e?: string }[];
-  /** Shots spliced into the launch film: `d` seconds opened at `at`, in the cut before any splice. */
-  inserts?: { at: number; d: number }[];
+  /** The launch film's score cues, by time (scripts/score.ts). */
+  cues?: { t: number; kind: string; v?: number }[];
   /** Plays the film from the start. */
   start(): void;
 }

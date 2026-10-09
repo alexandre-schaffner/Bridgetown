@@ -1,0 +1,110 @@
+---
+// A real screen of the app (src/assets/app/, scripts/showcase-screenshots.sh), framed like the
+// open island on the black stage, with its words above it. launch.ts moves the camera over it
+// in the screenshot's own pixels, cross-fades between its screens, lights one region with the
+// spotlight and presses a button with the pointer. Each caption (data-cap) takes the
+// headline's place in turn.
+import Pointer from "../../components/Pointer.astro";
+
+interface Props {
+  shot: string;
+  kick: string;
+  /** The screens, stacked in this order; the first shows first. All are 2200 × 1024. */
+  screens: { name: string; src: string }[];
+  captions: string[];
+}
+const { shot, kick, screens, captions } = Astro.props;
+---
+
+<section class="shot screen-shot" data-shot={shot}>
+  <div class="cam">
+    <div class="frame" data-frame>
+      {screens.map((s, i) => <img src={s.src} alt="" data-screen={s.name} style={i ? "opacity:0" : ""} />)}
+      <div class="spot" data-spot></div>
+      <Pointer class="ptr" size={34} data-ptr />
+    </div>
+  </div>
+  <div class="top-veil"></div>
+  <header class="copy">
+    <p class="kick mono" data-kick>{kick}</p>
+    <div class="caps">{captions.map((c) => <h2 class="hl-s cap" data-cap set:html={c} />)}</div>
+  </header>
+</section>
+
+<style>
+  /* 1600 wide, as launch.ts's FRAME has it: the screenshot at 0.727 of its pixels. */
+  .frame {
+    position: absolute;
+    left: 160px;
+    top: 266px;
+    width: 1600px;
+    height: 745px;
+    border-radius: 0 0 30px 30px;
+    overflow: hidden;
+    background: #000;
+    box-shadow:
+      0 0 0 1px var(--hair-strong),
+      0 80px 160px -40px rgb(0 0 0 / 0.9),
+      0 0 120px rgb(120 150 220 / 0.07);
+  }
+
+  img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  /* Everything but one region dims; the region keeps a hairline round it. */
+  .spot {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: 16px;
+    box-shadow:
+      0 0 0 1.5px rgb(255 255 255 / 0.28),
+      0 0 0 4000px rgb(0 0 0 / 0.68);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .frame :global(.ptr) {
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: 3;
+    opacity: 0;
+    filter: drop-shadow(0 4px 10px rgb(0 0 0 / 0.6));
+  }
+
+  .top-veil {
+    position: absolute;
+    inset: 0 0 auto;
+    height: 300px;
+    background: linear-gradient(180deg, #000 55%, transparent);
+    pointer-events: none;
+  }
+
+  .copy {
+    position: absolute;
+    left: 160px;
+    top: 82px;
+    right: 160px;
+    display: grid;
+    gap: 18px;
+  }
+
+  .caps {
+    position: relative;
+    height: 80px;
+  }
+
+  .cap {
+    position: absolute;
+    inset: 0 auto auto 0;
+    white-space: nowrap;
+  }
+</style>

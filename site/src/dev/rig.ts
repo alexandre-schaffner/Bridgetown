@@ -1,4 +1,4 @@
-// What both film rigs (film.ts, launch.ts) are made of: a paused timeline, the arch scene and
+// What both film rigs (launch.ts, island.ts) are made of: a paused timeline, the arch scene and
 // the camera it follows, the island in the notch shot, and the handshake with the recorder
 // (window.__film, protocol.ts). The pages lay it out on RigLayout.astro.
 
@@ -18,14 +18,6 @@ export function $<T extends Element = HTMLElement>(s: string, root: ParentNode =
   if (!el) throw new Error(`The rig has no ${s}`);
   return el;
 }
-
-/** What the island says at each step of its tour, Wings to Merge. */
-const TOUR = [
-  "Agents at work, either side of the notch.",
-  "Something is yours: a banner drops, then tucks back in.",
-  "Click, and the whole app unfolds.",
-  "Merge, from the notch. Then back to work.",
-];
 
 /** `cinematic` springs the island the launch film's slower way (scripts/island.ts). */
 export function createRig({ cinematic = false } = {}) {
@@ -81,22 +73,26 @@ export function createRig({ cinematic = false } = {}) {
     place(at: number, view: Partial<View>, lamp?: LightName) {
       tl.call(() => cut(view, lamp), [], at);
     },
-    /** The island's tour, a step at each of `steps`, each step's caption at `captions`. */
-    tour(cap: HTMLElement, steps: number[], captions: number[], texts = TOUR) {
+    /** The island's tour, a step at each of `steps`, each step's caption, `texts`, at `captions`. */
+    tour(cap: HTMLElement, steps: number[], captions: number[], texts: string[]) {
       steps.forEach((at, i) => tl.call(() => island.setStep(i), [], at));
       captions.forEach((at, i) => caption(cap, texts[i]!, at));
     },
     /**
      * Hands the film to the recorder (window.__film): ready once the scene has drawn (unless the
-     * film never shows it) and the fonts are in. `?play` plays it a moment after loading;
+     * film never shows it), the fonts are in and every picture is decoded. `?play` plays it a moment after loading;
      * `?at=42` plays it up to 42 seconds and holds there, for stills.
      */
-    publish({ cues, inserts, scene: shown = true }: Pick<FilmRig, "cues" | "inserts"> & { scene?: boolean } = {}) {
+    publish({ cues, scene: shown = true }: Pick<FilmRig, "cues"> & { scene?: boolean } = {}) {
       tl.eventCallback("onComplete", () => (window.__film.done = true));
-      window.__film = { ready: false, done: false, duration: tl.duration(), cues, inserts, start: () => void tl.play(0) };
+      window.__film = { ready: false, done: false, duration: tl.duration(), cues, start: () => void tl.play(0) };
       const whenDrawn = (then: () => void) => (sceneReady || !shown ? then() : requestAnimationFrame(() => whenDrawn(then)));
       // Let the fonts, textures and first frames settle before the recorder starts.
-      whenDrawn(() => document.fonts.ready.then(() => setTimeout(() => (window.__film.ready = true), 800)));
+      // Pictures load now, not when a shot first shows them: a lazy one in a hidden shot would
+      // still be loading, and blank, when the shot comes on.
+      for (const img of document.images) img.loading = "eager";
+      const pictures = () => Promise.all([...document.images].map((img) => img.decode().catch(() => {})));
+      whenDrawn(() => Promise.all([document.fonts.ready, pictures()]).then(() => setTimeout(() => (window.__film.ready = true), 800)));
       const params = new URLSearchParams(location.search);
       if (params.has("play")) setTimeout(() => tl.play(0), 1500);
       if (params.has("at")) {

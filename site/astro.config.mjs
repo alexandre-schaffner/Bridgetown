@@ -9,7 +9,7 @@ const devRigs = {
   hooks: {
     "astro:config:setup": ({ command, injectRoute }) => {
       if (command !== "dev") return;
-      for (const rig of ["film", "launch"]) {
+      for (const rig of ["launch", "island"]) {
         injectRoute({ pattern: `/${rig}`, entrypoint: `./src/dev/${rig}.astro` });
       }
     },

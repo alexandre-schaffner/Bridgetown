@@ -1,12 +1,14 @@
 ---
 // Day. One alert's whole path, Diagnose to Deploy, as a horizontal reel pinned in place.
-// Each step shows the thing that proves it happened. Two steps are yours.
-import Icon from "./Icon.astro";
-import { areaPath, linePath } from "../lib/spark";
-import { FIX, PATH, RISE } from "../lib/story";
+// Each step shows the thing that proves it happened. Two steps are yours, and those two are
+// the app's own screens: the session that settles them, before and after the merge.
+import AppShot from "./AppShot.astro";
+import { BUILD_LOG, FIX, PATH } from "../lib/story";
+import sessionMerge from "../assets/app/session-merge.png";
+import sessionMerged from "../assets/app/session-merged.png";
 
-const W = 520;
-const H = 120;
+/** The session's detail, from its title through the decision, in the captures' pixels. */
+const decision = { x: 761, y: 65, width: 1059, height: 674 };
 ---
 
 <section class="journey day" id="journey" data-journey aria-labelledby="journey-title">
@@ -39,16 +41,11 @@ const H = 120;
             The agent reads the alert, the logs and the dashboards around it in its own worktree.
           </p>
           <div class="panel">
-            <p class="panel-head"><span>Route 5xx · /v4/orders</span><b>71</b></p>
-            <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true" class="chart">
-              <path d={areaPath(RISE, W, H, 8)} class="area" />
-              <path d={linePath(RISE, W, H, 8)} class="line" pathLength="1" />
-              <line x1={W * 0.82} x2={W * 0.82} y1="0" y2={H} class="deploy" />
-            </svg>
-            <p class="panel-sub"><span class="mono">api v1.35.11</span> deployed 4 min before the rise</p>
+            <p class="panel-head"><span>merkl-app v2.15.0 · Build</span><span class="fail">Failed</span></p>
+            <pre class="log">{BUILD_LOG.map(([kind, text]) => <span class:list={["ll", kind]}>{text}</span>)}</pre>
             <p class="diag">
-              <b>Diagnosis</b> /v4/orders parses an empty <code>region</code> as <code>0</code>, and the lookup throws.
-              The change came in with v1.35.11.
+              <b>Diagnosis</b> The sparkline imports <code>d3-shape/src/curve</code>, a path only d3 v7 exports, and a
+              lockfile dedupe resolved v6. The package root works on both.
             </p>
           </div>
         </li>
@@ -58,11 +55,11 @@ const H = 120;
           <h3>Changes the code, on its own branch.</h3>
           <p class="caption">It edits only its worktree, then runs the tests that cover the change.</p>
           <div class="panel code">
-            <p class="panel-head mono"><span>src/routes/orders.ts</span><span class="faint">+4 −1</span></p>
+            <p class="panel-head mono"><span>apps/app/src/components/Sparkline.tsx</span><span class="faint">+1 −2</span></p>
             <pre>{FIX.map(([n, kind, text]) => (
               <span class:list={["dl", kind]}><span class="ln">{n}</span>{text}{"\n"}</span>
             ))}</pre>
-            <p class="panel-foot mono"><span class="ok">✓</span> 214 pass · 0 fail</p>
+            <p class="panel-foot mono"><span class="ok">✓</span> vite build · 312 pass · 0 fail</p>
           </div>
         </li>
 
@@ -71,15 +68,15 @@ const H = 120;
           <h3>Opens a draft, with the reasoning attached.</h3>
           <p class="caption">The diagnosis goes in the description, so a reviewer starts with context.</p>
           <div class="panel">
-            <p class="pr-title">fix(api): reject an empty region on /v4/orders <span class="faint">#3352</span></p>
+            <p class="pr-title">fix(app): import d3-shape from the package root <span class="faint">#3345</span></p>
             <p class="pr-meta">
               <span class="pill">Draft</span>
-              <span class="mono faint">fix-bt-api-empty-region</span>
+              <span class="mono faint">fix-bt-app-d3-shape</span>
             </p>
             <div class="pr-body">
-              <p><b>Root cause.</b> An empty region was parsed as 0 since v1.35.11.</p>
-              <p><b>Fix.</b> Reject it with a 400 before the lookup.</p>
-              <p><b>Tested.</b> A unit test for the empty, missing and valid cases.</p>
+              <p><b>Root cause.</b> <code>d3-shape/src/curve</code> exists only in d3 v7; the lockfile resolved v6.</p>
+              <p><b>Fix.</b> Import the curve and the line from the package root.</p>
+              <p><b>Tested.</b> The build passes, and the sparkline draws as before.</p>
             </div>
           </div>
         </li>
@@ -94,17 +91,17 @@ const H = 120;
             <ul class="rounds">
               <li>
                 <span class="r">Round 1</span>
-                <span>A negative region still reaches the lookup.</span>
+                <span>Two other charts still import from <code>d3-shape/src</code>.</span>
                 <span class="tag tag-amber">Blocking</span>
               </li>
               <li>
                 <span class="r"></span>
-                <span>Name the constant for the error message.</span>
+                <span>Sort the d3 imports.</span>
                 <span class="tag">Dropped</span>
               </li>
               <li>
                 <span class="r"></span>
-                <span>Agent: validates <code>region &gt; 0</code>, adds a test.</span>
+                <span>Agent: moves both to the package root.</span>
                 <span class="tag">Fixed</span>
               </li>
               <li>
@@ -123,9 +120,11 @@ const H = 120;
           <div class="panel">
             <ul class="checks">
               <li><span class="ok">✓</span> lint <span class="faint mono">18s</span></li>
-              <li><span class="ok">✓</span> typecheck <span class="faint mono">41s</span></li>
-              <li><span class="ok">✓</span> unit <span class="faint mono">1m 12s</span></li>
-              <li><span class="ok">✓</span> e2e · orders <span class="faint mono">3m 05s</span></li>
+              <li><span class="ok">✓</span> typecheck <span class="faint mono">44s</span></li>
+              <li><span class="ok">✓</span> unit <span class="faint mono">1m 08s</span></li>
+              <li><span class="ok">✓</span> build <span class="faint mono">2m 11s</span></li>
+              <li><span class="ok">✓</span> e2e · charts <span class="faint mono">3m 05s</span></li>
+              <li><span class="ok">✓</span> preview <span class="faint mono">1m 32s</span></li>
             </ul>
           </div>
         </li>
@@ -135,12 +134,12 @@ const H = 120;
           <h3>Asks a person to look.</h3>
           <p class="caption">Once CI is green, it posts in your approvals channel with a link to a guided walkthrough.</p>
           <div class="panel slack">
-            <p class="slack-ch mono">#approvals</p>
+            <p class="slack-ch mono">#product-approvals</p>
             <div class="slack-msg">
               <span class="avatar">A</span>
               <div>
                 <p><b>Alex</b> <span class="faint">via Bridgetown · 10:12</span></p>
-                <p>🤖 <span class="link">PR #3352</span> is green and ready for review: reject an empty region on /v4/orders. <span class="link">Walkthrough</span></p>
+                <p>🤖 <span class="link">PR #3345</span> is green and ready for review: import d3-shape from the package root. <span class="link">Walkthrough</span></p>
               </div>
             </div>
           </div>
@@ -150,12 +149,13 @@ const H = 120;
           <p class="step"><i class="dot dot-amber" aria-hidden="true"></i> 7 · Merge · Yours</p>
           <h3>You press Merge.</h3>
           <p class="caption">Approved and green, it waits in Needs you. Merging is always your click.</p>
-          <div class="panel">
-            <div class="act">
-              <span class="glyph green"><Icon name="git-merge" size={18} /></span>
-              <span><b>Merge fix(api): reject an empty region</b><span class="faint">#3352 · Approved · CI green</span></span>
-              <span class="primary">Merge</span>
-            </div>
+          <div class="panel shot">
+            <AppShot
+              src={sessionMerge}
+              crop={decision}
+              edge
+              alt="Bridgetown's session for merkl-app v2.15.0, Build failed: ready to merge. Merge fix(app): import d3-shape from the package root, #3345, approved by julien, CI green with 6 checks, Codex passed. A Merge button."
+            />
           </div>
         </li>
 
@@ -163,12 +163,13 @@ const H = 120;
           <p class="step"><i class="dot dot-amber" aria-hidden="true"></i> 8 · Release · Yours</p>
           <h3>You cut the release.</h3>
           <p class="caption">The next version is worked out for you. Tags are never pushed by an agent.</p>
-          <div class="panel">
-            <div class="act">
-              <span class="glyph"><Icon name="package" size={18} /></span>
-              <span><b>Ship api v1.35.12</b><span class="faint">Merged · ready to release</span></span>
-              <span class="primary">Cut v1.35.12</span>
-            </div>
+          <div class="panel shot">
+            <AppShot
+              src={sessionMerged}
+              crop={decision}
+              edge
+              alt="The same session, merged and ready to release. Ship merkl-app v2.15.0: merged #3345; cutting app-v2.15.1 starts the deploy, and approval stays with the reviewers. A Cut app-v2.15.1 button."
+            />
           </div>
         </li>
 
@@ -179,12 +180,12 @@ const H = 120;
             It is done when the release tracker confirms the deploy, and not before. Then it says so in the alert's thread.
           </p>
           <div class="panel">
-            <p class="deployed"><i class="dot dot-green" aria-hidden="true"></i> Deployed api v1.35.12 <span class="faint">production · 10:31</span></p>
+            <p class="deployed"><i class="dot dot-green" aria-hidden="true"></i> Deployed app-v2.15.1 <span class="faint">production · 10:31</span></p>
             <div class="slack-msg">
               <span class="avatar">A</span>
               <div>
                 <p><b>Alex</b> <span class="faint">via Bridgetown · in thread</span></p>
-                <p>🤖 Deployed v1.35.12 ✓</p>
+                <p>🤖 Deployed app-v2.15.1 ✓</p>
               </div>
             </div>
           </div>
@@ -322,42 +323,39 @@ const H = 120;
     font-weight: 500;
   }
 
-  .panel-head b {
-    color: var(--ui-text);
-    font-weight: 500;
-    font-variant-numeric: tabular-nums;
+  .fail {
+    color: var(--red);
   }
 
-  .panel-sub {
-    color: var(--ui-faint);
-    font-size: 0.8125rem;
-  }
-
-  .panel-sub .mono {
-    color: var(--ui-dim);
+  /* The build's own words, a line each, wrapped rather than scrolled: the error is the long
+     one. Wrapped as prose, so no space hangs past the panel's edge where a line breaks. */
+  .log {
+    margin: 0;
+    font-family: var(--mono);
     font-size: 0.78rem;
+    line-height: 1.65;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    color: var(--ui-dim);
   }
 
-  .chart {
-    width: 100%;
-    height: 7.5rem;
+  .ll {
+    display: block;
   }
 
-  .chart .line {
-    fill: none;
-    stroke: #fff;
-    stroke-width: 1.4;
-    vector-effect: non-scaling-stroke;
+  .ll.ok {
+    color: var(--ui-faint);
   }
 
-  .chart .area {
-    fill: rgb(255 255 255 / 0.07);
+  .ll.err {
+    color: oklch(0.72 0.14 22);
   }
 
-  .chart .deploy {
-    stroke: var(--amber);
-    stroke-width: 1.2;
-    vector-effect: non-scaling-stroke;
+  /* The app's screen fills its panel, edge to edge, its hairline at the panel's corners. */
+  .panel.shot {
+    --radius: 14px;
+    padding: 0;
+    overflow: hidden;
   }
 
   .diag {
@@ -543,42 +541,6 @@ const H = 120;
     color: oklch(0.72 0.14 252);
   }
 
-  .act {
-    display: grid;
-    grid-template-columns: 2rem minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 0.875rem;
-  }
-
-  .act b {
-    display: block;
-    font-weight: 500;
-  }
-
-  .act .faint {
-    font-size: 0.8125rem;
-  }
-
-  .glyph {
-    color: var(--ui-dim);
-  }
-
-  .glyph.green {
-    color: var(--green);
-  }
-
-  .primary {
-    display: inline-flex;
-    align-items: center;
-    height: 2rem;
-    padding: 0 0.875rem;
-    border-radius: 7px;
-    background: #ededed;
-    color: #000;
-    font-weight: 540;
-    white-space: nowrap;
-  }
-
   .yours .panel {
     box-shadow:
       0 0 0 1px oklch(0.8 0.15 74 / 0.55),
@@ -661,27 +623,7 @@ const H = 120;
 
   /* Each frame plays its proof once, when it first reaches the middle: .played, from reel.ts when
      the frames are in a row, from scripts/main.ts when they are stacked. */
-  :global(html.js) .chart .line {
-    stroke-dasharray: 1;
-    stroke-dashoffset: 1;
-    transition: stroke-dashoffset 1800ms var(--ease-in-out) 200ms;
-  }
-
-  :global(html.js) .chart .deploy,
-  :global(html.js) .chart .area {
-    opacity: 0;
-    transition: opacity 800ms var(--ease-out) 1400ms;
-  }
-
-  :global(html.js) .played .chart .line {
-    stroke-dashoffset: 0;
-  }
-
-  :global(html.js) .played .chart .deploy,
-  :global(html.js) .played .chart .area {
-    opacity: 1;
-  }
-
+  :global(html.js) .frame .ll,
   :global(html.js) .frame .dl,
   :global(html.js) .frame .rounds li,
   :global(html.js) .frame .checks li,
@@ -696,6 +638,7 @@ const H = 120;
       filter 500ms var(--ease-out);
   }
 
+  :global(html.js) .played .ll,
   :global(html.js) .played .dl,
   :global(html.js) .played .rounds li,
   :global(html.js) .played .checks li,
@@ -706,38 +649,14 @@ const H = 120;
     filter: none;
   }
 
-  .dl:nth-child(1), .rounds li:nth-child(1), .checks li:nth-child(1), .pr-body p:nth-child(1) { transition-delay: 150ms !important; }
-  .dl:nth-child(2), .rounds li:nth-child(2), .checks li:nth-child(2), .pr-body p:nth-child(2) { transition-delay: 450ms !important; }
-  .dl:nth-child(3), .rounds li:nth-child(3), .checks li:nth-child(3), .pr-body p:nth-child(3) { transition-delay: 750ms !important; }
-  .dl:nth-child(4), .rounds li:nth-child(4), .checks li:nth-child(4) { transition-delay: 1050ms !important; }
-  .dl:nth-child(5) { transition-delay: 1250ms !important; }
-  .dl:nth-child(6) { transition-delay: 1400ms !important; }
+  .ll:nth-child(1), .dl:nth-child(1), .rounds li:nth-child(1), .checks li:nth-child(1), .pr-body p:nth-child(1) { transition-delay: 150ms !important; }
+  .ll:nth-child(2), .dl:nth-child(2), .rounds li:nth-child(2), .checks li:nth-child(2), .pr-body p:nth-child(2) { transition-delay: 450ms !important; }
+  .ll:nth-child(3), .dl:nth-child(3), .rounds li:nth-child(3), .checks li:nth-child(3), .pr-body p:nth-child(3) { transition-delay: 750ms !important; }
+  .ll:nth-child(4), .dl:nth-child(4), .rounds li:nth-child(4), .checks li:nth-child(4) { transition-delay: 1050ms !important; }
+  .dl:nth-child(5), .checks li:nth-child(5) { transition-delay: 1250ms !important; }
+  .dl:nth-child(6), .checks li:nth-child(6) { transition-delay: 1400ms !important; }
   .dl:nth-child(7) { transition-delay: 1550ms !important; }
   .diag { transition-delay: 1700ms !important; }
-
-  /* The two buttons that are yours get pressed. */
-  :global(html.js) .played .primary {
-    animation: journey-press 1.6s var(--ease-out) 600ms both;
-  }
-
-  @keyframes journey-press {
-    0%,
-    30% {
-      transform: none;
-      box-shadow: 0 0 0 0 oklch(0.8 0.15 74 / 0);
-    }
-    40% {
-      transform: scale(0.93);
-      background: #cfcfcf;
-    }
-    55% {
-      transform: none;
-      box-shadow: 0 0 0 6px oklch(0.8 0.15 74 / 0.35);
-    }
-    100% {
-      box-shadow: 0 0 0 14px oklch(0.8 0.15 74 / 0);
-    }
-  }
 
   :global(html.js) .played .deployed .dot {
     animation: journey-land 900ms var(--ease-out) 300ms both;
@@ -758,16 +677,12 @@ const H = 120;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    :global(html.js) .chart .line {
-      stroke-dashoffset: 0;
-    }
+    :global(html.js) .frame .ll,
     :global(html.js) .frame .dl,
     :global(html.js) .frame .rounds li,
     :global(html.js) .frame .checks li,
     :global(html.js) .frame .pr-body p,
-    :global(html.js) .frame .diag,
-    :global(html.js) .chart .deploy,
-    :global(html.js) .chart .area {
+    :global(html.js) .frame .diag {
       opacity: 1;
       translate: 0 0;
       filter: none;

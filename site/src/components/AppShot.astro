@@ -1,0 +1,87 @@
+---
+// One of the real app's screens: src/assets/app/, captured at 2× from the running app with
+// demo data (scripts/showcase-screenshots.sh), so what the page shows is what Bridgetown
+// draws. Every screen is the open island, 1100 by 512 points, and every use draws it at about
+// that width, so one pair of sizes serves them all. `crop` shows part of it, in the image's
+// own pixels. Without one, a parent can set --ratio and --focus to fit it into another shape,
+// as object-fit does. `edge` draws the app's hairline around it, rounded like the island.
+import type { ImageMetadata } from "astro";
+import type { HTMLAttributes } from "astro/types";
+import { Picture } from "astro:assets";
+
+type Props = Omit<HTMLAttributes<"div">, "style"> & {
+  src: ImageMetadata;
+  alt: string;
+  crop?: { x: number; y: number; width: number; height: number };
+  edge?: boolean;
+  loading?: "eager" | "lazy";
+};
+const { src, alt, crop, edge = false, loading = "lazy", class: className, ...attributes } = Astro.props;
+
+const box = crop ?? { x: 0, y: 0, width: src.width, height: src.height };
+const pct = (v: number) => `${(v * 100).toFixed(4)}%`;
+const geometry = {
+  "--natural": `${box.width} / ${box.height}`,
+  ...(crop && {
+    "--crop-w": pct(src.width / crop.width),
+    "--crop-x": pct(-crop.x / crop.width),
+    "--crop-y": pct(-crop.y / crop.height),
+  }),
+};
+---
+
+<div class:list={["app-shot", crop && "cropped", edge && "edge", className]} style={geometry} {...attributes}>
+  <Picture
+    src={src}
+    alt={alt}
+    widths={[1100, 2200]}
+    sizes="1100px"
+    formats={["avif"]}
+    fallbackFormat="webp"
+    loading={loading}
+    decoding="async"
+    draggable="false"
+  />
+</div>
+
+<style>
+  .app-shot {
+    position: relative;
+    overflow: hidden;
+    aspect-ratio: var(--ratio, var(--natural));
+    background: #000;
+  }
+
+  .app-shot :global(img) {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: var(--focus, 50% 0);
+    user-select: none;
+  }
+
+  .cropped :global(img) {
+    position: absolute;
+    left: var(--crop-x);
+    top: var(--crop-y);
+    width: var(--crop-w);
+    max-width: none;
+    height: auto;
+  }
+
+  /* The island's bottom corners: 32 points of its 1100 by 512, the same share of the whole
+     screen at any size. A parent that fits it into another shape sets --radius. */
+  .edge {
+    border-radius: var(--radius, 2.909% / 6.25%);
+  }
+
+  .edge::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 1px var(--ui-hairline);
+    pointer-events: none;
+  }
+</style>
