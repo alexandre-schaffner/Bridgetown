@@ -152,8 +152,10 @@ const overviewAlt =
     color: var(--night-dim);
   }
 
-  /* With script: one viewport, pinned, while the board rises and the day comes. */
+  /* With script: one viewport, pinned, while the board rises and the day comes. --peek is how
+     far below the middle the board's top edge waits (scripts/main.ts): 86% down. */
   :global(html.js) .hero {
+    --peek: 0.36;
     height: 360svh;
     cursor: auto;
   }
@@ -168,8 +170,8 @@ const overviewAlt =
     overflow: clip;
   }
 
-  /* Centred in the room between the nav and the board's peeking edge (86% down, from `peek`
-     in scripts/main.ts); on a short screen it starts under the nav rather than behind it. */
+  /* Centred in the room between the nav and the board's peeking edge (--peek, above); on a
+     short screen it starts under the nav rather than behind it. */
   :global(html.js) .intro {
     position: absolute;
     left: var(--gutter);
@@ -219,7 +221,8 @@ const overviewAlt =
   }
 
   /* A phone: too narrow for the whole app to read, so it shows what needs you, the middle
-     column, cut from the full height. */
+     column, cut from the full height; short enough, centred, to clear the caption's three
+     lines above it. */
   @media (max-width: 600px) {
     .board-wrap,
     :global(html.js) .board-wrap {
@@ -229,7 +232,14 @@ const overviewAlt =
       --ratio: auto;
       --focus: 50% 0;
       --radius: 1.5rem;
-      height: min(var(--board-w) * 1.25, 100svh - 21rem);
+      height: min(var(--board-w) * 1.25, 100svh - 24rem);
+    }
+  }
+
+  /* The smallest phones: the caption at the lead's size, so it still takes three lines. */
+  @media (max-width: 360px) {
+    .caption {
+      font-size: var(--t-lead);
     }
   }
 
@@ -254,6 +264,20 @@ const overviewAlt =
     .actions {
       margin-top: 0.25rem;
       gap: 0.5rem 1.5rem;
+    }
+  }
+
+  /* A short phone upright (an iPhone SE, or most phones with Safari's toolbars showing): the
+     board peeks lower, its top edge 93% down, and the words take the room down to it. */
+  @media (max-height: 640px) and (orientation: portrait) {
+    :global(html.js) .hero {
+      --peek: 0.43;
+    }
+    :global(html.js) .intro {
+      bottom: 7svh;
+    }
+    h1 {
+      font-size: min(var(--size), 7.8svh);
     }
   }
 

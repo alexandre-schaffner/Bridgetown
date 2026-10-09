@@ -160,8 +160,11 @@ const boardWrap = $("[data-board-wrap]", hero);
 const boardTilt = finePointer && !reduced ? $("[data-board-tilt]", hero) : null;
 let boardW = 0;
 let boardH = 0;
+/** How far below the middle the board's top edge waits, in screens (Hero.astro's --peek). */
+let peekAt = 0.36;
 const measureBoard = () => {
   if (!boardWrap) return;
+  peekAt = parseFloat(getComputedStyle(hero).getPropertyValue("--peek")) || peekAt;
   boardW = boardWrap.offsetWidth;
   boardH = boardWrap.offsetHeight;
   hero.style.setProperty("--board-h", `${boardH}px`);
@@ -209,7 +212,7 @@ function playHero(p: number) {
   // The board waits at the foot of the screen, rises to the middle, holds, and goes.
   const rise = inOut(clamp(p / 0.3));
   const leave = smooth(0.6, 0.76, p);
-  const peek = innerHeight * 0.36 + boardH / 2;
+  const peek = innerHeight * peekAt + boardH / 2;
   boardY = lerp(peek, 0, rise) + (1 - intro.t) * innerHeight * 0.12 - leave * 50;
   boardS = lerp(0.9, 1, rise) * (1 - leave * 0.06);
   boardOn = intro.t * (1 - leave);

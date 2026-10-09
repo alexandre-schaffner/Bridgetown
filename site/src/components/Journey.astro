@@ -316,9 +316,12 @@ const decision = { x: 761, y: 65, width: 1059, height: 674 };
     color: var(--ui-faint);
   }
 
+  /* A file's path breaks anywhere rather than widen the panel, as on a narrow phone. */
   .panel-head {
     display: flex;
     justify-content: space-between;
+    gap: 0.75rem;
+    overflow-wrap: anywhere;
     color: var(--ui-dim);
     font-weight: 500;
   }
@@ -598,7 +601,7 @@ const decision = { x: 761, y: 65, width: 1059, height: 674 };
       margin-top: clamp(3rem, 7vh, 4.5rem);
     }
     .frame {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
       grid-template-areas: "step" "title" "caption" "panel";
     }
     .panel {

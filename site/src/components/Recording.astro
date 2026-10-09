@@ -1,7 +1,8 @@
 ---
 // Day, first thing through the arch: twenty seconds of a morning, recorded. The clip comes up
 // out of the hero's light, small between the two halves of the line, and grows to fill the
-// screen as you scroll.
+// screen as you scroll. A phone plays its own cut, zoomed on the notch as the next chapter is
+// (scripts/record.ts, island-phone): the whole screen at a phone's width can't be read.
 import Icon from "./Icon.astro";
 ---
 
@@ -20,9 +21,9 @@ import Icon from "./Icon.astro";
           loop
           playsinline
           preload="metadata"
-          poster="/media/island-poster.jpg"
           aria-label="A screen recording: tests run in a terminal while Bridgetown's island shows agents at work, drops a banner for a merge, opens, and the merge is settled from the notch."
         >
+          <source src="/media/island-phone.mp4" type="video/mp4" media="(max-width: 600px)" />
           <source src="/media/island.mp4" type="video/mp4" />
         </video>
         <button class="toggle" type="button" data-clip-toggle aria-label="Pause the recording">
@@ -66,13 +67,34 @@ import Icon from "./Icon.astro";
       });
       setPaused(userPaused);
     });
+    let inView = false;
+    const resume = () => {
+      if (inView && !userPaused) void video.play().catch(() => setPaused(true));
+      else video.pause();
+    };
     new IntersectionObserver(
       ([e]) => {
-        if (e!.isIntersecting && !userPaused) void video.play().catch(() => setPaused(true));
-        else video.pause();
+        inView = e!.isIntersecting;
+        resume();
       },
       { threshold: 0.25 },
     ).observe(video);
+
+    // The cut whose width this is, under its own poster. The browser picks a <source> once, so
+    // a phone turned on its side, or a window narrowed past a phone's width, swaps it here (as
+    // does a browser that ignores `media` and took the first).
+    const sources = [...video.querySelectorAll("source")];
+    const cut = () => sources.find((s) => !s.media || matchMedia(s.media).matches)!.src;
+    const sync = () => {
+      const src = cut();
+      video.poster = src.replace(/\.mp4$/, "-poster.jpg");
+      if (!video.currentSrc || video.currentSrc === src) return;
+      video.src = src;
+      resume();
+    };
+    sync();
+    video.addEventListener("loadedmetadata", sync);
+    for (const { media } of sources) if (media) matchMedia(media).addEventListener("change", sync);
 
     // In screens of scroll since the pin took hold: the first stretch lies over the hero's walk
     // into the light, and the screen develops out of it; then the clip grows.
@@ -100,7 +122,10 @@ import Icon from "./Icon.astro";
 </script>
 
 <style>
+  /* The film's shape, and the room its line and caption need above and below it at full size. */
   .recording {
+    --film: 1600 / 996;
+    --room: 12rem;
     padding-block: clamp(5rem, 12vh, 8rem);
   }
 
@@ -136,10 +161,11 @@ import Icon from "./Icon.astro";
 
   .frame {
     position: relative;
-    aspect-ratio: 1600 / 996;
+    aspect-ratio: var(--film);
     border-radius: 18px;
     overflow: hidden;
-    background: #0d0e10;
+    /* The poster, there before the script and without it (which sets the video's own). */
+    background: #0d0e10 url("/media/island-poster.jpg") center / cover no-repeat;
     box-shadow:
       0 1px 2px oklch(0.19 0.008 255 / 0.1),
       0 50px 100px -50px oklch(0.19 0.008 255 / 0.55);
@@ -175,10 +201,12 @@ import Icon from "./Icon.astro";
     opacity: 1;
   }
 
-  /* Without hover, there is no other way to find it. */
+  /* Without hover, there is no other way to find it, and a finger needs the room. */
   @media (hover: none) {
     .toggle {
       opacity: 1;
+      width: 2.75rem;
+      height: 2.75rem;
     }
   }
 
@@ -228,7 +256,7 @@ import Icon from "./Icon.astro";
 
   :global(html.js) .pin {
     /* The clip at full size; the line is sized so both halves fit beside it at its smallest. */
-    --clip-w: min(100cqw - 2 * var(--gutter), 96rem, (100svh - 12rem) * 1600 / 996);
+    --clip-w: min(100cqw - 2 * var(--gutter), 96rem, (100svh - var(--room)) * var(--film));
     position: sticky;
     top: 0;
     height: 100svh;
@@ -293,6 +321,19 @@ import Icon from "./Icon.astro";
   :global(html.js) .caption {
     opacity: var(--caption, 0);
     translate: 0 calc((1 - var(--caption, 0)) * 1rem);
+  }
+
+  /* The phone cut (the <source> above, at the same width): its own shape and poster, and as
+     wide as the screen while it and the caption still fit under it. */
+  @media (max-width: 600px) {
+    .recording {
+      --film: 400 / 440;
+      --room: 15rem;
+    }
+    .frame {
+      border-radius: 14px;
+      background-image: url("/media/island-phone-poster.jpg");
+    }
   }
 
   @media (max-width: 760px) {

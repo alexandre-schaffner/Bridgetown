@@ -3,7 +3,7 @@
 // of its own.
 
 import type { Page } from "playwright-core";
-import { LAPTOP, MACBOOK, PHONE, SHORT_PHONE, type Motion, type Viewport } from "./screens";
+import { LAPTOP, MACBOOK, PHONE, PHONE_SIDEWAYS, SHORT_PHONE, type Motion, type Viewport } from "./screens";
 
 /** One thing the page has to do. `run` throws a sentence saying what went wrong. */
 export interface Check {
@@ -16,6 +16,16 @@ export interface Check {
 
 function expect(ok: unknown, what: string): asserts ok {
   if (!ok) throw new Error(what);
+}
+
+/** The recording's film, its poster and the poster behind it (there without script), by name: "island island island". */
+async function recordingShows(page: Page) {
+  await page.waitForFunction(() => document.querySelector<HTMLVideoElement>("[data-clip-video]")!.currentSrc !== "");
+  return page.evaluate(() => {
+    const video = document.querySelector<HTMLVideoElement>("[data-clip-video]")!;
+    const name = (url: string) => /\/media\/([\w-]+?)(?:-poster)?\.(?:mp4|jpg)/.exec(url)?.[1] ?? "nothing";
+    return [video.currentSrc, video.poster, getComputedStyle(video.parentElement!).backgroundImage].map(name).join(" ");
+  });
 }
 
 export const CHECKS: Check[] = [
@@ -208,6 +218,55 @@ export const CHECKS: Check[] = [
       expect(opacity === "1", `it is drawn at opacity ${opacity}, shown only on hover`);
     },
   },
+  ...[
+    { viewport: PHONE, film: "island-phone", who: "A phone plays the recording's phone cut" },
+    { viewport: LAPTOP, film: "island", who: "A laptop plays the whole screen's recording" },
+  ].map(
+    ({ viewport, film, who }): Check => ({
+      name: `${who}, under its poster with script and without`,
+      viewport,
+      motion: "reduce",
+      async run(page) {
+        const shown = await recordingShows(page);
+        expect(shown === `${film} ${film} ${film}`, `film, poster and the frame's poster are ${shown}, not ${film}`);
+      },
+    }),
+  ),
+  {
+    name: "A phone turned on its side swaps the recording's phone cut for the whole screen",
+    viewport: PHONE,
+    motion: "reduce",
+    async run(page) {
+      await recordingShows(page);
+      await page.setViewportSize({ width: PHONE_SIDEWAYS.width, height: PHONE_SIDEWAYS.height });
+      // The film swaps at once; the frame's style a frame or so after it.
+      let shown = await recordingShows(page);
+      for (let tries = 0; tries < 30 && shown !== "island island island"; tries++) {
+        await page.waitForTimeout(100);
+        shown = await recordingShows(page);
+      }
+      expect(shown === "island island island", `film, poster and the frame's poster are ${shown}, not island`);
+    },
+  },
+  {
+    name: "On the smallest phone the hero's words stand clear of the board, and its caption too",
+    viewport: SHORT_PHONE,
+    motion: "reduce",
+    async run(page) {
+      const gap = (above: string, below: string) =>
+        page.evaluate(
+          ([above, below]) =>
+            Math.round(document.querySelector(below)!.getBoundingClientRect().top - document.querySelector(above)!.getBoundingClientRect().bottom),
+          [above, below] as const,
+        );
+      const words = await gap(".hero .actions", "[data-board-wrap]");
+      // Risen, the board stands in the middle and the caption over it.
+      await page.evaluate(() => scrollTo(0, innerHeight * 1.04));
+      await page.waitForTimeout(300);
+      const caption = await gap("[data-hero-caption]", "[data-board-wrap]");
+      expect(words >= 8 && caption >= 8, `the board comes ${-words}px over Watch the film, ${-caption}px over the caption`);
+    },
+  },
   {
     name: "Watch the film opens the dialog, fading in out of a blur",
     viewport: LAPTOP,
@@ -302,12 +361,14 @@ export const CHECKS: Check[] = [
     },
   },
   {
-    name: "Every film the page opens is there, with its poster",
+    name: "Every film the page opens or plays is there, with its poster",
     viewport: LAPTOP,
     motion: "reduce",
     async run(page) {
-      const films = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>("[data-open-film]")].map((b) => b.dataset.openFilm));
-      expect(films.length > 0, "nothing on the page opens a film");
+      const opened = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>("[data-open-film]")].map((b) => b.dataset.openFilm!));
+      expect(opened.length > 0, "nothing on the page opens a film");
+      // And the recording's two cuts, which play in the page.
+      const films = [...opened, "island", "island-phone"];
       const url = (path: string) => new URL(path, page.url()).href;
       for (const name of films) {
         const film = await page.request.get(url(`/media/${name}.mp4`), { headers: { Range: "bytes=0-1" } });
