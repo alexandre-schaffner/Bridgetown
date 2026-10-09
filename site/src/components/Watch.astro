@@ -1,53 +1,28 @@
 ---
-// Day, sunk. Bridgetown watching prod on its own: three hours of a signal in five-minute
-// steps, its usual level, and a rise no alert covers. The line draws as you scroll; when it
-// reaches the rise, the finding and its investigation appear.
-import { linePath, areaPath } from "../lib/spark";
-import { SIGNAL } from "../lib/story";
-
-const W = 1200;
-const H = 300;
-const PAD = 24;
-const { values, usual } = SIGNAL;
-const max = 80;
-const y = (v: number) => PAD + (1 - v / max) * (H - 2 * PAD);
-const x = (i: number) => (i / (values.length - 1)) * W;
-const riseFrom = x(values.length - 3) - 14;
-const median = [...values.slice(-3)].sort((a, b) => a - b)[1]!;
-const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
+// Day, sunk. Bridgetown watching prod on its own, as the app shows it: the prod column's API
+// 5xx far above its usual level, and the finding Bridgetown raised for it, which no Slack
+// alert covered. On a phone, the prod column alone, at a size that reads.
+import AppShot from "./AppShot.astro";
+import alertWatch from "../assets/app/alert-watch.png";
 ---
 
-<section class="watch day" id="watch" data-tone="sunk" data-watch aria-labelledby="watch-title">
+<section class="watch day" id="watch" data-tone="sunk" aria-labelledby="watch-title">
   <div class="wrap">
     <div class="chapter-head">
       <h2 id="watch-title" class="display">It watches production, too.</h2>
       <p class="lead">
         Every five minutes Bridgetown reads your dashboards. When a signal rises well above its usual level and no
-        alert covers it, Bridgetown opens an investigation of its own.
+        alert covers it, Bridgetown raises a finding of its own and starts an investigation, or suggests one in Needs
+        you when Jev doubts it.
       </p>
     </div>
 
-    <figure class="chart" data-chart>
-      <figcaption class="chart-head">
-        <span>API 5xx <span class="faint">· per 5 minutes · last 3 hours</span></span>
-        <span class="mono faint">Grafana</span>
-      </figcaption>
-      <div class="plot">
-        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={`API 5xx per five minutes over three hours: steady around ${Math.round(usual)}, then a rise to ${values.at(-1)!.toFixed(0)} in the last fifteen minutes.`}>
-          <rect x={riseFrom} y="0" width={W - riseFrom} height={H} class="rise" data-rise></rect>
-          <line x1="0" x2={W} y1={y(usual)} y2={y(usual)} class="usual"></line>
-          <path d={areaPath(values, W, H, PAD, max, 0)} class="area"></path>
-          <path d={linePath(values, W, H, PAD, max, 0)} class="line" pathLength="1" data-line></path>
-          <circle cx={x(values.length - 1)} cy={y(values.at(-1)!)} r="5" class="head" data-head></circle>
-        </svg>
-        <span class="usual-label" style={`--y:${(y(usual) / H).toFixed(4)}`}>usual · {Math.round(usual)}</span>
-        <div class="finding">
-          <p class="f-kind"><i class="dot dot-amber" aria-hidden="true"></i> Rise</p>
-          <p class="f-text">Median of the last 3 steps is {(median / usual).toFixed(1)}× usual. No Slack alert covers it.</p>
-          <p class="f-session"><i class="dot dot-blue live" aria-hidden="true"></i> Investigation started</p>
-        </div>
-      </div>
-      <div class="axis mono" aria-hidden="true">{times.map((t) => <span>{t}</span>)}</div>
+    <figure class="screen">
+      <AppShot
+        src={alertWatch}
+        edge
+        alt="Bridgetown open on a finding. Prod: API 5xx at 75, 4.9 times usual, its last bars in amber. The finding: API 5xx at 640 per 5 minutes, usually up to 43. Waiting on you: since 11:45 UTC, API 5xx has been 15 times its usual level for the past 3 hours; merkl-api v1.35.11 deployed at 11:41; no Slack alert has fired for it. No agent has run: Jev suggested one, and it is waiting in Needs you, with an Investigate button."
+      />
     </figure>
 
     <div class="notes">
@@ -64,31 +39,6 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
   </div>
 </section>
 
-<script>
-  import { $ } from "../lib/dom";
-  import { ScrollTrigger } from "../scripts/scroll";
-
-  const watch = $("[data-watch]");
-  const line = watch ? $<SVGPathElement>("[data-line]", watch) : null;
-  if (watch && line) {
-    const plot = $("[data-chart] .plot", watch)!;
-    const width = line.ownerSVGElement!.viewBox.baseVal.width;
-    ScrollTrigger.create({
-      trigger: $("[data-chart]", watch),
-      start: "top 85%",
-      end: "center 45%",
-      onUpdate: (s) => {
-        plot.style.setProperty("--draw", (1 - s.progress).toFixed(4));
-        // How far across the pen is, for the shade beneath it.
-        const at = line.getPointAtLength(s.progress * line.getTotalLength());
-        plot.style.setProperty("--reach", (at.x / width).toFixed(4));
-        if (s.progress > 0.985) watch.classList.add("risen");
-        else if (s.progress < 0.9) watch.classList.remove("risen");
-      },
-    });
-  }
-</script>
-
 <style>
   .watch {
     padding-block: clamp(7rem, 16vh, 11rem);
@@ -98,118 +48,12 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
     max-width: 11ch;
   }
 
-  .chart {
+  .screen {
     margin: 0;
-    padding: clamp(1.25rem, 2.5vw, 2rem);
-    border-radius: 16px;
-    background: var(--day);
-    box-shadow: 0 0 0 1px var(--line);
   }
 
-  .chart-head {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 1.25rem;
-    font-size: var(--t-small);
-    font-weight: 500;
-  }
-
-  .faint {
-    color: var(--ink-faint);
-    font-weight: 400;
-  }
-
-  .plot {
-    --plot-h: clamp(12rem, 30vh, 18rem);
-    position: relative;
-  }
-
-  svg {
-    width: 100%;
-    height: var(--plot-h);
-    overflow: visible;
-  }
-
-  .rise {
-    fill: oklch(0.8 0.15 74 / 0.12);
-  }
-
-  .usual {
-    stroke: var(--ink-faint);
-    stroke-width: 1;
-    stroke-dasharray: 3 5;
-    vector-effect: non-scaling-stroke;
-  }
-
-  .area {
-    fill: oklch(0.19 0.008 255 / 0.05);
-  }
-
-  .line {
-    fill: none;
-    stroke: var(--ink);
-    stroke-width: 1.75;
-    stroke-linejoin: round;
-    vector-effect: non-scaling-stroke;
-    stroke-dasharray: 1;
-    stroke-dashoffset: var(--draw, 0);
-  }
-
-  .head {
-    fill: var(--ink);
-    vector-effect: non-scaling-stroke;
-  }
-
-  /* On the dashed line, measured on the plot alone: on a phone the finding sits below it. */
-  .usual-label {
-    position: absolute;
-    top: calc(var(--y) * var(--plot-h));
-    left: 0;
-    translate: 0 -140%;
-    font-size: 0.75rem;
-    color: var(--ink-faint);
-  }
-
-  .finding {
-    position: absolute;
-    top: 0;
-    right: clamp(4.5rem, 9vw, 8rem);
-    display: grid;
-    gap: 0.375rem;
-    width: min(17rem, 60%);
-    padding: 0.875rem 1rem;
-    border-radius: 12px;
-    background: #000;
-    color: var(--ui-text);
-    font-size: 0.8125rem;
-    box-shadow: 0 16px 32px -16px oklch(0.19 0.008 255 / 0.5);
-  }
-
-  .f-kind,
-  .f-session {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-weight: 560;
-  }
-
-  .f-text {
-    color: var(--ui-dim);
-    line-height: 1.45;
-  }
-
-  .f-session {
-    margin-top: 0.25rem;
-    padding-top: 0.625rem;
-    border-top: 0.5px solid var(--ui-hairline);
-  }
-
-  .axis {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 0.75rem;
-    color: var(--ink-faint);
-    font-size: 0.75rem;
+  .screen :global(.app-shot) {
+    box-shadow: 0 30px 60px -36px oklch(0.19 0.008 255 / 0.55);
   }
 
   .notes {
@@ -229,65 +73,18 @@ const times = ["7:40", "8:10", "8:40", "9:10", "9:40", "10:10", "10:40"];
     font-weight: 560;
   }
 
-  /* With script, the line draws as you scroll and the finding waits for the rise. */
-  :global(html.js) .watch .plot {
-    --draw: 1;
-    --reach: 0;
-  }
-
-  /* The shade under the line keeps pace with its pen. */
-  :global(html.js) .watch .area {
-    clip-path: inset(0 calc((1 - var(--reach)) * 100%) 0 0);
-  }
-
-  :global(html.js) .watch [data-rise],
-  :global(html.js) .watch [data-head] {
-    opacity: 0;
-    transition: opacity 500ms var(--ease-out);
-  }
-
-  :global(html.js) .watch .finding {
-    opacity: 0;
-    translate: 0 0.75rem;
-    filter: blur(6px);
-    transition:
-      opacity 600ms var(--ease-out),
-      translate 700ms var(--ease-out),
-      filter 600ms var(--ease-out);
-  }
-
-  :global(html.js) .watch .f-session {
-    opacity: 0;
-    transition: opacity 500ms var(--ease-out) 700ms;
-  }
-
-  .watch:global(.risen) [data-rise],
-  .watch:global(.risen) [data-head] {
-    opacity: 1 !important;
-  }
-
-  .watch:global(.risen) .finding,
-  .watch:global(.risen) .f-session {
-    opacity: 1 !important;
-    translate: 0 0 !important;
-    filter: none !important;
-  }
-
-  /* Every other time on a phone; hidden, not removed, so the rest keep their places. */
-  @media (max-width: 400px) {
-    .axis span:nth-child(even) {
-      visibility: hidden;
-    }
-  }
-
   @media (max-width: 900px) {
     .notes {
       grid-template-columns: 1fr;
     }
-    .finding {
-      position: static;
-      width: auto;
-      margin-top: 1rem;
+  }
+
+  /* A phone: the prod column, 380 of the screen's 1100 points, cut from its full height. */
+  @media (max-width: 600px) {
+    .screen :global(.app-shot) {
+      --ratio: 380 / 512;
+      --focus: 0 0;
+      --radius: 1.25rem;
     }
   }
 </style>

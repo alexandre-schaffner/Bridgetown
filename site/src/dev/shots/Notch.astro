@@ -7,19 +7,9 @@ import MacScreen from "../../components/MacScreen.astro";
   <h2 class="day-title">It lives in the notch.</h2>
   <div class="mac-wrap" data-island-root><MacScreen class="film-mac" /></div>
   <p class="caption" data-caption></p>
-  <div class="dusk" data-dusk></div>
 </section>
 
 <style>
-  .dusk {
-    position: absolute;
-    inset: 0;
-    z-index: 10;
-    background: #000;
-    opacity: 0;
-    pointer-events: none;
-  }
-
   .day-shot {
     background: var(--day);
     color: var(--ink);

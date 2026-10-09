@@ -9,7 +9,6 @@ import { gsap } from "gsap";
 import type { Color } from "three";
 import { $, $$, cssRGB } from "../lib/dom";
 import { band, clamp, inOut, lerp, smooth } from "../lib/math";
-import { createBoard } from "./board";
 import { createDawn, type Dawn } from "./dawn";
 import { createReel } from "./reel";
 import type { ArchScene } from "./scene";
@@ -98,7 +97,7 @@ try {
   dawn = null;
 }
 dawn?.setDay(cssRGB("--day"));
-/** The pointer, -1 to 1, as the dawn follows it: eased toward `x`, `y`. */
+/** The pointer, -1 to 1, as the dawn and the board follow it: eased toward `x`, `y`. */
 const sunPointer = { x: 0, y: 0, ex: 0, ey: 0 };
 
 // The theme switch (Nav) changed what day is: the arch's flood and the dawn follow.
@@ -112,7 +111,6 @@ if (finePointer && !reduced) {
     const x = (e.clientX / innerWidth) * 2 - 1;
     const y = (e.clientY / innerHeight) * 2 - 1;
     scene?.setPointer(x, y);
-    board?.setPointer(x, y);
     sunPointer.x = x;
     sunPointer.y = y;
   });
@@ -157,10 +155,9 @@ ScrollTrigger.create({
   onUpdate: (s) => (heroP = s.progress),
 });
 
-// The board, live while you can see it. Measured once per layout, never while scrolling.
+// The board: the app, open. Measured once per layout, never while scrolling.
 const boardWrap = $("[data-board-wrap]", hero);
-const boardEl = $("[data-board]", hero);
-const board = boardEl ? createBoard(boardEl, { reducedMotion: reduced }) : null;
+const boardTilt = finePointer && !reduced ? $("[data-board-tilt]", hero) : null;
 let boardW = 0;
 let boardH = 0;
 const measureBoard = () => {
@@ -465,13 +462,13 @@ gsap.ticker.add(() => {
   if (heroLeads) {
     const dt = Math.min(0.05, gsap.ticker.deltaRatio(60) / 60);
     const flood = smooth(0.66, 0.9, heroP);
+    if (!reduced) dawnTime += dt;
+    // Without a mouse, the sun wanders along the edge on its own.
+    if (!finePointer && !reduced) sunPointer.x = Math.sin(dawnTime * 0.11) * 0.45;
+    const k = 1 - Math.exp(-dt * 2.4);
+    sunPointer.ex += (sunPointer.x - sunPointer.ex) * k;
+    sunPointer.ey += (sunPointer.y - sunPointer.ey) * k;
     if (dawn) {
-      if (!reduced) dawnTime += dt;
-      // Without a mouse, the sun wanders along the edge on its own.
-      if (!finePointer && !reduced) sunPointer.x = Math.sin(dawnTime * 0.11) * 0.45;
-      const k = 1 - Math.exp(-dt * 2.4);
-      sunPointer.ex += (sunPointer.x - sunPointer.ex) * k;
-      sunPointer.ey += (sunPointer.y - sunPointer.ey) * k;
       const w = boardW * boardS;
       const bh = boardH * boardS;
       dawn.render({
@@ -491,7 +488,10 @@ gsap.ticker.add(() => {
       heroMedia?.style.setProperty("--flood", flood.toFixed(3));
       heroMedia?.style.setProperty("--reach", (flood * 160).toFixed(1));
     }
-    if (board && boardOn > 0.05) board.tick(dt);
+    // The board leans a little toward the pointer, with the sun.
+    if (boardTilt && boardOn > 0.05) {
+      boardTilt.style.transform = `perspective(1600px) rotateX(${(-sunPointer.ey * 2.2).toFixed(3)}deg) rotateY(${(sunPointer.ex * 3.2).toFixed(3)}deg)`;
+    }
   }
 
   if (!scene) return;

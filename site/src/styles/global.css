@@ -80,7 +80,7 @@ html.theme-dark {
 }
 
 /* Black panels need an edge on a dark page. */
-html.theme-dark :is(.panel, .finding, .claim, .thread) {
+html.theme-dark :is(.panel, .claim, .thread) {
   box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.14) !important;
 }
 
@@ -346,23 +346,8 @@ html.js [data-sheet]::before {
   color: var(--ui-faint);
 }
 
-/* A dot for something happening now. Keyframe names are global (Astro scopes selectors, not
-   keyframes), so a component's own carry its name: film-arrive, island-glow. */
-.live {
-  animation: live-breathe 2.4s var(--ease-in-out) infinite;
-}
-
-@keyframes live-breathe {
-  50% {
-    opacity: 0.35;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .live {
-    animation: none;
-  }
-}
+/* Keyframe names are global (Astro scopes selectors, not keyframes), so a component's own
+   carry its name: film-arrive, island-glow. */
 
 @media (prefers-reduced-motion: reduce) {
   *,

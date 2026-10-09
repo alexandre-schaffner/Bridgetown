@@ -2,7 +2,7 @@
 // The montage, a word a beat, and the end card.
 import ArchMark from "../../components/ArchMark.astro";
 
-const montage = ["Triage.", "Diagnose.", "Fix.", "Review.", "Ship.", "Watch.", "Guard."];
+const montage = ["Triage.", "Fix.", "Review.", "Ship."];
 ---
 
 <section class="shot center" data-shot="montage">
@@ -10,11 +10,10 @@ const montage = ["Triage.", "Diagnose.", "Fix.", "Review.", "Ship.", "Watch.", "
 </section>
 
 <section class="shot over high end" data-shot="end">
-  <p class="kick mono">Introducing</p>
   <p class="mark"><ArchMark size={48} /></p>
   <h2 class="name sm">Bridgetown</h2>
-  <p class="end-line">Your alerts, handled before you look.</p>
-  <p class="end-small mono">Built for Merkl Infra · Apple silicon · macOS 14 or later · Download for macOS</p>
+  <p class="end-line">From Slack alert to reviewed fix. <span class="dim">Right in your Mac’s notch.</span></p>
+  <p class="end-small mono">Download for macOS · Apple silicon · macOS 14 or later</p>
 </section>
 
 <style>
@@ -34,16 +33,12 @@ const montage = ["Triage.", "Diagnose.", "Fix.", "Review.", "Ship.", "Watch.", "
     opacity: 0;
   }
 
-  .end .kick {
-    margin-bottom: 6px;
-  }
-
   .end-line {
     margin-top: 6px;
     font-size: 40px;
     font-weight: 500;
     letter-spacing: -0.025em;
-    color: var(--mid);
+    color: var(--hi);
   }
 
   .end-small {

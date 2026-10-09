@@ -1,0 +1,46 @@
+---
+// The notch recording rig, served by `astro dev` only (astro.config.mjs): the site's own Mac
+// screen, edge to edge, while tests run in the terminal and the island goes through its tour
+// (island.ts). Recorded at 1600 × 996 for the landing page's "You keep working" clip
+// (components/Recording.astro).
+import MacScreen from "../components/MacScreen.astro";
+import RigLayout from "./RigLayout.astro";
+---
+
+<RigLayout title="notch recording" rig="island">
+  <section class="notch" data-island-root>
+    <MacScreen class="film-mac" />
+  </section>
+
+  <script>
+    import "./island";
+  </script>
+</RigLayout>
+
+<style>
+  :global(html.island) {
+    background: var(--day);
+  }
+
+  .notch {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+  }
+
+  /* Just the screen, edge to edge, all of it. */
+  .notch :global(.film-mac) {
+    width: 100vw;
+  }
+
+  .notch :global(.screen) {
+    height: 900px;
+  }
+
+  .notch :global(.bezel) {
+    height: calc(900px * var(--k) + 14px);
+    border-radius: 0;
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+</style>

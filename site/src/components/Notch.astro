@@ -1,14 +1,14 @@
 ---
 // Day. On the other side of the arch: the top of a MacBook, and Bridgetown living in its
 // notch. Pinned while the island plays through its states (scripts/island.ts): wings, a
-// banner, the whole app, one click on Merge, folded away.
+// banner, the whole app, a session opened and merged, folded away.
 import MacScreen from "./MacScreen.astro";
 
 const steps = [
   {
     id: "wings",
     title: "Wings",
-    text: "Either side of the notch: the arch glows blue while agents work, and the count says how many.",
+    text: "Either side of the notch: the arch glows blue while agents work, and the count says what waits on you.",
   },
   {
     id: "banner",
@@ -18,12 +18,12 @@ const steps = [
   {
     id: "open",
     title: "The whole app",
-    text: "Click, and Bridgetown unfolds underneath: prod and status, what needs you, what the agents are doing.",
+    text: "Click, and Bridgetown unfolds underneath: prod, what needs you, what the agents are doing.",
   },
   {
     id: "merge",
     title: "One click",
-    text: "Settle it there. Merge, cut a release, send a reply, and the island folds away.",
+    text: "Settle it there: merge, cut the release, send the reply. Then it folds away.",
   },
 ];
 ---
@@ -45,8 +45,8 @@ const steps = [
         }
       </ol>
       <p class="try" hidden data-try>
-        <span class="pointer">Your turn: hover the notch, click it open, and settle what's there.</span>
-        <span class="touch">Your turn: tap the notch open, and settle what's there.</span>
+        <span class="pointer">Your turn: hover the notch, click it open, and merge what's ready to ship.</span>
+        <span class="touch">Your turn: tap the notch open, and merge what's ready to ship.</span>
       </p>
     </div>
   </div>

@@ -64,7 +64,7 @@ export const ALLOW: Allow[] = [
     // island.ts zooms while the screen inside the bezel is under 900px: the Mac is the page less
     // two 4vw gutters (MacScreen.astro), so up to a 1008px window.
     media: "(max-width: 1008px)",
-    why: "Narrow screens zoom the drawn Mac in on its notch (island.ts, fit): its menu bar, terminal and island wings or columns pass the bezel, and a phone sees only the open island's middle column.",
+    why: "Narrow screens zoom the drawn Mac in on its notch (island.ts, fit): its menu bar, terminal and island wings pass the bezel.",
   },
   {
     rule: "text-overlap",
@@ -74,25 +74,14 @@ export const ALLOW: Allow[] = [
   },
   {
     rule: "ellipsis",
-    within: "[data-island] .d",
-    why: "An island row's detail is one line and truncates, as the app's does; its title and the banner's never should.",
+    within: "[data-island] .b-title",
+    why: "The banner's title is one line and truncates, as the app's does (IslandView.swift, BannerContent).",
   },
   {
     rule: "clipped-text",
     within: "h1 .w",
     by: "h1 .w",
     why: "The hero's headline rises word by word, each inside a mask as tall as its line (Hero.astro): the font's box reaches past it, the glyphs don't.",
-  },
-  {
-    rule: "clipped-text",
-    within: "[data-board-wrap]",
-    by: "[data-hero] .stage",
-    why: "The hero's board waits at the foot of the screen, cut by its edge, until scrolling raises it (scripts/main.ts).",
-  },
-  {
-    rule: "ellipsis",
-    within: "[data-board-rows] .what",
-    why: "A board row's message and its source are a line each and truncate, as the app's rows do.",
   },
 ];
 
