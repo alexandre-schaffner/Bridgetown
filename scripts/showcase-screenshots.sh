@@ -17,6 +17,8 @@ mkdir -p site/src/assets/app
 for shot in "$run"/shots/*.dark.png; do
   cp "$shot" "site/src/assets/app/$(basename "$shot" .dark.png).png"
 done
+# A phone's hero (site/src/components/Hero.astro): the middle column alone, what needs you.
+(cd site && bun -e 'await (await import("sharp")).default("src/assets/app/tall-overview.png").extract({ left: 762, top: 65, width: 718, height: 1513 }).toFile("src/assets/app/needs-you.png")')
 cp "$run/shots/overview.dark.png" docs/images/bridgetown-overview.png
 cp "$run/shots/session-merge.dark.png" docs/images/bridgetown-session.png
 echo "Captured $(ls "$run"/shots/*.dark.png | wc -l | tr -d ' ') screens into site/src/assets/app and the README's two into docs/images"

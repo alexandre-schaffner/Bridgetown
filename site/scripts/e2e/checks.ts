@@ -189,24 +189,36 @@ export const CHECKS: Check[] = [
     },
   },
   {
-    name: "On the smallest phone the notch chapter's words stay on its pinned screen",
+    name: "On the smallest phone the notch's screen and the playing step's words share the screen",
     viewport: SHORT_PHONE,
     motion: "reduce",
     async run(page) {
-      // Halfway through the pin, the machine above and every line beneath it on screen.
-      await page.evaluate(() => {
-        const notch = document.querySelector<HTMLElement>("#notch")!;
-        scrollTo(0, notch.offsetTop + notch.offsetHeight / 2);
-      });
+      // The screen's top at the top of the view, as you'd read it.
+      await page.evaluate(() => scrollTo(0, document.querySelector("#notch [data-mac]")!.getBoundingClientRect().top + scrollY - 8));
       await page.waitForTimeout(300);
-      const out = await page.evaluate(() => {
-        const foot = Math.min(document.querySelector("#notch .pin")!.getBoundingClientRect().bottom, innerHeight);
-        return [...document.querySelectorAll<HTMLElement>("#notch .copy > *")]
-          .filter((el) => !el.hidden)
-          .map((el) => ({ text: el.innerText.trim().slice(0, 40), past: Math.round(el.getBoundingClientRect().bottom - foot) }))
-          .filter((el) => el.past > 0);
-      });
-      expect(out.length === 0, out.map((el) => `“${el.text}…” runs ${el.past}px past the screen's foot`).join("; "));
+      const past = await page.evaluate(() =>
+        Math.round(document.querySelector("#notch [data-step].on .s-text")!.getBoundingClientRect().bottom - innerHeight),
+      );
+      expect(past <= 0, `the step's words run ${past}px past the screen's foot`);
+    },
+  },
+  {
+    name: "On a phone the notch plays its steps by itself, and a tap picks one",
+    viewport: PHONE,
+    motion: "no-preference",
+    async run(page) {
+      const playing = () => page.evaluate(() => [...document.querySelectorAll("#notch [data-step]")].findIndex((s) => s.classList.contains("on")));
+      await page.evaluate(() => document.querySelector("#notch [data-mac]")!.scrollIntoView({ block: "center" }));
+      // Wings plays for 2.8s; give a busy machine room.
+      let later = 0;
+      for (let tries = 0; tries < 40 && later < 1; tries++) {
+        await page.waitForTimeout(200);
+        later = await playing();
+      }
+      expect(later >= 1, `after 8s in view it still plays step ${later + 1}`);
+      await page.click("#notch [data-step]:nth-child(4) [data-step-pick]");
+      const picked = await playing();
+      expect(picked === 3, `a tap on One click plays step ${picked + 1}`);
     },
   },
   {
@@ -249,22 +261,52 @@ export const CHECKS: Check[] = [
     },
   },
   {
-    name: "On the smallest phone the hero's words stand clear of the board, and its caption too",
+    name: "On the smallest phone the hero's words stand clear of the board, whose top edge peeks under them",
     viewport: SHORT_PHONE,
     motion: "reduce",
     async run(page) {
-      const gap = (above: string, below: string) =>
-        page.evaluate(
-          ([above, below]) =>
-            Math.round(document.querySelector(below)!.getBoundingClientRect().top - document.querySelector(above)!.getBoundingClientRect().bottom),
-          [above, below] as const,
-        );
-      const words = await gap(".hero .actions", "[data-board-wrap]");
-      // Risen, the board stands in the middle and the caption over it.
-      await page.evaluate(() => scrollTo(0, innerHeight * 1.04));
+      const { gap, peek } = await page.evaluate(() => {
+        const board = document.querySelector("[data-board-wrap]")!.getBoundingClientRect();
+        const words = document.querySelector(".hero .actions")!.getBoundingClientRect();
+        return { gap: Math.round(board.top - words.bottom), peek: Math.round(innerHeight - board.top) };
+      });
+      expect(gap >= 8 && peek >= 24, `the board stands ${gap}px under Watch the film, and ${peek}px of it peeks into the first screen`);
+    },
+  },
+  {
+    name: "On a phone the path swipes sideways, and the rail above it follows",
+    viewport: PHONE,
+    motion: "reduce",
+    async run(page) {
+      const pinned = await page.evaluate(() => getComputedStyle(document.querySelector("[data-journey-pin]")!).position);
+      await page.evaluate(() => {
+        const viewport = document.querySelector("[data-journey-viewport]")!;
+        viewport.scrollIntoView({ block: "center" });
+        const frames = viewport.querySelectorAll(".frame");
+        viewport.scrollLeft = frames[2]!.getBoundingClientRect().left - frames[0]!.getBoundingClientRect().left;
+      });
       await page.waitForTimeout(300);
-      const caption = await gap("[data-hero-caption]", "[data-board-wrap]");
-      expect(words >= 8 && caption >= 8, `the board comes ${-words}px over Watch the film, ${-caption}px over the caption`);
+      const done = await page.evaluate(() => document.querySelectorAll("#journey [data-rail].done").length);
+      expect(pinned !== "sticky" && done === 3, `the chapter is ${pinned}, and the rail marks ${done} steps at the third`);
+    },
+  },
+  {
+    name: "On a phone the download sends the page to your Mac instead",
+    viewport: PHONE,
+    motion: "reduce",
+    async run(page, requested) {
+      const shared = await page.evaluate(async () => {
+        let got: ShareData | null = null;
+        navigator.share = async (data) => void (got = data ?? null);
+        document.querySelector<HTMLElement>(".hero [data-download]")!.click();
+        await new Promise((r) => setTimeout(r, 100));
+        return got as ShareData | null;
+      });
+      const label = await page.locator(".hero [data-download]").innerText();
+      expect(
+        shared?.url === new URL("/", page.url()).href && label.trim() === "Send to your Mac" && !requested.some((r) => r.endsWith(".dmg")),
+        `the button says “${label.trim()}” and shares ${JSON.stringify(shared)}`,
+      );
     },
   },
   {
@@ -341,7 +383,7 @@ export const CHECKS: Check[] = [
     motion: "reduce",
     async run(page) {
       const torn = await page.evaluate(() => {
-        const note = document.querySelector("#download .note")!;
+        const note = document.querySelector("#download .note .for-mac")!;
         const text = [...note.childNodes].find((n) => n.textContent!.includes("Privacy"))!;
         const out: string[] = [];
         for (const name of ["System\u00a0Settings", "Privacy\u00a0&\u00a0Security", "Open\u00a0Anyway"]) {

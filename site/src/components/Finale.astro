@@ -12,13 +12,17 @@ import { download } from "../lib/download";
       <p class="lead">Works with the Slack, GitHub and Claude&nbsp;Code you already use.</p>
       <div class="get">
         <a class="button button-light" href={download.url} data-download>
-          <Icon name="download" size={15} stroke={2.2} />
-          Download for macOS
+          <span class="for-mac"><Icon name="download" size={15} stroke={2.2} />Download for macOS</span>
+          <span class="for-phone"><Icon name="share" size={15} stroke={2.2} />Send to your Mac</span>
+          <span class="when-copied"><Icon name="check" size={15} stroke={2.4} />Link copied</span>
         </a>
         <p class="meta mono">{download.metaParts.map((part) => <span>{part}</span>)}</p>
         <p class="note">
-          Not notarized yet. On first launch, open System&nbsp;Settings → Privacy&nbsp;&amp;&nbsp;Security →
-          Open&nbsp;Anyway.
+          <span class="for-mac">
+            Not notarized yet. On first launch, open System&nbsp;Settings → Privacy&nbsp;&amp;&nbsp;Security →
+            Open&nbsp;Anyway.
+          </span>
+          <span class="for-phone">Bridgetown runs on a Mac. Send yourself this page, and download it there.</span>
           <a href={download.notes}>Release notes and signatures</a>
         </p>
       </div>
@@ -137,6 +141,15 @@ import { download } from "../lib/download";
     display: block;
     margin-top: 0.25rem;
     color: var(--night-ink);
+  }
+
+  /* A phone: a shorter walk into the night before the arch. */
+  :global(html.phone) .finale {
+    padding-top: 35svh;
+  }
+
+  :global(html.phone) .finale::before {
+    height: 35svh;
   }
 
   .foot {

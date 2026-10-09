@@ -139,9 +139,13 @@ import { triageRows as rows } from "../lib/messages";
     padding-block: clamp(6rem, 14vh, 10rem);
   }
 
-  /* It slides in over the notch's last screen. */
+  /* It slides in over the notch's last screen; on a phone nothing is pinned to slide over. */
   :global(html.js) .triage {
     margin-top: -100svh;
+  }
+
+  :global(html.phone) .triage {
+    margin-top: 0;
   }
 
   .chapter-head .display {

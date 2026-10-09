@@ -2,14 +2,18 @@
 import AppShot from "./AppShot.astro";
 import Icon from "./Icon.astro";
 import { download } from "../lib/download";
+import needsYou from "../assets/app/needs-you.png";
 import overview from "../assets/app/overview.png";
 // Night, before dawn. The headline, large and alone, over the light breaking along the edge of
 // a dark world (scripts/dawn.ts). Scrolling raises Bridgetown out of that light, open as you
 // would find it: prod, what needs you, what the agents are doing. Then day floods the frame
-// and becomes the next chapter's screen.
+// and becomes the next chapter's screen. A phone (.phone) reads it top to bottom instead: the
+// words, then what needs you, its middle column alone (needs-you.png, cut from
+// tall-overview.png by scripts/showcase-screenshots.sh), standing in the dawn.
 
+// True of both: a phone sees only the middle column.
 const overviewAlt =
-  "Bridgetown open. Prod: API 5xx at 75, 4.9 times usual. Needs you, 12: answer Hugo about the sparkline work, reply to Pierre, switch the keeper's Arbitrum RPC. Agents, 6: on merkl-api alerts, one queued, one fixing, one in review, one starting.";
+  "Bridgetown open. Needs you, 12: answer Hugo about the sparkline work, reply to Pierre, switch the keeper's Arbitrum RPC, and ship three merged fixes.";
 ---
 
 <section class="hero night" id="top" data-hero aria-labelledby="hero-title">
@@ -23,8 +27,9 @@ const overviewAlt =
       </p>
       <div class="actions" data-rise>
         <a class="button button-light" href={download.url} data-download>
-          <Icon name="download" size={15} stroke={2.2} />
-          Download for macOS
+          <span class="for-mac"><Icon name="download" size={15} stroke={2.2} />Download for macOS</span>
+          <span class="for-phone"><Icon name="share" size={15} stroke={2.2} />Send to your Mac</span>
+          <span class="when-copied"><Icon name="check" size={15} stroke={2.4} />Link copied</span>
         </a>
         <button class="watch" type="button" data-open-film="launch">
           <span class="disc"><Icon name="play" size={12} stroke={2.4} /></span>
@@ -40,7 +45,7 @@ const overviewAlt =
 
     <div class="board-wrap" data-board-wrap>
       <div class="board" data-board-tilt>
-        <AppShot src={overview} alt={overviewAlt} edge loading="eager" />
+        <AppShot src={overview} narrow={needsYou} alt={overviewAlt} edge loading="eager" />
       </div>
     </div>
   </div>
@@ -289,5 +294,72 @@ const overviewAlt =
     :global(html.js) .caption {
       display: none;
     }
+  }
+
+  /* MARK: Phone
+
+     The page made for a phone (.phone, pages/index.astro): nothing pinned. The words fill the
+     first screen with the board's top edge peeking under them, and what needs you stands in
+     the dawn, dissolving into the light at its foot; day floods the frame as it goes
+     (scripts/main.ts). The caption would only say the lead again, low over the light. */
+  :global(html.phone) .hero {
+    height: auto;
+  }
+
+  :global(html.phone) .stage {
+    position: relative;
+    display: grid;
+    gap: 0;
+    height: auto;
+    padding: 0 var(--gutter) 6rem;
+    overflow: visible;
+  }
+
+  :global(html.phone) .intro {
+    position: relative;
+    inset: auto;
+    gap: 1.25rem;
+    min-height: 88svh;
+    padding-block: calc(var(--nav-h) + 1.5rem) 2.5rem;
+    align-content: center;
+  }
+
+  /* A short phone: the words closer under the nav and over the board, which still peeks. */
+  @media (max-height: 640px) {
+    :global(html.phone) .intro {
+      padding-block: calc(var(--nav-h) + 0.5rem) 1.5rem;
+    }
+  }
+
+  :global(html.phone) h1 {
+    max-width: none;
+    font-size: clamp(2.5rem, 12.8vw, 3.5rem);
+  }
+
+  :global(html.phone) .intro .lead {
+    font-size: var(--t-body);
+  }
+
+  :global(html.phone) .caption {
+    display: none;
+  }
+
+  :global(html.phone) .board-wrap {
+    --board-w: 100%;
+    position: relative;
+    left: auto;
+    top: auto;
+    width: 100%;
+    max-width: 30rem;
+    margin-inline: auto;
+    translate: none;
+    /* At its foot the column gives way to the light it stands in. */
+    mask-image: linear-gradient(180deg, #000 70%, transparent);
+  }
+
+  :global(html.phone) .board :global(.app-shot) {
+    --ratio: initial;
+    --radius: 1.125rem;
+    height: auto;
   }
 </style>

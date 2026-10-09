@@ -12,6 +12,8 @@ export { ScrollTrigger };
 
 export const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 export const finePointer = matchMedia("(pointer: fine)").matches;
+/** The page made for a phone (pages/index.astro): nothing pinned, nothing scrubbed by scroll. */
+export const phone = document.documentElement.classList.contains("phone");
 
 export const lenis = reduced ? null : new Lenis({ lerp: 0.09, wheelMultiplier: 0.95, touchMultiplier: 1.4 });
 if (lenis) {
