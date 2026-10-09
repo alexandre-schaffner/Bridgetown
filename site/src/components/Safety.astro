@@ -122,6 +122,7 @@ const rules = [
     grid-template-columns: 2.25rem minmax(0, 1fr);
     gap: 0.75rem;
     line-height: 1.45;
+    overflow-wrap: anywhere;
   }
 
   .msg.reply {
@@ -153,8 +154,10 @@ const rules = [
 
   .yours {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
+    gap: 0.5rem 1rem;
     padding-top: 1.125rem;
     border-top: 1px solid var(--line);
   }
@@ -238,6 +241,16 @@ const rules = [
     .split,
     .rule {
       grid-template-columns: 1fr;
+    }
+  }
+
+  /* A phone: the thread keeps its room for the words. */
+  @media (max-width: 600px) {
+    .thread {
+      padding: 1.125rem;
+    }
+    .msg.reply {
+      margin-left: 1.125rem;
     }
   }
 </style>

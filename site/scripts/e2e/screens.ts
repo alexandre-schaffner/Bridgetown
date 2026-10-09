@@ -17,11 +17,11 @@ export const DESKTOP: Viewport = { width: 1920, height: 1080, scale: 1, touch: f
 /** A phone turned on its side, where the pinned chapters lay their words out beside each other. */
 export const PHONE_SIDEWAYS: Viewport = { width: 812, height: 375, scale: 3, touch: true };
 /**
- * The smallest phone (an iPhone SE, first generation). Checks open it; the walk doesn't yet, as
- * the hero's board still covers the hero's caption and Watch the film button on it.
+ * The smallest phone (an iPhone SE, first generation), and about as tall as most phones are
+ * with Safari's toolbars showing.
  */
 export const SHORT_PHONE: Viewport = { width: 320, height: 568, scale: 2, touch: true };
-export const VIEWPORTS = [PHONE, PHONE_SIDEWAYS, TABLET, LAPTOP, MACBOOK, DESKTOP];
+export const VIEWPORTS = [SHORT_PHONE, PHONE, PHONE_SIDEWAYS, TABLET, LAPTOP, MACBOOK, DESKTOP];
 
 export const MOTIONS = ["reduce", "no-preference"] as const;
 export type Motion = (typeof MOTIONS)[number];

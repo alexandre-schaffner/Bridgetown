@@ -5,8 +5,10 @@
 //
 // usage: bun scripts/record.ts <film> [--fps 60] [--from <s>] [--to <s>] [--out <file>]
 //                                     [--poster <s>] [--stills <dir> [--every <s>]] [--silent]
-//   launch   the launch film, 1920 × 1080, scored (score.ts)          → public/media/launch.mp4
-//   island   the notch recording, 1600 × 996, saved 1280 wide          → public/media/island.mp4
+//   launch        the launch film, 1920 × 1080, scored (score.ts)     → public/media/launch.mp4
+//   island        the notch recording, 1600 × 996, saved 1280 wide     → public/media/island.mp4
+//   island-phone  the same, zoomed on the notch as on a phone, 400 × 440 at 2×
+//                                                                     → public/media/island-phone.mp4
 //   --poster <s>   also writes the frame at <s> seconds as <out>-poster.jpg, at the saved size
 //   --stills <dir> writes a PNG every --every seconds (default 1) instead of a video
 //   --silent       leaves a scored film unscored
@@ -28,10 +30,13 @@ interface Film {
   out: string;
   /** Saved narrower than it is drawn. */
   saveWidth?: number;
+  /** Device pixels per CSS pixel: a film drawn at a phone's width, sharp at a phone's density. */
+  scale?: number;
 }
 const FILMS: Record<string, Film> = {
   launch: { path: "/launch", width: 1920, height: 1080, out: "public/media/launch.mp4" },
   island: { path: "/island", width: 1600, height: 996, saveWidth: 1280, out: "public/media/island.mp4" },
+  "island-phone": { path: "/island", width: 400, height: 440, scale: 2, out: "public/media/island-phone.mp4" },
 };
 
 const args = process.argv.slice(2);
@@ -82,7 +87,7 @@ const server = await devServer();
 const browser = await launchBrowser();
 let code = 0;
 try {
-  const page = await browser.newPage({ viewport: { width: film.width, height: film.height }, deviceScaleFactor: 1 });
+  const page = await browser.newPage({ viewport: { width: film.width, height: film.height }, deviceScaleFactor: film.scale ?? 1 });
   await page.addInitScript(() => {
     let seed = 1;
     Math.random = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;

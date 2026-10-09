@@ -107,13 +107,15 @@ export function createIsland(
   // Fit the screen to the bezel (inside its 14px edges). Narrow screens zoom in on the notch
   // instead, letting the menu bar run off the sides: at 900px the open island and a little either
   // side stay in view; on a phone, as far as the open island's middle column, so what needs you
-  // can be read.
+  // can be read. --view-x is the screen's first point in view, which the terminal keeps clear of.
   const fit = () => {
     const inner = mac.clientWidth - 28;
     const span = 440 + (BOX_W + 32 - 440) * Math.min(1, Math.max(0, (inner - 320) / (900 - 320)));
     const k = inner < 900 ? inner / span : inner / SCREEN_W;
+    const ox = (inner - SCREEN_W * k) / 2;
     mac.style.setProperty("--k", String(k));
-    mac.style.setProperty("--ox", `${(inner - SCREEN_W * k) / 2}px`);
+    mac.style.setProperty("--ox", `${ox}px`);
+    mac.style.setProperty("--view-x", `${Math.max(0, -ox / k)}px`);
   };
   fit();
   new ResizeObserver(fit).observe(mac);

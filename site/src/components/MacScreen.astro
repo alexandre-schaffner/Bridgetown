@@ -64,6 +64,7 @@ Switched to a new branch 'search-cache'
   .mac {
     --k: 0.9;
     --ox: 0px;
+    --view-x: 0px;
     min-width: 0;
     width: min(100% - 2 * var(--gutter), 92rem);
     margin-inline: auto;
@@ -161,9 +162,10 @@ Switched to a new branch 'search-cache'
     z-index: 4;
   }
 
+  /* Zoomed in on the notch, the terminal moves under it, so its lines stay in view. */
   .window {
     position: absolute;
-    left: 120px;
+    left: max(120px, var(--view-x) + 28px);
     top: 150px;
     width: 640px;
     height: 420px;
