@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.0](https://github.com/alexandre-schaffner/Bridgetown/compare/v1.2.0...v1.3.0) (2026-10-09)
+
+
+### Features
+
+* clear alerts from Recent and pick in one list at a time ([#27](https://github.com/alexandre-schaffner/Bridgetown/issues/27)) ([d31406b](https://github.com/alexandre-schaffner/Bridgetown/commit/d31406bf6fbceffe48467162401586a193b12719))
+* **site:** fit the landing page to phones ([#29](https://github.com/alexandre-schaffner/Bridgetown/issues/29)) ([741635f](https://github.com/alexandre-schaffner/Bridgetown/commit/741635fe6929e5ed3c8e5d11d5100deec14ea3a7))
+
 ## [1.2.0](https://github.com/alexandre-schaffner/Bridgetown/compare/v1.1.0...v1.2.0) (2026-10-09)
 
 
