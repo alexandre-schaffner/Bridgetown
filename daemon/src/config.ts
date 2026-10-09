@@ -3,7 +3,7 @@ import { join } from "node:path"
 import { Context } from "effect"
 import { type Secrets, secretsFromEnv } from "./secrets.ts"
 
-export const VERSION = "1.1.0" // x-release-please-version
+export const VERSION = "1.2.0" // x-release-please-version
 
 export const GH_HOST = "nocturlab.ghe.com"
 export const GHE_REPO = "Merkl/monorepo"
