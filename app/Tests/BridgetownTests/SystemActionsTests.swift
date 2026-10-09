@@ -30,12 +30,14 @@ import Testing
     }
 
     /// A takeover waits on Terminal, and the first one on the Automation prompt; the island
-    /// keeps moving meanwhile.
+    /// keeps moving meanwhile. Ordered rather than timed: a busy runner can hold the main
+    /// actor for most of a second, but not past a script that takes two.
     @MainActor @Test func aScriptDoesntHoldTheMainActor() async throws {
-        let started = Date()
-        let script = Task { await SystemActions.runAppleScript("delay 1") }
+        let script = Task { () -> (String?, Date) in (await SystemActions.runAppleScript("delay 2"), Date()) }
         try await Task.sleep(for: .milliseconds(50))
-        #expect(Date().timeIntervalSince(started) < 0.8)
-        #expect(await script.value == nil)
+        let mainActorRan = Date()
+        let (error, scriptEnded) = await script.value
+        #expect(error == nil)
+        #expect(mainActorRan < scriptEnded)
     }
 }

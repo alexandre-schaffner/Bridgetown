@@ -184,7 +184,7 @@ jobs:
         working-directory: dist
         run: |
           gh api -H "Accept: application/vnd.github.raw" "repos/$GH_REPO/contents/app/Info.plist?ref=$TAG" \
-            | python3 -c 'import plistlib, sys; print("\n".join(plistlib.load(sys.stdin.buffer)["BridgetownUpdatePublicKeys"]))' > "$RUNNER_TEMP/public-keys"
+            | python3 -c 'import plistlib, sys; print("\n".join(plistlib.loads(sys.stdin.buffer.read())["BridgetownUpdatePublicKeys"]))' > "$RUNNER_TEMP/public-keys"
           base64 -d Bridgetown.dmg.sig > "$RUNNER_TEMP/dmg.sig"
           while read -r key; do
             # An Ed25519 SubjectPublicKeyInfo is this prefix, then the key's 32 bytes.
