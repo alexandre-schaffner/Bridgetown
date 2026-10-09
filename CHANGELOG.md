@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.0](https://github.com/alexandre-schaffner/Bridgetown/compare/v1.1.0...v1.2.0) (2026-10-09)
+
+
+### Features
+
+* configure memory models and improve error recovery ([#20](https://github.com/alexandre-schaffner/Bridgetown/issues/20)) ([9d5d0c3](https://github.com/alexandre-schaffner/Bridgetown/commit/9d5d0c3883118bd37162cd5336cae4e7d8f7eb89))
+* default automatic reviewing to GPT-6.1 Sol ([#22](https://github.com/alexandre-schaffner/Bridgetown/issues/22)) ([821c5c9](https://github.com/alexandre-schaffner/Bridgetown/commit/821c5c9df3aaf6bb14c1ae29952b7b561873b1e5))
+* notify about new releases and update the app in place ([#23](https://github.com/alexandre-schaffner/Bridgetown/issues/23)) ([a81900e](https://github.com/alexandre-schaffner/Bridgetown/commit/a81900e94495c42db355f175cb2f3226d2bbb5cd))
+
 ## [1.1.0](https://github.com/alexandre-schaffner/Bridgetown/compare/v1.0.2...v1.1.0) (2026-10-08)
 
 
