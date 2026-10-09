@@ -311,6 +311,25 @@ html.js [data-sheet]::before {
   transform: scale(0.97);
 }
 
+/* The download, said for where you are. A phone can't run it, so it sends the page to your
+   Mac instead (the share sheet, AirDrop among it; scripts/main.ts), and says so once a link is
+   only copied. Without script it is a download everywhere. */
+.for-phone,
+.when-copied {
+  display: none;
+}
+
+.for-mac,
+html.phone .for-phone,
+html.phone .copied .when-copied {
+  display: contents;
+}
+
+html.phone .for-mac,
+html.phone .copied .for-phone {
+  display: none;
+}
+
 .button-light {
   background: var(--night-ink);
   color: var(--night);

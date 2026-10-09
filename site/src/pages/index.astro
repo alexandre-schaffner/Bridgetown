@@ -32,10 +32,13 @@ const title = "Bridgetown: your alerts, handled before you look";
     <meta property="og:description" content={site.description} />
     <meta name="twitter:card" content="summary" />
     <script is:inline>
-      // Script on, and the theme resolved before the first paint so nothing flashes.
+      // Script on, and the theme resolved before the first paint so nothing flashes. A phone
+      // upright gets the page made for it (.phone): nothing pinned, every chapter at its own
+      // height, played in time as it arrives. Chosen once, so turning the phone keeps it.
       (() => {
         const root = document.documentElement;
         root.classList.add("js");
+        root.classList.toggle("phone", matchMedia("(max-width: 600px)").matches);
         let choice = "light";
         try {
           choice = localStorage.getItem("bridgetown-theme") || "light";

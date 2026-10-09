@@ -2,7 +2,8 @@
 // Day, first thing through the arch: twenty seconds of a morning, recorded. The clip comes up
 // out of the hero's light, small between the two halves of the line, and grows to fill the
 // screen as you scroll. A phone plays its own cut, zoomed on the notch as the next chapter is
-// (scripts/record.ts, island-phone): the whole screen at a phone's width can't be read.
+// (scripts/record.ts, island-phone): the whole screen at a phone's width can't be read. The page
+// made for a phone (.phone) doesn't pin it: the line, then the clip at full size, then its words.
 import Icon from "./Icon.astro";
 ---
 
@@ -44,7 +45,7 @@ import Icon from "./Icon.astro";
 <script>
   import { $ } from "../lib/dom";
   import { clamp, inOut, lerp, smooth } from "../lib/math";
-  import { reduced, ScrollTrigger } from "../scripts/scroll";
+  import { phone, reduced, ScrollTrigger } from "../scripts/scroll";
 
   // The clip grows from between the two halves of its line to fill the screen, and plays
   // only while you can see it.
@@ -106,18 +107,23 @@ import Icon from "./Icon.astro";
       set("--out", smooth(0.95, 1.45, d));
       set("--caption", smooth(1.65, 2.05, d));
     };
-    if (reduced) {
+    if (phone) {
+      // Nothing to grow out of: the hero's light has become day by the time it arrives.
+      for (const name of ["--enter", "--grow", "--out", "--caption"]) set(name, 1);
+    } else if (reduced) {
       // The clip at full size; the line's halves would only stand cut off at its sides. It still
       // fades in out of the light, or it would stand over the hero's board.
       for (const name of ["--grow", "--out", "--caption"]) set(name, 1);
     }
-    play(0);
-    ScrollTrigger.create({
-      trigger: recording,
-      start: "top top",
-      end: "bottom bottom",
-      onUpdate: (s) => play((s.progress * (recording.offsetHeight - innerHeight)) / innerHeight),
-    });
+    if (!phone) {
+      play(0);
+      ScrollTrigger.create({
+        trigger: recording,
+        start: "top top",
+        end: "bottom bottom",
+        onUpdate: (s) => play((s.progress * (recording.offsetHeight - innerHeight)) / innerHeight),
+      });
+    }
   }
 </script>
 
@@ -352,5 +358,66 @@ import Icon from "./Icon.astro";
     :global(html.js) .half.right {
       translate: 0 0;
     }
+  }
+
+  /* MARK: Phone
+
+     The page made for a phone (.phone, pages/index.astro): a chapter like the others, its
+     line whole and above the clip. */
+  :global(html.phone) .recording {
+    height: auto;
+    margin-top: 0;
+    padding-block: 5rem 4.5rem;
+    background: var(--day);
+  }
+
+  :global(html.phone) .recording::before {
+    content: none;
+  }
+
+  :global(html.phone) .pin {
+    position: static;
+    height: auto;
+    gap: 1.75rem;
+    justify-items: stretch;
+    width: min(100% - 2 * var(--gutter), 30rem);
+    overflow: visible;
+    container-type: normal;
+  }
+
+  :global(html.phone) .line {
+    position: static;
+    flex-direction: row;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 0 0.25em;
+    padding: 0;
+    font-size: var(--t-h2);
+    line-height: 1.04;
+    letter-spacing: -0.032em;
+    text-align: left;
+  }
+
+  :global(html.phone) .half,
+  :global(html.phone) .half.left,
+  :global(html.phone) .half.right {
+    flex: none;
+    translate: none;
+    opacity: 1;
+    filter: none;
+  }
+
+  :global(html.phone) .clip {
+    width: 100%;
+    transform: none;
+    opacity: 1;
+  }
+
+  :global(html.phone) .frame::after {
+    content: none;
+  }
+
+  :global(html.phone) .caption {
+    translate: none;
   }
 </style>

@@ -5,9 +5,10 @@
 // that width, so one pair of sizes serves them all. `crop` shows part of it, in the image's
 // own pixels. Without one, a parent can set --ratio and --focus to fit it into another shape,
 // as object-fit does. `edge` draws the app's hairline around it, rounded like the island.
+// `narrow` is what a phone shows instead, in its own shape: a phone fetches only that one.
 import type { ImageMetadata } from "astro";
 import type { HTMLAttributes } from "astro/types";
-import { Picture } from "astro:assets";
+import { getImage } from "astro:assets";
 
 type Props = Omit<HTMLAttributes<"div">, "style"> & {
   src: ImageMetadata;
@@ -15,8 +16,22 @@ type Props = Omit<HTMLAttributes<"div">, "style"> & {
   crop?: { x: number; y: number; width: number; height: number };
   edge?: boolean;
   loading?: "eager" | "lazy";
+  narrow?: ImageMetadata;
 };
-const { src, alt, crop, edge = false, loading = "lazy", class: className, ...attributes } = Astro.props;
+const { src, alt, crop, edge = false, loading = "lazy", narrow, class: className, ...attributes } = Astro.props;
+
+/** Where `narrow` takes over; the same width as the style's below. */
+const NARROW = "(max-width: 600px)";
+const formats = ["avif", "webp"] as const;
+const sizesOf = async (image: ImageMetadata, widths: number[], sizes: string, media?: string) =>
+  Promise.all(
+    formats.map(async (format) => ({ format, media, sizes, result: await getImage({ src: image, widths, sizes, format }) })),
+  );
+const sources = [
+  ...(narrow ? await sizesOf(narrow, [narrow.width / 2, narrow.width], "100vw", NARROW) : []),
+  ...(await sizesOf(src, [1100, 2200], "1100px")),
+];
+const fallback = sources.at(-1)!.result;
 
 const box = crop ?? { x: 0, y: 0, width: src.width, height: src.height };
 const pct = (v: number) => `${(v * 100).toFixed(4)}%`;
@@ -27,21 +42,29 @@ const geometry = {
     "--crop-x": pct(-crop.x / crop.width),
     "--crop-y": pct(-crop.y / crop.height),
   }),
+  ...(narrow && { "--natural-narrow": `${narrow.width} / ${narrow.height}` }),
 };
 ---
 
-<div class:list={["app-shot", crop && "cropped", edge && "edge", className]} style={geometry} {...attributes}>
-  <Picture
-    src={src}
-    alt={alt}
-    widths={[1100, 2200]}
-    sizes="1100px"
-    formats={["avif"]}
-    fallbackFormat="webp"
-    loading={loading}
-    decoding="async"
-    draggable="false"
-  />
+<div class:list={["app-shot", crop && "cropped", edge && "edge", narrow && "has-narrow", className]} style={geometry} {...attributes}>
+  <picture>
+    {
+      sources.map(({ format, media, sizes, result }) => (
+        <source srcset={result.srcSet.attribute} type={`image/${format}`} media={media} sizes={sizes} />
+      ))
+    }
+    <img
+      src={fallback.src}
+      srcset={fallback.srcSet.attribute}
+      sizes="1100px"
+      width={src.width / 2}
+      height={src.height / 2}
+      alt={alt}
+      loading={loading}
+      decoding="async"
+      draggable="false"
+    />
+  </picture>
 </div>
 
 <style>
@@ -50,6 +73,12 @@ const geometry = {
     overflow: hidden;
     aspect-ratio: var(--ratio, var(--natural));
     background: #000;
+  }
+
+  @media (max-width: 600px) {
+    .has-narrow {
+      aspect-ratio: var(--ratio, var(--natural-narrow));
+    }
   }
 
   .app-shot :global(img) {

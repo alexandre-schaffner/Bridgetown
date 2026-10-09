@@ -32,7 +32,7 @@ const decision = { x: 761, y: 65, width: 1059, height: 674 };
       }
     </ol>
 
-    <div class="viewport">
+    <div class="viewport" data-journey-viewport>
       <ol class="track" data-track>
         <li class="frame">
           <p class="step">1 · Diagnose</p>
@@ -316,7 +316,8 @@ const decision = { x: 761, y: 65, width: 1059, height: 674 };
     color: var(--ui-faint);
   }
 
-  /* A file's path breaks anywhere rather than widen the panel, as on a narrow phone. */
+  /* A file's path breaks anywhere rather than widen the panel, as on a narrow phone; the
+     status beside it never does. */
   .panel-head {
     display: flex;
     justify-content: space-between;
@@ -324,6 +325,11 @@ const decision = { x: 761, y: 65, width: 1059, height: 674 };
     overflow-wrap: anywhere;
     color: var(--ui-dim);
     font-weight: 500;
+  }
+
+  .panel-head > span + span {
+    flex: none;
+    overflow-wrap: normal;
   }
 
   .fail {
@@ -690,5 +696,48 @@ const decision = { x: 761, y: 65, width: 1059, height: 674 };
       translate: 0 0;
       filter: none;
     }
+  }
+
+  /* MARK: Phone
+
+     The page made for a phone (.phone, pages/index.astro): the frames in a row you swipe
+     through, each snapping to the gutter with the next one's edge in sight, and the rail above
+     them marking which one you're on (scripts/main.ts), its labels left to the frames. */
+  :global(html.phone) .rail {
+    display: grid;
+    margin-block: 2.5rem 1.75rem;
+  }
+
+  :global(html.phone) .rail span {
+    display: none;
+  }
+
+  :global(html.phone) .viewport {
+    margin-top: 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: var(--gutter);
+    scrollbar-width: none;
+  }
+
+  :global(html.phone) .viewport::-webkit-scrollbar {
+    display: none;
+  }
+
+  :global(html.phone) .viewport:focus-visible {
+    outline-offset: -2px;
+  }
+
+  :global(html.phone) .track {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.25rem;
+    width: max-content;
+  }
+
+  :global(html.phone) .frame {
+    width: min(100vw - 2 * var(--gutter) - 2rem, 26rem);
+    scroll-snap-align: start;
   }
 </style>

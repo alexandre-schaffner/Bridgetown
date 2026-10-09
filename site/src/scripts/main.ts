@@ -12,7 +12,7 @@ import { band, clamp, inOut, lerp, smooth } from "../lib/math";
 import { createDawn, type Dawn } from "./dawn";
 import { createReel } from "./reel";
 import type { ArchScene } from "./scene";
-import { finePointer, reduced, ScrollTrigger, sinceScroll } from "./scroll";
+import { finePointer, phone, reduced, ScrollTrigger, sinceScroll } from "./scroll";
 import { restView, type View } from "./view";
 
 // MARK: Scene
@@ -80,8 +80,10 @@ const watchFor = (ids: string[], rootMargin: string, then: () => void) => {
     if (el) io.observe(el);
   }
 };
-// Start once you are into the page; insist once a night chapter is a screen or so away.
-watchFor(["#notch", "#download"], "100% 0px", () => void loadScene());
+// Start once you are into the page; insist once a night chapter is a screen or so away. A
+// phone's page is shorter, and the work would stall the notch's tour as it plays: it starts a
+// few chapters before the arch instead.
+watchFor(phone ? ["#safety", "#download"] : ["#notch", "#download"], "100% 0px", () => void loadScene());
 watchFor(["#download"], "150% 0px", () => {
   urgent = true;
   void loadScene();
@@ -151,7 +153,8 @@ let heroP = 0;
 ScrollTrigger.create({
   trigger: hero,
   start: "top top",
-  end: "bottom bottom",
+  // A phone's hero isn't pinned: it scrolls by, all of it.
+  end: phone ? "bottom top" : "bottom bottom",
   onUpdate: (s) => (heroP = s.progress),
 });
 
@@ -202,6 +205,16 @@ let boardY = 0;
 let boardS = 1;
 
 function playHero(p: number) {
+  // A phone's board stands where the page puts it, under the words, and rises into place as
+  // they arrive; it is as present as the dawn behind it.
+  if (phone) {
+    boardOn = intro.t;
+    if (boardWrap) {
+      boardWrap.style.opacity = intro.t.toFixed(3);
+      boardWrap.style.transform = intro.t < 1 ? `translate3d(0,${((1 - intro.t) * 48).toFixed(1)}px,0)` : "";
+    }
+    return;
+  }
   // The words lift away first.
   const out = smooth(0.02, 0.2, p);
   if (heroIntro) {
@@ -259,14 +272,16 @@ if (!reduced) {
 // MARK: Journey
 
 // Wide screens pin the chapter and slide its reel past by scroll; narrow ones stack the
-// frames, each playing as it scrolls into view.
+// frames, each playing as it scrolls into view. A phone swipes through them instead, the
+// rail above marking which one it's on.
 const journey = $("[data-journey]");
 if (journey) {
   const pin = $("[data-journey-pin]", journey)!;
   const reel = createReel(journey, { tilt: !reduced });
   let sideways = false;
   const layout = () => {
-    sideways = reel.sideways;
+    // A phone's frames are in a row too, but it swipes them: nothing pinned.
+    sideways = reel.sideways && !phone;
     if (!sideways) {
       journey.style.height = "";
       pin.style.position = "";
@@ -300,6 +315,30 @@ if (journey) {
     { threshold: 0.4 },
   );
   $$(".frame", journey).forEach((f) => io.observe(f));
+
+  if (phone) {
+    const viewport = $("[data-journey-viewport]", journey)!;
+    const frames = $$(".frame", journey);
+    const rail = $$("[data-rail]", journey);
+    viewport.tabIndex = 0;
+    viewport.setAttribute("role", "group");
+    viewport.setAttribute("aria-label", "The path, one step at a time: swipe or scroll sideways");
+    let on = -1;
+    const mark = () => {
+      const left = viewport.getBoundingClientRect().left;
+      // The frame whose leading edge is nearest the gutter it snaps to.
+      const now = frames.reduce(
+        (best, f, i) =>
+          Math.abs(f.getBoundingClientRect().left - left) < Math.abs(frames[best]!.getBoundingClientRect().left - left) ? i : best,
+        0,
+      );
+      if (now === on) return;
+      on = now;
+      rail.forEach((r, i) => r.classList.toggle("done", i <= now));
+    };
+    viewport.addEventListener("scroll", mark, { passive: true });
+    mark();
+  }
 }
 
 // MARK: Finale
@@ -329,6 +368,31 @@ for (const link of $$("[data-download]")) {
   link.addEventListener("click", () => scene?.setLight("rest", 0.4));
 }
 
+// A phone can't run Bridgetown: its download buttons send this page to your Mac instead, by the
+// share sheet (AirDrop, Messages, Mail), or copy its link where there is none. Dismissing the
+// sheet does nothing.
+if (phone) {
+  const page = new URL("/", location.href).href;
+  for (const link of $$("[data-download]")) {
+    let copied = 0;
+    link.addEventListener("click", async (e) => {
+      e.preventDefault();
+      try {
+        if (navigator.share) {
+          await navigator.share({ title: "Bridgetown for macOS", text: "Bridgetown, for my Mac", url: page });
+          return;
+        }
+        await navigator.clipboard.writeText(page);
+        link.classList.add("copied");
+        clearTimeout(copied);
+        copied = window.setTimeout(() => link.classList.remove("copied"), 2400);
+      } catch {
+        // The sheet was dismissed, or the clipboard refused: the button stays as it was.
+      }
+    });
+  }
+}
+
 function finaleView(p: number): View {
   const v = restView();
   const t = inOut(p);
@@ -348,8 +412,9 @@ const toned = $$("main > .day").filter((s) => !s.hasAttribute("data-recording"))
 let sunk: [number, number][] = [];
 let lastTone = -1;
 
-// Chapters that slide in over the one before; what they cover sinks back as they come.
-const sheets = $$("[data-sheet]").map((sheet) => ({
+// Chapters that slide in over the one before; what they cover sinks back as they come. On a
+// phone nothing is pinned for one to slide over.
+const sheets = (phone ? [] : $$("[data-sheet]")).map((sheet) => ({
   sheet,
   under: sheet.previousElementSibling?.querySelector<HTMLElement>(".pin") ?? null,
   r: 0,
@@ -439,6 +504,9 @@ let dawnShown = false;
 gsap.ticker.add(() => {
   // Reads first, all of them, so no write below forces a layout in between.
   const h = onScreen(hero);
+  // A phone's board, where it scrolls to, and the hero's foot, which day floods the frame ahead of.
+  const phoneBoard = phone && h > 0 && boardWrap ? boardWrap.getBoundingClientRect() : null;
+  const heroFoot = phone && h > 0 ? hero.getBoundingClientRect().bottom : 0;
   const f = onScreen(finale);
   if (!reduced) for (const s of sheets) s.r = clamp(1 - s.sheet.getBoundingClientRect().top / innerHeight);
   const lit = outcomesNear
@@ -464,7 +532,9 @@ gsap.ticker.add(() => {
   document.documentElement.classList.toggle("hero-away", !heroLeads);
   if (heroLeads) {
     const dt = Math.min(0.05, gsap.ticker.deltaRatio(60) / 60);
-    const flood = smooth(0.66, 0.9, heroP);
+    // On a phone, day has filled the frame by the time the next chapter's edge is a third of
+    // the way up it, so the edge never shows.
+    const flood = phone ? smooth(innerHeight * 1.05, innerHeight * 0.35, heroFoot) : smooth(0.66, 0.9, heroP);
     if (!reduced) dawnTime += dt;
     // Without a mouse, the sun wanders along the edge on its own.
     if (!finePointer && !reduced) sunPointer.x = Math.sin(dawnTime * 0.11) * 0.45;
@@ -476,11 +546,14 @@ gsap.ticker.add(() => {
       const bh = boardH * boardS;
       dawn.render({
         time: dawnTime,
-        scroll: heroP,
+        // A phone's dawn breaks lower, where the board's top edge peeks (93% down rather than
+        // 86%), so none of the words stand in its glare; it rises past as you scroll.
+        scroll: phone ? heroP - 0.45 : heroP,
         intro: intro.dawn,
         flood,
         pointer: [sunPointer.ex, sunPointer.ey],
-        board: boardOn > 0.01 ? new DOMRect((innerWidth - w) / 2, (innerHeight - bh) / 2 + boardY, w, bh) : null,
+        board:
+          boardOn <= 0.01 ? null : (phoneBoard ?? new DOMRect((innerWidth - w) / 2, (innerHeight - bh) / 2 + boardY, w, bh)),
         boardOn,
       });
       if (!dawnShown) {

@@ -1,7 +1,9 @@
 ---
 // Day. On the other side of the arch: the top of a MacBook, and Bridgetown living in its
 // notch. Pinned while the island plays through its states (scripts/island.ts): wings, a
-// banner, the whole app, a session opened and merged, folded away.
+// banner, the whole app, a session opened and merged, folded away. Each step's title picks it.
+// The page made for a phone (.phone) doesn't pin it: the steps play in time, one after another
+// while the screen is in view, like stories, and a tap picks one.
 import MacScreen from "./MacScreen.astro";
 
 const steps = [
@@ -38,7 +40,9 @@ const steps = [
         {
           steps.map((s, i) => (
             <li data-step={s.id} class:list={[i === 0 && "on"]}>
-              <span class="s-title">{s.title}</span>
+              <button class="s-title" type="button" data-step-pick>
+                {s.title}
+              </button>
               <span class="s-text">{s.text}</span>
             </li>
           ))
@@ -57,7 +61,7 @@ const steps = [
   import { $, $$ } from "../lib/dom";
   import { clamp } from "../lib/math";
   import { createIsland } from "../scripts/island";
-  import { reduced, ScrollTrigger } from "../scripts/scroll";
+  import { lenis, phone, reduced, ScrollTrigger } from "../scripts/scroll";
 
   const notch = $("[data-notch]");
   if (notch) {
@@ -65,27 +69,97 @@ const steps = [
     const tryIt = $("[data-try]", notch);
     if (tryIt) tryIt.hidden = false;
     const steps = $$("[data-step]", notch);
-    const cuts = [0, 0.22, 0.46, 0.7, 1];
-    ScrollTrigger.create({
-      trigger: notch,
-      start: "top 60%",
-      // The last screen of the pin is the next chapter sliding over it.
-      end: () => `bottom-=${innerHeight} bottom`,
-      onToggle: (s) => island.setVisible(s.isActive),
-      onUpdate: (s) => {
-        // Pinning starts at "top top"; the first stretch before it is the approach.
-        const pinStart = innerHeight * 0.6;
-        const total = notch.offsetHeight - 2 * innerHeight + pinStart;
-        const p = clamp((s.progress * total - pinStart) / (total - pinStart));
-        const step = cuts.findIndex((c, i) => p >= c && p < (cuts[i + 1] ?? 2));
-        island.setStep(Math.max(0, step));
-        steps.forEach((el, i) => el.style.setProperty("--fill", clamp((p - cuts[i]!) / (cuts[i + 1]! - cuts[i]!)).toFixed(3)));
-      },
-    });
-    island.setVisible(true);
+    const picks = $$<HTMLButtonElement>("[data-step-pick]", notch);
+
+    if (phone) {
+      // How long each step plays, in ms: long enough for its whole script (scripts/island.ts)
+      // and a moment to read what it left.
+      const LENGTHS = [2800, 3800, 4200, 5400];
+      let at = 0;
+      let elapsed = 0;
+      let last = 0;
+      let raf = 0;
+      let inView = false;
+      // Once through, or once you take the island yourself, it waits for a tap.
+      let finished = false;
+      const show = (i: number) => {
+        at = i;
+        elapsed = 0;
+        island.setStep(i);
+        steps.forEach((el, j) => el.style.setProperty("--fill", j < i ? "1" : "0"));
+      };
+      const frame = (now: number) => {
+        raf = 0;
+        if (!inView || finished) return;
+        elapsed += now - last;
+        last = now;
+        const v = clamp(elapsed / LENGTHS[at]!);
+        steps[at]!.style.setProperty("--fill", (reduced ? 1 : v).toFixed(3));
+        if (v >= 1) {
+          if (at === steps.length - 1) {
+            finished = true;
+            return;
+          }
+          show(at + 1);
+        }
+        raf = requestAnimationFrame(frame);
+      };
+      const run = () => {
+        if (raf || !inView || finished) return;
+        last = performance.now();
+        raf = requestAnimationFrame(frame);
+      };
+      new IntersectionObserver(
+        ([e]) => {
+          inView = e!.isIntersecting;
+          island.setVisible(inView);
+          run();
+        },
+        { threshold: 0.4 },
+      ).observe($("[data-mac]", notch)!);
+      picks.forEach((b, i) =>
+        b.addEventListener("click", () => {
+          finished = false;
+          show(i);
+          run();
+        }),
+      );
+      for (const hit of $$("[data-island-hit], [data-target='merge']", notch)) {
+        hit.addEventListener("click", () => (finished = true));
+      }
+      show(0);
+    } else {
+      const cuts = [0, 0.22, 0.46, 0.7, 1];
+      // Pinning starts at "top top"; the first stretch before it is the approach.
+      const pinStart = () => innerHeight * 0.6;
+      const total = () => notch.offsetHeight - 2 * innerHeight + pinStart();
+      const trigger = ScrollTrigger.create({
+        trigger: notch,
+        start: "top 60%",
+        // The last screen of the pin is the next chapter sliding over it.
+        end: () => `bottom-=${innerHeight} bottom`,
+        onToggle: (s) => island.setVisible(s.isActive),
+        onUpdate: (s) => {
+          const p = clamp((s.progress * total() - pinStart()) / (total() - pinStart()));
+          const step = cuts.findIndex((c, i) => p >= c && p < (cuts[i + 1] ?? 2));
+          island.setStep(Math.max(0, step));
+          steps.forEach((el, i) => el.style.setProperty("--fill", clamp((p - cuts[i]!) / (cuts[i + 1]! - cuts[i]!)).toFixed(3)));
+        },
+      });
+      island.setVisible(true);
+      // A step's title scrolls to it, a little way into its stretch.
+      picks.forEach((b, i) =>
+        b.addEventListener("click", () => {
+          const progress = ((cuts[i]! + 0.02) * (total() - pinStart()) + pinStart()) / total();
+          const y = trigger.start + progress * (trigger.end - trigger.start);
+          if (lenis) lenis.scrollTo(y, { duration: 1.1, easing: (t) => 1 - (1 - t) ** 4 });
+          else scrollTo(0, y);
+        }),
+      );
+    }
 
     // The machine rises into place as the day arrives.
-    if (!reduced) {
+    if (!reduced && !phone) {
       gsap.fromTo(
         $("[data-mac]", notch),
         { y: 120, scale: 0.9, rotateX: 22, transformPerspective: 1400, transformOrigin: "50% 0%", opacity: 0.4 },
@@ -170,7 +244,14 @@ const steps = [
   }
 
   .s-title {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
     font-weight: 560;
+    text-align: left;
+    cursor: pointer;
   }
 
   .s-text {
@@ -319,5 +400,62 @@ const steps = [
     :global(html.js) .s-title {
       font-size: 0.8125rem;
     }
+  }
+
+  /* MARK: Phone
+
+     The page made for a phone (.phone, pages/index.astro): not pinned. The heading, the screen,
+     then the steps as tabs under it, each line filling while its step plays (the script above),
+     with a finger's room to tap one. */
+  :global(html.phone) .notch {
+    height: auto;
+    margin-top: 0;
+    padding-block: 5rem 4rem;
+  }
+
+  :global(html.phone) .pin {
+    position: static;
+    height: auto;
+    grid-template-rows: none;
+    gap: 1.75rem;
+    padding: 0;
+    overflow: visible;
+  }
+
+  :global(html.phone) .copy {
+    display: contents;
+  }
+
+  :global(html.phone) .copy > * {
+    width: min(100% - 2 * var(--gutter), 30rem);
+    margin-inline: auto;
+  }
+
+  :global(html.phone) .copy .display {
+    order: -1;
+    max-width: none;
+    font-size: var(--t-h2);
+  }
+
+  :global(html.phone) .steps {
+    margin-top: -0.25rem;
+    padding-bottom: 5rem;
+  }
+
+  :global(html.phone) .s-title {
+    min-height: 2.75rem;
+    padding-top: 1rem;
+  }
+
+  /* One step's words leave before the next one's arrive, so the two never overlap. */
+  :global(html.phone) .s-text {
+    height: 4.5rem;
+    font-size: var(--t-body);
+    transition-duration: 150ms;
+  }
+
+  :global(html.phone) .steps li.on .s-text {
+    transition-duration: 400ms;
+    transition-delay: 150ms;
   }
 </style>

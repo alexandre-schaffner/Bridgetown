@@ -12,7 +12,7 @@
   Referrer-Policy: strict-origin-when-cross-origin
   Strict-Transport-Security: max-age=31536000
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-fGCkwnf/LGc55IT34H4Cursq1wI9xP1MjdrPckGJ/2s='; style-src 'self'; style-src-attr 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-/KFClfVbQYWJXWHOWXl4C1iK2VpKmm1ubZmjMuOGyKs='; style-src 'self'; style-src-attr 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'
 
 # Hashed build output never changes under the same name.
 /_astro/*
