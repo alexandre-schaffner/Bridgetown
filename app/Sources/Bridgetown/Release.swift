@@ -49,6 +49,8 @@ struct AppVersion: Comparable, CustomStringConvertible, Codable, Sendable {
 struct Release: Equatable, Codable, Sendable {
     /// The asset `make dmg` builds and the release workflow uploads.
     static let dmgName = "Bridgetown.dmg"
+    /// The DMG's Ed25519 signature, base64, by the release key (`UpdateInstaller`).
+    static let signatureName = "Bridgetown.dmg.sig"
 
     let version: AppVersion
     /// The release page: its notes, and the way to install by hand.
@@ -56,21 +58,23 @@ struct Release: Equatable, Codable, Sendable {
     let dmg: URL
     /// The DMG's SHA-256, lowercase hex, as GitHub computed it on upload.
     let sha256: String
+    let signature: URL
 
     #if DEBUG
     /// A made-up release of this repository, for an e2e run or a test.
-    static func sample(_ version: String = "1.2.0", dmg: URL? = nil, sha256: String = "") -> Release {
+    static func sample(_ version: String = "1.2.0", dmg: URL? = nil, sha256: String = "", signature: URL? = nil) -> Release {
         let base = "https://github.com/\(GitHubReleases.repository)/releases"
         return Release(
             version: AppVersion(version)!, page: URL(string: "\(base)/tag/v\(version)")!,
-            dmg: dmg ?? URL(string: "\(base)/download/v\(version)/\(dmgName)")!, sha256: sha256
+            dmg: dmg ?? URL(string: "\(base)/download/v\(version)/\(dmgName)")!, sha256: sha256,
+            signature: signature ?? URL(string: "\(base)/download/v\(version)/\(signatureName)")!
         )
     }
     #endif
 }
 
 extension Release {
-    /// Reads GitHub's release JSON. A release without the DMG, or without its digest,
+    /// Reads GitHub's release JSON. A release without the DMG, its digest or its signature
     /// isn't one to install.
     init(json data: Data) throws {
         struct Payload: Decodable {
@@ -96,7 +100,13 @@ extension Release {
         guard let digest = asset.digest, digest.hasPrefix("sha256:") else {
             throw UpdateError("Bridgetown \(version) has no checksum for its download")
         }
-        self.init(version: version, page: payload.html_url, dmg: asset.browser_download_url, sha256: String(digest.dropFirst(7)).lowercased())
+        guard let signature = payload.assets.first(where: { $0.name == Self.signatureName }) else {
+            throw UpdateError("Bridgetown \(version) isn't signed for updates")
+        }
+        self.init(
+            version: version, page: payload.html_url, dmg: asset.browser_download_url,
+            sha256: String(digest.dropFirst(7)).lowercased(), signature: signature.browser_download_url
+        )
     }
 }
 
@@ -121,6 +131,17 @@ enum GitHubReleases {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard status == 200 else { throw UpdateError(status == 404 ? "No release published yet" : "GitHub answered \(status)") }
         return try Release(json: data)
+    }
+
+    /// A release's signature (`Release.signatureName`): 64 bytes, sent as base64.
+    static func signature(at url: URL) async throws -> Data {
+        let (data, response) = try await session.data(from: url)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else { throw UpdateError("Couldn't get the update's signature (HTTP \(status))") }
+        guard let signature = Data(base64Encoded: String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)),
+              signature.count == 64
+        else { throw UpdateError("The update's signature is unreadable") }
+        return signature
     }
 }
 

@@ -8,13 +8,13 @@ import os
 /// 1. downloads the DMG next to the app (same volume, so the swap is two renames);
 /// 2. checks its SHA-256 against the digest GitHub computed when the release workflow
 ///    uploaded it (releases are immutable once published);
-/// 3. mounts it read-only and copies Bridgetown.app out, refusing a bundle with another
-///    identifier, another version than the release's, or a signature that doesn't hold;
-/// 4. swaps it in for the running app, putting the old one back if the second rename fails.
-///
-/// What this proves is that the app is the one GitHub lists for the release, intact. It
-/// doesn't prove who built it: releases are signed ad hoc, so the signature only says the
-/// bundle hasn't changed since it was signed.
+/// 3. checks its Ed25519 signature against the public keys this app shipped with
+///    (`BridgetownUpdatePublicKeys` in Info.plist). Only the release workflow holds the
+///    private key, so a release published any other way, or a DMG swapped on the way, is
+///    refused before it is even mounted;
+/// 4. mounts it read-only and copies Bridgetown.app out, refusing a bundle with another
+///    identifier, another version than the release's, or a code signature that doesn't hold;
+/// 5. swaps it in for the running app, putting the old one back if the second rename fails.
 ///
 /// `relaunch` then waits for this process to quit and opens the new app, which removes the
 /// old one once it is up (`discard`); if it never comes up, the old one goes back. The
@@ -25,6 +25,11 @@ struct UpdateInstaller: Sendable {
     let destination: URL
     /// What the new bundle must call itself.
     let bundleIdentifier: String
+    /// What the DMG must be signed with, one of: two while the release key is rotated.
+    let publicKeys: [Curve25519.Signing.PublicKey]
+
+    /// The Info.plist entry holding `publicKeys`, each base64.
+    static let publicKeysEntry = "BridgetownUpdatePublicKeys"
 
     private static let log = Logger(subsystem: "xyz.merkl.bridgetown", category: "update")
 
@@ -33,8 +38,19 @@ struct UpdateInstaller: Sendable {
         guard let identifier = bundle.bundleIdentifier, bundle.bundleURL.pathExtension == "app" else {
             return .failure(UpdateError("Bridgetown isn't running from its app"))
         }
+        guard let keys = publicKeys(bundle.infoDictionary?[publicKeysEntry]) else {
+            return .failure(UpdateError("This build of Bridgetown can't check an update's signature."))
+        }
         if let obstacle = obstacle(to: bundle.bundleURL) { return .failure(obstacle) }
-        return .success(UpdateInstaller(destination: bundle.bundleURL, bundleIdentifier: identifier))
+        return .success(UpdateInstaller(destination: bundle.bundleURL, bundleIdentifier: identifier, publicKeys: keys))
+    }
+
+    /// The keys as Info.plist holds them, each its 32 bytes in base64; nil unless there is
+    /// at least one and each is a key.
+    static func publicKeys(_ entry: Any?) -> [Curve25519.Signing.PublicKey]? {
+        guard let strings = entry as? [String], !strings.isEmpty else { return nil }
+        let keys = strings.compactMap { Data(base64Encoded: $0).flatMap { try? Curve25519.Signing.PublicKey(rawRepresentation: $0) } }
+        return keys.count == strings.count ? keys : nil
     }
 
     /// Why `bundle` can't be swapped for another, if it can't: translocated (run from where
@@ -63,10 +79,15 @@ struct UpdateInstaller: Sendable {
             throw UpdateError("Couldn't make room next to \(destination.lastPathComponent)")
         }
         do {
+            let signature = try await GitHubReleases.signature(at: release.signature)
             let dmg = work.appending(path: Release.dmgName)
             try await Self.download(release.dmg, to: dmg, progress: progress)
             guard try Self.sha256(of: dmg) == release.sha256 else {
                 throw UpdateError("The download doesn't match its checksum")
+            }
+            let bytes = try Data(contentsOf: dmg, options: .alwaysMapped)
+            guard publicKeys.contains(where: { $0.isValidSignature(signature, for: bytes) }) else {
+                throw UpdateError("The download isn't signed by Bridgetown's release key")
             }
             let staged = try await stage(dmg, version: release.version, in: work)
             try swap(in: staged, keepingOldIn: work)

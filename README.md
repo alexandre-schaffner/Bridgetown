@@ -56,7 +56,7 @@ The selected reviewer checks the fix before the PR leaves draft. Blocking findin
 
 ### Updates
 
-Bridgetown checks GitHub for a newer release at launch and every 6 hours. A new version sends one notification and appears at the top of the prod column. Click **Install**, or use **Install Bridgetown x.y.z** in the **…** menu, to update. Bridgetown downloads the DMG and checks its SHA-256 against the digest GitHub recorded when the release was published. It then checks that the app inside has Bridgetown's bundle identifier and the release's version, and that its code signature is intact, before swapping it in and relaunching. Releases are signed ad hoc, so these checks show the download is the one GitHub lists for the release, undamaged; they don't prove who built it (see [Releasing](#releasing) to verify that). If any check fails, the app you have stays in place. If the new version doesn't open within a minute, the previous one goes back and opens instead. **Check for updates** in the same menu checks right away. To update in place, Bridgetown must run from a folder you can write to, such as Applications. If it runs from somewhere else, you get a download link instead.
+Bridgetown checks GitHub for a newer release at launch and every 6 hours. A new version sends one notification and appears at the top of the prod column. Click **Install**, or use **Install Bridgetown x.y.z** in the **…** menu, to update. Bridgetown downloads the DMG and checks its SHA-256 against the digest GitHub recorded when the release was published. It then checks the DMG's Ed25519 signature against a public key built into the app you have. Only the release workflow holds the private key, so a DMG published any other way is refused before it is opened. Last, it checks that the app inside has Bridgetown's bundle identifier and the release's version, and that its code signature is intact, before swapping it in and relaunching. If any check fails, the app you have stays in place. If the new version doesn't open within a minute, the previous one goes back and opens instead. **Check for updates** in the same menu checks right away. To update in place, Bridgetown must run from a folder you can write to, such as Applications. If it runs from somewhere else, you get a download link instead.
 
 ## Try it locally
 
@@ -253,7 +253,7 @@ On `main`, [release-please](https://github.com/googleapis/release-please) keeps 
 
 1. release-please tags the version and opens a draft release.
 2. A read-only macOS job builds the DMG and checks it with `scripts/verify-bundle.sh`.
-3. A separate job signs `SHA256SUMS` with cosign (keyless), attests the DMG's build provenance, uploads both to the draft, and publishes it. From then on the release and its tag are immutable.
+3. A separate job, in the `release` environment, signs the DMG for in-app updates (`Bridgetown.dmg.sig`) and checks that signature against the public keys in the tagged `app/Info.plist`. It then signs `SHA256SUMS` with cosign (keyless), attests the DMG's build provenance, uploads everything to the draft, and publishes it. From then on the release and its tag are immutable.
 4. The landing page redeploys so its download button names the new version.
 
 Verify a download:
@@ -265,5 +265,7 @@ cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 gh attestation verify Bridgetown.dmg -R alexandre-schaffner/Bridgetown
 ```
+
+In-app updates trust the Ed25519 keys listed in `BridgetownUpdatePublicKeys` in `app/Info.plist`, normally one. The private half is the `UPDATE_SIGNING_KEY` secret (PEM) in the `release` environment, which only deploys from `main`. GitHub can't give a secret back, so keep a backup elsewhere. To rotate the key, for example after it leaks or is lost, generate a new one (`openssl genpkey -algorithm ed25519`) and add its public half to the list. Once a release with both keys is out, replace the secret, and drop the old key in a later release. An app that can't check a signature (no key, or a broken one) offers the download instead of installing.
 
 If a build or publish fails, the draft and tag stay put: re-run the failed jobs, or run `release.yml` by hand with the draft's tag. The landing page also deploys on its own when `site/` changes on `main`, using Cloudflare repository secrets passed explicitly by the release workflow and the `production` environment to restrict deployment to `main`. That is the only way it ships: `bun run deploy` refuses to run outside GitHub Actions, so a working tree that was never committed can't go live and then vanish at the next deploy. To redeploy without a change, run `gh workflow run deploy-site.yml`.
