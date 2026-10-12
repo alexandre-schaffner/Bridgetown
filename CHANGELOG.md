@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.0](https://github.com/alexandre-schaffner/Bridgetown/compare/v1.3.0...v1.4.0) (2026-10-12)
+
+
+### Features
+
+* give Claude agents your own MCP servers, connectors and skills ([#32](https://github.com/alexandre-schaffner/Bridgetown/issues/32)) ([8355e95](https://github.com/alexandre-schaffner/Bridgetown/commit/8355e95f2ce712ea4233b13402122de9257b036b))
+* **site:** a page made for the phone ([#30](https://github.com/alexandre-schaffner/Bridgetown/issues/30)) ([4447eac](https://github.com/alexandre-schaffner/Bridgetown/commit/4447eac9b3ea6b8ad1f98feeffd7208999dd7d51))
+
 ## [1.3.0](https://github.com/alexandre-schaffner/Bridgetown/compare/v1.2.0...v1.3.0) (2026-10-09)
 
 
