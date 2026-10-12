@@ -43,17 +43,12 @@ const describeTool = (name: string, input: unknown): string => {
   return truncate(`${name.replace(/^mcp__/, "")} ${detail}`.trim(), 160)
 }
 
-/** What to tell the user about an MCP server sessions couldn't use. Claude sessions inherit the user's own servers. */
-export const mcpProblem = (name: string, status: string, provider: AgentProvider = "claude", configDir?: string | null): string => {
+/** What to tell the user about an MCP server sessions couldn't use. Sessions inherit the user's own servers. */
+export const mcpProblem = (name: string, status: string, provider: AgentProvider = "claude"): string => {
   if (name === "grafana") return "grafana MCP · sessions: not reachable. Run `bun grafana:mcp` in the monorepo."
-  if (provider === "codex") {
-    const command = `${configDir ? `CODEX_HOME='${configDir.replaceAll("'", `'\\''`)}' ` : ""}codex mcp`
-    return status === "needs-auth"
-      ? `${name} MCP · sessions: needs a login. Run \`${command} login ${name}\`.`
-      : `${name} MCP · sessions: ${status}. Check \`${command} get ${name}\`.`
-  }
-  if (status === "needs-auth") return `${name} MCP · sessions: needs a login. Run \`claude mcp login ${name}\`.`
-  return `${name} MCP · sessions: ${status}. Check \`claude mcp get ${name}\`.`
+  return status === "needs-auth"
+    ? `${name} MCP · sessions: needs a login. Run \`${provider} mcp login ${name}\`.`
+    : `${name} MCP · sessions: ${status}. Check \`${provider} mcp get ${name}\`.`
 }
 
 /** How a turn ended: a structured result to act on, or a reason it cannot be trusted. */
@@ -76,7 +71,7 @@ const reportMcp = (id: string, servers: ReadonlyArray<{ readonly name: string; r
     const down = wanted.filter((server) => server.status === "failed")
     yield* repo.log(id, down.length === 0 ? "status" : "error", `MCP: ${wanted.map((s) => `${s.name} ${s.status}`).join(", ") || "none configured"}`)
     const session = down.length === 0 ? undefined : yield* repo.get(id)
-    yield* hub.problem("mcp", down.length === 0 ? null : down.map((s) => mcpProblem(s.name, s.status, session?.provider, session?.agentConfigDir)).join(" "))
+    yield* hub.problem("mcp", down.length === 0 ? null : down.map((s) => mcpProblem(s.name, s.status, session?.provider)).join(" "))
   })
 
 /** Applies normalized provider events to the session. */
