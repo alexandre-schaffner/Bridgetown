@@ -98,6 +98,7 @@ TESTING_PLUGINS := $(shell d="$$(dirname "$$(xcrun --find swift 2>/dev/null)")/.
 
 test-app:
 	swift test --package-path app $(if $(TESTING_PLUGINS),-Xswiftc -plugin-path -Xswiftc "$(TESTING_PLUGINS)")
+	python3 scripts/test_app_termination.py
 
 # What CI checks, here: the daemon's types and tests, the app's tests, the site's build and
 # tests. (CI also bundles the app: make all.)

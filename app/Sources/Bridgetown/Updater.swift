@@ -3,9 +3,9 @@ import Foundation
 import Observation
 
 /// Keeps Bridgetown current from its GitHub releases: it asks for the latest release at
-/// launch and every few hours, says when a newer one is out (`onAvailable`, a notification
-/// once per version), and installs it in place when you ask (`UpdateInstaller`), then
-/// relaunches.
+/// launch, every six hours and after wake, says when a newer one is out (`onAvailable`,
+/// a notification once per version), and installs it in place when you ask
+/// (`UpdateInstaller`), then relaunches.
 ///
 /// Only a release build running from its .app checks: a debug binary has no version to
 /// compare. One that can't replace itself (translocated, on a read-only volume, in a
@@ -69,8 +69,9 @@ final class Updater {
     }
 
     typealias Feed = @Sendable () async throws -> Release
+    typealias Sleep = @Sendable (Duration) async throws -> Void
 
-    static let interval: Duration = .seconds(6 * 3600)
+    nonisolated static let interval: Duration = .seconds(6 * 3600)
     /// The install this launch may be the end of (`Pending`).
     private static let pendingKey = "updatePending"
 
@@ -91,8 +92,12 @@ final class Updater {
 
     @ObservationIgnored private let feed: Feed
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let sleep: Sleep
+    @ObservationIgnored private let wakeNotifications: NotificationCenter
     @ObservationIgnored private var loop: Task<Void, Never>?
+    @ObservationIgnored private var wakeLoop: Task<Void, Never>?
     @ObservationIgnored private var clearTask: Task<Void, Never>?
+    @ObservationIgnored private var isChecking = false
 
     /// This app, as its bundle says.
     convenience init(bundle: Bundle = .main) {
@@ -107,12 +112,22 @@ final class Updater {
         current: AppVersion?,
         installer: Result<UpdateInstaller, UpdateError>,
         defaults: UserDefaults = .standard,
+        sleep: @escaping Sleep = { try await Task.sleep(for: $0) },
+        wakeNotifications: NotificationCenter = NSWorkspace.shared.notificationCenter,
         feed: @escaping Feed = { try await GitHubReleases.latest() }
     ) {
         self.current = current
         self.installer = installer
         self.feed = feed
         self.defaults = defaults
+        self.sleep = sleep
+        self.wakeNotifications = wakeNotifications
+    }
+
+    deinit {
+        loop?.cancel()
+        wakeLoop?.cancel()
+        clearTask?.cancel()
     }
 
     /// Whether it checks at all: a release build, from its .app.
@@ -140,14 +155,23 @@ final class Updater {
     }
 
     /// Finishes the install this launch may be the end of, then checks now and every
-    /// `interval`.
+    /// `interval`, and whenever the Mac wakes.
     func start() {
         guard isEnabled, loop == nil else { return }
+        let wakes = wakeNotifications.notifications(named: NSWorkspace.didWakeNotification).map { _ in () }
+        wakeLoop = Task { [weak self] in
+            for await _ in wakes {
+                guard !Task.isCancelled, let self else { return }
+                await self.check(manual: false)
+            }
+        }
+        let sleep = self.sleep
         loop = Task { [weak self] in
             await self?.finishInstall()
             while !Task.isCancelled {
                 await self?.check(manual: false)
-                try? await Task.sleep(for: Self.interval)
+                do { try await sleep(Self.interval) }
+                catch { return }
             }
         }
     }
@@ -155,7 +179,9 @@ final class Updater {
     /// Asks GitHub for the latest release. One you asked for says how it went; one on its
     /// own only speaks up when there is something newer.
     func check(manual: Bool) async {
-        guard let current, !state.isBusy else { return }
+        guard let current, !state.isBusy, !isChecking else { return }
+        isChecking = true
+        defer { isChecking = false }
         clearTask?.cancel()
         if manual { state = .checking }
         do {

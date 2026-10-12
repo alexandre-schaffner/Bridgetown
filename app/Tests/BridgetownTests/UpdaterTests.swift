@@ -1,3 +1,4 @@
+import AppKit
 import CryptoKit
 import Foundation
 import os
@@ -69,6 +70,8 @@ import Testing
 
     private func updater(
         _ current: String?, installs: Bool = false, defaults: UserDefaults? = nil,
+        sleep: @escaping Updater.Sleep = { try await Task.sleep(for: $0) },
+        wakeNotifications: NotificationCenter = NotificationCenter(),
         feed: @escaping Updater.Feed = { UpdaterTests.release }
     ) -> Updater {
         let installer = UpdateInstaller(
@@ -78,8 +81,77 @@ import Testing
         return Updater(
             current: current.flatMap(AppVersion.init),
             installer: installs ? .success(installer) : .failure(UpdateError("Move Bridgetown to Applications to update it from here.")),
-            defaults: defaults ?? self.defaults(), feed: feed
+            defaults: defaults ?? self.defaults(), sleep: sleep,
+            wakeNotifications: wakeNotifications, feed: feed
         )
+    }
+
+    private actor FeedCalls {
+        private(set) var count = 0
+        func latest() -> Release {
+            count += 1
+            return UpdaterTests.release
+        }
+    }
+
+    private func waitForChecks(_ expected: Int, from calls: FeedCalls) async throws {
+        for _ in 0..<200 {
+            if await calls.count >= expected { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(await calls.count == expected)
+    }
+
+    @Test func checksAtLaunchAndFourTimesADayWithoutStartingTwoLoops() async throws {
+        let ticks = AsyncStream<Void>.makeStream()
+        defer { ticks.continuation.finish() }
+        let calls = FeedCalls()
+        let updater = updater("1.1.0", sleep: { interval in
+            #expect(interval == .seconds(6 * 3600))
+            for await _ in ticks.stream { return }
+            throw CancellationError()
+        }, feed: { await calls.latest() })
+        updater.start()
+        updater.start()
+        for expected in 1...5 {
+            try await waitForChecks(expected, from: calls)
+            if expected < 5 { ticks.continuation.yield(()) }
+        }
+        #expect(updater.state == .available(Self.release))
+    }
+
+    @Test func wakingChecksAgainWithoutWaitingForTheTimer() async throws {
+        let notifications = NotificationCenter()
+        let calls = FeedCalls()
+        let updater = updater("1.1.0", wakeNotifications: notifications, feed: { await calls.latest() })
+        updater.start()
+        try await waitForChecks(1, from: calls)
+        notifications.post(name: NSWorkspace.didWakeNotification, object: nil)
+        try await waitForChecks(2, from: calls)
+        #expect(updater.state == .available(Self.release))
+    }
+
+    @Test func wakeChecksDoNotOverlapAnInFlightCheck() async throws {
+        let notifications = NotificationCenter()
+        let releases = AsyncStream<Release>.makeStream()
+        defer { releases.continuation.finish() }
+        let calls = FeedCalls()
+        let updater = updater("1.1.0", wakeNotifications: notifications, feed: {
+            _ = await calls.latest()
+            for await release in releases.stream { return release }
+            throw CancellationError()
+        })
+        updater.start()
+        try await waitForChecks(1, from: calls)
+        notifications.post(name: NSWorkspace.didWakeNotification, object: nil)
+        await updater.check(manual: true)
+        try await Task.sleep(for: .milliseconds(20))
+        releases.continuation.yield(Self.release)
+        for _ in 0..<200 where updater.state != .available(Self.release) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(await calls.count == 1)
+        #expect(updater.state == .available(Self.release))
     }
 
     /// Each check that finds it says so; the notifier says it once (NotifierTests).
@@ -102,7 +174,7 @@ import Testing
     }
 
     @Test func onlyACheckYouAskedForSaysItFailed() async {
-        let offline = updater("1.1.0") { throw URLError(.notConnectedToInternet) }
+        let offline = updater("1.1.0", feed: { throw URLError(.notConnectedToInternet) })
         await offline.check(manual: false)
         #expect(offline.state == .idle)
         await offline.check(manual: true)
@@ -111,10 +183,10 @@ import Testing
     }
 
     @Test func aDebugBinaryNeverChecks() async {
-        let debug = updater(nil) {
+        let debug = updater(nil, feed: {
             Issue.record("checked")
             return UpdaterTests.release
-        }
+        })
         #expect(!debug.isEnabled)
         await debug.check(manual: true)
         #expect(debug.state == .idle)

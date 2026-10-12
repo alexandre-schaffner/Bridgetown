@@ -49,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var signalSources: [DispatchSourceSignal] = []
     private var newActions = NewActions()
+    private let termination = AppTermination()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Geist.register()
@@ -114,8 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Quit waits for the daemon to shut down (at most ~2.5s) without blocking the main
     /// thread, then lets the app go.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        let waiting = daemon.stop { NSApp.reply(toApplicationShouldTerminate: true) }
-        return waiting ? .terminateLater : .terminateNow
+        termination.reply(to: sender, stop: daemon.stop)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
