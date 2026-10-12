@@ -3,7 +3,7 @@ import type { NonNullableUsage, Options, SDKAssistantMessage, SDKResultSuccess, 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import type { SessionResult } from "../../src/agent/result.ts"
-import { TOOL_SERVER } from "../../src/agent/tools.ts"
+import { TOOL_SERVER } from "../../src/security/capabilities.ts"
 
 /**
  * What the Claude CLI does for the daemon, by hand, for the tests' agents and the mock's scripted one: the Agent SDK

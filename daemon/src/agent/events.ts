@@ -5,13 +5,12 @@ import type { AgentProvider } from "../domain/models.ts"
 import { Phase } from "../domain/session.ts"
 import { commandOf } from "../guard/bash.ts"
 import { WRITE_TOOLS } from "../guard/confine.ts"
-import type { HubShape } from "../hub.ts"
 import { truncate } from "../lib/text.ts"
 import type { SessionRepoShape } from "../sessions/repo.ts"
 import { ownPrUrl } from "../ship/pr.ts"
 import type { AgentEvent } from "./protocol.ts"
 import { SessionResult } from "./result.ts"
-import { TOOL_SERVER } from "./tools.ts"
+import { BROKER_PREFIX, TOOL_SERVER } from "../security/capabilities.ts"
 import { redactSecrets } from "../security/policy.ts"
 
 /** The schema lists phases in flow order. */
@@ -43,13 +42,11 @@ const describeTool = (name: string, input: unknown): string => {
   return truncate(`${name.replace(/^mcp__/, "")} ${detail}`.trim(), 160)
 }
 
-/** What to tell the user about an MCP server sessions couldn't use. Sessions inherit the user's own servers. */
-export const mcpProblem = (name: string, status: string, provider: AgentProvider = "claude"): string => {
-  if (name === "grafana") return "grafana MCP · sessions: not reachable. Run `bun grafana:mcp` in the monorepo."
-  return status === "needs-auth"
+/** What to tell the user about one of their own MCP servers a session couldn't use. */
+export const mcpProblem = (name: string, status: string, provider: AgentProvider = "claude"): string =>
+  status === "needs-auth"
     ? `${name} MCP · sessions: needs a login. Run \`${provider} mcp login ${name}\`.`
     : `${name} MCP · sessions: ${status}. Check \`${provider} mcp get ${name}\`.`
-}
 
 /** How a turn ended: a structured result to act on, or a reason it cannot be trusted. */
 export type TurnEnd =
@@ -58,20 +55,22 @@ export type TurnEnd =
 
 export interface EventSink {
   readonly repo: SessionRepoShape
-  readonly hub: HubShape
   /** Ends the query's input, so the CLI exits once it has sent its result. */
   readonly closeInput: () => void
   readonly onEnd: (end: TurnEnd) => Effect.Effect<void, AdapterError>
 }
 
-const reportMcp = (id: string, servers: ReadonlyArray<{ readonly name: string; readonly status: string }>, { repo, hub }: EventSink) =>
+/**
+ * Every other server is the user's own, and a session works without it, so a broken one goes in that session's
+ * transcript rather than in the app's problems. A server the user left disabled is their choice.
+ */
+const reportMcp = (id: string, servers: ReadonlyArray<{ readonly name: string; readonly status: string }>, { repo }: EventSink) =>
   Effect.gen(function* () {
     const wanted = servers.filter((server) => server.name !== TOOL_SERVER)
-    // A server the user left signed out or disabled is their choice, as in their own Claude Code; only a failure is a problem.
-    const down = wanted.filter((server) => server.status === "failed")
-    yield* repo.log(id, down.length === 0 ? "status" : "error", `MCP: ${wanted.map((s) => `${s.name} ${s.status}`).join(", ") || "none configured"}`)
+    const down = wanted.filter((server) => server.status === "failed" || server.status === "needs-auth")
     const session = down.length === 0 ? undefined : yield* repo.get(id)
-    yield* hub.problem("mcp", down.length === 0 ? null : down.map((s) => mcpProblem(s.name, s.status, session?.provider)).join(" "))
+    const hints = down.map((s) => ` ${mcpProblem(s.name, s.status, session?.provider)}`).join("")
+    yield* repo.log(id, down.some((s) => s.status === "failed") ? "error" : "status", `MCP: ${wanted.map((s) => `${s.name} ${s.status}`).join(", ") || "none configured"}.${hints}`)
   })
 
 /** Applies normalized provider events to the session. */
@@ -88,8 +87,7 @@ export const handleEvent = (id: string, event: AgentEvent, sink: EventSink): Eff
         if (event.text.trim() !== "") yield* repo.log(id, "text", redactSecrets(event.text), { activity: true })
         return
       case "tool": {
-        const prefix = `mcp__${TOOL_SERVER}__`
-        const name = event.name.startsWith(prefix) ? event.name.slice(prefix.length) : event.name
+        const name = event.name.startsWith(BROKER_PREFIX) ? event.name.slice(BROKER_PREFIX.length) : event.name
         if (["report", "ask", "slack_context", "StructuredOutput"].includes(name)) return
         yield* repo.log(id, "tool", redactSecrets(describeTool(name, event.input)), { activity: true })
         const phase = impliedPhase(name, event.input)

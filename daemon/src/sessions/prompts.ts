@@ -33,7 +33,7 @@ const replyLine = (reply: ThreadReply, max = Infinity): string => `[${AUTHORS[re
 /** The rules every automated turn starts with, alert or inbox. */
 const sharedRules = (branch: string): ReadonlyArray<string> => [
   "## Rules for this automated run",
-  "- Use Bridgetown's broker tools for shell, files, GitHub, Grafana and publishing. Built-in shell and file tools, subagents and repository MCP settings are unavailable. Any other MCP tools you have (Notion, for example), skills and web reads are the user's own: use them to gather context, never to post or change anything.",
+  "- Use Bridgetown's broker tools for shell, files, GitHub, Grafana and publishing. Built-in shell and file tools, subagents and repository MCP settings are unavailable. Any other MCP tools you have (Notion, for example) are the user's own, and only their reads (search, fetch, get, list…) are authorized: gather context with them, never post or change anything. Their Grafana, GitHub, Merkl and Slack tools are refused; use the broker's.",
   "- bt_run executes local commands with no network or credentials. bt_read_file / bt_list_files inspect source; bt_write_file edits it. Never read credentials or modify Git metadata, agent configuration or CI workflows.",
   "- bt_github reads only the configured repository. bt_observe reads only the approved Grafana metrics/log tools within the incident time window. Other production or onchain reads require human hand-off.",
   "- Never merge, tag, release, approve, re-run or cancel workflows, or post messages. Those are the user's actions in Bridgetown.",

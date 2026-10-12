@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { callTool, CODEX_TOOLS, makeToolServer, TOOL_SERVER, type ToolCallbacks } from "../../src/agent/tools.ts"
+import { callTool, CODEX_TOOLS, makeToolServer, type ToolCallbacks } from "../../src/agent/tools.ts"
+import { TOOL_SERVER } from "../../src/security/capabilities.ts"
 import { connectTools } from "../support/sdk.ts"
 
 const recordingTools = () => {

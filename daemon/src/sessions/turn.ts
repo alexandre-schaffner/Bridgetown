@@ -5,7 +5,6 @@ import { type EventSink, handleEvent, type TurnEnd } from "../agent/events.ts"
 import type { ToolCallbacks } from "../agent/tools.ts"
 import { AdapterError, errorMessage } from "../domain/errors.ts"
 import type { Session } from "../domain/session.ts"
-import type { HubShape } from "../hub.ts"
 import type { MemoryShape } from "../memory/memory.ts"
 import { truncate } from "../lib/text.ts"
 import type { SlackThreadShape } from "../slack/thread.ts"
@@ -32,7 +31,6 @@ export const makeTurnInput = (prompt: string) =>
 
 export interface TurnDeps {
   readonly store: StoreShape
-  readonly hub: HubShape
   readonly thread: SlackThreadShape
   readonly repo: SessionRepoShape
   readonly asks: AsksShape
@@ -94,7 +92,6 @@ export const makeTurns = (deps: TurnDeps) => {
         const end = { seen: false }
         const sink: EventSink = {
           repo,
-          hub: deps.hub,
           closeInput: () => void Queue.endUnsafe(input),
           onEnd: (turnEnd) => {
             end.seen = true

@@ -3,10 +3,9 @@ import { z } from "zod"
 import { VERSION } from "../config.ts"
 import type { Phase } from "../domain/session.ts"
 import { ownPrUrl } from "../ship/pr.ts"
-import { BROKER_TOOLS, BrokerRequest } from "../security/capabilities.ts"
+import { BROKER_TOOLS, BrokerRequest, TOOL_SERVER } from "../security/capabilities.ts"
 import { assertNoSecrets, evidence, redactSecrets } from "../security/policy.ts"
 
-export const TOOL_SERVER = "bridgetown"
 export interface ToolCallbacks {
   readonly memorySearch: (query: string) => Promise<string>
   readonly memoryRead: (path: string) => Promise<string>

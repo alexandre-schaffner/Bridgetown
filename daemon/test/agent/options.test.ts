@@ -15,7 +15,7 @@ describe("investigation configuration", () => {
       tools: { report: async () => {}, ask: async () => undefined, slackContext: async () => "", memorySearch: async () => "", memoryRead: async () => "", memoryRemember: async () => false },
     })
     expect(options.settingSources).toEqual(["user"])
-    expect(options.tools).toEqual(["ToolSearch", "WebFetch", "WebSearch", "Skill"])
+    expect(options.tools).toEqual(["ToolSearch", "WebSearch", "Skill"])
     expect(Object.keys(options.mcpServers ?? {})).toEqual(["bridgetown"])
     // `dontAsk` would refuse the broker's own MCP tools before canUseTool runs.
     expect(options.permissionMode).toBe("default")
@@ -34,8 +34,8 @@ test("the user's MCP tools run, while shell and files stay behind the broker", a
       report: async () => {}, ask: async () => undefined, slackContext: async () => "",
     },
   })
-  for (const name of ["Bash", "Read", "Write", "Task", "mcp__bridgetown__unknown", "mcp__bridgetown__memory_read", "mcp__claude_ai_Notion__notion-fetch", "ToolSearch", "WebFetch"]) {
-    const decision = ["Bash", "Read", "Write", "Task", "mcp__bridgetown__unknown"].includes(name) ? "deny" : "allow"
+  for (const name of ["Bash", "Read", "Write", "Task", "mcp__bridgetown__unknown", "mcp__bridgetown__memory_read", "mcp__claude_ai_Notion__notion-fetch", "mcp__claude_ai_Notion__notion-update-page", "ToolSearch", "WebFetch"]) {
+    const decision = ["Bash", "Read", "Write", "Task", "mcp__bridgetown__unknown", "mcp__claude_ai_Notion__notion-update-page", "WebFetch"].includes(name) ? "deny" : "allow"
     expect((await options.canUseTool?.(name, { path: "MEMORY.md" }, { signal: new AbortController().signal, toolUseID: "test", requestId: "test" }))?.behavior).toBe(decision)
     const hook = options.hooks?.PreToolUse?.[0]?.hooks[0]
     const reply = await hook?.({ hook_event_name: "PreToolUse", tool_name: name, tool_input: {}, tool_use_id: "test", session_id: "test", transcript_path: "", cwd: home }, "test", { signal: new AbortController().signal })

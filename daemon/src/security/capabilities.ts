@@ -21,26 +21,65 @@ export const BrokerRequest = z.discriminatedUnion("tool", [
 ])
 export type BrokerRequest = z.infer<typeof BrokerRequest>
 
+/** The in-process MCP server that carries the broker tools, and the prefix its tools have. */
+export const TOOL_SERVER = "bridgetown"
+export const BROKER_PREFIX = `mcp__${TOOL_SERVER}__`
+
 /** Provider built-ins cannot run code or read files behind the broker's back. */
 export const investigationToolRefusal = (name: string): string | undefined => {
-  const tool = name.startsWith("mcp__bridgetown__") ? name.slice("mcp__bridgetown__".length) : name
+  const tool = name.startsWith(BROKER_PREFIX) ? name.slice(BROKER_PREFIX.length) : name
   if (["report", "ask", "slack_context", "memory_search", "memory_read", "memory_remember", "StructuredOutput", ...Object.keys(BROKER_TOOLS).map((name) => `bt_${name}`)].includes(tool)) return undefined
   return `Use Bridgetown's broker tools. The ${name} tool is not authorized in this investigation.`
 }
 
-/** Claude built-ins a session keeps alongside the user's MCP servers. None runs code or touches files on this machine. */
-export const INHERITED_BUILTINS = ["ToolSearch", "WebFetch", "WebSearch", "Skill"] as const
+/**
+ * Claude built-ins a session keeps alongside the user's MCP servers. None runs code or touches files on this machine,
+ * and none sends a request to an address the model chooses: WebFetch would carry evidence out in a URL.
+ */
+export const INHERITED_BUILTINS: ReadonlyArray<string> = ["ToolSearch", "WebSearch", "Skill"]
 
 /**
- * Investigations inherit the user's own MCP servers: claude.ai connectors (Notion, Slack…) for Claude, ChatGPT apps
- * for Codex, and plugins for both. Shell, files and subagents still go through the broker.
+ * Services the broker already reads within limits (repository, incident window, rows, the alert's thread); a user's own
+ * server for one would skip them. Matched on the whole name, since Codex puts every ChatGPT app under one server.
+ */
+const BROKERED_SERVICE = /grafana|github|merkl|slack/i
+const READ_VERBS = new Set(["search", "fetch", "get", "list", "read", "query", "find", "view", "describe", "lookup", "retrieve", "show", "count", "inspect"])
+const WRITE_VERBS = new Set([
+  "create", "update", "delete", "remove", "send", "post", "put", "patch", "write", "edit", "move", "duplicate", "copy", "clone", "restore", "publish",
+  "sync", "upload", "download", "export", "import", "spawn", "start", "stop", "run", "execute", "exec", "trigger", "deploy", "set", "add", "insert",
+  "replace", "append", "comment", "reply", "respond", "share", "invite", "archive", "merge", "approve", "reject", "close", "open", "cancel", "enable",
+  "disable", "login", "logout", "schedule", "react", "mark", "assign", "submit", "save", "upsert", "apply", "rename", "transfer", "generate", "convert",
+  "batch", "mutate", "modify", "change", "notify", "forward", "resolve", "revoke", "grant", "push", "commit", "reset", "clear", "purge", "drop", "lock",
+  "unlock", "launch", "restart", "kill", "terminate", "fork", "sign", "pay", "book", "rollback", "release", "promote", "scale", "toggle", "subscribe",
+  "unsubscribe", "join", "leave", "pin", "unpin", "star", "label", "tag", "follow", "mute", "block", "accept", "decline", "dismiss", "draft", "compose",
+  "upgrade", "install", "uninstall", "register", "configure", "connect", "disconnect", "authorize", "refresh",
+])
+const words = (tool: string): ReadonlyArray<string> => tool.split(/[^A-Za-z0-9]+|(?<=[a-z0-9])(?=[A-Z])/).filter(Boolean).map((word) => word.toLowerCase())
+
+/**
+ * An inherited MCP tool runs with the user's own accounts and nobody approves it, so only reads get through: its name
+ * must say it reads (search, get, list…) and must not say it writes (create, send, update…). Unknown verbs are refused.
+ */
+const inheritedMcpRefusal = (name: string): string | undefined => {
+  if (BROKERED_SERVICE.test(name)) return `Bridgetown's broker tools read Grafana, GitHub, Merkl and Slack within the investigation's limits. The ${name} tool is not authorized in this investigation.`
+  const verbs = words(name.split("__").slice(2).join("__"))
+  if (verbs.some((verb) => READ_VERBS.has(verb)) && !verbs.some((verb) => WRITE_VERBS.has(verb))) return undefined
+  return `Your own MCP tools may only read. Posting, changing or sending anything is the user's call; ask for it in your result. The ${name} tool is not authorized in this investigation.`
+}
+
+/**
+ * Investigations inherit read tools from the user's own MCP servers: claude.ai connectors (Notion…) for Claude, ChatGPT
+ * apps for Codex, and plugins for both. Shell, files and subagents still go through the broker.
  */
 export const inheritedToolRefusal = (name: string): string | undefined =>
-  name.startsWith("mcp__") && !name.startsWith("mcp__bridgetown__") ? undefined : investigationToolRefusal(name)
+  name.startsWith("mcp__") && !name.startsWith(BROKER_PREFIX) ? inheritedMcpRefusal(name) : investigationToolRefusal(name)
 
-/** Claude sessions also keep skills, tool search and web reads. */
+/** Claude sessions also keep skills, tool search and web search. */
 export const claudeInvestigationToolRefusal = (name: string): string | undefined =>
-  (INHERITED_BUILTINS as ReadonlyArray<string>).includes(name) ? undefined : inheritedToolRefusal(name)
+  INHERITED_BUILTINS.includes(name) ? undefined : inheritedToolRefusal(name)
+
+/** The only tools a reviewer gets: scoped source reads. */
+export const REVIEW_TOOLS: ReadonlyArray<string> = ["bt_read_file", "bt_list_files"]
 
 export const reviewToolRefusal = (name: string): string | undefined =>
-  ["mcp__bridgetown__bt_read_file", "mcp__bridgetown__bt_list_files", "bt_read_file", "bt_list_files", "StructuredOutput"].includes(name) ? undefined : "Reviewers may only use Bridgetown's scoped read tools."
+  [...REVIEW_TOOLS, ...REVIEW_TOOLS.map((tool) => `${BROKER_PREFIX}${tool}`), "StructuredOutput"].includes(name) ? undefined : "Reviewers may only use Bridgetown's scoped read tools."
