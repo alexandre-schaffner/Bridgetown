@@ -158,7 +158,6 @@ export const SessionRunnerLive = Layer.effect(SessionRunner)(
 
     const { runTurn } = makeTurns({
       store,
-      hub,
       thread,
       repo,
       asks,

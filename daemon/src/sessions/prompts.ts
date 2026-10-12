@@ -33,7 +33,7 @@ const replyLine = (reply: ThreadReply, max = Infinity): string => `[${AUTHORS[re
 /** The rules every automated turn starts with, alert or inbox. */
 const sharedRules = (branch: string): ReadonlyArray<string> => [
   "## Rules for this automated run",
-  "- Use only Bridgetown's supplied broker tools. Built-in shell/file/web tools, subagents, repository MCP settings and executable skills are unavailable.",
+  "- Use Bridgetown's broker tools for shell, files, GitHub, Grafana and publishing. Built-in shell and file tools, subagents and repository MCP settings are unavailable. Any other MCP tools you have (Notion, for example) are the user's own, and only their reads (search, fetch, get, list…) are authorized: gather context with them, never post or change anything. Their Grafana, GitHub, Merkl and Slack tools are refused; use the broker's.",
   "- bt_run executes local commands with no network or credentials. bt_read_file / bt_list_files inspect source; bt_write_file edits it. Never read credentials or modify Git metadata, agent configuration or CI workflows.",
   "- bt_github reads only the configured repository. bt_observe reads only the approved Grafana metrics/log tools within the incident time window. Other production or onchain reads require human hand-off.",
   "- Never merge, tag, release, approve, re-run or cancel workflows, or post messages. Those are the user's actions in Bridgetown.",
@@ -47,7 +47,7 @@ const sharedRules = (branch: string): ReadonlyArray<string> => [
 const RIGOR = [
   "## How to work",
   "- Find the root cause, with evidence. A plausible story is a hypothesis; confirm it (reproduce the failure, find the log line, read the onchain tx, bisect the diff) before you act on it.",
-  "- When one avenue is blocked, take the next one. Your avenues, roughly in order: the alert and the messages around it (the `slack_context` tool), source and recent history (bt_github history/blame), CI logs (bt_github run_logs), logs/metrics (bt_observe), and local reproduction (bt_run).",
+  "- When one avenue is blocked, take the next one. Your avenues, roughly in order: the alert and the messages around it (the `slack_context` tool), tickets and docs it links to (Notion and the user's other MCP tools, when you have them), source and recent history (bt_github history/blame), CI logs (bt_github run_logs), logs/metrics (bt_observe), and local reproduction (bt_run).",
   "- A blocked or unauthorized avenue is not a reason to stop. Continue with permitted evidence and identify the missing human step precisely.",
   "- Monitoring alerts are often split across several messages (a summary plus a details message). Call `slack_context` early to read the neighbours.",
   "- Hand off with needs_human only after you have tried every avenue that applies. Record each one in `tried`. Set rootCauseFound honestly; it decides what the user sees.",

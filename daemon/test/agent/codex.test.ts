@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test"
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { afterAll, describe, expect, test } from "bun:test"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { codexAgent } from "../../src/agent/codex.ts"
 import { codexSessionHome } from "../../src/agent/codex-home.ts"
@@ -7,6 +7,18 @@ import type { AgentInput, AgentRequest } from "../../src/agent/protocol.ts"
 import { newSession } from "../../src/sessions/new-session.ts"
 import { makeAlert } from "../support/records.ts"
 import { scratchDir } from "../support/tmp.ts"
+
+// The user's own Codex home: tests never read the machine's.
+const userHome = scratchDir("bt-codex-user-")
+mkdirSync(join(userHome, "plugins"))
+writeFileSync(join(userHome, "config.toml"), [
+  'model = "user-model"', '[mcp_servers.notion]', 'url = "https://mcp.notion.com/mcp"', '[mcp_servers.local]', 'command = "./bin/server"', 'cwd = "."',
+  '[plugins."browser@openai-bundled"]', 'enabled = true', '[apps.connector_pets]', 'enabled = false',
+  '[hooks]', '[[hooks.PreToolUse]]', '[[hooks.PreToolUse.hooks]]', 'type = "command"', 'command = "user-hook"',
+].join("\n") + "\n")
+const previousUserHome = process.env.CODEX_HOME
+process.env.CODEX_HOME = userHome
+afterAll(() => { if (previousUserHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previousUserHome })
 
 const quote = (text: string) => `'${text.replaceAll("'", `'\\''`)}'`
 const fixture = join(import.meta.dir, "../fixtures/codex-server.ts")
@@ -103,6 +115,42 @@ describe("Codex investigation adapter", () => {
     const run = setup("bad-result")
     const events = await Array.fromAsync(codexAgent(run.request, run.cli))
     expect(events.at(-1)).toMatchObject({ output: undefined })
+  })
+  test("Bridgetown trusts its own guard before the thread starts", async () => {
+    const run = setup("normal")
+    await Array.fromAsync(codexAgent(run.request, run.cli))
+    const audit = run.audit()
+    expect(audit).toContain('"keyPath":"hooks.state","value":{"config.toml:pre_tool_use:0:0":{"trusted_hash":"sha256:guard"}}')
+    expect(audit.indexOf('"method":"config/batchWrite"')).toBeLessThan(audit.indexOf('"method":"thread/start"'))
+  })
+  test("a guard Codex will not run prevents the thread", async () => {
+    const run = setup("untrusted-guard")
+    await expect(Array.fromAsync(codexAgent(run.request, run.cli))).rejects.toThrow("tool guard")
+    expect(run.audit()).not.toContain('"method":"thread/start"')
+  })
+  test("investigations inherit the user's MCP servers, plugins and apps, never their hooks", async () => {
+    const run = setup("normal")
+    await Array.fromAsync(codexAgent(run.request, run.cli))
+    const start = JSON.parse(run.audit().split("\n").find((line) => line.includes('"method":"thread/start"')) ?? "{}").params.config
+    expect(start.mcp_servers).toEqual({
+      notion: { url: "https://mcp.notion.com/mcp", default_tools_approval_mode: "approve" },
+      local: { command: "./bin/server", cwd: userHome, default_tools_approval_mode: "approve" },
+    })
+    expect(start.plugins).toEqual({ "browser@openai-bundled": { enabled: true } })
+    expect(start.apps).toEqual({ connector_pets: { enabled: false }, _default: { enabled: true, default_tools_approval_mode: "approve" } })
+    expect(start.model).toBeUndefined()
+    expect(start.hooks).toBeUndefined()
+    const dir = codexSessionHome(run.request.home, "s")
+    expect(existsSync(join(dir, "plugins"))).toBe(true)
+    expect(readFileSync(join(dir, "config.toml"), "utf8")).toContain("--guard-codex' '--inherit'")
+  })
+  test("other Codex jobs keep broker tools only", async () => {
+    const run = setup("normal")
+    await Array.fromAsync(codexAgent(run.request, run.cli, { sandbox: "read-only", schema: {}, tools: [], instructions: "Review." }))
+    expect(run.audit()).toContain('"config":{"mcp_servers":{},')
+    const dir = codexSessionHome(run.request.home, "s")
+    expect(existsSync(join(dir, "plugins"))).toBe(false)
+    expect(readFileSync(join(dir, "config.toml"), "utf8")).not.toContain("--inherit")
   })
   test("unsupported guards prevent turn start", async () => {
     const run = setup("no-guards")

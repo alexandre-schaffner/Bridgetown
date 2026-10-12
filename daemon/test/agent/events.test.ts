@@ -16,20 +16,32 @@ describe("implied phase", () => {
   })
 })
 
-describe("MCP problems shown in the app", () => {
-  test("Codex authentication uses the saved runtime configuration", () => {
-    expect(mcpProblem("merkl", "needs-auth", "codex", "/bt/codex/s1")).toContain("CODEX_HOME='/bt/codex/s1' codex mcp login merkl")
+describe("MCP problems in a session's transcript", () => {
+  test("Codex servers are the user's own, so the user's Codex fixes them", () => {
+    expect(mcpProblem("notion", "failed", "codex")).toBe("notion MCP · sessions: failed. Check `codex mcp get notion`.")
   })
   test("a login problem says where the login works", () => {
-    expect(mcpProblem("merkl", "needs-auth")).toBe("merkl MCP · sessions: needs a login. Run `claude mcp login merkl` in the monorepo.")
-  })
-
-  test("grafana is started, not logged into", () => {
-    expect(mcpProblem("grafana", "failed")).toContain("`bun grafana:mcp`")
+    expect(mcpProblem("notion", "needs-auth")).toBe("notion MCP · sessions: needs a login. Run `claude mcp login notion`.")
   })
 
   test("other states name themselves", () => {
-    expect(mcpProblem("merkl", "failed")).toBe("merkl MCP · sessions: failed. Check `claude mcp get merkl` in the monorepo.")
+    expect(mcpProblem("notion", "failed")).toBe("notion MCP · sessions: failed. Check `claude mcp get notion`.")
+  })
+
+  test("a broken server of the user's stays in that session, not in the app's problems", async () => {
+    const world = makeWorld()
+    try {
+      const { problem, transcript } = await world.runPromise(Effect.gen(function* () {
+        const repo = yield* SessionRepo, hub = yield* Hub, store = yield* Store
+        yield* store.putAlert(makeAlert({ id: "mcp" }))
+        yield* repo.create(makeSession("running", { id: "mcp", alertId: "mcp" }))
+        const servers = [{ name: "bridgetown", status: "connected" }, { name: "plugin:revv:review", status: "failed" }, { name: "notion", status: "connected" }]
+        yield* handleEvent("mcp", { kind: "init", conversationId: "c", servers }, { repo, closeInput: () => {}, onEnd: () => Effect.void })
+        return { problem: yield* hub.problemFor("mcp"), transcript: yield* store.transcript("mcp", 10) }
+      }))
+      expect(problem).toBeNull()
+      expect(transcript.find((entry) => entry.kind === "error")?.text).toBe("MCP: plugin:revv:review failed, notion connected. plugin:revv:review MCP · sessions: failed. Check `claude mcp get plugin:revv:review`.")
+    } finally { await world.dispose() }
   })
 })
 
@@ -37,13 +49,13 @@ test("Claude and Codex broker tools both log activity and advance phases", async
   const world = makeWorld()
   try {
     const rows = await world.runPromise(Effect.gen(function* () {
-      const repo = yield* SessionRepo, hub = yield* Hub, store = yield* Store
+      const repo = yield* SessionRepo, store = yield* Store
       const rows = []
       for (const prefix of ["", "mcp__bridgetown__"]) {
         const id = prefix === "" ? "events-codex" : "events-claude"
         yield* store.putAlert(makeAlert({ id }))
         yield* repo.create(makeSession("running", { id, alertId: id, phase: "diagnose" }))
-        const sink = { repo, hub, closeInput: () => {}, onEnd: () => Effect.void }
+        const sink = { repo, closeInput: () => {}, onEnd: () => Effect.void }
         yield* handleEvent(id, { kind: "tool", name: `${prefix}bt_write_file`, input: { path: "src/fix.ts" } }, sink)
         const fix = (yield* repo.get(id))?.phase
         yield* handleEvent(id, { kind: "tool", name: `${prefix}bt_submit_fix`, input: { title: "fix: correct it" } }, sink)

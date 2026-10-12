@@ -13,6 +13,7 @@ const complete = () => {
   event("item/completed", { item: { type: "agentMessage", text: scenario === "bad-result" ? "not-json" : JSON.stringify(RESULT), phase: "final_answer" } })
   event("turn/completed", { turn: { status: "completed", error: null } })
 }
+let guardTrusted = false
 const lines = createInterface({ input: process.stdin })
 lines.on("line", (line) => {
   const request = Schema.decodeUnknownSync(Schema.fromJsonString(Envelope))(line)
@@ -26,6 +27,16 @@ lines.on("line", (line) => {
       send({ id: request.id, result: { config: { ...config, ...(scenario === "no-guards" ? { hooks: {} } : {}) } } })
       break
     }
+    case "hooks/list": {
+      const config = Bun.TOML.parse(readFileSync(join(process.env.CODEX_HOME ?? "", "config.toml"), "utf8")) as { hooks?: { PreToolUse?: Array<{ matcher?: string, hooks: Array<{ type: string, command: string }> }> } }
+      const hooks = (config.hooks?.PreToolUse ?? []).flatMap((entry, i) => entry.hooks.map((hook, j) => ({
+        key: `config.toml:pre_tool_use:${i}:${j}`, eventName: "preToolUse", handlerType: hook.type, command: hook.command, matcher: entry.matcher ?? null,
+        enabled: true, currentHash: "sha256:guard", trustStatus: guardTrusted ? "trusted" : "untrusted",
+      })))
+      send({ id: request.id, result: { data: [{ cwd: "", hooks, warnings: [], errors: [] }] } })
+      break
+    }
+    case "config/batchWrite": guardTrusted = scenario !== "untrusted-guard"; send({ id: request.id, result: {} }); break
     case "thread/start": case "thread/resume": send({ id: request.id, result: { thread: { id: "codex-conversation" } } }); break
     case "mcpServerStatus/list": send({ id: request.id, result: { data: scenario === "mcp" ? [{ name: "merkl", runtimeStatus: "starting" }] : [], nextCursor: null } }); break
     case "turn/start":

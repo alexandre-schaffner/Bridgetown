@@ -34,7 +34,7 @@ if (process.argv[2] === "--sandbox-run") {
   const { codexHookVerdict } = await import("./guard/codex.ts")
   let raw: unknown
   try { raw = JSON.parse(await new Response(Bun.stdin.stream()).text()) } catch { raw = null }
-  process.stdout.write(JSON.stringify(codexHookVerdict(raw)))
+  process.stdout.write(JSON.stringify(codexHookVerdict(raw, process.argv[3] === "--inherit")))
 } else {
   await import("./daemon.ts")
 }
