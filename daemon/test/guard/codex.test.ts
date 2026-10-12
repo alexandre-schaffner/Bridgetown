@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { codexHookVerdict } from "../../src/guard/codex.ts"
-import { investigationToolRefusal, reviewToolRefusal } from "../../src/security/capabilities.ts"
+import { claudeInvestigationToolRefusal, investigationToolRefusal, reviewToolRefusal } from "../../src/security/capabilities.ts"
 
 describe("broker-only Codex tools", () => {
   test("built-ins and arbitrary MCP operations cannot bypass broker authorization", () => {
@@ -14,6 +14,10 @@ describe("broker-only Codex tools", () => {
       expect(investigationToolRefusal(name)).toBeUndefined()
       expect(investigationToolRefusal(`mcp__bridgetown__${name}`)).toBeUndefined()
     }
+  })
+  test("Claude sessions add the user's MCP servers and web reads, never built-in shell or files", () => {
+    for (const name of ["mcp__claude_ai_Notion__notion-fetch", "mcp__grafana__query", "ToolSearch", "WebFetch", "WebSearch", "Skill", "mcp__bridgetown__bt_run"]) expect(claudeInvestigationToolRefusal(name)).toBeUndefined()
+    for (const name of ["Bash", "Read", "Edit", "Write", "Task", "Agent", "mcp__bridgetown__unknown"]) expect(claudeInvestigationToolRefusal(name)).toBeDefined()
   })
   test("reviewers cannot read or update persistent investigation memory", () => {
     for (const name of ["memory_search", "memory_read", "memory_remember"]) {

@@ -122,7 +122,7 @@ from observed workflow outcomes. See [memory storage and corrections](docs/WORKF
 
 ## You keep the controls
 
-Each agent gets its own Git worktree and scoped broker tools. Generated commands and file operations run in a macOS OS sandbox with no network, no credentials, and restricted filesystem access. GitHub and Grafana reads go through fixed broker capabilities. Publishing scans an immutable snapshot, pushes only the session’s own branch to the configured repository, and creates or updates a draft PR.
+Each agent gets its own Git worktree and scoped broker tools. Generated commands and file operations run in a macOS OS sandbox with no network, no credentials, and restricted filesystem access. GitHub and Grafana reads go through fixed broker capabilities. Claude agents also inherit your own MCP servers, claude.ai connectors (Notion, for example), plugins and skills, so they can read the tickets and docs an alert links to. Publishing scans an immutable snapshot, pushes only the session’s own branch to the configured repository, and creates or updates a draft PR.
 
 Merging, cutting releases, and sending prepared replies require your click. Production environment approval remains with the reviewer team. External content is labelled as untrusted evidence; known credential patterns are redacted or rejected.
 

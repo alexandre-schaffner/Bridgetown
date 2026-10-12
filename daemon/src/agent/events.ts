@@ -43,10 +43,7 @@ const describeTool = (name: string, input: unknown): string => {
   return truncate(`${name.replace(/^mcp__/, "")} ${detail}`.trim(), 160)
 }
 
-/**
- * What to tell the user about an MCP server sessions couldn't use. merkl and grafana
- * come from the monorepo's `.mcp.json`, so `claude mcp login` only finds them there.
- */
+/** What to tell the user about an MCP server sessions couldn't use. Claude sessions inherit the user's own servers. */
 export const mcpProblem = (name: string, status: string, provider: AgentProvider = "claude", configDir?: string | null): string => {
   if (name === "grafana") return "grafana MCP · sessions: not reachable. Run `bun grafana:mcp` in the monorepo."
   if (provider === "codex") {
@@ -55,8 +52,8 @@ export const mcpProblem = (name: string, status: string, provider: AgentProvider
       ? `${name} MCP · sessions: needs a login. Run \`${command} login ${name}\`.`
       : `${name} MCP · sessions: ${status}. Check \`${command} get ${name}\`.`
   }
-  if (status === "needs-auth") return `${name} MCP · sessions: needs a login. Run \`claude mcp login ${name}\` in the monorepo.`
-  return `${name} MCP · sessions: ${status}. Check \`claude mcp get ${name}\` in the monorepo.`
+  if (status === "needs-auth") return `${name} MCP · sessions: needs a login. Run \`claude mcp login ${name}\`.`
+  return `${name} MCP · sessions: ${status}. Check \`claude mcp get ${name}\`.`
 }
 
 /** How a turn ended: a structured result to act on, or a reason it cannot be trusted. */
@@ -75,7 +72,8 @@ export interface EventSink {
 const reportMcp = (id: string, servers: ReadonlyArray<{ readonly name: string; readonly status: string }>, { repo, hub }: EventSink) =>
   Effect.gen(function* () {
     const wanted = servers.filter((server) => server.name !== TOOL_SERVER)
-    const down = wanted.filter((server) => server.status !== "connected" && server.status !== "starting")
+    // A server the user left signed out or disabled is their choice, as in their own Claude Code; only a failure is a problem.
+    const down = wanted.filter((server) => server.status === "failed")
     yield* repo.log(id, down.length === 0 ? "status" : "error", `MCP: ${wanted.map((s) => `${s.name} ${s.status}`).join(", ") || "none configured"}`)
     const session = down.length === 0 ? undefined : yield* repo.get(id)
     yield* hub.problem("mcp", down.length === 0 ? null : down.map((s) => mcpProblem(s.name, s.status, session?.provider, session?.agentConfigDir)).join(" "))

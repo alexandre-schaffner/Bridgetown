@@ -6,7 +6,7 @@ import { makeSession } from "../support/records.ts"
 import { scratchDir } from "../support/tmp.ts"
 
 describe("investigation configuration", () => {
-  test("repo MCP and inherited settings never add executable authority", () => {
+  test("only the user's own settings load, so repo MCP and settings never add executable authority", () => {
     const dir = scratchDir("bt-mcp-")
     writeFileSync(join(dir, ".mcp.json"), JSON.stringify({ mcpServers: { grafana: { type: "http", url: "https://attacker.invalid" } } }))
     const options = sdkOptions({
@@ -14,16 +14,17 @@ describe("investigation configuration", () => {
       abort: new AbortController(), onRefused: () => {},
       tools: { report: async () => {}, ask: async () => undefined, slackContext: async () => "", memorySearch: async () => "", memoryRead: async () => "", memoryRemember: async () => false },
     })
-    expect(options.settingSources).toEqual([])
-    expect(options.tools).toEqual([])
+    expect(options.settingSources).toEqual(["user"])
+    expect(options.tools).toEqual(["ToolSearch", "WebFetch", "WebSearch", "Skill"])
     expect(Object.keys(options.mcpServers ?? {})).toEqual(["bridgetown"])
-    expect(options.permissionMode).toBe("dontAsk")
-    expect(options.disallowedTools).toContain("WebFetch")
-    expect(options.disallowedTools).toContain("Bash")
+    // `dontAsk` would refuse the broker's own MCP tools before canUseTool runs.
+    expect(options.permissionMode).toBe("default")
+    expect(options.allowedTools).toBeUndefined()
+    for (const name of ["Bash", "Read", "Edit", "Write", "Task", "Agent"]) expect(options.disallowedTools).toContain(name)
   })
 })
 
-test("memory access remains brokered and built-in tools cannot bypass it", async () => {
+test("the user's MCP tools run, while shell and files stay behind the broker", async () => {
   const home = scratchDir("bt-memory-sandbox-")
   const options = sdkOptions({
     home, session: makeSession("running"), abort: new AbortController(), resume: false, daemonPort: 9999,
@@ -33,8 +34,8 @@ test("memory access remains brokered and built-in tools cannot bypass it", async
       report: async () => {}, ask: async () => undefined, slackContext: async () => "",
     },
   })
-  for (const name of ["Bash", "Read", "Write", "mcp__foreign__memory_read", "mcp__bridgetown__memory_read"]) {
-    const decision = name === "mcp__bridgetown__memory_read" ? "allow" : "deny"
+  for (const name of ["Bash", "Read", "Write", "Task", "mcp__bridgetown__unknown", "mcp__bridgetown__memory_read", "mcp__claude_ai_Notion__notion-fetch", "ToolSearch", "WebFetch"]) {
+    const decision = ["Bash", "Read", "Write", "Task", "mcp__bridgetown__unknown"].includes(name) ? "deny" : "allow"
     expect((await options.canUseTool?.(name, { path: "MEMORY.md" }, { signal: new AbortController().signal, toolUseID: "test", requestId: "test" }))?.behavior).toBe(decision)
     const hook = options.hooks?.PreToolUse?.[0]?.hooks[0]
     const reply = await hook?.({ hook_event_name: "PreToolUse", tool_name: name, tool_input: {}, tool_use_id: "test", session_id: "test", transcript_path: "", cwd: home }, "test", { signal: new AbortController().signal })

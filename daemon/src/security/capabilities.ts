@@ -28,5 +28,17 @@ export const investigationToolRefusal = (name: string): string | undefined => {
   return `Use Bridgetown's broker tools. The ${name} tool is not authorized in this investigation.`
 }
 
+/** Claude built-ins a session keeps alongside the user's MCP servers. None runs code or touches files on this machine. */
+export const INHERITED_BUILTINS = ["ToolSearch", "WebFetch", "WebSearch", "Skill"] as const
+
+/**
+ * Claude sessions inherit the user's own tools: MCP servers, claude.ai connectors (Notion, Slack…), plugins, skills
+ * and web reads. Shell, files and subagents still go through the broker.
+ */
+export const claudeInvestigationToolRefusal = (name: string): string | undefined =>
+  (INHERITED_BUILTINS as ReadonlyArray<string>).includes(name) || (name.startsWith("mcp__") && !name.startsWith("mcp__bridgetown__"))
+    ? undefined
+    : investigationToolRefusal(name)
+
 export const reviewToolRefusal = (name: string): string | undefined =>
   ["mcp__bridgetown__bt_read_file", "mcp__bridgetown__bt_list_files", "bt_read_file", "bt_list_files", "StructuredOutput"].includes(name) ? undefined : "Reviewers may only use Bridgetown's scoped read tools."

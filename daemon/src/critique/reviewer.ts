@@ -179,7 +179,9 @@ export const claudeReview = (request: ReviewRequest, claudePath: string | undefi
         cwd: request.worktree, model: request.profile.model,
         ...(request.profile.effort === null ? {} : { effort: Schema.decodeUnknownSync(ClaudeEffort)(request.profile.effort) }),
         abortController: abort, tools: [], disallowedTools: ["Task", "Agent", "Bash", "Read", "Glob", "Grep", "Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch"],
-        settingSources: [], mcpServers: { bridgetown: makeToolServer(reviewTools(request, abort.signal), "review") }, strictMcpConfig: true, persistSession: false, permissionMode: "dontAsk", maxTurns: 100,
+        settingSources: [], mcpServers: { bridgetown: makeToolServer(reviewTools(request, abort.signal), "review") }, strictMcpConfig: true, persistSession: false, maxTurns: 100,
+        // `dontAsk` refuses any tool that is not pre-approved, the reviewer's own read tools included.
+        permissionMode: "dontAsk", allowedTools: ["mcp__bridgetown__bt_read_file", "mcp__bridgetown__bt_list_files"],
         env: providerEnv(process.env), outputFormat: { type: "json_schema", schema: VERDICT_JSON_SCHEMA },
         hooks: { PreToolUse: [{ hooks: [async (input) => input.hook_event_name === "PreToolUse" && reviewToolRefusal(input.tool_name) !== undefined
           ? { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "Reviewers may only read files." } } : {}] }] },

@@ -19,7 +19,7 @@ describe("Claude reviewing", () => {
     let closed = false
     const actual = await Effect.runPromise(claudeReview(request, "/fake/claude", ({ prompt, options }) => {
       expect(prompt).toContain("+export const fixed = true")
-      expect(options).toMatchObject({ model: "custom-reviewer", effort: "max", tools: [], permissionMode: "dontAsk", persistSession: false, strictMcpConfig: true, settingSources: [] })
+      expect(options).toMatchObject({ model: "custom-reviewer", effort: "max", tools: [], permissionMode: "dontAsk", allowedTools: ["mcp__bridgetown__bt_read_file", "mcp__bridgetown__bt_list_files"], persistSession: false, strictMcpConfig: true, settingSources: [] })
       expect(Object.keys(options?.mcpServers ?? {})).toEqual(["bridgetown"])
       return {
         close: () => { closed = true },

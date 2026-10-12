@@ -21,7 +21,7 @@ describe("MCP problems shown in the app", () => {
     expect(mcpProblem("merkl", "needs-auth", "codex", "/bt/codex/s1")).toContain("CODEX_HOME='/bt/codex/s1' codex mcp login merkl")
   })
   test("a login problem says where the login works", () => {
-    expect(mcpProblem("merkl", "needs-auth")).toBe("merkl MCP · sessions: needs a login. Run `claude mcp login merkl` in the monorepo.")
+    expect(mcpProblem("merkl", "needs-auth")).toBe("merkl MCP · sessions: needs a login. Run `claude mcp login merkl`.")
   })
 
   test("grafana is started, not logged into", () => {
@@ -29,7 +29,7 @@ describe("MCP problems shown in the app", () => {
   })
 
   test("other states name themselves", () => {
-    expect(mcpProblem("merkl", "failed")).toBe("merkl MCP · sessions: failed. Check `claude mcp get merkl` in the monorepo.")
+    expect(mcpProblem("merkl", "failed")).toBe("merkl MCP · sessions: failed. Check `claude mcp get merkl`.")
   })
 })
 
