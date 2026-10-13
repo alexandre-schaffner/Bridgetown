@@ -29,6 +29,9 @@ final class Store {
     private(set) var busy: Set<String> = []
     /// Last failed user action, shown briefly in the header.
     private(set) var flash: String?
+    /// Why a card's last resolve did not go through ("CI failed on #3340: lint."), said on
+    /// the card until it is pressed again or goes.
+    private(set) var refusals: [String: String] = [:]
     /// Why this connection hasn't succeeded yet (while still `.connecting`).
     private(set) var lastConnectError: String?
 
@@ -101,6 +104,9 @@ final class Store {
 
     private func apply(_ next: Snapshot) {
         server = next
+        // A card that went takes its reason with it.
+        let standing = refusals.filter { next.action(id: $0.key) != nil }
+        if standing.count != refusals.count { refusals = standing }
         let shown = withLocalEdits(next)
         guard shown != snapshot else { return }
         snapshot = shown
@@ -153,16 +159,23 @@ final class Store {
     /// Opens the action's `url` first when it has one (escalations, review links).
     /// A resolve can take minutes (merging, tagging); when our request gives up while the
     /// daemon still reports the action in flight, that isn't a failure, so say nothing.
+    /// Why it failed stays on its card rather than flashing, while the card is still there.
     func resolve(_ action: Action, response: String? = nil, onSuccess: (() -> Void)? = nil) {
         if let url = action.url { SystemActions.open(url) }
-        perform(
+        let sent = perform(
             action.id,
             stillWorking: { [weak self] error in
                 (error.isTimeout || (error as? DaemonError)?.statusCode == 409)
                     && self?.snapshot?.action(id: action.id)?.inFlight == true
             },
+            explain: { [weak self] message in
+                guard let self, snapshot?.action(id: action.id) != nil else { return false }
+                refusals[action.id] = message
+                return true
+            },
             onSuccess: onSuccess
         ) { try await $0.resolve(actionId: action.id, response: response) }
+        if sent { refusals[action.id] = nil }
     }
 
     func dismiss(_ action: Action) {
@@ -254,12 +267,13 @@ final class Store {
     // MARK: Plumbing
 
     /// Runs `call`, applies the Snapshot it returns, and flashes the error unless
-    /// `stillWorking` says the daemon is still on it. A key already in flight is a second
+    /// `stillWorking` says the daemon is still on it, or `explain` says it where it happened. A key already in flight is a second
     /// click on the same thing, so it sends nothing. False when nothing was sent.
     @discardableResult
     private func perform(
         _ key: String,
         stillWorking: ((Error) -> Bool)? = nil,
+        explain: ((String) -> Bool)? = nil,
         onSuccess: (() -> Void)? = nil,
         onFailure: (() -> Void)? = nil,
         _ call: @escaping @Sendable (DaemonClient) async throws -> Snapshot
@@ -278,7 +292,8 @@ final class Store {
             } catch {
                 if stillWorking?(error) == true { return }
                 onFailure?()
-                report(error.userMessage)
+                let message = error.userMessage
+                if explain?(message) != true { report(message) }
             }
         }
         return true

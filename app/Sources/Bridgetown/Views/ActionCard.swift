@@ -2,7 +2,8 @@ import SwiftUI
 
 /// A card in Needs you, as a row of its table: the title and its age over the detail,
 /// each up to two lines. The group's header names the verb, so the row's button waits for
-/// the pointer, sliding in over the row's end rather than taking width from every title.
+/// the pointer, sliding in over the row's end rather than taking width from every title;
+/// a Ship row keeps its button out, since a verified fix is the decision closest to done.
 /// An agent's question with quick replies is answered from the row itself. Opened, the
 /// row is the whole card (`ActionCard`).
 struct ActionRow: View {
@@ -17,6 +18,9 @@ struct ActionRow: View {
     /// An agent's question with quick replies: answered from the row itself, one click,
     /// as nothing needs typing.
     private var answersInline: Bool { action.kind == .answer && !action.options.isEmpty && !action.inFlight }
+
+    /// Merge and release: the button stays on the row, and says so while GitHub works.
+    private var ships: Bool { action.kind.group == .ship && action.isOneClick }
 
     var body: some View {
         Group {
@@ -36,46 +40,71 @@ struct ActionRow: View {
 
     private var row: some View {
         TableRow(pick: pick, open: toggle) { hovering in
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                SelectMark(pick: pick, hovering: hovering) {
-                    if action.failed(in: store.snapshot) {
-                        Image(systemName: Tone.failure.stopSymbol)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Ink.red)
-                            .accessibilityLabel("Failed")
-                    }
-                }
-                .centeredOnRowTitle()
-
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text(action.title).rowTitle()
-                        Spacer(minLength: 4)
-                        if action.inFlight {
-                            // Said by the row's value: as an element of its own, a spinner
-                            // would make the whole row read as one.
-                            ProgressView().controlSize(.mini)
-                                .help(action.kind.progressLabel)
-                                .accessibilityHidden(true)
-                        } else {
-                            Text(Format.relative(action.createdAt, now: now))
-                                .font(Typo.time)
-                                .foregroundStyle(.tertiary)
+            HStack(spacing: 12) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    SelectMark(pick: pick, hovering: hovering) {
+                        if action.failed(in: store.snapshot) {
+                            Image(systemName: Tone.failure.stopSymbol)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Ink.red)
+                                .accessibilityLabel("Failed")
                         }
                     }
-                    if !action.detail.isEmpty {
-                        Text(Markdown.line(action.detail, size: 12)).rowDetail()
+                    .centeredOnRowTitle()
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text(action.title).rowTitle()
+                            Spacer(minLength: 4)
+                            if ships {
+                                // Its age sits under its button.
+                            } else if action.inFlight {
+                                // Said by the row's value: as an element of its own, a spinner
+                                // would make the whole row read as one.
+                                ProgressView().controlSize(.mini)
+                                    .help(action.kind.progressLabel)
+                                    .accessibilityHidden(true)
+                            } else {
+                                age
+                            }
+                        }
+                        if !action.detail.isEmpty {
+                            Text(Markdown.line(action.detail, size: 12)).rowDetail()
+                        }
+                        if let refusal = store.refusals[action.id] {
+                            RefusalLine(kind: action.kind, reason: refusal)
+                                .padding(.top, 2)
+                        }
+                        if answersInline {
+                            OptionChips(options: action.options) { store.resolve(action, response: $0) }
+                                .padding(.top, 6)
+                        }
                     }
-                    if answersInline {
-                        OptionChips(options: action.options) { store.resolve(action, response: $0) }
-                            .padding(.top, 6)
+                }
+                if ships {
+                    // The button is laid over this place, outside the row's own button:
+                    // here it only holds its width, so the title wraps short of it.
+                    VStack(alignment: .trailing, spacing: 6) {
+                        shipSlot
+                            .opacity(action.inFlight ? 1 : 0)
+                            .accessibilityHidden(!action.inFlight)
+                        age
                     }
                 }
             }
             .padding(.horizontal, Metrics.inset)
             .padding(.vertical, 16)
         } overlay: { hovering in
-            if hovering && !action.inFlight && !answersInline && !pick.picking {
+            if ships {
+                if !action.inFlight && !pick.picking {
+                    VStack(alignment: .trailing, spacing: 6) {
+                        shipButton
+                        age.hidden()
+                    }
+                    .padding(.trailing, Metrics.inset)
+                    .transition(.opacity)
+                }
+            } else if hovering && !action.inFlight && !answersInline && !pick.picking {
                 hoverButton
                     .transition(.opacity)
             }
@@ -89,6 +118,39 @@ struct ActionRow: View {
         .accessibilityAction(named: Text(action.primaryLabel)) {
             if action.isOneClick { store.resolve(action) } else { toggle() }
         }
+    }
+
+    private var age: some View {
+        Text(Format.relative(action.createdAt, now: now))
+            .font(Typo.time)
+            .foregroundStyle(.tertiary)
+    }
+
+    /// A Ship row's end: its button, or what GitHub is doing while the daemon resolves it.
+    @ViewBuilder
+    private var shipSlot: some View {
+        if action.inFlight {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini)
+                Text(action.kind.progressLabel)
+                    .font(Typo.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .fixedSize()
+            .frame(height: Ink.buttonHeight)
+            .accessibilityElement(children: .combine)
+        } else {
+            shipButton
+        }
+    }
+
+    /// The tag a release would cut is in the row's detail already: its row button stays
+    /// short, so a narrow island keeps the title. The opened card says it in full.
+    private var shipButton: some View {
+        Button(action.kind == .release ? "Cut release" : action.primaryLabel) { store.resolve(action) }
+            .buttonStyle(.stage(.primary))
+            .fixedSize()
     }
 
     /// The row's button on hover, over an opaque end of the row that fades in from the
@@ -159,6 +221,10 @@ struct ActionCard: View {
                     if showsDetail {
                         ClampedText(markdown: action.detail, lineLimit: 4, size: 12, lineSpacing: Typo.rowLineSpacing)
                             .foregroundStyle(.secondary)
+                    }
+                    if let refusal = store.refusals[action.id] {
+                        RefusalLine(kind: action.kind, reason: refusal)
+                            .padding(.top, 2)
                     }
                 }
                 .padding(.trailing, 20)  // clear the dismiss button
@@ -312,6 +378,31 @@ private struct ActionMenu: View {
         if !action.inFlight {
             Button(action.dismissCloses ? "Close session…" : "Dismiss", action: requestDismiss)
         }
+    }
+}
+
+/// Why the card's last press did not go through, under its detail until it is pressed
+/// again: amber, as it waits on you, and said in words, never by the colour alone.
+private struct RefusalLine: View {
+    let kind: Action.Kind
+    let reason: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Ink.amber)
+                .accessibilityHidden(true)
+            (Text(kind.refusalLead).foregroundStyle(Ink.text).fontWeight(.medium) + Text(" · ") + Text(reason))
+                .font(Typo.body)
+                .foregroundStyle(.secondary)
+                .lineSpacing(Typo.rowLineSpacing)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("action.refusal")
     }
 }
 

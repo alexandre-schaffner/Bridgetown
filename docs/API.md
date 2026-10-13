@@ -103,7 +103,10 @@ alert of the same problem replaces it.
 
 - **Merge** asks GitHub first and records nothing when the call fails, so the next click tries again. A GitHub
   hiccup (a 5xx, a dropped connection, a timeout, another merge moving the base branch) is tried up to three more
-  times within the click, each time after asking whether the PR merged anyway. A merge GitHub
+  times within the click, each time after asking whether the PR merged anyway. A merge that does not go through
+  answers with the reason in plain words, which the app keeps on the card: a `409` for what GitHub shows now (a
+  draft, CI failed or running, changes requested, a review missing, a head the model review did not pass, a
+  conflict, a branch rule) and a `500` when GitHub did not answer. A merge GitHub
   queues instead of doing (a merge queue) is GitHub's to finish; the Merge card comes back only if it hasn't merged
   within an hour. A session waiting to merge goes back to CI, and its Merge card goes, when the PR's checks go red or
   run again, or it gets changes requested or needs a review again. A PR closed on GitHub closes its session

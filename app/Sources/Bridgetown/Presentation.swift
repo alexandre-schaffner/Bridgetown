@@ -194,11 +194,23 @@ extension Action.Kind {
         }
     }
 
+    /// Leads the reason a resolve did not go through, on its card: "Not merged · CI failed on #3340: lint."
+    var refusalLead: String {
+        switch self {
+        case .merge: "Not merged"
+        case .release: "Not released"
+        case .rerun: "Not re-run"
+        case .investigate: "Not started"
+        case .reply, .answer: "Not sent"
+        default: "Didn't go through"
+        }
+    }
+
     /// Shown in place of the primary button while the daemon resolves the action.
     var progressLabel: String {
         switch self {
         case .merge: "Merging…"
-        case .release: "Cutting the release…"
+        case .release: "Releasing…"
         case .rerun: "Re-running…"
         case .investigate: "Starting an agent…"
         case .reply, .answer: "Sending…"
@@ -208,12 +220,13 @@ extension Action.Kind {
 }
 
 /// The decision an action asks for. "Needs you" lists actions under these, so a row
-/// doesn't repeat what its group already says.
+/// doesn't repeat what its group already says. Ship leads: a verified fix is the
+/// decision closest to done, one click from production.
 enum ActionGroup: CaseIterable {
-    /// Someone is waiting on an answer: a teammate, an agent, or a call only you can make.
-    case answer
     /// A verified fix is ready to merge or release.
     case ship
+    /// Someone is waiting on an answer: a teammate, an agent, or a call only you can make.
+    case answer
     /// A new incident or prod signal no agent has picked up.
     case investigate
     /// An agent ended without a fix: retry it, or close the session.

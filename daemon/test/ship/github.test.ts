@@ -31,7 +31,7 @@ describe("transient GitHub failures", () => {
     expect(transientGitHub(adapter("exited 1: GraphQL: Pull request is not mergeable: the merge commit cannot be cleanly created (mergePullRequest)"))).toBe(false)
     expect(transientGitHub(adapter("exited 1: GraphQL: Head branch was modified. Review and try the merge again. (mergePullRequest)"))).toBe(false)
     expect(transientGitHub(new GheBlocked({ operation: "gh pr merge", message: "HTTP 403: IP allow list" }))).toBe(false)
-    expect(transientGitHub(new Conflict({ message: "The PR is no longer ready to merge. Refresh its checks and review." }))).toBe(false)
+    expect(transientGitHub(new Conflict({ message: "CI is running again on #3340." }))).toBe(false)
   })
 })
 
