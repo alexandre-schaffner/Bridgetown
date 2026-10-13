@@ -202,7 +202,7 @@ extension Action.Kind {
         case .rerun: "Not re-run"
         case .investigate: "Not started"
         case .reply, .answer: "Not sent"
-        default: "Didn't go through"
+        case .review, .escalate, .unknown: "Didn't go through"
         }
     }
 
@@ -281,6 +281,15 @@ extension Action {
         default: options.isEmpty
         }
     }
+
+    /// Its row keeps its button out rather than showing it under the pointer, and says on
+    /// it what GitHub is doing while the daemon resolves it: a verified fix is the decision
+    /// closest to done.
+    var pinsButton: Bool { kind.group == .ship && isOneClick }
+
+    /// Its row's button. The tag a release would cut is in the row's detail already, so it
+    /// stays short and a narrow island keeps the title; the opened card says it in full.
+    var rowButtonLabel: String { kind == .release ? "Cut release" : primaryLabel }
 
     /// The agent behind it failed (a re-run, or a review of a failed session): marked red on
     /// its row, where every other meaning is left to the group's header.
