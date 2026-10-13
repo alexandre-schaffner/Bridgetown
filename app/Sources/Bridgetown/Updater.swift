@@ -73,6 +73,10 @@ final class Updater {
     typealias Sleep = @Sendable (Duration) async throws -> Void
 
     nonisolated static let interval: Duration = .seconds(6 * 3600)
+    /// After a check on its own failed: soon, well inside GitHub's 60 requests an hour.
+    nonisolated static let retry: Duration = .seconds(10 * 60)
+    /// Before checking after wake: Wi-Fi is often still joining when the Mac says it woke.
+    nonisolated static let afterWake: Duration = .seconds(30)
     /// The install this launch may be the end of (`Pending`).
     private static let pendingKey = "updatePending"
 
@@ -98,7 +102,11 @@ final class Updater {
     @ObservationIgnored private var loop: Task<Void, Never>?
     @ObservationIgnored private var wakeLoop: Task<Void, Never>?
     @ObservationIgnored private var clearTask: Task<Void, Never>?
-    @ObservationIgnored private var isChecking = false
+    /// The check out at GitHub, which a check asked for meanwhile waits for. It answers
+    /// whether GitHub did.
+    @ObservationIgnored private var checking: Task<Bool, Never>?
+    /// Whether the check out says how it went: you asked for it, or for one while it was out.
+    @ObservationIgnored private var checkReports = false
 
     /// This app, as its bundle says.
     convenience init(bundle: Bundle = .main) {
@@ -156,42 +164,67 @@ final class Updater {
     }
 
     /// Finishes the install this launch may be the end of, then checks now and every
-    /// `interval`, and whenever the Mac wakes.
+    /// `interval` (sooner after a failure), and `afterWake` once the Mac wakes.
     func start() {
         guard isEnabled, loop == nil else { return }
         let wakes = wakeNotifications.notifications(named: NSWorkspace.didWakeNotification).map { _ in () }
+        let sleep = self.sleep
         wakeLoop = Task { [weak self] in
             for await _ in wakes {
+                do { try await sleep(Self.afterWake) }
+                catch { return }
                 guard !Task.isCancelled, let self else { return }
                 await self.check(manual: false)
             }
         }
-        let sleep = self.sleep
         loop = Task { [weak self] in
             await self?.finishInstall()
             while !Task.isCancelled {
-                await self?.check(manual: false)
-                do { try await sleep(Self.interval) }
+                let answered = await self?.check(manual: false) ?? true
+                do { try await sleep(answered ? Self.interval : Self.retry) }
                 catch { return }
             }
         }
     }
 
-    /// Asks GitHub for the latest release. One you asked for says how it went; one on its
-    /// own only speaks up when there is something newer.
-    func check(manual: Bool) async {
-        guard let current, !state.isBusy, !isChecking else { return }
-        isChecking = true
-        defer { isChecking = false }
+    /// Asks GitHub for the latest release, and answers whether it did: false only for a
+    /// check that failed. One you asked for says how it went; one on its own only speaks up
+    /// when there is something newer. While one is out, another waits for it rather than
+    /// asking again, and one you ask for makes it say how it went.
+    @discardableResult
+    func check(manual: Bool) async -> Bool {
+        guard let current else { return true }
+        if let checking {
+            if manual, !state.isBusy { reportCheck() }
+            return await checking.value
+        }
+        guard !state.isBusy else { return true }
         clearTask?.cancel()
-        if manual { state = .checking }
+        checkReports = false
+        if manual { reportCheck() }
+        let check = Task { await fetch(newerThan: current) }
+        checking = check
+        return await check.value
+    }
+
+    private func reportCheck() {
+        checkReports = true
+        clearTask?.cancel()
+        state = .checking
+    }
+
+    /// The check out, which says how it went as `checkReports` asks by the time GitHub
+    /// answers.
+    private func fetch(newerThan current: AppVersion) async -> Bool {
+        defer { checking = nil }
         do {
             let latest = try await feed()
+            let manual = checkReports
             // An install may have started while the check was out.
-            guard !state.isBusy || state == .checking else { return }
+            guard !state.isBusy || state == .checking else { return true }
             if latest.version > current {
                 // On its own, a check leaves up why this release didn't install.
-                if !manual, case let .installFailed(failed, _) = state, failed == latest { return }
+                if !manual, case let .installFailed(failed, _) = state, failed == latest { return true }
                 state = .available(latest)
                 onAvailable?(latest)
             } else if manual {
@@ -204,8 +237,10 @@ final class Updater {
             } else {
                 state = .idle
             }
+            return true
         } catch {
-            if manual { state = .checkFailed(error.userMessage(peer: "GitHub")) }
+            if checkReports { state = .checkFailed(error.userMessage(peer: "GitHub")) }
+            return false
         }
     }
 
