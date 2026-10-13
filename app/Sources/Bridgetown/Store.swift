@@ -157,21 +157,20 @@ final class Store {
     // MARK: Actions
 
     /// Opens the action's `url` first when it has one (escalations, review links).
-    /// A resolve can take minutes (merging, tagging); when our request gives up while the
-    /// daemon still reports the action in flight, that isn't a failure, so say nothing.
-    /// Why it failed stays on its card rather than flashing, while the card is still there.
+    /// A resolve can take minutes (merging, tagging); when our request gives up, or the
+    /// daemon says it is already on it (409), while it still reports the action in flight,
+    /// that isn't a failure, so say nothing. Why it failed (a refused merge is a 422) stays
+    /// on its card rather than flashing, while the card is still there.
     func resolve(_ action: Action, response: String? = nil, onSuccess: (() -> Void)? = nil) {
         if let url = action.url { SystemActions.open(url) }
         let sent = perform(
             action.id,
-            stillWorking: { [weak self] error in
-                (error.isTimeout || (error as? DaemonError)?.statusCode == 409)
-                    && self?.snapshot?.action(id: action.id)?.inFlight == true
-            },
-            explain: { [weak self] message in
-                guard let self, snapshot?.action(id: action.id) != nil else { return false }
-                refusals[action.id] = message
-                return true
+            route: { [weak self] error in
+                switch self?.snapshot?.action(id: action.id) {
+                case nil: .flash
+                case let shown? where shown.inFlight && (error.isTimeout || (error as? DaemonError)?.statusCode == 409): .silent
+                case _?: .card(action.id)
+                }
             },
             onSuccess: onSuccess
         ) { try await $0.resolve(actionId: action.id, response: response) }
@@ -266,14 +265,23 @@ final class Store {
 
     // MARK: Plumbing
 
-    /// Runs `call`, applies the Snapshot it returns, and flashes the error unless
-    /// `stillWorking` says the daemon is still on it, or `explain` says it where it happened. A key already in flight is a second
-    /// click on the same thing, so it sends nothing. False when nothing was sent.
+    /// Where a failed request's reason goes.
+    private enum FailureRoute {
+        /// Nowhere: the daemon is still on it.
+        case silent
+        /// On the card with this action id.
+        case card(String)
+        /// In the header.
+        case flash
+    }
+
+    /// Runs `call`, applies the Snapshot it returns, and says why it failed where `route`
+    /// sends it (the header by default). A key already in flight is a second click on the
+    /// same thing, so it sends nothing. False when nothing was sent.
     @discardableResult
     private func perform(
         _ key: String,
-        stillWorking: ((Error) -> Bool)? = nil,
-        explain: ((String) -> Bool)? = nil,
+        route: ((Error) -> FailureRoute)? = nil,
         onSuccess: (() -> Void)? = nil,
         onFailure: (() -> Void)? = nil,
         _ call: @escaping @Sendable (DaemonClient) async throws -> Snapshot
@@ -290,10 +298,16 @@ final class Store {
                 apply(try await call(client))
                 onSuccess?()
             } catch {
-                if stillWorking?(error) == true { return }
-                onFailure?()
-                let message = error.userMessage
-                if explain?(message) != true { report(message) }
+                switch route?(error) ?? .flash {
+                case .silent:
+                    return
+                case let .card(id):
+                    onFailure?()
+                    refusals[id] = error.userMessage
+                case .flash:
+                    onFailure?()
+                    report(error.userMessage)
+                }
             }
         }
         return true
