@@ -17,7 +17,7 @@ import { Store } from "../store/store.ts"
 import { reviewRequestText, reviewRoute } from "./approvals.ts"
 import { mergeDetail, releaseDetail } from "./cards.ts"
 import { mergeOnce, releaseOnce } from "./gates.ts"
-import { ciState, GitHub, type PullRequest } from "./github.ts"
+import { ciState, GitHub, type PullRequest, transientGitHub } from "./github.ts"
 import { prLabel } from "./pr.ts"
 import { afterMerge, ciTransition, deployStalled, deployTransition, type Escalation, followsDeploy, MAX_CI_ROUNDS, mergedResolution, needsReviewRequest } from "./transitions.ts"
 
@@ -352,6 +352,7 @@ export const ShipperLive = Layer.effect(Shipper)(
           yield* github.mergePr(url, live.headRefOid)
         }),
         isMerged: (url) => github.viewPr(url).pipe(Effect.map((pr) => pr.mergedAt !== null)),
+        retryable: transientGitHub,
       }).pipe(Effect.tapError(() => atGate(sessionId, "awaiting_merge", { activity: session.activity })))
       if (merged) yield* onMerged(sessionId)
       else yield* atGate(sessionId, "awaiting_merge", { mergeRequestedAt: now(), activity: "Queued to merge" })

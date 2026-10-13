@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Schedule } from "effect"
 import { type AdapterError, Conflict, type GitHubError } from "../domain/errors.ts"
 import type { Session } from "../domain/session.ts"
 
@@ -11,23 +11,42 @@ import type { Session } from "../domain/session.ts"
 export interface MergePorts {
   readonly merge: (prUrl: string) => Effect.Effect<void, GitHubError | Conflict>
   readonly isMerged: (prUrl: string) => Effect.Effect<boolean, GitHubError>
+  /** A hiccup that asking again gets past (a 5xx, a dropped connection, a base branch that moved under the merge). */
+  readonly retryable: (error: GitHubError | Conflict) => boolean
+  /** The wait between those attempts. */
+  readonly backoff?: Schedule.Schedule<unknown>
 }
+
+/** Three more tries over about 3.5 seconds: a hiccup passes, a real refusal is not kept waiting long. */
+const MERGE_RETRIES = 3
+const MERGE_BACKOFF = Schedule.exponential("500 millis")
 
 /**
  * Asks GitHub to merge unless the PR is merged already. GitHub cannot merge a
  * PR twice, so asking it first is what makes a repeat safe; nothing is recorded
  * before the call, so a call that failed (GHE refusing the network, a PR not
- * mergeable yet) leaves the gate as it was and the next click tries again.
- * Returns whether the PR is merged now (false: queued behind a merge queue).
+ * mergeable yet) leaves the gate as it was and the next click tries again. A
+ * `retryable` failure is tried again here first, each time after asking
+ * whether it merged anyway; a read that fails then leaves the merge's own
+ * failure to say why. Returns whether the PR is merged now (false: queued
+ * behind a merge queue).
  */
 export const mergeOnce = Effect.fn("mergeOnce")(function* (session: Session, prUrl: string, ports: MergePorts) {
-  if (session.milestones.merged || (yield* ports.isMerged(prUrl))) return true
-  const asked = yield* ports.merge(prUrl).pipe(Effect.result)
-  if (asked._tag === "Failure") {
-    if (yield* ports.isMerged(prUrl)) return true
-    return yield* Effect.fail(asked.failure)
-  }
-  return yield* ports.isMerged(prUrl)
+  const again = { while: ports.retryable, times: MERGE_RETRIES, schedule: ports.backoff ?? MERGE_BACKOFF }
+  // Called afresh on every attempt: a port may read GitHub when called, not when run.
+  const isMerged = Effect.suspend(() => ports.isMerged(prUrl)).pipe(Effect.retry(again))
+  if (session.milestones.merged || (yield* isMerged)) return true
+  const ask = Effect.suspend(() => ports.merge(prUrl)).pipe(
+    Effect.catch((failure) =>
+      isMerged.pipe(
+        Effect.orElseSucceed(() => false),
+        Effect.flatMap((merged) => (merged ? Effect.succeed("merged" as const) : Effect.fail(failure))),
+      ),
+    ),
+    Effect.retry(again),
+  )
+  if ((yield* ask) === "merged") return true
+  return yield* isMerged
 })
 
 export interface ReleasePorts {

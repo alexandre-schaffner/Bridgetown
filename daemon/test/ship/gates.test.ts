@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { Deferred, Effect, Fiber } from "effect"
+import { Deferred, Effect, Fiber, Schedule } from "effect"
 import { Actions } from "../../src/actions/actions.ts"
 import { snapshot } from "../../src/api/views.ts"
 import type { Action } from "../../src/domain/action.ts"
 import { AdapterError } from "../../src/domain/errors.ts"
 import { NO_MILESTONES, type Session, type SessionStatus } from "../../src/domain/session.ts"
 import { mergeOnce, releaseOnce } from "../../src/ship/gates.ts"
+import { transientGitHub } from "../../src/ship/github.ts"
 import { Shipper } from "../../src/ship/shipper.ts"
 import { Store } from "../../src/store/store.ts"
 import { fakeGitHub } from "../support/fakes.ts"
@@ -24,6 +25,9 @@ const world = (initial: Session) => {
   const calls = { merge: 0, create: 0, nextTag: 0 }
   const github = {
     merged: false, queued: false, unreachable: false, tags: new Set<string>(), mergeFails: false, createFails: false, createFailsAfterTagging: false,
+    /** How many `gh pr merge` calls fail with a hiccup (a 502) before one goes through; `readFails`: how many `pr view` reads do. */
+    /** `readsFailAfter`: a refused merge takes GitHub's reads down with it. */
+    busyFor: 0, mergesAnyway: false, readFails: 0, readsFailAfter: false,
   }
   const state = { movedOn: false }
   const save = (patch: Partial<Session>) =>
@@ -37,11 +41,29 @@ const world = (initial: Session) => {
       Effect.suspend(() => {
         if (github.unreachable) return fail("IP allow list")
         calls.merge++
-        if (github.mergeFails) return fail("not mergeable")
+        if (github.mergeFails) {
+          if (github.readsFailAfter) github.readFails = 10
+          return fail("not mergeable")
+        }
+        if (github.busyFor > 0) {
+          github.busyFor--
+          if (github.mergesAnyway) github.merged = true
+          return fail("HTTP 502: Bad Gateway")
+        }
         github.merged = !github.queued
         return Effect.void
       }),
-    isMerged: () => (github.unreachable ? fail("IP allow list") : Effect.sync(() => github.merged)),
+    isMerged: () =>
+      Effect.suspend(() => {
+        if (github.unreachable) return fail("IP allow list")
+        if (github.readFails > 0) {
+          github.readFails--
+          return fail("HTTP 503: Service Unavailable")
+        }
+        return Effect.succeed(github.merged)
+      }),
+    retryable: transientGitHub,
+    backoff: Schedule.forever,
   }
   const releasePorts = {
     save,
@@ -95,6 +117,45 @@ describe("merge gate", () => {
     w.github.unreachable = true
     expect((await Effect.runPromiseExit(mergeOnce(w.row, "u", w.mergePorts)))._tag).toBe("Failure")
     w.github.unreachable = false
+    expect(await Effect.runPromise(mergeOnce(w.row, "u", w.mergePorts))).toBe(true)
+    expect(w.calls.merge).toBe(1)
+  })
+  test("a GitHub hiccup is asked again within the click, which merges", async () => {
+    const w = world(session("awaiting_merge"))
+    w.github.busyFor = 2
+    expect(await Effect.runPromise(mergeOnce(w.row, "u", w.mergePorts))).toBe(true)
+    expect(w.calls.merge).toBe(3)
+  })
+  test("a hiccup that merged anyway is not asked again", async () => {
+    const w = world(session("awaiting_merge"))
+    w.github.busyFor = 1
+    w.github.mergesAnyway = true
+    expect(await Effect.runPromise(mergeOnce(w.row, "u", w.mergePorts))).toBe(true)
+    expect(w.calls.merge).toBe(1)
+  })
+  test("a hiccup that lasts fails the click after three more tries, leaving the gate for the next", async () => {
+    const w = world(session("awaiting_merge"))
+    w.github.busyFor = 10
+    const failure = await Effect.runPromise(mergeOnce(w.row, "u", w.mergePorts).pipe(Effect.flip))
+    expect(failure.message).toContain("502")
+    expect(w.calls.merge).toBe(4)
+  })
+  test("a refusal is not asked again", async () => {
+    const w = world(session("awaiting_merge"))
+    w.github.mergeFails = true
+    expect((await Effect.runPromiseExit(mergeOnce(w.row, "u", w.mergePorts)))._tag).toBe("Failure")
+    expect(w.calls.merge).toBe(1)
+  })
+  test("a read that fails after a refusal leaves the refusal to say why", async () => {
+    const w = world(session("awaiting_merge"))
+    w.github.mergeFails = true
+    w.github.readsFailAfter = true
+    const failure = await Effect.runPromise(mergeOnce(w.row, "u", w.mergePorts).pipe(Effect.flip))
+    expect(failure.message).toBe("not mergeable")
+  })
+  test("a read that hiccups is asked again: a merge that went through is not reported failed", async () => {
+    const w = world(session("awaiting_merge"))
+    w.github.readFails = 2
     expect(await Effect.runPromise(mergeOnce(w.row, "u", w.mergePorts))).toBe(true)
     expect(w.calls.merge).toBe(1)
   })
