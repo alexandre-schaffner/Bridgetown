@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { z } from "zod"
 import { Effect } from "effect"
 import { GH_HOST, GHE_REPO } from "../config.ts"
+import { errorMessage } from "../domain/errors.ts"
 import { isOwnBranch } from "../domain/session.ts"
 import type { AgentRequest } from "../agent/protocol.ts"
 import { changedPaths, type TreeEntry } from "./changes.ts"
@@ -99,7 +100,13 @@ export const makeBroker = (request: AgentRequest, runCommand: (command: Readonly
     const { parent, tree, patch } = await capturePatch()
     let publishedHead = parent
     if (patch !== "") {
-      publishedHead = (await execute(git("-c", "commit.gpgsign=false", "commit-tree", tree, "-p", parent, "-m", args.title))).trim()
+      // Signed as your own `git commit` signs, which commit-tree only does when asked: with the key
+      // your Git config names, which may live in your SSH agent.
+      const signs = (await execute(git("config", "--type=bool", "--default=false", "--get", "commit.gpgsign"))).trim() === "true"
+      const agent = process.env.SSH_AUTH_SOCK === undefined ? {} : { SSH_AUTH_SOCK: process.env.SSH_AUTH_SOCK }
+      publishedHead = (await execute(git("commit-tree", ...(signs ? ["-S"] : []), tree, "-p", parent, "-m", args.title), { env: { GH_HOST, ...agent } }).catch((cause: unknown) => {
+        throw new Error(`Couldn't commit the fix; if Git signs your commits, check your signing key is available. ${errorMessage(cause)}`)
+      })).trim()
       await execute(git("update-ref", `refs/heads/${activeBranch}`, publishedHead, parent))
       await execute(git("read-tree", publishedHead))
     }

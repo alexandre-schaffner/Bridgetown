@@ -36,7 +36,8 @@ describe.skipIf(process.platform !== "darwin")("real scoped file broker", () => 
 const setup = () => {
   const repo = scratchRepo(), root = join(repo, ".shared", "worktrees", "fix-bt-test-123")
   sh(`git worktree add -q -b fix-bt-test-123 ${root}`, repo)
-  sh('git config user.email t@t && git config user.name test', repo)
+  // Unsigned, whatever the machine's own Git config says, unless a test signs.
+  sh('git config user.email t@t && git config user.name test && git config commit.gpgsign false', repo)
   const request: AgentRequest = {
     session: { ...newSession(makeAlert(), "s", repo, { mode: "manual", provider: "codex", model: "test", effort: null }), branch: "fix-bt-test-123", worktree: root },
     abort: new AbortController(), home: repo, daemonPort: 0, resume: false,
@@ -71,6 +72,23 @@ describe.skipIf(process.platform !== "darwin")("fix publication with a local fak
     expect(sh('git show origin/fix-bt-test-123:fix.txt', root)).toBe("approved")
     expect(calls.findIndex((args) => args.includes("--undo"))).toBeLessThan(calls.findIndex((args) => args.includes("push")))
     expect(calls.some((args) => args.includes("add"))).toBe(false)
+  }, 30_000)
+
+  test("signs the published commit as the user's Git config asks", async () => {
+    const { repo, root, request } = setup()
+    const keys = scratchDir("bt-signing-")
+    sh(`ssh-keygen -q -t ed25519 -N "" -C t@t -f ${join(keys, "key")}`, keys)
+    writeFileSync(join(keys, "allowed"), `t@t ${readFileSync(join(keys, "key.pub"), "utf8")}`)
+    sh(`git config commit.gpgsign true && git config gpg.format ssh && git config gpg.ssh.program ssh-keygen && git config user.signingkey ${join(keys, "key")} && git config gpg.ssh.allowedSignersFile ${join(keys, "allowed")}`, repo)
+    writeFileSync(join(root, "fix.txt"), "signed\n")
+    const broker = makeBroker(request, async (command, options) => {
+      if (command[0] === "gh") return command.includes("list") ? "[]" : `https://${GH_HOST}/${GHE_REPO}/pull/13`
+      if (command.includes("push")) return Effect.runPromise(runOk([...command.slice(0, -2), "origin", command.at(-1) ?? ""], options))
+      return Effect.runPromise(runOk(command, options))
+    })
+    await broker({ tool: "submit_fix", args: { title: "fix: signed", body: "" } })
+    expect(sh("git cat-file commit origin/fix-bt-test-123", root)).toContain("-----BEGIN SSH SIGNATURE-----")
+    expect(sh("git verify-commit origin/fix-bt-test-123 2>&1", root)).toContain('Good "git" signature for t@t')
   }, 30_000)
 
   test("prepares a broker-owned follow-up from main after a merged fix", async () => {
