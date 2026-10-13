@@ -1,4 +1,5 @@
 import SwiftUI
+import Termination
 
 /// The app's own line, in the band beside the notch: how Bridgetown is doing, in one
 /// sentence, and its menu. Healthy services say nothing; whatever is wrong is listed by

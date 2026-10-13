@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Termination
 
 /// Side effects outside the app: URLs, the log file, Terminal takeover, the Settings window,
 /// the clipboard, quitting.

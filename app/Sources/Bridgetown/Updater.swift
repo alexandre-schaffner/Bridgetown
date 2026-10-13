@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Observation
+import Termination
 
 /// Keeps Bridgetown current from its GitHub releases: it asks for the latest release at
 /// launch, every six hours and after wake, says when a newer one is out (`onAvailable`,
