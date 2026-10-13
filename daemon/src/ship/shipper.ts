@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { ActionQueue } from "../actions/queue.ts"
 import type { Alert } from "../domain/alert.ts"
-import { Conflict, type GitHubError } from "../domain/errors.ts"
+import { Conflict, type GitHubError, MergeRefused } from "../domain/errors.ts"
 import { now } from "../domain/ids.ts"
 import { releaseState } from "../domain/release.ts"
 import { type SentBack, type Session, withPatch } from "../domain/session.ts"
@@ -29,7 +29,7 @@ export interface ShipperShape {
   /** A release tracker message changed: moves the sessions shipping that tag. */
   readonly trackDeploy: (alert: Alert) => Effect.Effect<void, GitHubError>
   /** The merge gate: merges at most once, then moves on to the release. `Conflict` unless the session is `awaiting_merge`. */
-  readonly merge: (sessionId: string) => Effect.Effect<void, GitHubError | Conflict>
+  readonly merge: (sessionId: string) => Effect.Effect<void, GitHubError | Conflict | MergeRefused>
   /** The release gate: cuts at most one tag for the session's prefix. `Conflict` unless the session is `awaiting_release` with a prefix. */
   readonly release: (sessionId: string) => Effect.Effect<void, GitHubError | Conflict>
   /** Re-runs the failed workflow run of the session's release alert, on the agent's recommendation. `Conflict` unless the session is `waiting` on it. */
@@ -351,13 +351,13 @@ export const ShipperLive = Layer.effect(Shipper)(
           // A head the review did not pass is a reason only while model reviewing is on.
           const reviewPassed = !(yield* hub.settings).adversarialReview || claimed.critique === null || passedAt(claimed.critique, live.headRefOid)
           const reason = notReadyToMerge(live, prLabel(url), reviewPassed)
-          if (reason !== null) return yield* new Conflict({ message: reason })
+          if (reason !== null) return yield* new MergeRefused({ message: reason })
           yield* github.mergePr(url, live.headRefOid)
         }),
         isMerged: (url) => github.viewPr(url).pipe(Effect.map((pr) => pr.mergedAt !== null)),
         retryable: transientGitHub,
       }).pipe(
-        Effect.mapError((error) => mergeFailure(error, prLabel(prUrl))),
+        Effect.mapError(mergeFailure),
         Effect.tapError(() => atGate(sessionId, "awaiting_merge", { activity: session.activity })),
       )
       if (merged) yield* onMerged(sessionId)

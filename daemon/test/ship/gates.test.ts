@@ -25,9 +25,11 @@ const world = (initial: Session) => {
   const calls = { merge: 0, create: 0, nextTag: 0 }
   const github = {
     merged: false, queued: false, unreachable: false, tags: new Set<string>(), mergeFails: false, createFails: false, createFailsAfterTagging: false,
-    /** How many `gh pr merge` calls fail with a hiccup (a 502) before one goes through; `readFails`: how many `pr view` reads do. */
-    /** `readsFailAfter`: a refused merge takes GitHub's reads down with it. */
-    busyFor: 0, mergesAnyway: false, readFails: 0, readsFailAfter: false,
+    /**
+     * `busyFor`: how many `gh pr merge` calls fail with a hiccup (a 502) before one goes through; `readFails`: how many
+     * `pr view` reads do; `readsFailAfter`: a refused merge takes GitHub's reads down with it; `hangs`: nothing answers.
+     */
+    busyFor: 0, mergesAnyway: false, readFails: 0, readsFailAfter: false, hangs: false, reads: 0,
   }
   const state = { movedOn: false }
   const save = (patch: Partial<Session>) =>
@@ -55,6 +57,8 @@ const world = (initial: Session) => {
       }),
     isMerged: () =>
       Effect.suspend(() => {
+        github.reads++
+        if (github.hangs) return Effect.never
         if (github.unreachable) return fail("IP allow list")
         if (github.readFails > 0) {
           github.readFails--
@@ -139,6 +143,17 @@ describe("merge gate", () => {
     const failure = await Effect.runPromise(mergeOnce(w.row, "u", w.mergePorts).pipe(Effect.flip))
     expect(failure.message).toContain("502")
     expect(w.calls.merge).toBe(4)
+    // One read before each try and one after it: retries never nest.
+    expect(w.github.reads).toBe(8)
+  })
+  test("a GitHub that stops answering fails the click at its deadline, leaving the gate for the next", async () => {
+    const w = world(session("awaiting_merge"))
+    w.github.hangs = true
+    const failure = await Effect.runPromise(mergeOnce(w.row, "u", { ...w.mergePorts, deadline: "20 millis" }).pipe(Effect.flip))
+    expect(failure.message).toBe("GitHub did not answer the merge in time. Merge again in a moment.")
+    expect(w.calls.merge).toBe(0)
+    w.github.hangs = false
+    expect(await Effect.runPromise(mergeOnce(w.row, "u", w.mergePorts))).toBe(true)
   })
   test("a refusal is not asked again", async () => {
     const w = world(session("awaiting_merge"))

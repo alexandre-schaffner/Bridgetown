@@ -63,15 +63,45 @@ export const needsReviewRequest = (session: Session, pr: PullRequest, dryRun: bo
 
 const readyToMerge = (pr: PullRequest): CiStep => ({ _tag: "ReadyToMerge", activity: `#${pr.number} approved and green, ready to merge` })
 
+/** What stops a PR merging as GitHub reads it: CI not green, or a review that blocks it. */
+export type MergeBlock =
+  | { readonly _tag: "CiRed"; readonly failing: Extract<CiState, { _tag: "Red" }>["failing"] }
+  | { readonly _tag: "CiPending" }
+  | { readonly _tag: "ChangesRequested" }
+  | { readonly _tag: "ReviewRequired" }
+
 /**
- * A session waiting to merge, read again every tick: it stays only while CI is green and no review blocks the PR.
+ * The one reading of whether GitHub would merge `pr`, `null` when nothing stops it: the merge gate holds a session
+ * only while it is `null`, and a Merge click says which one stopped it (`notReadyToMerge`).
+ */
+export const mergeBlock = (pr: PullRequest, ci: CiState): MergeBlock | null => {
+  if (ci._tag === "Red") return { _tag: "CiRed", failing: ci.failing }
+  if (ci._tag === "Pending") return { _tag: "CiPending" }
+  if (pr.reviewDecision === "CHANGES_REQUESTED") return { _tag: "ChangesRequested" }
+  if (pr.reviewDecision === "REVIEW_REQUIRED") return { _tag: "ReviewRequired" }
+  return null
+}
+
+const backToCi = (block: MergeBlock, pr: PullRequest): string => {
+  switch (block._tag) {
+    case "CiRed":
+      return `CI went red on #${pr.number}`
+    case "CiPending":
+      return `CI running again on #${pr.number}`
+    case "ChangesRequested":
+      return `Changes requested on #${pr.number}`
+    case "ReviewRequired":
+      return `#${pr.number} needs a review again`
+  }
+}
+
+/**
+ * A session waiting to merge, read again every tick: it stays only while nothing blocks the merge (`mergeBlock`).
  * A merge GitHub took (`mergeRequestedAt`) is GitHub's to finish; one it has plainly dropped is offered again.
  */
 const atMergeGate = (session: Session, pr: PullRequest, ci: CiState, nowMs: number): CiStep => {
-  if (ci._tag === "Red") return { _tag: "BackToCi", activity: `CI went red on #${pr.number}` }
-  if (ci._tag === "Pending") return { _tag: "BackToCi", activity: `CI running again on #${pr.number}` }
-  if (pr.reviewDecision === "CHANGES_REQUESTED") return { _tag: "BackToCi", activity: `Changes requested on #${pr.number}` }
-  if (pr.reviewDecision === "REVIEW_REQUIRED") return { _tag: "BackToCi", activity: `#${pr.number} needs a review again` }
+  const block = mergeBlock(pr, ci)
+  if (block !== null) return { _tag: "BackToCi", activity: backToCi(block, pr) }
   const queued = session.mergeRequestedAt !== null && nowMs - Date.parse(session.mergeRequestedAt) < MERGE_QUEUE_TIMEOUT_MS
   return queued ? { _tag: "Wait", activity: null } : readyToMerge(pr)
 }

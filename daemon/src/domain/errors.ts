@@ -36,11 +36,17 @@ export class NotFound extends Schema.TaggedError<NotFound>()("NotFound", { messa
 /** The request is valid but the current state does not allow it. HTTP 409. */
 export class Conflict extends Schema.TaggedError<Conflict>()("Conflict", { message: Schema.String }) {}
 
+/**
+ * GitHub, or the merge gate before it, will not merge the PR as it stands: why, in the words its card shows. HTTP
+ * 422, so the app tells it from a click on something already being resolved (a 409) and keeps it on the card.
+ */
+export class MergeRefused extends Schema.TaggedError<MergeRefused>()("MergeRefused", { message: Schema.String }) {}
+
 /** A malformed or out-of-range request body. HTTP 400. */
 export class InvalidInput extends Schema.TaggedError<InvalidInput>()("InvalidInput", { message: Schema.String }) {}
 
 /** Every typed failure a service can hand the API. */
-export type DaemonError = AdapterError | MissingCredential | SlackApiError | GheBlocked | NotFound | Conflict | InvalidInput
+export type DaemonError = AdapterError | MissingCredential | SlackApiError | GheBlocked | NotFound | Conflict | MergeRefused | InvalidInput
 
 /** The one place typed failures become HTTP statuses (docs/API.md "Errors"). */
 export const statusOf = (error: DaemonError): number => {
@@ -51,6 +57,8 @@ export const statusOf = (error: DaemonError): number => {
       return 404
     case "Conflict":
       return 409
+    case "MergeRefused":
+      return 422
     case "AdapterError":
     case "MissingCredential":
     case "SlackApiError":

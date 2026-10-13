@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { Effect, ManagedRuntime, Schema } from "effect"
 import { authorized, bind, type BoundServer, serve } from "../../src/api/server.ts"
 import { Models } from "../../src/agent/models.ts"
-import { AdapterError, Conflict, GheBlocked, InvalidInput, MissingCredential, NotFound, SlackApiError, statusOf } from "../../src/domain/errors.ts"
+import { AdapterError, Conflict, GheBlocked, InvalidInput, MergeRefused, MissingCredential, NotFound, SlackApiError, statusOf } from "../../src/domain/errors.ts"
 import { DEFAULT_SETTINGS, Settings } from "../../src/domain/settings.ts"
 import type { ModelSelection } from "../../src/domain/models.ts"
 import { appLayer } from "../../src/layers.ts"
@@ -208,6 +208,7 @@ describe("status codes", () => {
     expect(statusOf(new InvalidInput({ message: "" }))).toBe(400)
     expect(statusOf(new NotFound({ message: "" }))).toBe(404)
     expect(statusOf(new Conflict({ message: "" }))).toBe(409)
+    expect(statusOf(new MergeRefused({ message: "" }))).toBe(422)
     expect(statusOf(new AdapterError({ adapter: "sqlite", operation: "x", message: "", cause: null }))).toBe(500)
     expect(statusOf(new MissingCredential({ service: "slack", message: "" }))).toBe(500)
     expect(statusOf(new SlackApiError({ method: "chat.postMessage", code: "not_posted", message: "" }))).toBe(500)
