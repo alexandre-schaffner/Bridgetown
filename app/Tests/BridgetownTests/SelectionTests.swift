@@ -73,8 +73,8 @@ import Testing
         var snap = try Fixture.snapshot()
         snap.actions = [action("1", .review), action("2", .merge), action("3", .escalate), action("4", .investigate), action("5", .release)]
         let groups = snap.actionGroups
-        #expect(groups.map(\.group) == [.answer, .ship, .investigate, .retry])
-        #expect(groups[1].actions.map(\.id) == ["2", "5"])
+        #expect(groups.map(\.group) == [.ship, .answer, .investigate, .retry])
+        #expect(groups[0].actions.map(\.id) == ["2", "5"])
     }
 
     @Test func sharedPrimaryNeedsTheSameKindAndLabel() {

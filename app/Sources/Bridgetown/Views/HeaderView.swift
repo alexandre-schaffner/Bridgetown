@@ -1,4 +1,5 @@
 import SwiftUI
+import Termination
 
 /// The app's own line, in the band beside the notch: how Bridgetown is doing, in one
 /// sentence, and its menu. Healthy services say nothing; whatever is wrong is listed by
@@ -112,7 +113,7 @@ struct AppMenu: View {
         Menu {
             items
             Divider()
-            Button("Quit Bridgetown") { NSApp.terminate(nil) }
+            Button("Quit Bridgetown") { AppTermination.quit() }
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 13, weight: .medium))
@@ -131,7 +132,7 @@ struct AppMenu: View {
             // Shortcuts need a button in the hierarchy; these draw nothing.
             Group {
                 Button("Settings", action: showSettings).keyboardShortcut(",")
-                Button("Quit Bridgetown") { NSApp.terminate(nil) }.keyboardShortcut("q")
+                Button("Quit Bridgetown") { AppTermination.quit() }.keyboardShortcut("q")
             }
             .opacity(0)
             .allowsHitTesting(false)

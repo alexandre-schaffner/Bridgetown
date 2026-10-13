@@ -3,7 +3,7 @@ import { Effect, ManagedRuntime, Schema } from "effect"
 import { authorized, bind, type BoundServer, serve } from "../../src/api/server.ts"
 import { Models } from "../../src/agent/models.ts"
 import { AdapterError, Conflict, GheBlocked, InvalidInput, MissingCredential, NotFound, SlackApiError, statusOf } from "../../src/domain/errors.ts"
-import { Settings } from "../../src/domain/settings.ts"
+import { DEFAULT_SETTINGS, Settings } from "../../src/domain/settings.ts"
 import type { ModelSelection } from "../../src/domain/models.ts"
 import { appLayer } from "../../src/layers.ts"
 import { newSession } from "../../src/sessions/new-session.ts"
@@ -159,6 +159,9 @@ describe("status codes", () => {
     expect((await post("/settings", { maxConcurrent: 0 })).status).toBe(400)
     expect((await post("/settings", { thresholds: { autoActionable: 3 } })).status).toBe(400)
     expect((await post("/settings", { quietHours: { start: "25:00" } })).status).toBe(400)
+    expect((await post("/settings", { memoryBudgetUsd: { learn: 0.2 } })).status).toBe(400)
+    expect((await post("/settings", { memoryBudgetUsd: { dream: 10.25 } })).status).toBe(400)
+    expect((await post("/settings", '{"memoryBudgetUsd":{"learn":1e309}}')).status).toBe(400)
     expect((await call("/alerts/%E0%A4%A")).status).toBe(400)
   })
   test("409 for a message the session cannot take", async () => {
@@ -170,6 +173,11 @@ describe("status codes", () => {
     const response = await post("/settings", { maxConcurrent: 3, quietHours: { start: "23:00" } })
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ settings: { maxConcurrent: 3, quietHours: { enabled: false, start: "23:00", end: "08:00" } } })
+  })
+  test("a memory spend limit changes on its own", async () => {
+    const response = await post("/settings", { memoryBudgetUsd: { dream: 2.5 } })
+    expect(response.status).toBe(200)
+    expect((await settingsOf(Promise.resolve(response))).memoryBudgetUsd).toEqual({ ...DEFAULT_SETTINGS.memoryBudgetUsd, dream: 2.5 })
   })
   test("settings merge key by key, keep what the patch leaves out, and survive a read", async () => {
     const before = await settingsOf(call("/state"))

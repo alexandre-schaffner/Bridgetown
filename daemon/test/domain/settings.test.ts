@@ -35,6 +35,11 @@ describe("settings stored before a setting existed", () => {
     expect(settings).toMatchObject({ maxConcurrent: 3, quietHours: { enabled: true, start: "23:00", end: "08:00" } })
   })
 
+  test("memory spend limits stored before they existed take the defaults", () => {
+    const { memoryBudgetUsd: _, ...old } = DEFAULT_SETTINGS
+    expect(loadSettings(JSON.stringify(old)).memoryBudgetUsd).toEqual(DEFAULT_SETTINGS.memoryBudgetUsd)
+  })
+
   test("a poll stored before it had to be whole seconds reads as the loop runs it", () => {
     expect(loadSettings(JSON.stringify({ ...DEFAULT_SETTINGS, pollSeconds: 7.5 })).pollSeconds).toBe(10)
     expect(loadSettings(JSON.stringify({ ...DEFAULT_SETTINGS, pollSeconds: 42.6 })).pollSeconds).toBe(43)

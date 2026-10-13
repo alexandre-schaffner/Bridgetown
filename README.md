@@ -56,7 +56,7 @@ The selected reviewer checks the fix before the PR leaves draft. Blocking findin
 
 ### Updates
 
-Bridgetown checks GitHub for a newer release at launch and every 6 hours. A new version sends one notification and appears at the top of the prod column. Click **Install**, or use **Install Bridgetown x.y.z** in the **…** menu, to update. Bridgetown downloads the DMG and checks its SHA-256 against the digest GitHub recorded when the release was published. It then checks the DMG's Ed25519 signature against a public key built into the app you have. Only the release workflow holds the private key, so a DMG published any other way is refused before it is opened. Last, it checks that the app inside has Bridgetown's bundle identifier and the release's version, and that its code signature is intact, before swapping it in and relaunching. If any check fails, the app you have stays in place. If the new version doesn't open within a minute, the previous one goes back and opens instead. **Check for updates** in the same menu checks right away. To update in place, Bridgetown must run from a folder you can write to, such as Applications. If it runs from somewhere else, you get a download link instead.
+Bridgetown checks GitHub for a newer release at launch, every 6 hours while running (four times a day), and 30 seconds after your Mac wakes from sleep. A check that fails, say before Wi-Fi is back, tries again 10 minutes later. A new version sends one notification and appears at the top of the prod column. Click **Install**, or use **Install Bridgetown x.y.z** in the **…** menu, to update. Bridgetown downloads the DMG and checks its SHA-256 against the digest GitHub recorded when the release was published. It then checks the DMG's Ed25519 signature against a public key built into the app you have. Only the release workflow holds the private key, so a DMG published any other way is refused before it is opened. Last, it checks that the app inside has Bridgetown's bundle identifier and the release's version, and that its code signature is intact, before swapping it in and relaunching. If any check fails, the app you have stays in place. If the new version doesn't open within a minute, the previous one goes back and opens instead. **Check for updates** in the same menu checks right away. To update in place, Bridgetown must run from a folder you can write to, such as Applications. If it runs from somewhere else, you get a download link instead.
 
 ## Try it locally
 
@@ -113,8 +113,8 @@ Open **Settings → Memory** to disable memory, see pending evidence and the las
 consolidation now, or open the files. Learning runs about once a minute when evidence is pending;
 consolidation runs every six hours when there is new evidence. Choose the provider, model and effort under
 **Settings → Models → Memory**. Jobs use the selected provider's existing authentication and time out after two
-minutes for learning or five minutes for consolidation. Claude jobs also cap spending at $0.50 and $1 respectively;
-Codex does not report spending. No remote is configured.
+minutes for learning or five minutes for consolidation. Claude jobs also cap spending, at $0.50 and $1 respectively by
+default; change the caps in **Settings → Memory**. Codex does not report spending. No remote is configured.
 
 You can edit the Markdown notes directly. Automatic writes pause while the memory repo has uncommitted edits;
 commit your corrections to resume them. Notes retain their sources and distinguish statements and agent claims

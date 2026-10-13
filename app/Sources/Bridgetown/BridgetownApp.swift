@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Termination
 
 @main
 struct BridgetownApp: App {
@@ -133,7 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             signal(sig, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
             source.setEventHandler {
-                MainActor.assumeIsolated { NSApp.terminate(nil) }
+                AppTermination.quit()
             }
             source.resume()
             signalSources.append(source)

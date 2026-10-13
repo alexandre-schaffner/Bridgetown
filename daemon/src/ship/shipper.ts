@@ -17,8 +17,9 @@ import { Store } from "../store/store.ts"
 import { reviewRequestText, reviewRoute } from "./approvals.ts"
 import { mergeDetail, releaseDetail } from "./cards.ts"
 import { mergeOnce, releaseOnce } from "./gates.ts"
-import { ciState, GitHub, type PullRequest } from "./github.ts"
+import { ciState, GitHub, type PullRequest, transientGitHub } from "./github.ts"
 import { prLabel } from "./pr.ts"
+import { mergeFailure, notReadyToMerge } from "./refusals.ts"
 import { afterMerge, ciTransition, deployStalled, deployTransition, type Escalation, followsDeploy, MAX_CI_ROUNDS, mergedResolution, needsReviewRequest } from "./transitions.ts"
 
 /** PR → CI → review → merge → release → deploy, driven by polling GitHub and reading the release tracker. */
@@ -347,12 +348,18 @@ export const ShipperLive = Layer.effect(Shipper)(
         merge: (url) => Effect.gen(function* () {
           const live = yield* github.viewPr(url)
           if (live.mergedAt !== null) return
-          if (live.isDraft === true || ciState(live)._tag !== "Green" || live.reviewDecision === "CHANGES_REQUESTED" || live.reviewDecision === "REVIEW_REQUIRED") return yield* new Conflict({ message: "The PR is no longer ready to merge. Refresh its checks and review." })
-          if ((yield* hub.settings).adversarialReview && claimed.critique !== null && !passedAt(claimed.critique, live.headRefOid)) return yield* new Conflict({ message: "The PR head no longer matches its passed review." })
+          // A head the review did not pass is a reason only while model reviewing is on.
+          const reviewPassed = !(yield* hub.settings).adversarialReview || claimed.critique === null || passedAt(claimed.critique, live.headRefOid)
+          const reason = notReadyToMerge(live, prLabel(url), reviewPassed)
+          if (reason !== null) return yield* new Conflict({ message: reason })
           yield* github.mergePr(url, live.headRefOid)
         }),
         isMerged: (url) => github.viewPr(url).pipe(Effect.map((pr) => pr.mergedAt !== null)),
-      }).pipe(Effect.tapError(() => atGate(sessionId, "awaiting_merge", { activity: session.activity })))
+        retryable: transientGitHub,
+      }).pipe(
+        Effect.mapError((error) => mergeFailure(error, prLabel(prUrl))),
+        Effect.tapError(() => atGate(sessionId, "awaiting_merge", { activity: session.activity })),
+      )
       if (merged) yield* onMerged(sessionId)
       else yield* atGate(sessionId, "awaiting_merge", { mergeRequestedAt: now(), activity: "Queued to merge" })
     })

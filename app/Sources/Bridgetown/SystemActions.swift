@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Termination
 
 /// Side effects outside the app: URLs, the log file, Terminal takeover, the Settings window,
 /// the clipboard, quitting.
@@ -72,7 +73,7 @@ enum SystemActions {
         #if DEBUG
         if let sink { return sink(.quit, "") }
         #endif
-        NSApp.terminate(nil)
+        AppTermination.quit()
     }
 
     /// `takeOverCommand` in a new Terminal window. Returns an error message on failure.

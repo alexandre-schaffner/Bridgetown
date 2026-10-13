@@ -90,7 +90,7 @@ describe("the merge gate is read again every tick", () => {
         Effect.andThen(Effect.gen(function* () { return yield* (yield* Shipper).merge("s_m").pipe(Effect.flip) })),
       ))
       expect(failure._tag).toBe("Conflict")
-      expect(failure.message).toContain("passed review")
+      expect(failure.message).toBe("#3345 changed since the model review passed it.")
       expect(calls.merge).toBe(0)
     } finally { await world.dispose() }
   })

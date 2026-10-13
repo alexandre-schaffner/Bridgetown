@@ -1,3 +1,4 @@
+import AppKit
 import CryptoKit
 import Foundation
 import os
@@ -69,6 +70,9 @@ import Testing
 
     private func updater(
         _ current: String?, installs: Bool = false, defaults: UserDefaults? = nil,
+        // The timer never comes round within a test unless it says so.
+        sleep: @escaping Updater.Sleep = { _ in try await Task.sleep(for: .seconds(3600)) },
+        wakeNotifications: NotificationCenter = NotificationCenter(),
         feed: @escaping Updater.Feed = { UpdaterTests.release }
     ) -> Updater {
         let installer = UpdateInstaller(
@@ -78,8 +82,106 @@ import Testing
         return Updater(
             current: current.flatMap(AppVersion.init),
             installer: installs ? .success(installer) : .failure(UpdateError("Move Bridgetown to Applications to update it from here.")),
-            defaults: defaults ?? self.defaults(), feed: feed
+            defaults: defaults ?? self.defaults(), sleep: sleep,
+            wakeNotifications: wakeNotifications, feed: feed
         )
+    }
+
+    private actor FeedCalls {
+        private(set) var count = 0
+        func latest(failingFirst failures: Int = 0) throws -> Release {
+            count += 1
+            if count <= failures { throw URLError(.notConnectedToInternet) }
+            return UpdaterTests.release
+        }
+    }
+
+    /// Each wait the updater asks for. `returning` of them end at once; the rest last until
+    /// the updater is gone.
+    private actor Sleeps {
+        private(set) var waits: [Duration] = []
+        let returning: Int
+        init(returning: Int = 0) { self.returning = returning }
+
+        func sleep(_ duration: Duration) async throws {
+            waits.append(duration)
+            if waits.count > returning { try await Task.sleep(for: .seconds(3600)) }
+        }
+    }
+
+    /// Waits up to two seconds for `condition`.
+    private func eventually(_ condition: () async -> Bool) async throws {
+        for _ in 0..<200 {
+            if await condition() { return }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
+    @Test func checksAtLaunchAndFourTimesADayWithoutStartingTwoLoops() async throws {
+        let ticks = AsyncStream<Void>.makeStream()
+        defer { ticks.continuation.finish() }
+        let calls = FeedCalls()
+        let updater = updater("1.1.0", sleep: { interval in
+            #expect(interval == Updater.interval)
+            for await _ in ticks.stream { return }
+            throw CancellationError()
+        }, feed: { try await calls.latest() })
+        updater.start()
+        updater.start()
+        for expected in 1...5 {
+            try await eventually { await calls.count >= expected }
+            #expect(await calls.count == expected)
+            if expected < 5 { ticks.continuation.yield(()) }
+        }
+        #expect(updater.state == .available(Self.release))
+    }
+
+    @Test func aCheckOnItsOwnThatFailedTriesAgainSooner() async throws {
+        let sleeps = Sleeps(returning: 1)
+        let calls = FeedCalls()
+        let updater = updater("1.1.0", sleep: { try await sleeps.sleep($0) }, feed: { try await calls.latest(failingFirst: 1) })
+        updater.start()
+        try await eventually { await sleeps.waits.count == 2 }
+        #expect(await sleeps.waits == [Updater.retry, Updater.interval])
+        #expect(updater.state == .available(Self.release))
+    }
+
+    @Test func wakingChecksOnceTheNetworkHadTimeToComeBack() async throws {
+        let notifications = NotificationCenter()
+        let sleeps = Sleeps()
+        let calls = FeedCalls()
+        let updater = updater("1.1.0", sleep: { duration in
+            if duration == Updater.afterWake { return }
+            try await sleeps.sleep(duration)
+        }, wakeNotifications: notifications, feed: { try await calls.latest() })
+        updater.start()
+        try await eventually { await sleeps.waits == [Updater.interval] }
+        #expect(await calls.count == 1)
+        notifications.post(name: NSWorkspace.didWakeNotification, object: nil)
+        try await eventually { await calls.count == 2 }
+        #expect(await calls.count == 2)
+        #expect(updater.state == .available(Self.release))
+    }
+
+    /// One on its own still out when you ask: yours waits for it, and says how it went.
+    @Test func aCheckYouAskForWhileOneIsOutWaitsForItAndSaysHowItWent() async throws {
+        let answers = AsyncThrowingStream<Release, Error>.makeStream()
+        let calls = FeedCalls()
+        let updater = updater("1.1.0", feed: {
+            _ = try await calls.latest()
+            for try await release in answers.stream { return release }
+            throw CancellationError()
+        })
+        let onItsOwn = Task { await updater.check(manual: false) }
+        try await eventually { await calls.count == 1 }
+        let asked = Task { await updater.check(manual: true) }
+        try await eventually { updater.state == .checking }
+        #expect(updater.state == .checking)
+        answers.continuation.finish(throwing: URLError(.notConnectedToInternet))
+        #expect(await onItsOwn.value == false)
+        #expect(await asked.value == false)
+        #expect(await calls.count == 1)
+        #expect(updater.state == .checkFailed("GitHub not reachable"))
     }
 
     /// Each check that finds it says so; the notifier says it once (NotifierTests).
@@ -102,7 +204,7 @@ import Testing
     }
 
     @Test func onlyACheckYouAskedForSaysItFailed() async {
-        let offline = updater("1.1.0") { throw URLError(.notConnectedToInternet) }
+        let offline = updater("1.1.0", feed: { throw URLError(.notConnectedToInternet) })
         await offline.check(manual: false)
         #expect(offline.state == .idle)
         await offline.check(manual: true)
@@ -111,10 +213,10 @@ import Testing
     }
 
     @Test func aDebugBinaryNeverChecks() async {
-        let debug = updater(nil) {
+        let debug = updater(nil, feed: {
             Issue.record("checked")
             return UpdaterTests.release
-        }
+        })
         #expect(!debug.isEnabled)
         await debug.check(manual: true)
         #expect(debug.state == .idle)

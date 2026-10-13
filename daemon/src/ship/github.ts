@@ -1,6 +1,6 @@
 import { Context, Effect, Layer, Schema } from "effect"
 import { GH_HOST, GHE_REPO } from "../config.ts"
-import { type AdapterError, decodeOr, GheBlocked, type GitHubError } from "../domain/errors.ts"
+import { type AdapterError, type Conflict, decodeOr, GheBlocked, type GitHubError } from "../domain/errors.ts"
 import { git, run, runOk } from "../lib/proc.ts"
 import { nextTagFrom } from "./tags.ts"
 
@@ -14,6 +14,15 @@ const onGhe = <A, R>(effect: Effect.Effect<A, AdapterError, R>): Effect.Effect<A
       refusedByAllowList(error.message) ? Effect.fail(new GheBlocked({ operation: error.operation, message: error.message })) : Effect.fail(error),
     ),
   )
+
+/**
+ * A failure that asking again gets past: GitHub busy (a 5xx, "something went wrong"), the connection or our own
+ * timeout giving up, or another merge landing on the base branch first. Never a refusal (`GheBlocked`, a `Conflict`,
+ * a PR that is not mergeable).
+ */
+export const transientGitHub = (error: GitHubError | Conflict): boolean =>
+  error._tag === "AdapterError" &&
+  /Base branch was modified|HTTP 5\d\d|Bad Gateway|Service Unavailable|Something went wrong|timed out|time-?out|connection (reset|refused)|unexpected EOF/i.test(error.message)
 
 const gh = (args: ReadonlyArray<string>, cwd?: string) =>
   onGhe(runOk(["gh", ...args], { env: { GH_HOST }, timeoutMs: 120_000, ...(cwd === undefined ? {} : { cwd }) }))

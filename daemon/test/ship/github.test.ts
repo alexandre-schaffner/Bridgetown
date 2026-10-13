@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
+import { AdapterError, Conflict, GheBlocked } from "../../src/domain/errors.ts"
 import { Health } from "../../src/health.ts"
 import { Hub } from "../../src/hub.ts"
-import { ciState, type Reachability, refusedByAllowList } from "../../src/ship/github.ts"
+import { ciState, type Reachability, refusedByAllowList, transientGitHub } from "../../src/ship/github.ts"
 import { fakeGitHub } from "../support/fakes.ts"
 import { makeWorld } from "../support/world.ts"
 
@@ -11,6 +12,26 @@ describe("GHE allow list", () => {
     expect(refusedByAllowList("HTTP 403: Although you appear to have the correct authorization credentials, the `Merkl` organization has an IP allow list enabled")).toBe(true)
     expect(refusedByAllowList("fatal: unable to access 'https://nocturlab.ghe.com/…': The requested URL returned error: 403")).toBe(true)
     expect(refusedByAllowList("could not resolve host")).toBe(false)
+  })
+})
+
+describe("transient GitHub failures", () => {
+  const adapter = (message: string) => new AdapterError({ adapter: "subprocess", operation: "gh pr merge", message, cause: null })
+  test("a busy GitHub, a dropped connection or a moved base branch is worth asking again", () => {
+    for (const message of [
+      "exited 1: GraphQL: Base branch was modified. Review and try the merge again. (mergePullRequest)",
+      "exited 1: HTTP 502: Bad Gateway (https://nocturlab.ghe.com/api/graphql)",
+      "exited 1: GraphQL: Something went wrong while executing your query. (mergePullRequest)",
+      "exited 1: Post \"https://nocturlab.ghe.com/api/graphql\": read tcp: connection reset by peer",
+      "exited 1: net/http: TLS handshake timeout",
+      "Timed out: command.",
+    ]) expect(transientGitHub(adapter(message))).toBe(true)
+  })
+  test("a refusal is not", () => {
+    expect(transientGitHub(adapter("exited 1: GraphQL: Pull request is not mergeable: the merge commit cannot be cleanly created (mergePullRequest)"))).toBe(false)
+    expect(transientGitHub(adapter("exited 1: GraphQL: Head branch was modified. Review and try the merge again. (mergePullRequest)"))).toBe(false)
+    expect(transientGitHub(new GheBlocked({ operation: "gh pr merge", message: "HTTP 403: IP allow list" }))).toBe(false)
+    expect(transientGitHub(new Conflict({ message: "CI is running again on #3340." }))).toBe(false)
   })
 })
 

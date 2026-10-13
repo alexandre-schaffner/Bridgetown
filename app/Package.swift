@@ -7,7 +7,15 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "Bridgetown",
+            dependencies: ["Termination"],
             path: "Sources/Bridgetown"
+        ),
+        .target(name: "Termination", path: "Sources/Termination"),
+        // A bare app that quits as Bridgetown does, which AppTerminationTests runs.
+        .executableTarget(
+            name: "TerminationHarness",
+            dependencies: ["Termination"],
+            path: "Sources/TerminationHarness"
         ),
         // swift-testing (`import Testing`), which ships with the Command Line Tools;
         // XCTest needs a full Xcode. Run with `make test-app` or `swift test`.
