@@ -26,9 +26,11 @@ export type Thresholds = typeof Thresholds.Type
 
 const QuietHours = Schema.Struct({ enabled: Schema.Boolean, start: ClockTime, end: ClockTime })
 
-const Usd = Schema.Number.check(Schema.isGreaterThan(0))
+/** What a memory job's spend limit may be, in dollars; the app's stepper offers the same range. */
+export const MEMORY_BUDGET_USD = { minimum: 0.25, maximum: 10 }
+const MemoryBudgetUsd = Schema.Number.check(Schema.isBetween(MEMORY_BUDGET_USD))
 /** What one Claude memory job may spend, by mode: learning, and consolidation (dreaming). */
-const MemoryBudget = Schema.Struct({ learn: Usd, dream: Usd })
+const MemoryBudget = Schema.Struct({ learn: MemoryBudgetUsd, dream: MemoryBudgetUsd })
 
 export const Settings = Schema.Struct({
   models: ModelSettings,

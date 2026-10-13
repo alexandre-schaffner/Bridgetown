@@ -415,10 +415,13 @@ struct Settings: Codable, Sendable, Equatable {
         var end: String    // "08:00"
     }
 
-    /// What one Claude memory job may spend, in dollars.
+    /// What one Claude memory job may spend, in dollars, by the daemon's name for its mode.
     struct MemoryBudget: Codable, Sendable, Equatable {
+        /// What the daemon accepts (`MEMORY_BUDGET_USD`).
+        static let range: ClosedRange<Double> = 0.25...10
+
         var learn: Double = 0.5
-        /// Consolidation.
+        /// Consolidation, which the daemon calls dreaming.
         var dream: Double = 1
     }
 

@@ -79,7 +79,7 @@ settings saved:
 - A key left out keeps its value. `thresholds`, `quietHours` and `memoryBudgetUsd` merge key by key, so `{ "thresholds": { "autoActionable": 0.9 } }`
   changes that one threshold. `models` merges by role; each supplied role replaces its entire selection. `channels` is the full list.
 - Unknown keys are dropped. Every value is checked: thresholds between 0 and 1, `maxConcurrent` a whole number of at
-  least 1, `quietHours` times as `HH:MM`, `pollSeconds` a whole number of at least 10, and `memoryBudgetUsd` amounts above 0. A value out of range or of
+  least 1, `quietHours` times as `HH:MM`, `pollSeconds` a whole number of at least 10, and `memoryBudgetUsd` amounts from 0.25 to 10. A value out of range or of
   the wrong type, or an invalid `null`, fails the whole request with `400` and changes nothing.
 - The merged settings are checked again as a whole, saved in the store, and pushed to every `/events` stream.
 

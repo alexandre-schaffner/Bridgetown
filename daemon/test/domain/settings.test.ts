@@ -37,7 +37,7 @@ describe("settings stored before a setting existed", () => {
 
   test("memory spend limits stored before they existed take the defaults", () => {
     const { memoryBudgetUsd: _, ...old } = DEFAULT_SETTINGS
-    expect(loadSettings(JSON.stringify(old)).memoryBudgetUsd).toEqual({ learn: 0.5, dream: 1 })
+    expect(loadSettings(JSON.stringify(old)).memoryBudgetUsd).toEqual(DEFAULT_SETTINGS.memoryBudgetUsd)
   })
 
   test("a poll stored before it had to be whole seconds reads as the loop runs it", () => {

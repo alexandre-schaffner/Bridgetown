@@ -435,7 +435,7 @@ private struct MemoryTab: View {
     private func budget(_ label: String, _ key: WritableKeyPath<Settings.MemoryBudget, Double>) -> some View {
         let budgets: WritableKeyPath<Settings, Settings.MemoryBudget> = \.memoryBudgetUsd
         let binding = settings.binding(budgets.appending(path: key), debounce: true)
-        return stepper(label, binding.wrappedValue.formatted(.currency(code: "USD")), binding, in: 0.25...10, step: 0.25)
+        return stepper(label, binding.wrappedValue.formatted(.currency(code: "USD")), binding, in: Settings.MemoryBudget.range, step: 0.25)
     }
 
     @MainActor private func reload() async {
