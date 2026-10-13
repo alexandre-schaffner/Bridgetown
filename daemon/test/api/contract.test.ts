@@ -5,7 +5,7 @@ import { alertDetailView, boardView, snapshotView, sweepView } from "../../src/a
 import type { MemoryStatus } from "../../src/api/wire.ts"
 import type { Action } from "../../src/domain/action.ts"
 import type { Session } from "../../src/domain/session.ts"
-import { DEFAULT_SETTINGS } from "../../src/domain/settings.ts"
+import { DEFAULT_SETTINGS, MEMORY_BUDGET_USD } from "../../src/domain/settings.ts"
 import type { FetchedBoard, FetchedPanel } from "../../src/grafana/board.ts"
 import { patternKey } from "../../src/watch/logs.ts"
 import { measure, readingOf, type Reading } from "../../src/watch/detect.ts"
@@ -96,6 +96,9 @@ describe("the wire, as the app's fixtures hold it", () => {
   test("memory.json: local memory status", () => {
     const status: MemoryStatus = { enabled: true, path: "/Users/me/Library/Application Support/Bridgetown/memory", state: "idle", pending: 3, lastLearnedAt: "2026-10-07T10:00:00.000Z", lastDreamedAt: null, error: null }
     pinned("memory", status)
+  })
+  test("settings-limits.json: what a memory spend limit may be, which the app's stepper offers", () => {
+    pinned("settings-limits", { memoryBudgetUsd: MEMORY_BUDGET_USD })
   })
   test("snapshot.json: a snapshot", () => {
     pinned(

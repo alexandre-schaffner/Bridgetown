@@ -1,0 +1,6 @@
+{
+  "memoryBudgetUsd": {
+    "minimum": 0.25,
+    "maximum": 10
+  }
+}
