@@ -417,7 +417,7 @@ struct Settings: Codable, Sendable, Equatable {
 
     /// What one Claude memory job may spend, in dollars, by the daemon's name for its mode.
     struct MemoryBudget: Codable, Sendable, Equatable {
-        /// What the daemon accepts (`MEMORY_BUDGET_USD`).
+        /// What the daemon accepts (`MEMORY_BUDGET_USD`), checked against its `settings-limits` fixture.
         static let range: ClosedRange<Double> = 0.25...10
 
         var learn: Double = 0.5

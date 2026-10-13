@@ -1,7 +1,8 @@
 import { Context, Effect, Layer, Schema } from "effect"
 import { GH_HOST, GHE_REPO } from "../config.ts"
-import { type AdapterError, type Conflict, decodeOr, GheBlocked, type GitHubError } from "../domain/errors.ts"
+import { type AdapterError, decodeOr, GheBlocked, type GitHubError, MergeRefused } from "../domain/errors.ts"
 import { git, run, runOk } from "../lib/proc.ts"
+import { prLabel } from "./pr.ts"
 import { nextTagFrom } from "./tags.ts"
 
 /** What `gh` / git print when the Merkl org's IP allow list refuses this network. */
@@ -17,12 +18,31 @@ const onGhe = <A, R>(effect: Effect.Effect<A, AdapterError, R>): Effect.Effect<A
 
 /**
  * A failure that asking again gets past: GitHub busy (a 5xx, "something went wrong"), the connection or our own
- * timeout giving up, or another merge landing on the base branch first. Never a refusal (`GheBlocked`, a `Conflict`,
- * a PR that is not mergeable).
+ * timeout giving up, or another merge landing on the base branch first. Never a refusal (`GheBlocked`, a
+ * `MergeRefused`).
  */
-export const transientGitHub = (error: GitHubError | Conflict): boolean =>
+export const transientGitHub = (error: GitHubError | MergeRefused): boolean =>
   error._tag === "AdapterError" &&
   /Base branch was modified|HTTP 5\d\d|Bad Gateway|Service Unavailable|Something went wrong|timed out|time-?out|connection (reset|refused)|unexpected EOF/i.test(error.message)
+
+/** What GitHub said, without `gh`'s wrapping: `exited 1: GraphQL: … (mergePullRequest)`. */
+export const said = (message: string): string =>
+  message.replace(/^exited \d+:\s*/, "").replace(/^GraphQL:\s*/, "").replace(/\s*\(mergePullRequest\)\s*$/, "").trim()
+
+/**
+ * A failed `gh pr merge` as what it means: a hiccup to ask again about stays as it was, anything else is GitHub
+ * refusing the merge, said in the words the PR's card shows.
+ */
+export const mergeRefusal = (error: AdapterError, prUrl: string): AdapterError | MergeRefused => {
+  if (transientGitHub(error)) return error
+  const message = said(error.message)
+  const label = prLabel(prUrl)
+  if (/cannot be cleanly created|merge conflict/i.test(message)) return new MergeRefused({ message: `${label} has conflicts with its base branch.` })
+  if (/Head branch was modified|head commit|expected head/i.test(message)) return new MergeRefused({ message: `New commits landed on ${label}. Check them, then merge again.` })
+  if (/required status check/i.test(message)) return new MergeRefused({ message: `GitHub is still waiting on a required check for ${label}.` })
+  if (/approving review|review is required/i.test(message)) return new MergeRefused({ message: `GitHub requires an approving review on ${label}.` })
+  return new MergeRefused({ message: `GitHub refused to merge ${label}: ${message.slice(0, 200)}` })
+}
 
 const gh = (args: ReadonlyArray<string>, cwd?: string) =>
   onGhe(runOk(["gh", ...args], { env: { GH_HOST }, timeoutMs: 120_000, ...(cwd === undefined ? {} : { cwd }) }))
@@ -84,7 +104,11 @@ const viewPr = (prUrl: string) =>
     Effect.flatMap((out) => decodeOr("gh", "pr view", Schema.fromJsonString(PullRequest))(out)),
   )
 
-const mergePr = (prUrl: string, head: string) => gh(["pr", "merge", prUrl, "--squash", "--match-head-commit", head]).pipe(Effect.asVoid)
+const mergePr = (prUrl: string, head: string) =>
+  gh(["pr", "merge", prUrl, "--squash", "--match-head-commit", head]).pipe(
+    Effect.asVoid,
+    Effect.catchTag("AdapterError", (error) => Effect.fail(mergeRefusal(error, prUrl))),
+  )
 
 const rerunFailedJobs = (runId: string) => gh(["run", "rerun", runId, "--failed", "-R", GHE_REPO]).pipe(Effect.asVoid)
 
@@ -140,7 +164,8 @@ const reachability: Effect.Effect<Reachability> = run(["gh", "api", "user", "--h
  */
 export interface GitHubShape {
   readonly viewPr: (prUrl: string) => Effect.Effect<PullRequest, GitHubError>
-  readonly mergePr: (prUrl: string, head: string) => Effect.Effect<void, GitHubError>
+  /** GitHub refusing the merge (a conflict, a moved head, a branch rule) is a `MergeRefused` that says why. */
+  readonly mergePr: (prUrl: string, head: string) => Effect.Effect<void, GitHubError | MergeRefused>
   readonly rerunFailedJobs: (runId: string) => Effect.Effect<void, GitHubError>
   /** Next tag for `prefix` (e.g. `admin` → `admin-v0.6.1`), read from the remote so local clones can lag. */
   readonly nextPatchTag: (repoPath: string, prefix: string) => Effect.Effect<string, GitHubError>

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { AdapterError, Conflict, GheBlocked } from "../../src/domain/errors.ts"
+import { AdapterError, GheBlocked, MergeRefused } from "../../src/domain/errors.ts"
 import type { PullRequest } from "../../src/ship/github.ts"
 import { mergeFailure, notReadyToMerge } from "../../src/ship/refusals.ts"
 
@@ -28,30 +28,18 @@ describe("why a PR is not ready to merge", () => {
 })
 
 describe("a failed merge in the card's words", () => {
-  test("GitHub's refusals become reasons, and leave the card for the next click", () => {
-    const cases: ReadonlyArray<readonly [string, string]> = [
-      ["GraphQL: Pull request is not mergeable: the merge commit cannot be cleanly created (mergePullRequest)", "#3340 has conflicts with its base branch."],
-      ["GraphQL: Head branch was modified. Review and try the merge again. (mergePullRequest)", "New commits landed on #3340. Check them, then merge again."],
-      ["GraphQL: Required status check \"ci-ok\" is expected. (mergePullRequest)", "GitHub is still waiting on a required check for #3340."],
-      ["GraphQL: At least 1 approving review is required by reviewers with write access. (mergePullRequest)", "GitHub requires an approving review on #3340."],
-      ["GraphQL: Repository rule violations found (mergePullRequest)", "GitHub refused to merge #3340: Repository rule violations found"],
-    ]
-    for (const [stderr, reason] of cases) {
-      const failure = mergeFailure(gh(stderr), "#3340")
-      expect(failure._tag).toBe("Conflict")
-      expect(failure.message).toBe(reason)
-    }
-  })
   test("GitHub not answering stays a failure to try again, said plainly", () => {
-    const failure = mergeFailure(gh("HTTP 502: Bad Gateway (https://nocturlab.ghe.com/api/graphql)"), "#3340")
+    const failure = mergeFailure(gh("HTTP 502: Bad Gateway (https://nocturlab.ghe.com/api/graphql)"))
     expect(failure._tag).toBe("AdapterError")
     expect(failure.message).toBe("GitHub did not answer the merge (HTTP 502: Bad Gateway (https://nocturlab.ghe.com/api/graphql)). Merge again in a moment.")
   })
-  test("the allow list keeps its tag, and a reason already given is kept", () => {
-    const blocked = mergeFailure(new GheBlocked({ operation: "gh pr merge", message: "HTTP 403: … IP allow list enabled" }), "#3340")
+  test("the allow list keeps its tag, and a reason or another failure is kept", () => {
+    const blocked = mergeFailure(new GheBlocked({ operation: "gh pr merge", message: "HTTP 403: … IP allow list enabled" }))
     expect(blocked._tag).toBe("GheBlocked")
     expect(blocked.message).toBe("GitHub Enterprise refuses this network (its IP allow list).")
-    const reason = new Conflict({ message: "CI is running again on #3340." })
-    expect(mergeFailure(reason, "#3340")).toBe(reason)
+    const reason = new MergeRefused({ message: "CI is running again on #3340." })
+    expect(mergeFailure(reason)).toBe(reason)
+    const decode = new AdapterError({ adapter: "gh", operation: "pr view", message: "Expected string", cause: null })
+    expect(mergeFailure(decode)).toBe(decode)
   })
 })

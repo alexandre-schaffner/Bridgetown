@@ -92,6 +92,42 @@ import Testing
         #expect(stub.events == ["→ POST \(path)", "← POST \(path)"])
     }
 
+    /// A merge GitHub refused is said on its card, even while the snapshot still shows it
+    /// being merged.
+    @Test func aRefusalWhileInFlightStaysOnTheCard() async throws {
+        let (store, stub) = try await connected { _ in .init(status: 422, body: Data(#"{"error":"CI failed on #3340: lint."}"#.utf8)) }
+        defer { stub.stop() }
+        let merge = try #require(store.snapshot?.action(id: "act_merge_1"))
+        try #require(merge.inFlight)
+        store.resolve(merge)
+        try await stub.until { store.refusals[merge.id] != nil }
+        #expect(store.refusals[merge.id] == "CI failed on #3340: lint.")
+        #expect(store.flash == nil)
+    }
+
+    /// The daemon is already on it: not a failure.
+    @Test func aConflictWhileInFlightSaysNothing() async throws {
+        let (store, stub) = try await connected { _ in .init(status: 409, body: Data(#"{"error":"This action is already being resolved"}"#.utf8)) }
+        defer { stub.stop() }
+        let merge = try #require(store.snapshot?.action(id: "act_merge_1"))
+        store.resolve(merge)
+        try await stub.until { !store.isBusy(merge.id) }
+        #expect(stub.requests.count == 1)
+        #expect(store.refusals[merge.id] == nil)
+        #expect(store.flash == nil)
+    }
+
+    /// Nothing in flight to wait for, so a conflict is said on the card.
+    @Test func aConflictWithNothingInFlightStaysOnTheCard() async throws {
+        let (store, stub) = try await connected { _ in .init(status: 409, body: Data(#"{"error":"The session moved on"}"#.utf8)) }
+        defer { stub.stop() }
+        let review = try #require(store.snapshot?.action(id: "act_review_1"))
+        try #require(!review.inFlight)
+        store.resolve(review)
+        try await stub.until { store.refusals[review.id] != nil }
+        #expect(store.refusals[review.id] == "The session moved on")
+    }
+
     @Test func aRefusedSettingGoesBackToWhatTheDaemonSaid() async throws {
         let (store, stub) = try await connected { _ in .init(status: 500, body: Data(#"{"error":"nope"}"#.utf8)) }
         defer { stub.stop() }

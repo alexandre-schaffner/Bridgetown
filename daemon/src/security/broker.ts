@@ -5,7 +5,6 @@ import { join } from "node:path"
 import { z } from "zod"
 import { Effect } from "effect"
 import { GH_HOST, GHE_REPO } from "../config.ts"
-import { errorMessage } from "../domain/errors.ts"
 import { isOwnBranch } from "../domain/session.ts"
 import type { AgentRequest } from "../agent/protocol.ts"
 import { changedPaths, type TreeEntry } from "./changes.ts"
@@ -21,6 +20,9 @@ import { fileBroker, snapshotFiles } from "./files.ts"
 
 /** Protected execution metadata may never ride along with a brokered fix. */
 export const publishablePath = (path: string): boolean => !protectedPath(path) && !path.replaceAll("\\", "/").split("/").some((part, index, parts) => part === "workflows" && parts[index - 1] === ".github") && path !== ".gitattributes"
+
+/** How long signing a fix may wait on its key before the fix is committed unsigned. */
+const SIGN_TIMEOUT_MS = 15_000
 
 export const makeBroker = (request: AgentRequest, runCommand: (command: ReadonlyArray<string>, options: RunOptions) => Promise<string> = (command, options) => Effect.runPromise(runOk(command, options), { signal: request.abort.signal })): ((input: BrokerRequest) => Promise<string>) => {
   const { session, abort } = request
@@ -90,6 +92,19 @@ export const makeBroker = (request: AgentRequest, runCommand: (command: Readonly
     } finally { await rm(staging, { recursive: true, force: true }) }
   }
 
+  /**
+   * The fix as one commit, signed as your own `git commit` signs (commit-tree only signs when asked): with the key
+   * your Git config names, which may live in your SSH agent. A key that waits for you (Touch ID, a passphrase prompt)
+   * gets `SIGN_TIMEOUT_MS`; nobody is there for an unattended fix, so it is then committed unsigned, as before.
+   */
+  const commitFix = async (tree: string, parent: string, title: string): Promise<string> => {
+    const unsigned = async () => (await execute(git("-c", "commit.gpgsign=false", "commit-tree", tree, "-p", parent, "-m", title))).trim()
+    if ((await execute(git("config", "--type=bool", "--default=false", "--get", "commit.gpgsign"))).trim() !== "true") return unsigned()
+    const agent = process.env.SSH_AUTH_SOCK === undefined ? {} : { SSH_AUTH_SOCK: process.env.SSH_AUTH_SOCK }
+    const signed = await execute(git("commit-tree", "-S", tree, "-p", parent, "-m", title), { env: agent, timeoutMs: SIGN_TIMEOUT_MS }).catch(() => null)
+    return signed === null ? unsigned() : signed.trim()
+  }
+
   const publish = async (args: Extract<BrokerRequest, { tool: "submit_fix" }>["args"]): Promise<string> => {
     if (worktree === null || !isSessionBranch(session.branch)) throw new Error("Only this session's prepared branch can be published.")
     assertNoSecrets(args.title); assertNoSecrets(args.body)
@@ -100,13 +115,7 @@ export const makeBroker = (request: AgentRequest, runCommand: (command: Readonly
     const { parent, tree, patch } = await capturePatch()
     let publishedHead = parent
     if (patch !== "") {
-      // Signed as your own `git commit` signs, which commit-tree only does when asked: with the key
-      // your Git config names, which may live in your SSH agent.
-      const signs = (await execute(git("config", "--type=bool", "--default=false", "--get", "commit.gpgsign"))).trim() === "true"
-      const agent = process.env.SSH_AUTH_SOCK === undefined ? {} : { SSH_AUTH_SOCK: process.env.SSH_AUTH_SOCK }
-      publishedHead = (await execute(git("commit-tree", ...(signs ? ["-S"] : []), tree, "-p", parent, "-m", args.title), { env: { GH_HOST, ...agent } }).catch((cause: unknown) => {
-        throw new Error(`Couldn't commit the fix; if Git signs your commits, check your signing key is available. ${errorMessage(cause)}`)
-      })).trim()
+      publishedHead = await commitFix(tree, parent, args.title)
       await execute(git("update-ref", `refs/heads/${activeBranch}`, publishedHead, parent))
       await execute(git("read-tree", publishedHead))
     }

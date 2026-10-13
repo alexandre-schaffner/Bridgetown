@@ -89,7 +89,7 @@ describe("the merge gate is read again every tick", () => {
       const failure = await world.runPromise(seed(shipping("awaiting_merge", { critique: { reviewer: "codex", sha: "reviewed-head", findings: [], response: null } }), [mergeCard()]).pipe(
         Effect.andThen(Effect.gen(function* () { return yield* (yield* Shipper).merge("s_m").pipe(Effect.flip) })),
       ))
-      expect(failure._tag).toBe("Conflict")
+      expect(failure._tag).toBe("MergeRefused")
       expect(failure.message).toBe("#3345 changed since the model review passed it.")
       expect(calls.merge).toBe(0)
     } finally { await world.dispose() }

@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { AdapterError, Conflict, GheBlocked } from "../../src/domain/errors.ts"
+import { AdapterError, GheBlocked, MergeRefused } from "../../src/domain/errors.ts"
 import { Health } from "../../src/health.ts"
 import { Hub } from "../../src/hub.ts"
-import { ciState, type Reachability, refusedByAllowList, transientGitHub } from "../../src/ship/github.ts"
+import { ciState, mergeRefusal, type Reachability, refusedByAllowList, transientGitHub } from "../../src/ship/github.ts"
 import { fakeGitHub } from "../support/fakes.ts"
 import { makeWorld } from "../support/world.ts"
 
@@ -31,7 +31,30 @@ describe("transient GitHub failures", () => {
     expect(transientGitHub(adapter("exited 1: GraphQL: Pull request is not mergeable: the merge commit cannot be cleanly created (mergePullRequest)"))).toBe(false)
     expect(transientGitHub(adapter("exited 1: GraphQL: Head branch was modified. Review and try the merge again. (mergePullRequest)"))).toBe(false)
     expect(transientGitHub(new GheBlocked({ operation: "gh pr merge", message: "HTTP 403: IP allow list" }))).toBe(false)
-    expect(transientGitHub(new Conflict({ message: "CI is running again on #3340." }))).toBe(false)
+    expect(transientGitHub(new MergeRefused({ message: "CI is running again on #3340." }))).toBe(false)
+  })
+})
+
+describe("a failed gh pr merge in the card's words", () => {
+  const gh = (message: string) => new AdapterError({ adapter: "subprocess", operation: "gh pr merge", message: `exited 1: ${message}`, cause: null })
+  const url = "https://nocturlab.ghe.com/Merkl/merkl/pull/3340"
+  test("GitHub's refusals become reasons, and leave the card for the next click", () => {
+    const cases: ReadonlyArray<readonly [string, string]> = [
+      ["GraphQL: Pull request is not mergeable: the merge commit cannot be cleanly created (mergePullRequest)", "#3340 has conflicts with its base branch."],
+      ["GraphQL: Head branch was modified. Review and try the merge again. (mergePullRequest)", "New commits landed on #3340. Check them, then merge again."],
+      ["GraphQL: Required status check \"ci-ok\" is expected. (mergePullRequest)", "GitHub is still waiting on a required check for #3340."],
+      ["GraphQL: At least 1 approving review is required by reviewers with write access. (mergePullRequest)", "GitHub requires an approving review on #3340."],
+      ["GraphQL: Repository rule violations found (mergePullRequest)", "GitHub refused to merge #3340: Repository rule violations found"],
+    ]
+    for (const [stderr, reason] of cases) {
+      const failure = mergeRefusal(gh(stderr), url)
+      expect(failure._tag).toBe("MergeRefused")
+      expect(failure.message).toBe(reason)
+    }
+  })
+  test("a hiccup stays as it was, to be asked again", () => {
+    const busy = gh("HTTP 502: Bad Gateway (https://nocturlab.ghe.com/api/graphql)")
+    expect(mergeRefusal(busy, url)).toBe(busy)
   })
 })
 

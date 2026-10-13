@@ -3,7 +3,7 @@ import SwiftUI
 /// A card in Needs you, as a row of its table: the title and its age over the detail,
 /// each up to two lines. The group's header names the verb, so the row's button waits for
 /// the pointer, sliding in over the row's end rather than taking width from every title;
-/// a Ship row keeps its button out, since a verified fix is the decision closest to done.
+/// a Ship row keeps its button out (`pinsButton`).
 /// An agent's question with quick replies is answered from the row itself. Opened, the
 /// row is the whole card (`ActionCard`).
 struct ActionRow: View {
@@ -19,8 +19,8 @@ struct ActionRow: View {
     /// as nothing needs typing.
     private var answersInline: Bool { action.kind == .answer && !action.options.isEmpty && !action.inFlight }
 
-    /// Merge and release: the button stays on the row, and says so while GitHub works.
-    private var ships: Bool { action.kind.group == .ship && action.isOneClick }
+    /// The size of `pinnedEnd`, which the row keeps clear.
+    @ViewState private var pinnedSize = CGSize.zero
 
     var body: some View {
         Group {
@@ -56,17 +56,7 @@ struct ActionRow: View {
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
                             Text(action.title).rowTitle()
                             Spacer(minLength: 4)
-                            if ships {
-                                // Its age sits under its button.
-                            } else if action.inFlight {
-                                // Said by the row's value: as an element of its own, a spinner
-                                // would make the whole row read as one.
-                                ProgressView().controlSize(.mini)
-                                    .help(action.kind.progressLabel)
-                                    .accessibilityHidden(true)
-                            } else {
-                                age
-                            }
+                            if !action.pinsButton { titleEnd }
                         }
                         if !action.detail.isEmpty {
                             Text(Markdown.line(action.detail, size: 12)).rowDetail()
@@ -81,29 +71,16 @@ struct ActionRow: View {
                         }
                     }
                 }
-                if ships {
-                    // The button is laid over this place, outside the row's own button:
-                    // here it only holds its width, so the title wraps short of it.
-                    VStack(alignment: .trailing, spacing: 6) {
-                        shipSlot
-                            .opacity(action.inFlight ? 1 : 0)
-                            .accessibilityHidden(!action.inFlight)
-                        age
-                    }
+                if action.pinsButton {
+                    // Holds the room `pinnedEnd` is laid over, so the title wraps short of it.
+                    Color.clear.frame(width: pinnedSize.width, height: pinnedSize.height)
                 }
             }
             .padding(.horizontal, Metrics.inset)
             .padding(.vertical, 16)
         } overlay: { hovering in
-            if ships {
-                if !action.inFlight && !pick.picking {
-                    VStack(alignment: .trailing, spacing: 6) {
-                        shipButton
-                        age.hidden()
-                    }
-                    .padding(.trailing, Metrics.inset)
-                    .transition(.opacity)
-                }
+            if action.pinsButton {
+                pinnedEnd
             } else if hovering && !action.inFlight && !answersInline && !pick.picking {
                 hoverButton
                     .transition(.opacity)
@@ -126,31 +103,51 @@ struct ActionRow: View {
             .foregroundStyle(.tertiary)
     }
 
-    /// A Ship row's end: its button, or what GitHub is doing while the daemon resolves it.
+    /// An unpinned row's end, on its title line: its age, or a spinner while the daemon
+    /// resolves it.
     @ViewBuilder
-    private var shipSlot: some View {
+    private var titleEnd: some View {
         if action.inFlight {
-            HStack(spacing: 6) {
-                ProgressView().controlSize(.mini)
-                Text(action.kind.progressLabel)
-                    .font(Typo.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            .fixedSize()
-            .frame(height: Ink.buttonHeight)
-            .accessibilityElement(children: .combine)
+            // Said by the row's value: as an element of its own, a spinner would make the
+            // whole row read as one.
+            ProgressView().controlSize(.mini)
+                .help(action.kind.progressLabel)
+                .accessibilityHidden(true)
         } else {
-            shipButton
+            age
         }
     }
 
-    /// The tag a release would cut is in the row's detail already: its row button stays
-    /// short, so a narrow island keeps the title. The opened card says it in full.
-    private var shipButton: some View {
-        Button(action.kind == .release ? "Cut release" : action.primaryLabel) { store.resolve(action) }
-            .buttonStyle(.stage(.primary))
-            .fixedSize()
+    /// A pinned row's end over its age: its button, or what GitHub is doing while the daemon
+    /// resolves it. Laid over the row, outside the row's own button, so the button takes its
+    /// own clicks; the rest lets clicks through to the row.
+    private var pinnedEnd: some View {
+        VStack(alignment: .trailing, spacing: 6) {
+            if action.inFlight {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.mini)
+                    Text(action.kind.progressLabel)
+                        .font(Typo.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .fixedSize()
+                .frame(height: Ink.buttonHeight)
+                .accessibilityElement(children: .combine)
+                .allowsHitTesting(false)
+            } else {
+                Button(action.rowButtonLabel) { store.resolve(action) }
+                    .buttonStyle(.stage(.primary))
+                    .fixedSize()
+                    // While picking, a click picks the row: the button gives way, keeping its room.
+                    .opacity(pick.picking ? 0 : 1)
+                    .allowsHitTesting(!pick.picking)
+                    .accessibilityHidden(pick.picking)
+            }
+            age.allowsHitTesting(false)
+        }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { pinnedSize = $0 }
+        .padding(.trailing, Metrics.inset)
     }
 
     /// The row's button on hover, over an opaque end of the row that fades in from the
@@ -161,7 +158,7 @@ struct ActionRow: View {
                 .frame(width: 28)
             Group {
                 if action.isOneClick {
-                    Button(action.primaryLabel) { store.resolve(action) }
+                    Button(action.rowButtonLabel) { store.resolve(action) }
                 } else {
                     // Needs input: the button opens the card where it's typed or chosen.
                     Button(action.kind == .reply ? "Review reply" : "Answer", action: toggle)

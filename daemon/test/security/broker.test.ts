@@ -91,6 +91,20 @@ describe.skipIf(process.platform !== "darwin")("fix publication with a local fak
     expect(sh("git verify-commit origin/fix-bt-test-123 2>&1", root)).toContain('Good "git" signature for t@t')
   }, 30_000)
 
+  test("a key that cannot sign leaves the fix published unsigned, not lost", async () => {
+    const { repo, root, request } = setup()
+    sh(`git config commit.gpgsign true && git config gpg.format ssh && git config user.signingkey ${join(scratchDir("bt-signing-"), "missing")}`, repo)
+    writeFileSync(join(root, "fix.txt"), "unsigned\n")
+    const broker = makeBroker(request, async (command, options) => {
+      if (command[0] === "gh") return command.includes("list") ? "[]" : `https://${GH_HOST}/${GHE_REPO}/pull/14`
+      if (command.includes("push")) return Effect.runPromise(runOk([...command.slice(0, -2), "origin", command.at(-1) ?? ""], options))
+      return Effect.runPromise(runOk(command, options))
+    })
+    expect(await broker({ tool: "submit_fix", args: { title: "fix: unsigned", body: "" } })).toBe(`https://${GH_HOST}/${GHE_REPO}/pull/14`)
+    expect(sh("git show origin/fix-bt-test-123:fix.txt", root)).toBe("unsigned")
+    expect(sh("git cat-file commit origin/fix-bt-test-123", root)).not.toContain("SIGNATURE")
+  }, 30_000)
+
   test("prepares a broker-owned follow-up from main after a merged fix", async () => {
     const { root, request } = setup()
     const merged = { ...request, session: { ...request.session, milestones: { ...request.session.milestones, merged: true } } }

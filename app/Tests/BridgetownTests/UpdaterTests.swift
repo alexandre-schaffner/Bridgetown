@@ -178,8 +178,8 @@ import Testing
         try await eventually { updater.state == .checking }
         #expect(updater.state == .checking)
         answers.continuation.finish(throwing: URLError(.notConnectedToInternet))
-        #expect(await onItsOwn.value == false)
-        #expect(await asked.value == false)
+        #expect(await onItsOwn.value == .failed)
+        #expect(await asked.value == .failed)
         #expect(await calls.count == 1)
         #expect(updater.state == .checkFailed("GitHub not reachable"))
     }
@@ -218,7 +218,7 @@ import Testing
             return UpdaterTests.release
         })
         #expect(!debug.isEnabled)
-        await debug.check(manual: true)
+        #expect(await debug.check(manual: true) == .skipped)
         #expect(debug.state == .idle)
     }
 

@@ -306,3 +306,19 @@ import Testing
         #expect(!decoded.memory)
     }
 }
+
+@Suite struct MemoryBudgetLimits {
+    private struct Limits: Decodable {
+        struct Range: Decodable { let minimum: Double, maximum: Double }
+        let memoryBudgetUsd: Range
+    }
+
+    @Test func theStepperOffersWhatTheDaemonAccepts() throws {
+        let limits = try Fixture.decode(Limits.self, "settings-limits").memoryBudgetUsd
+        #expect(Settings.MemoryBudget.range == limits.minimum...limits.maximum)
+    }
+
+    @Test func defaultsAreTheDaemons() throws {
+        #expect(Settings.MemoryBudget() == (try Fixture.snapshot().settings.memoryBudgetUsd))
+    }
+}
