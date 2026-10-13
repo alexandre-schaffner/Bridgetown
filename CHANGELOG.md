@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.5.0](https://github.com/alexandre-schaffner/Bridgetown/compare/v1.4.0...v1.5.0) (2026-10-13)
+
+
+### Features
+
+* memory spend limits and signed fix commits; fix updater hangs and checks after wake ([#33](https://github.com/alexandre-schaffner/Bridgetown/issues/33)) ([1f65be4](https://github.com/alexandre-schaffner/Bridgetown/commit/1f65be4c0e8db125caaf6f73888f70065e5304f4))
+
+
+### Fixes
+
+* say why a merge was refused, bound merge clicks, and tidy [#33](https://github.com/alexandre-schaffner/Bridgetown/issues/33) ([#37](https://github.com/alexandre-schaffner/Bridgetown/issues/37)) ([e86b153](https://github.com/alexandre-schaffner/Bridgetown/commit/e86b153c8271ccc861e5fdf8cccc32f2cabf3dbb))
+
+
+### Dependencies
+
+* bump the minor-and-patch group in /daemon with 5 updates ([#35](https://github.com/alexandre-schaffner/Bridgetown/issues/35)) ([10bbbe2](https://github.com/alexandre-schaffner/Bridgetown/commit/10bbbe2ad04572845873f56f3419cc9dcae2d8bf))
+
 ## [1.4.0](https://github.com/alexandre-schaffner/Bridgetown/compare/v1.3.0...v1.4.0) (2026-10-12)
 
 
