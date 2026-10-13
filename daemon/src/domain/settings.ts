@@ -26,6 +26,10 @@ export type Thresholds = typeof Thresholds.Type
 
 const QuietHours = Schema.Struct({ enabled: Schema.Boolean, start: ClockTime, end: ClockTime })
 
+const Usd = Schema.Number.check(Schema.isGreaterThan(0))
+/** What one Claude memory job may spend, by mode: learning, and consolidation (dreaming). */
+const MemoryBudget = Schema.Struct({ learn: Usd, dream: Usd })
+
 export const Settings = Schema.Struct({
   models: ModelSettings,
   channels: Schema.Array(Channel),
@@ -35,6 +39,7 @@ export const Settings = Schema.Struct({
   inbox: Schema.Boolean,
   /** Persistent local memory across messages and sessions. */
   memory: Schema.Boolean,
+  memoryBudgetUsd: MemoryBudget,
   maxConcurrent: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
   dryRun: Schema.Boolean,
   /** A different model reviews each pushed fix before the PR leaves draft. */
@@ -88,6 +93,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoStart: true,
   inbox: true,
   memory: true,
+  memoryBudgetUsd: { learn: 0.5, dream: 1 },
   maxConcurrent: 2,
   dryRun: true,
   adversarialReview: true,
@@ -133,7 +139,7 @@ export const loadSettings = (raw: string | undefined): Settings => {
 export const MIN_POLL_SECONDS = 10
 
 /**
- * `POST /settings`: any setting, and any key of `thresholds` and `quietHours` on its own. A poll is whole seconds and
+ * `POST /settings`: any setting, and any key of `thresholds`, `quietHours` and `memoryBudgetUsd` on its own. A poll is whole seconds and
  * at least `MIN_POLL_SECONDS`, as the poll loop takes it; a poll stored before that rule loads rounded to it.
  */
 export const SettingsPatch = Schema.Struct({
@@ -141,6 +147,7 @@ export const SettingsPatch = Schema.Struct({
   pollSeconds: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(MIN_POLL_SECONDS))),
   thresholds: Schema.optional(Thresholds.mapFields(Struct.map(Schema.optional))),
   quietHours: Schema.optional(QuietHours.mapFields(Struct.map(Schema.optional))),
+  memoryBudgetUsd: Schema.optional(MemoryBudget.mapFields(Struct.map(Schema.optional))),
   models: Schema.optional(ModelSettings.mapFields(Struct.map(Schema.optional))),
 })
 export type SettingsPatch = typeof SettingsPatch.Type

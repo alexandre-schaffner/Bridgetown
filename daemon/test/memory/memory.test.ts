@@ -67,6 +67,26 @@ describe("persistent learning", () => {
     } finally { await world.dispose() }
   })
 
+  test("each job starts with the spend limit set for its mode", async () => {
+    const budgets: Array<number> = []
+    const agent: MemoryModelShape = { run: async function* (job) {
+      budgets.push(job.budgetUsd)
+      yield { output: { changes: [] }, error: null, costUsd: 0 }
+    } }
+    const world = makeWorld({ memoryModel: agent })
+    try {
+      await world.runPromise(Effect.gen(function* () {
+        const hub = yield* Hub
+        yield* hub.updateSettings({ ...(yield* hub.settings), memoryBudgetUsd: { learn: 0.25, dream: 3 } })
+        yield* (yield* Store).captureMemory("user", "user", "A durable preference")
+        const memory = yield* Memory
+        yield* memory.requestRun
+        yield* eventually(memory.status, (status) => status.state === "idle" && status.lastDreamedAt !== null ? status : undefined)
+      }))
+      expect(budgets).toEqual([0.25, 3])
+    } finally { await world.dispose() }
+  })
+
   test("a missing topic gets validation feedback and repairs before evidence is acknowledged", async () => {
     const id = "multicall-repair"
     const home = scratchDir("bt-memory-repair-")

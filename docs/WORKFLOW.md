@@ -145,7 +145,7 @@ The daemon runs one memory job at a time with the provider, model and effort cho
 Automatic uses Claude Sonnet with medium effort. Jobs use the selected provider's existing authentication.
 Learning batches up to 50 events (and 60,000 characters of evidence) once a minute, with a two-minute timeout.
 Dreaming has a five-minute timeout and runs every six hours when evidence has changed, or after a manual **Run now**.
-Claude limits spending to $0.50 for learning and $1 for dreaming; Codex does not report spending. Each Claude
+Claude limits spending to $0.50 for learning and $1 for dreaming by default (**Settings → Memory**); Codex does not report spending. Each Claude
 attempt allows at most 12 learning turns or 20 consolidation turns.
 It merges duplicates, updates stale entries, and checks retained sources for contradictions. Missing evidence is
 not confirmation. Empty batches require no model call. Tests and the demo use fake adapters.

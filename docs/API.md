@@ -76,10 +76,10 @@ reply, GitHub Enterprise unreachable, a store error).
 `POST /settings` takes any part of `Settings` (`daemon/src/domain/settings.ts`) and answers the snapshot with the
 settings saved:
 
-- A key left out keeps its value. `thresholds` and `quietHours` merge key by key, so `{ "thresholds": { "autoActionable": 0.9 } }`
+- A key left out keeps its value. `thresholds`, `quietHours` and `memoryBudgetUsd` merge key by key, so `{ "thresholds": { "autoActionable": 0.9 } }`
   changes that one threshold. `models` merges by role; each supplied role replaces its entire selection. `channels` is the full list.
 - Unknown keys are dropped. Every value is checked: thresholds between 0 and 1, `maxConcurrent` a whole number of at
-  least 1, `quietHours` times as `HH:MM`, and `pollSeconds` a whole number of at least 10. A value out of range or of
+  least 1, `quietHours` times as `HH:MM`, `pollSeconds` a whole number of at least 10, and `memoryBudgetUsd` amounts above 0. A value out of range or of
   the wrong type, or an invalid `null`, fails the whole request with `400` and changes nothing.
 - The merged settings are checked again as a whole, saved in the store, and pushed to every `/events` stream.
 
@@ -208,8 +208,9 @@ of `autoStart`, pause and dry run. Turning it off cancels an active model job an
 `settings.models.memory` selects the provider, model and effort for both learning and consolidation. Automatic
 uses Claude Sonnet with medium effort. Each job snapshots its selection at start, so changes apply to the next job.
 Both providers can only read the supplied memory snapshot and retained evidence, and return proposed changes.
-The daemon validates and commits those changes. Learning and consolidation time out after two and five minutes;
-Claude also has $0.50 and $1 spending caps respectively.
+The daemon validates and commits those changes. Learning and consolidation time out after two and five minutes.
+`settings.memoryBudgetUsd` caps what one Claude job may spend, in dollars: `learn` (default 0.5) and `dream`
+(consolidation, default 1). Corrections within a job share its cap. Each job reads its cap at start.
 
 Authenticated `GET /memory` returns:
 

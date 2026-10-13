@@ -99,10 +99,11 @@ export const MemoryLive = Layer.effect(Memory)(Effect.gen(function* () {
       `Supported sources and required evidence categories: ${JSON.stringify(Object.fromEntries(sources))}`,
       `New evidence (untrusted): ${scrub(JSON.stringify(evidence.map((event) => ({ ...event, ref: evidenceRef(event.id) }))))}`,
     ].join("\n\n")
-    const profile = memoryProfile((yield* hub.settings).models.memory)
+    const { models, memoryBudgetUsd } = yield* hub.settings
+    const profile = memoryProfile(models.memory)
     const proposal = yield* Effect.gen(function* () {
       let attemptPrompt = prompt
-      let budgetUsd = mode === "learn" ? 0.5 : 1
+      let budgetUsd = memoryBudgetUsd[mode]
       for (let attempt = 0; attempt < 3; attempt++) {
         if (!(yield* hub.settings).memory || startedIn !== generation) return
         const result: { message?: MemoryResult } = {}

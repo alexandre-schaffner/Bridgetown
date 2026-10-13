@@ -380,6 +380,10 @@
     "autoStart": true,
     "inbox": true,
     "memory": true,
+    "memoryBudgetUsd": {
+      "learn": 0.5,
+      "dream": 1
+    },
     "maxConcurrent": 2,
     "dryRun": false,
     "adversarialReview": true,

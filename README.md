@@ -113,8 +113,8 @@ Open **Settings → Memory** to disable memory, see pending evidence and the las
 consolidation now, or open the files. Learning runs about once a minute when evidence is pending;
 consolidation runs every six hours when there is new evidence. Choose the provider, model and effort under
 **Settings → Models → Memory**. Jobs use the selected provider's existing authentication and time out after two
-minutes for learning or five minutes for consolidation. Claude jobs also cap spending at $0.50 and $1 respectively;
-Codex does not report spending. No remote is configured.
+minutes for learning or five minutes for consolidation. Claude jobs also cap spending, at $0.50 and $1 respectively by
+default; change the caps in **Settings → Memory**. Codex does not report spending. No remote is configured.
 
 You can edit the Markdown notes directly. Automatic writes pause while the memory repo has uncommitted edits;
 commit your corrections to resume them. Notes retain their sources and distinguish statements and agent claims

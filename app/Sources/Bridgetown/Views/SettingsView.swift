@@ -74,6 +74,15 @@ struct SettingsBinding {
     }
 }
 
+private func stepper<V: Strideable>(_ label: String, _ value: String, _ binding: Binding<V>, in range: ClosedRange<V>, step: V.Stride = 1) -> some View {
+    LabeledContent(label) {
+        HStack(spacing: 6) {
+            Text(value).monospacedDigit()
+            Stepper(label, value: binding, in: range, step: step).labelsHidden()
+        }
+    }
+}
+
 // MARK: - Accounts
 
 private struct AccountsTab: View {
@@ -243,15 +252,6 @@ private struct TriageTab: View {
         .formStyle(.grouped)
     }
 
-    private func stepper(_ label: String, _ value: String, _ binding: Binding<Int>, in range: ClosedRange<Int>, step: Int = 1) -> some View {
-        LabeledContent(label) {
-            HStack(spacing: 6) {
-                Text(value).monospacedDigit()
-                Stepper(label, value: binding, in: range, step: step).labelsHidden()
-            }
-        }
-    }
-
     private func threshold(_ label: String, _ key: WritableKeyPath<Settings.Thresholds, Double>) -> some View {
         let thresholds: WritableKeyPath<Settings, Settings.Thresholds> = \.thresholds
         let raw = settings.binding(thresholds.appending(path: key), debounce: true)
@@ -383,8 +383,17 @@ private struct MemoryTab: View {
             Section {
                 Toggle("Remember across messages and sessions", isOn: settings.binding(\.memory))
             } footer: {
-                Text("Learns from newly watched messages, your answers and actions, and agent findings about once a minute; consolidates every six hours when there is new evidence. Choose its provider and model in Models → Memory. Learning stops after two minutes; consolidation after five. Claude jobs also have $0.50 and $1 spend limits, respectively.")
+                Text("Learns from newly watched messages, your answers and actions, and agent findings about once a minute; consolidates every six hours when there is new evidence. Choose its provider and model in Models → Memory. Learning stops after two minutes; consolidation after five.")
                     .font(.caption)
+            }
+            Section {
+                budget("Learning", \.learn)
+                budget("Consolidation", \.dream)
+            } header: {
+                Text("Spend limit per job")
+            } footer: {
+                Text("A Claude job stops when it reaches its limit. Codex doesn't report spending, so its jobs have no limit.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Local memory") {
                 if let status {
@@ -421,6 +430,12 @@ private struct MemoryTab: View {
 
     private func time(_ date: Date?) -> String {
         date?.formatted(date: .abbreviated, time: .shortened) ?? "Never"
+    }
+
+    private func budget(_ label: String, _ key: WritableKeyPath<Settings.MemoryBudget, Double>) -> some View {
+        let budgets: WritableKeyPath<Settings, Settings.MemoryBudget> = \.memoryBudgetUsd
+        let binding = settings.binding(budgets.appending(path: key), debounce: true)
+        return stepper(label, binding.wrappedValue.formatted(.currency(code: "USD")), binding, in: 0.25...10, step: 0.25)
     }
 
     @MainActor private func reload() async {

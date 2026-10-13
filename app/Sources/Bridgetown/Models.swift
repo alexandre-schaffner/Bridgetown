@@ -415,11 +415,18 @@ struct Settings: Codable, Sendable, Equatable {
         var end: String    // "08:00"
     }
 
+    /// What one Claude memory job may spend, in dollars.
+    struct MemoryBudget: Codable, Sendable, Equatable {
+        var learn: Double = 0.5
+        /// Consolidation.
+        var dream: Double = 1
+    }
+
     /// The top-level fields, which are also the granularity the app sends `POST /settings`
     /// in: a changed nested object is sent whole, though the daemon would merge
     /// `thresholds` and `quietHours` key by key.
     enum CodingKeys: String, CodingKey, CaseIterable, Sendable {
-        case channels, thresholds, autoStart, inbox, memory, maxConcurrent, dryRun, adversarialReview, watchProd, pollSeconds
+        case channels, thresholds, autoStart, inbox, memory, memoryBudgetUsd, maxConcurrent, dryRun, adversarialReview, watchProd, pollSeconds
         case monorepoPath, deploymentRepoPath, quietHours, models
     }
 
@@ -429,6 +436,7 @@ struct Settings: Codable, Sendable, Equatable {
     /// Watch mentions, group mentions and DMs across all of Slack.
     var inbox: Bool
     var memory: Bool = true
+    var memoryBudgetUsd = MemoryBudget()
     var maxConcurrent: Int
     var dryRun: Bool
     /// The selected reviewer checks each pushed fix before the PR leaves draft.
@@ -452,6 +460,7 @@ extension Settings {
         autoStart = try c.decode(Bool.self, forKey: .autoStart)
         inbox = try c.decode(Bool.self, forKey: .inbox)
         memory = try c.decodeIfPresent(Bool.self, forKey: .memory) ?? true
+        memoryBudgetUsd = try c.decodeIfPresent(MemoryBudget.self, forKey: .memoryBudgetUsd) ?? MemoryBudget()
         maxConcurrent = try c.decode(Int.self, forKey: .maxConcurrent)
         dryRun = try c.decode(Bool.self, forKey: .dryRun)
         adversarialReview = try c.decode(Bool.self, forKey: .adversarialReview)
@@ -470,6 +479,7 @@ extension Settings {
         case .autoStart: autoStart = other.autoStart
         case .inbox: inbox = other.inbox
         case .memory: memory = other.memory
+        case .memoryBudgetUsd: memoryBudgetUsd = other.memoryBudgetUsd
         case .maxConcurrent: maxConcurrent = other.maxConcurrent
         case .dryRun: dryRun = other.dryRun
         case .adversarialReview: adversarialReview = other.adversarialReview
