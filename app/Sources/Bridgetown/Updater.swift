@@ -231,7 +231,7 @@ final class Updater {
             }
             do {
                 try UpdateInstaller.relaunch(installer.destination, keptIn: work)
-                NSApp.terminate(nil)
+                AppTermination.quit()
             } catch {
                 state = .installed(release)
             }

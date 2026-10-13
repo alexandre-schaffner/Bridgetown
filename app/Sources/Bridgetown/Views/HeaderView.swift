@@ -112,7 +112,7 @@ struct AppMenu: View {
         Menu {
             items
             Divider()
-            Button("Quit Bridgetown") { NSApp.terminate(nil) }
+            Button("Quit Bridgetown") { AppTermination.quit() }
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 13, weight: .medium))
@@ -131,7 +131,7 @@ struct AppMenu: View {
             // Shortcuts need a button in the hierarchy; these draw nothing.
             Group {
                 Button("Settings", action: showSettings).keyboardShortcut(",")
-                Button("Quit Bridgetown") { NSApp.terminate(nil) }.keyboardShortcut("q")
+                Button("Quit Bridgetown") { AppTermination.quit() }.keyboardShortcut("q")
             }
             .opacity(0)
             .allowsHitTesting(false)

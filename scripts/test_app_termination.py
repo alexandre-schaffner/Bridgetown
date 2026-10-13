@@ -1,4 +1,4 @@
-"""Exercise the real AppKit quit loop from a Swift task, in a separate process."""
+"""Exercise the real AppKit quit loop, started from a Swift task or the main queue, in a separate process."""
 
 import os
 from pathlib import Path
@@ -13,33 +13,35 @@ ROOT = Path(__file__).resolve().parent.parent
 HARNESS = r'''
 import AppKit
 
+// AppDelegate's quit: wait for a shutdown that reports back on the main actor, as
+// DaemonProcess does.
 @MainActor
 final class Delegate: NSObject, NSApplicationDelegate {
-    let termination = AppTermination()
+    let from = CommandLine.arguments[1]
+    let daemon = !CommandLine.arguments.contains("no-daemon")
     var stops = 0
-    let delayed = CommandLine.arguments.contains("delayed")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.prohibited)
-        Task {
-            NSApp.terminate(nil)
-            if delayed {
-                // Another quit while shutdown is pending must not start it again.
-                NSApp.terminate(nil)
-            }
+        switch from {
+        case "task": Task { AppTermination.quit() }
+        case "queue": DispatchQueue.main.async { AppTermination.quit() }
+        default: fatalError("quit from task or queue")
         }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        termination.reply(to: sender) { done in
-            guard delayed else { return false }
-            stops += 1
-            Task {
-                try? await Task.sleep(for: .milliseconds(100))
-                done()
-            }
-            return true
+        guard daemon else { return .terminateNow }
+        stops += 1
+        Task {
+            try? await Task.sleep(for: .milliseconds(100))
+            // Asked again while it waits: AppKit doesn't stop twice.
+            AppTermination.quit()
+            NSApp.terminate(nil)
+            try? await Task.sleep(for: .milliseconds(100))
+            NSApp.reply(toApplicationShouldTerminate: true)
         }
+        return .terminateLater
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -75,19 +77,22 @@ class AppTerminationTests(unittest.TestCase):
             check=True, capture_output=True, text=True, timeout=60,
         )
 
-    def test_quit_from_a_task_waits_for_shutdown_without_blocking_tasks(self):
+    def quit(self, *args):
         result = subprocess.run(
-            [str(self.binary), "delayed"], capture_output=True, text=True, timeout=5,
+            [str(self.binary), *args], capture_output=True, text=True, timeout=5,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("shutdown finished; stops=1", result.stdout)
+        return result.stdout
+
+    def test_quit_from_a_task_waits_for_shutdown(self):
+        self.assertIn("shutdown finished; stops=1", self.quit("task"))
+
+    def test_quit_from_a_main_queue_block_waits_for_shutdown(self):
+        # A SIGTERM arrives as a block on the main queue.
+        self.assertIn("shutdown finished; stops=1", self.quit("queue"))
 
     def test_quit_without_a_daemon_ends_immediately(self):
-        result = subprocess.run(
-            [str(self.binary)], capture_output=True, text=True, timeout=5,
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("shutdown finished; stops=0", result.stdout)
+        self.assertIn("shutdown finished; stops=0", self.quit("task", "no-daemon"))
 
     def test_app_delegate_quits_and_stops_its_real_child(self):
         binary = ROOT / "app/.build/debug/Bridgetown"

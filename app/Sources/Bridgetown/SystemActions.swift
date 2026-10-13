@@ -72,7 +72,7 @@ enum SystemActions {
         #if DEBUG
         if let sink { return sink(.quit, "") }
         #endif
-        NSApp.terminate(nil)
+        AppTermination.quit()
     }
 
     /// `takeOverCommand` in a new Terminal window. Returns an error message on failure.
