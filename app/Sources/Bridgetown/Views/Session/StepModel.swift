@@ -98,6 +98,8 @@ extension Session {
 
     /// The counter names the step in play, or the last outcome, never a count of successes.
     var focusedStepIndex: Int? { steps.indices.first { stepKind(at: $0).isMarked } }
+    /// Its step's key, the figure of the headline's orb.
+    var focusedStepKey: Step.Key? { focusedStepIndex.map { steps[$0].key } }
 
     var focusedStepDescription: String {
         guard let index = focusedStepIndex else { return stepsDescription }

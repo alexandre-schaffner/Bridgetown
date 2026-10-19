@@ -12,7 +12,8 @@ public enum OrbTheme: Sendable {
     case auto, dark, light
 }
 
-@available(iOS 15.0, macOS 12.0, *)
+// Bridgetown: 17/14, not 15/12, for `Color.resolve(in:)` (the tint).
+@available(iOS 17.0, macOS 14.0, *)
 public struct ThinkingOrb: View {
     private let state: OrbState
     private let size: OrbSize
@@ -24,10 +25,9 @@ public struct ThinkingOrb: View {
     private let tint: Color?
 
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.self) private var environment
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    // ImageRenderer never advances a TimelineView, so snapshot.sh injects a
-    // fixed instant here to capture a deterministic frame.
+    // ImageRenderer never advances a TimelineView, so upstream's snapshot
+    // script (not vendored) injects a fixed instant here.
     @Environment(\.orbFrozenTime) private var frozenTime
 
     /// `displaySize` renders the orb at an arbitrary point size while keeping
@@ -41,7 +41,7 @@ public struct ThinkingOrb: View {
         speed: Double = 1,
         paused: Bool = false,
         displaySize: Double? = nil,
-        tint: Color? = nil
+        tint: Color? = nil // Bridgetown
     ) {
         self.state = state
         self.size = size
@@ -49,7 +49,7 @@ public struct ThinkingOrb: View {
         self.speed = speed
         self.paused = paused
         self.displaySize = displaySize
-        self.tint = tint
+        self.tint = tint // Bridgetown
     }
 
     private var isDark: Bool {
@@ -76,7 +76,8 @@ public struct ThinkingOrb: View {
                 // one static, deterministic frame — same instant as the web
                 canvas(preset: preset, t: OrbSpec.reducedMotionT * effSpeed)
             } else {
-                TimelineView(.animation(paused: paused)) { timeline in
+                // Bridgetown: capped at 60 fps, like the app's own marks.
+                TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: paused)) { timeline in
                     // One shared clock, so several orbs on screen stay in
                     // phase exactly as they do on the web.
                     let t = timeline.date.timeIntervalSinceReferenceDate * effSpeed
@@ -92,9 +93,10 @@ public struct ThinkingOrb: View {
 
     @ViewBuilder
     private func canvas(preset: ResolvedPreset, t: Double) -> some View {
-        let tint = tint?.resolve(in: environment)
         Canvas(rendersAsynchronously: false) { context, _ in
             var context = context
+            // Bridgetown: the tint, resolved where it is drawn.
+            let tint = tint?.resolve(in: context.environment)
             let zoom = (displaySize ?? size.value) / size.value
             if zoom != 1 { context.scaleBy(x: zoom, y: zoom) }
             let frame = orbFrame(preset, size: size.value, t: t)
@@ -118,7 +120,8 @@ public struct ThinkingOrb: View {
     }
 
     /// Quantise to 8-bit exactly as the canvas painter does, so the platforms
-    /// land on identical greys rather than merely close ones.
+    /// land on identical greys rather than merely close ones. Bridgetown: then
+    /// multiplied by `tint`.
     private func ink(_ white: Double, _ alpha: Double, _ tint: Color.Resolved?) -> Color {
         let w = Swift.min(1, Swift.max(0, white))
         let g = ((isDark ? 1 - w : w) * 255).rounded(.toNearestOrAwayFromZero) / 255
@@ -129,14 +132,14 @@ public struct ThinkingOrb: View {
     }
 }
 
-// MARK: - Frozen time (snapshot testing)
+// MARK: - Frozen time (snapshots)
 
 private struct OrbFrozenTimeKey: EnvironmentKey {
     static let defaultValue: Double? = nil
 }
 
 extension EnvironmentValues {
-    /// Pins the animation to a fixed instant. Used by the snapshot harness;
+    /// Pins the animation to a fixed instant, for snapshots (upstream's harness);
     /// `ImageRenderer` does not fire `onAppear` or advance `TimelineView`,
     /// so without this every capture would render the same t=0 frame.
     var orbFrozenTime: Double? {

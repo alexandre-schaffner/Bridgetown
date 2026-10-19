@@ -132,7 +132,8 @@ private struct StepEvidenceRow: View {
     }
 }
 
-/// Compact evidence marks keep the status headline as the only orb in the detail.
+/// A step's mark in the evidence list: a dot, pulsing while the step moves. The orb is
+/// the headline's alone.
 private struct StepMark: View {
     let session: Session
     let index: Int
@@ -148,7 +149,7 @@ private struct StepMark: View {
         let tint = session.stepTint(at: index)
         switch kind {
         case .moving, .you:
-            LiveDot(color: tint, size: 6)
+            LiveDot(color: tint, live: kind == .moving, size: 6)
         case .ahead, .held:
             Circle().strokeBorder(kind == .held ? tint : Ink.faint, lineWidth: 1)
                 .frame(width: 7, height: 7)

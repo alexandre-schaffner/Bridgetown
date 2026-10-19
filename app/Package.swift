@@ -11,13 +11,11 @@ let package = Package(
             path: "Sources/Bridgetown"
         ),
         .target(name: "Termination", path: "Sources/Termination"),
-        // Libraries.dev's ThinkingOrbsKit (MIT, LICENSE included), as of bfcb863,
-        // less its snapshot helper, plus a tint.
+        // Libraries.dev's thinking orbs, vendored: where from and what changed is in VENDORED.md.
         .target(
             name: "ThinkingOrbs",
             path: "Sources/ThinkingOrbs",
-            exclude: ["LICENSE"],
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            exclude: ["LICENSE", "VENDORED.md"]
         ),
         // A bare app that quits as Bridgetown does, which AppTerminationTests runs.
         .executableTarget(

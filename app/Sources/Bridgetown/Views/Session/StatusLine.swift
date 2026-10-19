@@ -1,4 +1,5 @@
 import SwiftUI
+import ThinkingOrbs
 
 /// A mark plus the daemon's headline, its status word in `tone`'s colour. The words carry
 /// the meaning, so the line reads the same without colour.
@@ -35,24 +36,42 @@ extension StatusLine where Mark == LiveDot {
 }
 
 extension StatusLine where Mark == SessionStatusMark {
-    /// One orb beside a moving session's headline; other states retain their status dot.
+    /// A session's headline beside its `SessionStatusMark`.
     init(session: Session, size: CGFloat = 12, lineLimit: Int = 1) {
         self.init(headline: session.headline, tone: session.tone, size: size, lineLimit: lineLimit, mark: SessionStatusMark(session: session))
     }
 }
 
-/// The detail owns the orb; board rows and step evidence keep compact marks.
+/// A session headline's mark: the orb while something moves the session, its figure the
+/// step at work; otherwise its dot. Either sits in the orb's square, so the headline
+/// stays put as the session moves and stops. Board rows and step evidence keep dots.
 struct SessionStatusMark: View {
     let session: Session
 
     var body: some View {
-        if session.dot == .moving {
-            AgentOrb(
-                step: session.focusedStepIndex.map { session.steps[$0].key } ?? .unknown,
-                color: session.tone.color
-            )
-        } else {
-            SessionDot(session: session, size: 6)
+        Group {
+            if session.dot == .moving {
+                AgentOrb(state: (session.focusedStepKey ?? .unknown).orbState, color: session.tone.color)
+            } else {
+                SessionDot(session: session, size: 6)
+            }
+        }
+        .frame(width: AgentOrb.side, height: AgentOrb.side)
+    }
+}
+
+extension Step.Key {
+    /// The orb's figure for the work: searching through a diagnosis, composing a fix,
+    /// solving a review.
+    var orbState: OrbState {
+        switch self {
+        case .diagnose: .searching
+        case .fix: .composing
+        case .pr: .weaving
+        case .critique: .solving
+        case .ci: .working
+        case .deploy: .connecting
+        case .unknown: .breathing
         }
     }
 }

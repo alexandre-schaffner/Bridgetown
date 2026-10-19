@@ -80,30 +80,19 @@ struct Pulse: ViewModifier {
 
 // MARK: Agent status
 
-/// The agent status headline’s thinking orb (Libraries.dev's thinking-orbs) whose figure
-/// says what kind of work it is, searching through a diagnosis, composing a fix, solving a
-/// review, in the step's colour. Drawn from the clock, like `Pulse`, so it can't drag the
-/// row's layout along. Held still, it is one frame of the same figure.
+/// A thinking orb (Libraries.dev's thinking-orbs) in `color`, its figure `state`. Drawn
+/// from the clock, like `Pulse`, so it can't drag the row's layout along. Held still, it
+/// is one frame of the same figure.
 struct AgentOrb: View {
-    let step: Step.Key
+    static let side: CGFloat = 32
+
+    let state: OrbState
     let color: Color
-    var size: CGFloat = 32
+    var size: CGFloat = AgentOrb.side
     @Environment(\.marksHoldStill) private var still
 
     var body: some View {
-        ThinkingOrb(state: Self.state(step), size: .px64, theme: .dark, paused: still, displaySize: size, tint: color)
+        ThinkingOrb(state: state, size: .px64, theme: .dark, paused: still, displaySize: size, tint: color)
             .accessibilityHidden(true)
-    }
-
-    static func state(_ step: Step.Key) -> OrbState {
-        switch step {
-        case .diagnose: .searching
-        case .fix: .composing
-        case .pr: .weaving
-        case .critique: .solving
-        case .ci: .working
-        case .deploy: .connecting
-        case .unknown: .breathing
-        }
     }
 }

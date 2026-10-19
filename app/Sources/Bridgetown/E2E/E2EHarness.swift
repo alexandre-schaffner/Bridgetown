@@ -42,7 +42,8 @@ final class E2EHarness {
     private var suite = E2ESuite()
     private var runner: E2ERunner?
     private var control: E2EControl?
-    private let watchdog = E2EWatchdog()
+    /// Only a run has one; a normal launch or the island demo never makes the timer.
+    private var watchdog: E2EWatchdog?
     /// @AppStorage reads and writes here during a run, never in the app's own defaults.
     private var defaultsDomain = ""
 
@@ -157,7 +158,7 @@ final class E2EHarness {
         )
         self.runner = runner
         SystemActions.sink = { [weak runner] kind, detail in runner?.record(kind, detail) }
-        watchdog.start(seconds: Self.watchdogSeconds) { [weak runner] in
+        watchdog = E2EWatchdog(seconds: Self.watchdogSeconds) { [weak runner] in
             runner?.fail("watchdog: nothing finished within \(Self.watchdogSeconds)s")
         }
     }
@@ -185,13 +186,13 @@ final class E2EHarness {
             do {
                 let control = try E2EControl(
                     runner: runner,
-                    activity: { [watchdog] in watchdog.kick(seconds: Self.watchdogSeconds) },
+                    activity: { [watchdog] in watchdog?.kick(seconds: Self.watchdogSeconds) },
                     quit: { self.finish(app) }
                 )
                 self.control = control
                 let url = try await control.start(writingTo: out)
                 print("e2e control on \(url) (token in \(out.appending(path: "control.json").path))")
-                watchdog.kick(seconds: Self.watchdogSeconds)
+                watchdog?.kick(seconds: Self.watchdogSeconds)
             } catch {
                 runner.fail("control endpoint: \(error)")
                 finish(app)
@@ -259,23 +260,19 @@ final class E2EHarness {
 final class E2EWatchdog: @unchecked Sendable {
     private let timer = DispatchSource.makeTimerSource(queue: .global())
 
-    init() {
-        // Normal launches discard the harness before start. An inactive source traps
-        // when released; activate it now, leaving it unscheduled until start.
-        timer.activate()
-    }
-
-    deinit {
-        timer.cancel()
-    }
-
-    func start(seconds: Int, onFire: @escaping @MainActor @Sendable () -> Void) {
+    /// Running from the start: a dispatch source released before it ever ran traps.
+    init(seconds: Int, onFire: @escaping @MainActor @Sendable () -> Void) {
         timer.setEventHandler {
             FileHandle.standardError.write(Data("e2e: watchdog fired\n".utf8))
             DispatchQueue.main.async { MainActor.assumeIsolated { onFire() } }
             DispatchQueue.global().asyncAfter(deadline: .now() + 3) { Darwin.exit(2) }
         }
         timer.schedule(deadline: .now() + .seconds(seconds))
+        timer.resume()
+    }
+
+    deinit {
+        timer.cancel()
     }
 
     /// Pushes the deadline back: the control endpoint heard from its agent.
