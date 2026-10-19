@@ -10,7 +10,7 @@ import type { FetchedBoard } from "../grafana/board.ts"
 import { Hub, type Status as HubStatus } from "../hub.ts"
 import { revvLink } from "../ship/pr.ts"
 import { SlackMe } from "../slack/me.ts"
-import { fromMrkdwn, mentionedUsers } from "../slack/mrkdwn.ts"
+import { fromMrkdwn, mentionedUsers, plain } from "../slack/mrkdwn.ts"
 import { Store } from "../store/store.ts"
 import { type Reading, readingOnBoard } from "../watch/detect.ts"
 import { byConcern, errorsLink, levelOf, type LogPattern, patternLink, shownUsual, suspicious } from "../watch/logs.ts"
@@ -67,10 +67,10 @@ const sessionView = (session: Session, alert: Alert | undefined): SessionView =>
   updatedAt: session.updatedAt,
 })
 
-const actionView = (action: Action, session: Session | undefined, inFlight: ReadonlySet<string>): ActionView => ({
+const actionView = (action: Action, session: Session | undefined, inFlight: ReadonlySet<string>, names: ReadonlyMap<string, string>): ActionView => ({
   id: action.id,
   kind: action.kind,
-  title: action.title,
+  title: plain(action.title, names),
   detail: action.detail,
   primaryLabel: action.primaryLabel,
   options: action.options,
@@ -88,6 +88,7 @@ export interface SnapshotParts {
   readonly dryRun: boolean
   readonly settings: Settings
   readonly inFlight: ReadonlySet<string>
+  readonly names: ReadonlyMap<string, string>
   /** Active first, then the recent finished ones. */
   readonly sessions: ReadonlyArray<Session>
   readonly actions: ReadonlyArray<Action>
@@ -102,7 +103,7 @@ export const snapshotView = (parts: SnapshotParts): Snapshot => {
   const openCards = (alertId: string) => parts.actions.filter((a) => a.alertId === alertId).length
   return {
     status: { ...parts.status, dryRun: parts.dryRun },
-    actions: parts.actions.map((action) => actionView(action, session(action.sessionId), parts.inFlight)),
+    actions: parts.actions.map((action) => actionView(action, session(action.sessionId), parts.inFlight, parts.names)),
     sessions: parts.sessions.map((s) => sessionView(s, parts.alertsById.get(s.alertId))),
     alerts: parts.alerts.map((alert) => alertView(alert, session(alert.sessionId), openCards(alert.id))),
     metrics: parts.metrics,
@@ -124,7 +125,7 @@ export const alertDetailView = (
   // Alerts stored before history existed still say how they were triaged.
   events: alert.events.length > 0 ? alert.events : [{ at: alert.receivedAt, text: triageEvent(alert.triage) }],
   session: session === undefined ? null : sessionView(session, alert),
-  actions: actions.map((action) => actionView(action, action.sessionId === null ? undefined : sessionsById.get(action.sessionId), inFlight)),
+  actions: actions.map((action) => actionView(action, action.sessionId === null ? undefined : sessionsById.get(action.sessionId), inFlight, names)),
 })
 
 /** Rows by id, from those already loaded plus any older ones `ids` refer to. */
@@ -148,6 +149,10 @@ export const snapshot = Effect.gen(function* () {
   const hub = yield* Hub
   const sessions = [...(yield* store.activeSessions()), ...(yield* store.recentSessions(SNAPSHOT_FINISHED_SESSIONS))]
   const actions = yield* store.listActions()
+  // Old queued cards may still contain raw Slack mentions. Resolve them for display too.
+  const me = yield* SlackMe
+  const names = new Map<string, string>()
+  for (const user of new Set(actions.flatMap((action) => mentionedUsers(action.title)))) names.set(user, yield* me.nameOf(user))
   const alerts = yield* store.recentAlerts(SNAPSHOT_ALERTS)
   const now = new Date()
   return snapshotView({
@@ -155,6 +160,7 @@ export const snapshot = Effect.gen(function* () {
     dryRun: yield* hub.dryRun,
     settings: yield* hub.settings,
     inFlight: yield* (yield* Actions).inFlight,
+    names,
     sessions,
     actions,
     alerts,

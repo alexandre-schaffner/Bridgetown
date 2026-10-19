@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { inboxQueries, parseInbox, threadTsFromPermalink } from "../../src/slack/inbox-parse.ts"
 
-const ctx = { me: "U0ATSF15M4L", fromName: "Pierre", alertChannels: new Set(["C0AUKD42N3U"]) }
+const ctx = { me: "U0ATSF15M4L", fromName: "Pierre", names: new Map([["U07R2KEA1E1", "Hugo"]]), alertChannels: new Set(["C0AUKD42N3U"]) }
 const match = (overrides: Record<string, unknown> = {}) => ({
   ts: "1790915239.000100",
   text: "<@U0ATSF15M4L|Alexandre Schaffner> can you test locally the admin without the backoffice token ?",
@@ -20,6 +20,17 @@ describe("inbox", () => {
     expect(item?.title).toBe("Pierre · #product-front: can you test locally the admin without the backoffice token ?")
     expect(item?.fingerprint).toBe("inbox:C0AA:1790915000.000100")
     expect(item?.fields).toMatchObject({ _tag: "inbox", channelKind: "channel", via: "mention", threadTs: "1790915000.000100", prUrl: null })
+  })
+  test("notification titles and summaries show mentioned people by name", () => {
+    const text = "<@U0ATSF15M4L> <@U07R2KEA1E1> can you review the quote?"
+    const item = parseInbox(match({ text, channel: { id: "C9", name: "sales" } }), "mention", ctx)
+    expect(item?.title).toBe("Pierre · #sales: @Hugo can you review the quote?")
+    expect(item?.summary).toBe("@someone @Hugo can you review the quote?")
+    expect(item?.raw).toBe(text)
+  })
+  test("unresolved mentions use a readable fallback, and labeled mentions keep their name", () => {
+    const item = parseInbox(match({ text: "<@U404> and <@U123|@Alice> please review" }), "group", ctx)
+    expect(item?.title).toBe("Pierre · #product-front: @someone and @Alice please review")
   })
   test("skips my own messages, bot posts in alert channels and Bridgetown posts", () => {
     expect(parseInbox(match({ user: "U0ATSF15M4L" }), "mention", ctx)).toBeUndefined()

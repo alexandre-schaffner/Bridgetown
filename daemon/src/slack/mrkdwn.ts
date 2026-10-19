@@ -55,7 +55,7 @@ const attachmentParts = (attachments: unknown): Array<string> => {
  * content; `text` is only the notification fallback ("Deployment merkl-admin v0.6.0"),
  * so it comes first and the structured parts follow.
  */
-export const flattenMessage = (message: SlackMessage): string => {
+export const flattenMessage = (message: Pick<SlackMessage, "text" | "blocks" | "attachments">): string => {
   const parts: Array<string> = []
   if (message.text !== undefined && message.text.trim() !== "") parts.push(message.text)
   const structured: Array<string> = []
@@ -68,8 +68,13 @@ export const flattenMessage = (message: SlackMessage): string => {
 }
 
 /** mrkdwn → readable text: links become their label, entities decode. */
-export const plain = (mrkdwn: string): string =>
+export const plain = (mrkdwn: string, names: ReadonlyMap<string, string> = new Map()): string =>
   mrkdwn
+    .replace(/<@([A-Z0-9]+)(?:\|([^>]+))?>/g, (_, id: string, label: string | undefined) => {
+      const name = label ?? names.get(id)
+      if (name === undefined || name === id) return "@someone"
+      return name.startsWith("@") ? name : `@${name}`
+    })
     .replace(/<!subteam\^[A-Z0-9]+\|([^>]+)>/g, "$1")
     .replace(/<!subteam\^[A-Z0-9]+>/g, "@team")
     .replace(/<([^|>]+)\|([^>]+)>/g, "$2")
@@ -220,8 +225,8 @@ const EMOJI: Readonly<Record<string, string>> = {
 }
 
 /** Display text for titles: readable links, no mrkdwn emphasis. */
-export const clean = (mrkdwn: string): string =>
-  plain(mrkdwn)
+export const clean = (mrkdwn: string, names: ReadonlyMap<string, string> = new Map()): string =>
+  plain(mrkdwn, names)
     .replace(/[*`]/g, "")
     .replace(/(^|\s)_([^_]+)_(?=\s|$|[.,:;])/g, "$1$2")
     .replace(/\s+/g, " ")

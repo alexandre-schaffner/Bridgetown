@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
+import { snapshot } from "../../src/api/views.ts"
 import type { JevVerdict } from "../../src/domain/alert.ts"
 import { SlackApiError } from "../../src/domain/errors.ts"
 import { Hub } from "../../src/hub.ts"
@@ -37,7 +38,7 @@ const setup = () => {
   let matches: ReadonlyArray<SearchMatch> = []
   const world = makeWorld({
     jev: jevByText,
-    slack: fakeSlack({ search: (query) => Effect.succeed(query === `<@${ME}>` ? matches : []), userName: () => Effect.succeed("Pierre") }),
+    slack: fakeSlack({ search: (query) => Effect.succeed(query === `<@${ME}>` ? matches : []), userName: (id) => Effect.succeed(id === "U2" ? "Pierre" : id === "U3" ? "Hugo" : id) }),
   })
   const poll = (next: ReadonlyArray<SearchMatch>) =>
     world.runPromise(
@@ -65,6 +66,35 @@ describe("an inbox item", () => {
 
   test("a newer message saying it was answered takes the card down", async () => {
     expect((await poll([mention(ago(5), "never mind, answered")])).cards).toEqual([])
+  })
+})
+
+describe("Slack mentions in notification titles", () => {
+  const { world, poll } = setup()
+  afterAll(() => world.dispose())
+
+  test("resolves names before putting the Needs you action in the queue", async () => {
+    const ts = ago(20)
+    await poll([mention(ts, "<@U3> can you review the quote?")])
+    const out = await world.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store
+        return { actions: yield* store.listActions(), alert: yield* store.getAlert(`C9:${ts}`) }
+      }),
+    )
+    expect(out.actions[0]?.title).toBe("Pierre · #eng-api: @Hugo can you review the quote?")
+    expect(out.alert?.summary).toBe("@someone @Hugo can you review the quote?")
+    expect(out.alert?.raw).toBe(`<@${ME}> <@U3> can you review the quote?`)
+    // A card saved by the previous version must be readable without re-ingesting it.
+    const action = out.actions[0]
+    if (action === undefined) throw new Error("Expected an escalated action")
+    const legacy = await world.runPromise(
+      Effect.gen(function* () {
+        yield* (yield* Store).putAction({ ...action, title: "Pierre · #eng-api: <@U3> can you review the quote?" })
+        return yield* snapshot
+      }),
+    )
+    expect(legacy.actions[0]?.title).toBe("Pierre · #eng-api: @Hugo can you review the quote?")
   })
 })
 

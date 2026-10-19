@@ -35,7 +35,7 @@ const program = Effect.gen(function* () {
         channel: { id: `C${index}`, name: item.where.replace("#", ""), is_im: item.where === "DM" },
       },
       item.via,
-      { me: "U0ATSF15M4L", fromName: item.from, alertChannels: new Set() },
+      { me: "U0ATSF15M4L", fromName: item.from, names: new Map(), alertChannels: new Set() },
     )
     if (parsed === undefined) continue
     const verdict = yield* jev.judgeInbox({ item: parsed, thread: item.thread ?? [], myName: "Alexandre Schaffner" })

@@ -12,7 +12,7 @@ import { SessionRunner } from "../sessions/runner.ts"
 import { type SearchMatch, SlackClient } from "../slack/client.ts"
 import { type InboxVia, inboxQueries, parseInbox } from "../slack/inbox-parse.ts"
 import { SlackMe } from "../slack/me.ts"
-import { toThreadReplies } from "../slack/mrkdwn.ts"
+import { flattenMessage, mentionedUsers, toThreadReplies } from "../slack/mrkdwn.ts"
 import { SlackThread } from "../slack/thread.ts"
 import { Store } from "../store/store.ts"
 import { decideInbox } from "../triage/policy.ts"
@@ -62,7 +62,9 @@ export const InboxLive = Layer.effect(Inbox)(
       const id = `${match.channel.id}:${match.ts}`
       if ((yield* store.getAlert(id)) !== undefined) return
       const fromName = match.user === undefined || match.user === null ? (match.username ?? "Someone") : yield* me.nameOf(match.user)
-      const parsed = parseInbox(match, via, { me: identity.user_id, fromName, alertChannels })
+      const names = new Map<string, string>()
+      for (const user of mentionedUsers(flattenMessage(match))) names.set(user, yield* me.nameOf(user))
+      const parsed = parseInbox(match, via, { me: identity.user_id, fromName, names, alertChannels })
       if (parsed === undefined) return
       const threadTs = threadTsOf(parsed)
       const filing = { permalink: match.permalink ?? null, receivedAt: tsToIso(parsed.ts) }
