@@ -87,19 +87,19 @@ import ThinkingOrbs
         #expect(s.stepTint(at: 3) == Ink.neutral)
     }
 
-    /// The headline orb says what moves the session; a session nothing moves keeps its dot.
-    @Test func theHeadlineOrbSaysWhatMovesTheSession() throws {
+    /// The headline orb says what is going on; an ended session keeps its dot.
+    @Test func theHeadlineOrbSaysWhatIsGoingOn() throws {
         let at: (Int) -> [Step.State] = { current in (0..<6).map { $0 < current ? .done : $0 == current ? .current : .pending } }
-        #expect(try session(.preparing, .live, .agent, at(0)).orbState == .shaping)
+        #expect(try session(.preparing, .live, .agent, at(0)).orbState == .searching)
         #expect(try session(.running, .live, .agent, at(0)).orbState == .searching)
         #expect(try session(.running, .live, .agent, at(1)).orbState == .composing)
         #expect(try session(.running, .live, .agent, at(2)).orbState == .weaving)
         #expect(try session(.critiquing, .live, .critic, at(3)).orbState == .solving)
         #expect(try session(.ci, .live, .ci, at(4)).orbState == .working)
         #expect(try session(.deploying, .live, .deploy, at(5)).orbState == .connecting)
-        #expect(try session(.waiting, .waiting, .you, at(1)).orbState == nil)
-        #expect(try session(.awaiting_merge, .live, .reviewers, at(3)).orbState == nil)
-        #expect(try session(.queued, .neutral, .queue, at(0)).orbState == nil)
+        #expect(try session(.waiting, .waiting, .you, at(1)).orbState == .breathing)
+        #expect(try session(.awaiting_merge, .live, .reviewers, at(3)).orbState == .breathing)
+        #expect(try session(.queued, .neutral, .queue, at(0)).orbState == .breathing)
         #expect(try session(.resolved, .success, nil, [.done, .done, .done, .done, .done, .done]).orbState == nil)
     }
 }
