@@ -1,5 +1,4 @@
 import SwiftUI
-import ThinkingOrbs
 
 /// A mark plus the daemon's headline, its status word in `tone`'s colour. The words carry
 /// the meaning, so the line reads the same without colour.
@@ -42,37 +41,22 @@ extension StatusLine where Mark == SessionStatusMark {
     }
 }
 
-/// A session headline's mark: the orb while something moves the session, its figure the
-/// step at work; otherwise its dot. Either sits in the orb's square, so the headline
-/// stays put as the session moves and stops. Board rows and step evidence keep dots.
+/// A session headline's mark: while it is active, the orb whose figure says what is going
+/// on (`Session.orbState`), at half speed when nothing moves it; once it has ended, its dot.
+/// Either sits in the orb's square, so the headline stays put. Board rows and step
+/// evidence keep dots.
 struct SessionStatusMark: View {
     let session: Session
 
     var body: some View {
         Group {
-            if session.dot == .moving {
-                AgentOrb(state: (session.focusedStepKey ?? .unknown).orbState, color: session.tone.color)
+            if let state = session.orbState {
+                AgentOrb(state: state, color: session.tone.color, speed: session.dot == .moving ? 1 : 0.5)
             } else {
                 SessionDot(session: session, size: 6)
             }
         }
         .frame(width: AgentOrb.side, height: AgentOrb.side)
-    }
-}
-
-extension Step.Key {
-    /// The orb's figure for the work: searching through a diagnosis, composing a fix,
-    /// solving a review.
-    var orbState: OrbState {
-        switch self {
-        case .diagnose: .searching
-        case .fix: .composing
-        case .pr: .weaving
-        case .critique: .solving
-        case .ci: .working
-        case .deploy: .connecting
-        case .unknown: .breathing
-        }
     }
 }
 

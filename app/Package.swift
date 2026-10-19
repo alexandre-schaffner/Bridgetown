@@ -27,7 +27,7 @@ let package = Package(
         // XCTest needs a full Xcode. Run with `make test-app` or `swift test`.
         .testTarget(
             name: "BridgetownTests",
-            dependencies: ["Bridgetown"],
+            dependencies: ["Bridgetown", "ThinkingOrbs"],
             path: "Tests/BridgetownTests",
             resources: [.copy("Fixtures")]
         ),

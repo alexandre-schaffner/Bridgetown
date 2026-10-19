@@ -1,4 +1,5 @@
 import SwiftUI
+import ThinkingOrbs
 
 // How who has a session's next move (the daemon's `holder`), its step states and its tone
 // draw its dot and each of its six steps. Kept apart from the views so every state can be
@@ -42,6 +43,43 @@ extension Session {
         case let holder? where holder.isMoving: .moving
         case .you?, nil: .still
         case _?: .waiting
+        }
+    }
+}
+
+// MARK: The headline's orb
+
+extension Session {
+    /// The headline orb's figure while the session is active, saying what is going on:
+    /// taking shape while it prepares, the agent's work at its step, the adversarial review
+    /// solving, CI working, a deploy connecting; listening while it waits on you, breathing
+    /// while it waits on reviewers or the queue. Nil once it has ended: its dot says how.
+    var orbState: OrbState? {
+        guard isActive else { return nil }
+        if status == .preparing { return .shaping }
+        return switch holder {
+        case .agent?: (focusedStepKey ?? .unknown).orbState
+        case .critic?: .solving
+        case .ci?: .working
+        case .deploy?: .connecting
+        case .you?: .listening
+        case .reviewers?, .queue?, .unknown?, nil: .breathing
+        }
+    }
+}
+
+extension Step.Key {
+    /// The agent's work at this step: searching through a diagnosis, composing a fix,
+    /// weaving the PR.
+    var orbState: OrbState {
+        switch self {
+        case .diagnose: .searching
+        case .fix: .composing
+        case .pr: .weaving
+        case .critique: .solving
+        case .ci: .working
+        case .deploy: .connecting
+        case .unknown: .breathing
         }
     }
 }
