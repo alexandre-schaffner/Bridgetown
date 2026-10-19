@@ -50,20 +50,17 @@ extension Session {
 // MARK: The headline's orb
 
 extension Session {
-    /// The headline orb's figure while the session is active, saying what is going on:
-    /// taking shape while it prepares, the agent's work at its step, the adversarial review
-    /// solving, CI working, a deploy connecting; listening while it waits on you, breathing
-    /// while it waits on reviewers or the queue. Nil once it has ended: its dot says how.
+    /// The headline orb's figure while something moves the session (`Dot.moving`), saying
+    /// what: taking shape while it prepares, the agent's work at its step, the adversarial
+    /// review solving, CI working, a deploy connecting. Nil otherwise: its dot stands.
     var orbState: OrbState? {
-        guard isActive else { return nil }
+        guard dot == .moving else { return nil }
         if status == .preparing { return .shaping }
         return switch holder {
-        case .agent?: (focusedStepKey ?? .unknown).orbState
         case .critic?: .solving
         case .ci?: .working
         case .deploy?: .connecting
-        case .you?: .listening
-        case .reviewers?, .queue?, .unknown?, nil: .breathing
+        default: (focusedStepKey ?? .unknown).orbState
         }
     }
 }

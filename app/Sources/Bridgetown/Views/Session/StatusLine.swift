@@ -41,17 +41,16 @@ extension StatusLine where Mark == SessionStatusMark {
     }
 }
 
-/// A session headline's mark: while it is active, the orb whose figure says what is going
-/// on (`Session.orbState`), at half speed when nothing moves it; once it has ended, its dot.
-/// Either sits in the orb's square, so the headline stays put. Board rows and step
-/// evidence keep dots.
+/// A session headline's mark: the orb while something moves the session, its figure saying
+/// what (`Session.orbState`); otherwise its dot. Either sits in the orb's square, so the
+/// headline stays put as the session moves and stops. Board rows and step evidence keep dots.
 struct SessionStatusMark: View {
     let session: Session
 
     var body: some View {
         Group {
             if let state = session.orbState {
-                AgentOrb(state: state, color: session.tone.color, speed: session.dot == .moving ? 1 : 0.5)
+                AgentOrb(state: state, color: session.tone.color)
             } else {
                 SessionDot(session: session, size: 6)
             }
