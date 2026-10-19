@@ -3,6 +3,16 @@ import Testing
 @testable import Bridgetown
 
 @MainActor @Suite struct E2EHarnessTests {
+    @Test func normalLaunchDoesNotCreateAHarness() {
+        #expect(E2EHarness(arguments: ["Bridgetown"]) == nil)
+    }
+
+    @Test func islandDemoCanBeReleasedWithoutStartingTheWatchdog() {
+        let harness = E2EHarness(arguments: ["Bridgetown", "--island-demo"])
+        #expect(harness != nil)
+        withExtendedLifetime(harness) {}
+    }
+
     /// Runs in two worktrees at once must not share the mock's root or the defaults that
     /// hold the telemetry tab; runs in one checkout keep both, so its shots compare.
     @Test func eachCheckoutRunsApart() {

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The island: one black shape that hangs from the notch and morphs between resting,
 /// banner and open. Content is laid out at its final size and revealed by the shape as it
-/// grows (the shape clips it), with a blur-fade on top, so opening reads as the notch
+/// grows (the shape clips it). Content uses a blur-fade, so opening reads as the notch
 /// unfolding rather than a window appearing.
 struct IslandView: View {
     let model: IslandModel

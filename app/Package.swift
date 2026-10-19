@@ -7,10 +7,18 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "Bridgetown",
-            dependencies: ["Termination"],
+            dependencies: ["Termination", "ThinkingOrbs"],
             path: "Sources/Bridgetown"
         ),
         .target(name: "Termination", path: "Sources/Termination"),
+        // Libraries.dev's ThinkingOrbsKit (MIT, LICENSE included), as of bfcb863,
+        // less its snapshot helper, plus a tint.
+        .target(
+            name: "ThinkingOrbs",
+            path: "Sources/ThinkingOrbs",
+            exclude: ["LICENSE"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
         // A bare app that quits as Bridgetown does, which AppTerminationTests runs.
         .executableTarget(
             name: "TerminationHarness",

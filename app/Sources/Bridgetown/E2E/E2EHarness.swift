@@ -259,6 +259,16 @@ final class E2EHarness {
 final class E2EWatchdog: @unchecked Sendable {
     private let timer = DispatchSource.makeTimerSource(queue: .global())
 
+    init() {
+        // Normal launches discard the harness before start. An inactive source traps
+        // when released; activate it now, leaving it unscheduled until start.
+        timer.activate()
+    }
+
+    deinit {
+        timer.cancel()
+    }
+
     func start(seconds: Int, onFire: @escaping @MainActor @Sendable () -> Void) {
         timer.setEventHandler {
             FileHandle.standardError.write(Data("e2e: watchdog fired\n".utf8))
@@ -266,7 +276,6 @@ final class E2EWatchdog: @unchecked Sendable {
             DispatchQueue.global().asyncAfter(deadline: .now() + 3) { Darwin.exit(2) }
         }
         timer.schedule(deadline: .now() + .seconds(seconds))
-        timer.resume()
     }
 
     /// Pushes the deadline back: the control endpoint heard from its agent.

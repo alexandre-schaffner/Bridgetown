@@ -61,21 +61,14 @@ private struct StepCounter: View {
     var body: some View {
         HStack(spacing: 10) {
             if let index = session.focusedStepIndex {
+                Text(session.steps[index].label)
+                    .font(Typo.label)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
                 (Text("\(index + 1)").foregroundStyle(.secondary)
                  + Text(" / \(session.steps.count)").foregroundStyle(.tertiary))
                     .font(.geistMono(11))
                     .fixedSize()
-                HStack(spacing: 6) {
-                    if session.stepKind(at: index) == .moving {
-                        Spinner(color: session.stepTint(at: index), lineWidth: 1.25)
-                            .frame(width: 9, height: 9)
-                            .accessibilityHidden(true)
-                    }
-                    Text(session.steps[index].label)
-                        .font(Typo.label)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                }
             } else {
                 Text("Steps").font(Typo.label).foregroundStyle(.secondary)
             }
@@ -98,8 +91,7 @@ private struct StepEvidenceRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            mark
-                .frame(width: 12, height: 12)
+            StepMark(session: session, index: index)
                 .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -138,13 +130,25 @@ private struct StepEvidenceRow: View {
                 .foregroundStyle(Ink.dim)
         }
     }
+}
 
-    @ViewBuilder
-    private var mark: some View {
+/// Compact evidence marks keep the status headline as the only orb in the detail.
+private struct StepMark: View {
+    let session: Session
+    let index: Int
+
+    private var kind: Session.StepKind { session.stepKind(at: index) }
+
+    var body: some View {
+        mark.frame(width: 12, height: 12)
+            .accessibilityHidden(true)
+    }
+
+    @ViewBuilder private var mark: some View {
         let tint = session.stepTint(at: index)
         switch kind {
-        case .moving: Spinner(color: tint)
-        case .you: Beacon(color: tint, breathes: true)
+        case .moving, .you:
+            LiveDot(color: tint, size: 6)
         case .ahead, .held:
             Circle().strokeBorder(kind == .held ? tint : Ink.faint, lineWidth: 1)
                 .frame(width: 7, height: 7)
