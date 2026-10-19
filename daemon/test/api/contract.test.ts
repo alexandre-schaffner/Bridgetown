@@ -118,7 +118,6 @@ describe("the wire, as the app's fixtures hold it", () => {
           quietHours: { enabled: true, start: "22:00", end: "08:00" },
         },
         inFlight: new Set(["act_merge_1"]),
-        names: new Map(),
         sessions,
         actions,
         alerts,

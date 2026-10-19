@@ -67,14 +67,23 @@ export const flattenMessage = (message: Pick<SlackMessage, "text" | "blocks" | "
   return parts.join("\n")
 }
 
-/** mrkdwn → readable text: links become their label, entities decode. */
-export const plain = (mrkdwn: string, names: ReadonlyMap<string, string> = new Map()): string =>
-  mrkdwn
-    .replace(/<@([A-Z0-9]+)(?:\|([^>]+))?>/g, (_, id: string, label: string | undefined) => {
-      const name = label ?? names.get(id)
-      if (name === undefined || name === id) return "@someone"
-      return name.startsWith("@") ? name : `@${name}`
-    })
+const NO_NAMES: ReadonlyMap<string, string> = new Map()
+
+const sigiled = (sigil: string, name: string) => (name.startsWith(sigil) ? name : sigil + name)
+
+/**
+ * Each user mention as `@name`, from its label or `names`. One neither names becomes `unknown(token)`: left as
+ * written by default, so a reader (Jev, an agent) still tells people apart and can ping them back.
+ */
+export const nameMentions = (text: string, names: ReadonlyMap<string, string>, unknown = (token: string) => token): string =>
+  text.replace(/<@([A-Z0-9]+)(?:\|([^>]+))?>/g, (token, id: string, label: string | undefined) => {
+    const name = label ?? names.get(id)
+    return name === undefined ? unknown(token) : sigiled("@", name)
+  })
+
+/** mrkdwn → readable text: mentions become `@name` (`nameMentions`), links their label, entities decode. */
+export const plain = (mrkdwn: string, names: ReadonlyMap<string, string> = NO_NAMES): string =>
+  nameMentions(mrkdwn, names)
     .replace(/<!subteam\^[A-Z0-9]+\|([^>]+)>/g, "$1")
     .replace(/<!subteam\^[A-Z0-9]+>/g, "@team")
     .replace(/<([^|>]+)\|([^>]+)>/g, "$2")
@@ -127,7 +136,7 @@ const proseToMrkdwn = (text: string): string => {
  * `:shortcodes:` → emoji. Entities are left for the Markdown parser to decode, but inside code, which it reads verbatim.
  * Slack has no escapes, so a backslash, and a `<` with no closing `>`, stay as written.
  */
-export const fromMrkdwn = (mrkdwn: string, names: ReadonlyMap<string, string> = new Map()): string => {
+export const fromMrkdwn = (mrkdwn: string, names: ReadonlyMap<string, string> = NO_NAMES): string => {
   const parts = mrkdwn.split("```")
   return parts
     .map((part, index) => {
@@ -189,7 +198,6 @@ const tokenFromMrkdwn = (token: string, names: ReadonlyMap<string, string>): str
   const bar = token.indexOf("|")
   const target = bar === -1 ? token : token.slice(0, bar)
   const label = bar === -1 ? undefined : token.slice(bar + 1)
-  const sigiled = (sigil: string, name: string) => (name.startsWith(sigil) ? name : sigil + name)
   if (target.startsWith("#")) return sigiled("#", label ?? target.slice(1))
   if (target.startsWith("@")) return sigiled("@", label ?? names.get(target.slice(1)) ?? target.slice(1))
   if (target.startsWith("!")) return sigiled("@", label ?? target.slice(1).split("^")[0] ?? "")
@@ -225,7 +233,7 @@ const EMOJI: Readonly<Record<string, string>> = {
 }
 
 /** Display text for titles: readable links, no mrkdwn emphasis. */
-export const clean = (mrkdwn: string, names: ReadonlyMap<string, string> = new Map()): string =>
+export const clean = (mrkdwn: string, names: ReadonlyMap<string, string> = NO_NAMES): string =>
   plain(mrkdwn, names)
     .replace(/[*`]/g, "")
     .replace(/(^|\s)_([^_]+)_(?=\s|$|[.,:;])/g, "$1$2")

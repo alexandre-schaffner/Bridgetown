@@ -2,7 +2,7 @@ import type { InboxFields, ParsedAlert } from "../domain/alert.ts"
 import { firstLine, truncate } from "../lib/text.ts"
 import { findPrUrl } from "../ship/pr.ts"
 import type { SearchMatch } from "./client.ts"
-import { BOT_PREFIX, clean, flattenMessage, isPerson } from "./mrkdwn.ts"
+import { BOT_PREFIX, clean, flattenMessage, isPerson, nameMentions } from "./mrkdwn.ts"
 
 export type InboxVia = InboxFields["via"]
 
@@ -30,6 +30,7 @@ export const threadTsFromPermalink = (permalink: string | undefined): string | n
 export interface InboxContext {
   readonly me: string
   readonly fromName: string
+  /** The names of the people the message mentions (`SlackMe.namesIn`); one missing reads "@someone". */
   readonly names: ReadonlyMap<string, string>
   /**
    * Alert channels. Their bot posts are alerts, which `AlertChannels` reads; what
@@ -47,14 +48,16 @@ export const parseInbox = (match: SearchMatch, via: InboxVia, ctx: InboxContext)
   const channelKind = match.channel.is_im === true ? "dm" : match.channel.is_mpim === true ? "group_dm" : "channel"
   const threadTs = threadTsFromPermalink(match.permalink)
   const where = channelKind === "channel" ? `#${match.channel.name ?? match.channel.id}` : channelKind === "dm" ? "DM" : "group DM"
-  const head = truncate(clean(firstLine(text.replace(new RegExp(`<@${ctx.me}(\\|[^>]*)?>`, "g"), "").trim()), ctx.names) || "(no text)", 90)
+  // What you read in a notification: people by name, one Slack could not name as "@someone", never an id.
+  const named = (mrkdwn: string) => clean(nameMentions(mrkdwn, ctx.names, () => "@someone"))
+  const head = truncate(named(firstLine(text.replace(new RegExp(`<@${ctx.me}(\\|[^>]*)?>`, "g"), "").trim())) || "(no text)", 90)
   return {
     id: `${match.channel.id}:${match.ts}`,
     channelId: match.channel.id,
     channelName: channelKind === "channel" ? (match.channel.name ?? match.channel.id) : where,
     ts: match.ts,
     title: `${ctx.fromName} · ${where}: ${head}`,
-    summary: truncate(clean(text, ctx.names), 140),
+    summary: truncate(named(text), 140),
     raw: truncate(text, 4_000),
     source: "inbox",
     fingerprint: `inbox:${match.channel.id}:${threadTs ?? match.ts}`,

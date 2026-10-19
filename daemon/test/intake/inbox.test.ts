@@ -1,6 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { snapshot } from "../../src/api/views.ts"
 import type { JevVerdict } from "../../src/domain/alert.ts"
 import { SlackApiError } from "../../src/domain/errors.ts"
 import { Hub } from "../../src/hub.ts"
@@ -15,6 +14,8 @@ import { makeWorld } from "../support/world.ts"
 const ME = "UME"
 const ago = (minutes: number) => (Date.now() / 1000 - minutes * 60).toFixed(6)
 const THREAD = ago(30)
+/** Who Slack can name; anyone else is `user_not_found`. */
+const NAMES = new Map([[ME, "Alexandre"], ["U2", "Pierre"], ["U3", "Hugo"]])
 
 /** A mention of me in #eng-api's thread `THREAD`, from Pierre. */
 const mention = (ts: string, text: string): SearchMatch => ({
@@ -38,7 +39,13 @@ const setup = () => {
   let matches: ReadonlyArray<SearchMatch> = []
   const world = makeWorld({
     jev: jevByText,
-    slack: fakeSlack({ search: (query) => Effect.succeed(query === `<@${ME}>` ? matches : []), userName: (id) => Effect.succeed(id === "U2" ? "Pierre" : id === "U3" ? "Hugo" : id) }),
+    slack: fakeSlack({
+      search: (query) => Effect.succeed(query === `<@${ME}>` ? matches : []),
+      userName: (id) => {
+        const name = NAMES.get(id)
+        return name === undefined ? Effect.fail(new SlackApiError({ method: "users.info", code: "user_not_found", message: "user_not_found" })) : Effect.succeed(name)
+      },
+    }),
   })
   const poll = (next: ReadonlyArray<SearchMatch>) =>
     world.runPromise(
@@ -73,28 +80,48 @@ describe("Slack mentions in notification titles", () => {
   const { world, poll } = setup()
   afterAll(() => world.dispose())
 
-  test("resolves names before putting the Needs you action in the queue", async () => {
+  test("an item filed before names were resolved is named on the first poll: its alert, card and session", async () => {
+    const title = "Pierre · #eng-api: <@U3> and <@U404> can you review the quote?"
+    const alert = makeAlert({ id: "C9:1", source: "inbox", title, summary: `<@${ME}> <@U3> can you review the quote?`, raw: `<@${ME}> <@U3> can you review the quote?` })
+    const elsewhere = makeAlert({ id: "C1:2", title: "Deploy by <@U3> failed" })
+    const card = { id: "act_1", kind: "escalate", title, detail: "", primaryLabel: "Open", options: [], sessionId: null, alertId: alert.id, fingerprint: null, retry: false, url: null, createdAt: "" } as const
+    const out = await world.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store
+        yield* store.putAlert(alert)
+        yield* store.putAlert(elsewhere)
+        yield* store.putAction(card)
+        yield* store.putSession(makeSession("waiting", { id: "s1", alertId: alert.id, title }))
+        yield* (yield* SlackMe).identity
+        yield* (yield* Inbox).poll
+        return {
+          alert: yield* store.getAlert(alert.id),
+          elsewhere: yield* store.getAlert(elsewhere.id),
+          actions: yield* store.listActions(),
+          session: yield* store.getSession("s1"),
+        }
+      }),
+    )
+    const named = "Pierre · #eng-api: @Hugo and @someone can you review the quote?"
+    expect(out.alert).toMatchObject({ title: named, summary: "@Alexandre @Hugo can you review the quote?", raw: alert.raw })
+    expect(out.actions.map((a) => [a.id, a.title])).toEqual([["act_1", named]])
+    expect(out.session?.title).toBe(named)
+    // Only the inbox's: an alert channel's title is left as it was filed.
+    expect(out.elsewhere?.title).toBe("Deploy by <@U3> failed")
+  })
+
+  test("a new item is filed with people named, and the message kept as written", async () => {
     const ts = ago(20)
-    await poll([mention(ts, "<@U3> can you review the quote?")])
+    await poll([mention(ts, "<@U3> and <@U404> can you review the quote?")])
     const out = await world.runPromise(
       Effect.gen(function* () {
         const store = yield* Store
         return { actions: yield* store.listActions(), alert: yield* store.getAlert(`C9:${ts}`) }
       }),
     )
-    expect(out.actions[0]?.title).toBe("Pierre · #eng-api: @Hugo can you review the quote?")
-    expect(out.alert?.summary).toBe("@someone @Hugo can you review the quote?")
-    expect(out.alert?.raw).toBe(`<@${ME}> <@U3> can you review the quote?`)
-    // A card saved by the previous version must be readable without re-ingesting it.
-    const action = out.actions[0]
-    if (action === undefined) throw new Error("Expected an escalated action")
-    const legacy = await world.runPromise(
-      Effect.gen(function* () {
-        yield* (yield* Store).putAction({ ...action, title: "Pierre · #eng-api: <@U3> can you review the quote?" })
-        return yield* snapshot
-      }),
-    )
-    expect(legacy.actions[0]?.title).toBe("Pierre · #eng-api: @Hugo can you review the quote?")
+    expect(out.actions.find((a) => a.alertId === `C9:${ts}`)?.title).toBe("Pierre · #eng-api: @Hugo and @someone can you review the quote?")
+    expect(out.alert?.summary).toBe("@Alexandre @Hugo and @someone can you review the quote?")
+    expect(out.alert?.raw).toBe(`<@${ME}> <@U3> and <@U404> can you review the quote?`)
   })
 })
 

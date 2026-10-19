@@ -67,6 +67,8 @@ export interface StoreShape extends EvidenceStore {
   readonly sessionsUpdatedSince: (since: string) => Effect.Effect<ReadonlyArray<Session>, AdapterError>
   readonly getAction: (id: string) => Effect.Effect<Action | undefined, AdapterError>
   readonly putAction: (action: Action) => Effect.Effect<void, AdapterError>
+  /** Changes a stored card's title; nothing for a card already gone (so it never brings back one you dismissed). */
+  readonly retitleAction: (id: string, title: string) => Effect.Effect<void, AdapterError>
   readonly deleteAction: (id: string) => Effect.Effect<void, AdapterError>
   /** Deletes every action matching `predicate`; returns how many. */
   readonly deleteActionsWhere: (predicate: (action: Action) => boolean) => Effect.Effect<number, AdapterError>
@@ -254,6 +256,8 @@ const StoreImpl = (secrets: ReadonlyArray<string | undefined>) => Layer.effect(S
           INSERT INTO actions (id, created_at, json) VALUES (${action.id}, ${action.createdAt}, ${JSON.stringify(action)})
           ON CONFLICT (id) DO UPDATE SET json = excluded.json
         `.pipe(Effect.asVoid, Effect.mapError(sqlError("put action"))),
+      retitleAction: (id, title) =>
+        sql`UPDATE actions SET json = json_set(json, '$.title', ${title}) WHERE id = ${id}`.pipe(Effect.asVoid, Effect.mapError(sqlError("retitle action"))),
       deleteAction,
       deleteActionsWhere: (predicate) =>
         listActions().pipe(
