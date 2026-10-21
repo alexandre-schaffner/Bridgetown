@@ -67,7 +67,6 @@ export interface StoreShape extends EvidenceStore {
   readonly sessionsUpdatedSince: (since: string) => Effect.Effect<ReadonlyArray<Session>, AdapterError>
   readonly getAction: (id: string) => Effect.Effect<Action | undefined, AdapterError>
   readonly putAction: (action: Action) => Effect.Effect<void, AdapterError>
-  /** Changes a stored card's title; nothing for a card already gone (so it never brings back one you dismissed). */
   readonly retitleAction: (id: string, title: string) => Effect.Effect<void, AdapterError>
   readonly deleteAction: (id: string) => Effect.Effect<void, AdapterError>
   /** Deletes every action matching `predicate`; returns how many. */

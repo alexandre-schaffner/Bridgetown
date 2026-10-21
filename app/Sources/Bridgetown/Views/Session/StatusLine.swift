@@ -35,16 +35,11 @@ extension StatusLine where Mark == LiveDot {
 }
 
 extension StatusLine where Mark == SessionStatusMark {
-    /// A session's headline beside its `SessionStatusMark`.
     init(session: Session, size: CGFloat = 12, lineLimit: Int = 1) {
         self.init(headline: session.headline, tone: session.tone, size: size, lineLimit: lineLimit, mark: SessionStatusMark(session: session))
     }
 }
 
-/// A session headline's mark: while it is active, the orb whose figure says what is going
-/// on (`Session.orbState`), at half speed when nothing moves it; once it has ended, its dot.
-/// Either sits in the orb's square, so the headline stays put. Board rows and step
-/// evidence keep dots.
 struct SessionStatusMark: View {
     let session: Session
 

@@ -21,13 +21,10 @@ public struct ThinkingOrb: View {
     private let speed: Double
     private let paused: Bool
     private let displaySize: Double?
-    /// Bridgetown: multiplies the ink, so the lightest dots take this colour.
     private let tint: Color?
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    // ImageRenderer never advances a TimelineView, so upstream's snapshot
-    // script (not vendored) injects a fixed instant here.
     @Environment(\.orbFrozenTime) private var frozenTime
 
     /// `displaySize` renders the orb at an arbitrary point size while keeping
@@ -41,7 +38,7 @@ public struct ThinkingOrb: View {
         speed: Double = 1,
         paused: Bool = false,
         displaySize: Double? = nil,
-        tint: Color? = nil // Bridgetown
+        tint: Color? = nil
     ) {
         self.state = state
         self.size = size
@@ -49,7 +46,7 @@ public struct ThinkingOrb: View {
         self.speed = speed
         self.paused = paused
         self.displaySize = displaySize
-        self.tint = tint // Bridgetown
+        self.tint = tint
     }
 
     private var isDark: Bool {
@@ -76,7 +73,6 @@ public struct ThinkingOrb: View {
                 // one static, deterministic frame — same instant as the web
                 canvas(preset: preset, t: OrbSpec.reducedMotionT * effSpeed)
             } else {
-                // Bridgetown: capped at 60 fps, like the app's own marks.
                 TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: paused)) { timeline in
                     // One shared clock, so several orbs on screen stay in
                     // phase exactly as they do on the web.
@@ -95,7 +91,6 @@ public struct ThinkingOrb: View {
     private func canvas(preset: ResolvedPreset, t: Double) -> some View {
         Canvas(rendersAsynchronously: false) { context, _ in
             var context = context
-            // Bridgetown: the tint, resolved where it is drawn.
             let tint = tint?.resolve(in: context.environment)
             let zoom = (displaySize ?? size.value) / size.value
             if zoom != 1 { context.scaleBy(x: zoom, y: zoom) }
@@ -120,8 +115,7 @@ public struct ThinkingOrb: View {
     }
 
     /// Quantise to 8-bit exactly as the canvas painter does, so the platforms
-    /// land on identical greys rather than merely close ones. Bridgetown: then
-    /// multiplied by `tint`.
+    /// land on identical greys rather than merely close ones.
     private func ink(_ white: Double, _ alpha: Double, _ tint: Color.Resolved?) -> Color {
         let w = Swift.min(1, Swift.max(0, white))
         let g = ((isDark ? 1 - w : w) * 255).rounded(.toNearestOrAwayFromZero) / 255
@@ -131,8 +125,6 @@ public struct ThinkingOrb: View {
         return Color(.sRGB, red: g, green: g, blue: g, opacity: alpha)
     }
 }
-
-// MARK: - Frozen time (snapshots)
 
 private struct OrbFrozenTimeKey: EnvironmentKey {
     static let defaultValue: Double? = nil

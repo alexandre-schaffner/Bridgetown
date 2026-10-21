@@ -7,7 +7,6 @@ import Testing
         #expect(E2EHarness(arguments: ["Bridgetown"]) == nil)
     }
 
-    /// Released at once, as a launch that never starts it does: it must not trap.
     @Test func islandDemoCanBeReleasedWithoutStarting() {
         #expect(E2EHarness(arguments: ["Bridgetown", "--island-demo"]) != nil)
     }

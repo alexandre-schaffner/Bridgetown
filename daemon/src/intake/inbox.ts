@@ -29,8 +29,7 @@ export class Inbox extends Context.Service<Inbox, InboxShape>()("Inbox") {}
 
 const SEARCH_COUNT = 20
 const INBOX_HORIZON = "inbox_since"
-/** How far back the inbox's earlier titles are looked at for `<@U…>` mentions to name. */
-const UNNAMED_ROWS = 200
+const MENTION_BACKFILL_ROWS = 200
 
 export const InboxLive = Layer.effect(Inbox)(
   Effect.gen(function* () {
@@ -92,17 +91,13 @@ export const InboxLive = Layer.effect(Inbox)(
       yield* intake.file(parsed, filing, { _tag: "Judge", triage })
     })
 
-    /**
-     * Items filed before titles named people still show `<@U…>` on their alert, card and session: named as new items
-     * are, once, on the first poll Slack answers.
-     */
     const nameEarlierMentions = Effect.gen(function* () {
       const unnamed = (text: string) => mentionedUsers(text).length > 0
-      const alerts = (yield* store.recentAlerts(UNNAMED_ROWS)).filter((a) => a.source === "inbox")
+      const alerts = (yield* store.recentAlerts(MENTION_BACKFILL_ROWS)).filter((a) => a.source === "inbox")
       const inboxIds = new Set(alerts.map((a) => a.id))
       const stale = alerts.filter((a) => unnamed(a.title) || unnamed(a.summary))
       const actions = (yield* store.listActions()).filter((a) => a.alertId !== null && inboxIds.has(a.alertId) && unnamed(a.title))
-      const sessions = [...(yield* store.activeSessions()), ...(yield* store.recentSessions(UNNAMED_ROWS))]
+      const sessions = [...(yield* store.activeSessions()), ...(yield* store.recentSessions(MENTION_BACKFILL_ROWS))]
         .filter((s) => inboxIds.has(s.alertId) && unnamed(s.title))
       const titles = [...stale.flatMap((a) => [a.title, a.summary]), ...actions.map((a) => a.title), ...sessions.map((s) => s.title)]
       if (titles.length === 0) return

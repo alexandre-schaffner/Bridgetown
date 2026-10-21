@@ -14,7 +14,6 @@ import { makeWorld } from "../support/world.ts"
 const ME = "UME"
 const ago = (minutes: number) => (Date.now() / 1000 - minutes * 60).toFixed(6)
 const THREAD = ago(30)
-/** Who Slack can name; anyone else is `user_not_found`. */
 const NAMES = new Map([[ME, "Alexandre"], ["U2", "Pierre"], ["U3", "Hugo"]])
 
 /** A mention of me in #eng-api's thread `THREAD`, from Pierre. */
@@ -106,7 +105,6 @@ describe("Slack mentions in notification titles", () => {
     expect(out.alert).toMatchObject({ title: named, summary: "@Alexandre @Hugo can you review the quote?", raw: alert.raw })
     expect(out.actions.map((a) => [a.id, a.title])).toEqual([["act_1", named]])
     expect(out.session?.title).toBe(named)
-    // Only the inbox's: an alert channel's title is left as it was filed.
     expect(out.elsewhere?.title).toBe("Deploy by <@U3> failed")
   })
 

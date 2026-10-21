@@ -11,7 +11,6 @@ let package = Package(
             path: "Sources/Bridgetown"
         ),
         .target(name: "Termination", path: "Sources/Termination"),
-        // Libraries.dev's thinking orbs, vendored: where from and what changed is in VENDORED.md.
         .target(
             name: "ThinkingOrbs",
             path: "Sources/ThinkingOrbs",

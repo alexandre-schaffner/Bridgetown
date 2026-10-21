@@ -42,7 +42,6 @@ final class E2EHarness {
     private var suite = E2ESuite()
     private var runner: E2ERunner?
     private var control: E2EControl?
-    /// Only a run has one; a normal launch or the island demo never makes the timer.
     private var watchdog: E2EWatchdog?
     /// @AppStorage reads and writes here during a run, never in the app's own defaults.
     private var defaultsDomain = ""

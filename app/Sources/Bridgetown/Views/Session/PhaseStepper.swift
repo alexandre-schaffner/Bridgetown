@@ -132,8 +132,6 @@ private struct StepEvidenceRow: View {
     }
 }
 
-/// A step's mark in the evidence list: a dot, pulsing while the step moves. The orb is
-/// the headline's alone.
 private struct StepMark: View {
     let session: Session
     let index: Int

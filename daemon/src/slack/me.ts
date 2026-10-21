@@ -19,7 +19,6 @@ export interface SlackMeShape {
   readonly groups: Effect.Effect<ReadonlyArray<UserGroup>>
   /** A user's display name, or their id when Slack cannot say (asked again next time). */
   readonly nameOf: (userId: string) => Effect.Effect<string>
-  /** The names of the users `texts` mention (`mentionedUsers`), looked up together; one Slack cannot name is left out. */
   readonly namesIn: (texts: ReadonlyArray<string>) => Effect.Effect<ReadonlyMap<string, string>>
 }
 

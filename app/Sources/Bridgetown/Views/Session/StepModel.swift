@@ -47,13 +47,7 @@ extension Session {
     }
 }
 
-// MARK: The headline's orb
-
 extension Session {
-    /// The headline orb's figure while the session is active, saying what is going on: the
-    /// agent's work at its step, the adversarial review solving, CI working, a deploy
-    /// connecting; breathing while it waits on you, reviewers or the queue. Nil once it has
-    /// ended: its dot says how.
     var orbState: OrbState? {
         guard isActive else { return nil }
         return switch holder {
@@ -67,8 +61,6 @@ extension Session {
 }
 
 extension Step.Key {
-    /// The agent's work at this step: searching through a diagnosis, composing a fix,
-    /// weaving the PR.
     var orbState: OrbState {
         switch self {
         case .diagnose: .searching
@@ -134,7 +126,6 @@ extension Session {
 
     /// The counter names the step in play, or the last outcome, never a count of successes.
     var focusedStepIndex: Int? { steps.indices.first { stepKind(at: $0).isMarked } }
-    /// Its step's key, the figure of the headline's orb.
     var focusedStepKey: Step.Key? { focusedStepIndex.map { steps[$0].key } }
 
     var focusedStepDescription: String {

@@ -30,7 +30,6 @@ export const threadTsFromPermalink = (permalink: string | undefined): string | n
 export interface InboxContext {
   readonly me: string
   readonly fromName: string
-  /** The names of the people the message mentions (`SlackMe.namesIn`); one missing reads "@someone". */
   readonly names: ReadonlyMap<string, string>
   /**
    * Alert channels. Their bot posts are alerts, which `AlertChannels` reads; what
@@ -48,7 +47,6 @@ export const parseInbox = (match: SearchMatch, via: InboxVia, ctx: InboxContext)
   const channelKind = match.channel.is_im === true ? "dm" : match.channel.is_mpim === true ? "group_dm" : "channel"
   const threadTs = threadTsFromPermalink(match.permalink)
   const where = channelKind === "channel" ? `#${match.channel.name ?? match.channel.id}` : channelKind === "dm" ? "DM" : "group DM"
-  // What you read in a notification: people by name, one Slack could not name as "@someone", never an id.
   const named = (mrkdwn: string) => clean(nameMentions(mrkdwn, ctx.names, () => "@someone"))
   const head = truncate(named(firstLine(text.replace(new RegExp(`<@${ctx.me}(\\|[^>]*)?>`, "g"), "").trim())) || "(no text)", 90)
   return {

@@ -78,11 +78,6 @@ struct Pulse: ViewModifier {
     }
 }
 
-// MARK: Agent status
-
-/// A thinking orb (Libraries.dev's thinking-orbs) in `color`, its figure `state`, at
-/// `speed` times its own pace. Drawn from the clock, like `Pulse`, so it can't drag the
-/// row's layout along. Held still, it is one frame of the same figure.
 struct AgentOrb: View {
     static let side: CGFloat = 32
 

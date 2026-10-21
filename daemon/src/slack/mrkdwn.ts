@@ -71,19 +71,14 @@ const NO_NAMES: ReadonlyMap<string, string> = new Map()
 
 const sigiled = (sigil: string, name: string) => (name.startsWith(sigil) ? name : sigil + name)
 
-/**
- * Each user mention as `@name`, from its label or `names`. One neither names becomes `unknown(token)`: left as
- * written by default, so a reader (Jev, an agent) still tells people apart and can ping them back.
- */
-export const nameMentions = (text: string, names: ReadonlyMap<string, string>, unknown = (token: string) => token): string =>
+export const nameMentions = (text: string, names: ReadonlyMap<string, string>, unknown: (token: string) => string): string =>
   text.replace(/<@([A-Z0-9]+)(?:\|([^>]+))?>/g, (token, id: string, label: string | undefined) => {
     const name = label ?? names.get(id)
     return name === undefined ? unknown(token) : sigiled("@", name)
   })
 
-/** mrkdwn → readable text: mentions become `@name` (`nameMentions`), links their label, entities decode. */
 export const plain = (mrkdwn: string, names: ReadonlyMap<string, string> = NO_NAMES): string =>
-  nameMentions(mrkdwn, names)
+  nameMentions(mrkdwn, names, (token) => token)
     .replace(/<!subteam\^[A-Z0-9]+\|([^>]+)>/g, "$1")
     .replace(/<!subteam\^[A-Z0-9]+>/g, "@team")
     .replace(/<([^|>]+)\|([^>]+)>/g, "$2")

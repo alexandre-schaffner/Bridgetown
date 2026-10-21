@@ -87,7 +87,6 @@ import ThinkingOrbs
         #expect(s.stepTint(at: 3) == Ink.neutral)
     }
 
-    /// The headline orb says what is going on; an ended session keeps its dot.
     @Test func theHeadlineOrbSaysWhatIsGoingOn() throws {
         let at: (Int) -> [Step.State] = { current in (0..<6).map { $0 < current ? .done : $0 == current ? .current : .pending } }
         #expect(try session(.preparing, .live, .agent, at(0)).orbState == .searching)

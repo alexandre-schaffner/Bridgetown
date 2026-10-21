@@ -37,7 +37,6 @@ const program = Effect.gen(function* () {
         channel: { id: `C${index}`, name: item.where.replace("#", ""), is_im: item.where === "DM" },
       },
       item.via,
-      // Only you are named, as Slack would; anyone else a fixture mentions reads "@someone".
       { me: ME, fromName: item.from, names: new Map([[ME, MY_NAME]]), alertChannels: new Set() },
     )
     if (parsed === undefined) continue
