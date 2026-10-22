@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.6.0](https://github.com/alexandre-schaffner/Bridgetown/compare/v1.5.0...v1.6.0) (2026-10-22)
+
+
+### Features
+
+* thinking orbs for working sessions, and Slack mentions shown by name ([#44](https://github.com/alexandre-schaffner/Bridgetown/issues/44)) ([09f5cdb](https://github.com/alexandre-schaffner/Bridgetown/commit/09f5cdb7fecc90aaa9333f3d42adf424ff5325ec))
+
+
+### Dependencies
+
+* bump the minor-and-patch group in /daemon with 4 updates ([#42](https://github.com/alexandre-schaffner/Bridgetown/issues/42)) ([5b6b63f](https://github.com/alexandre-schaffner/Bridgetown/commit/5b6b63f56a5f2a2a65e3cb4d67012c3b011faddd))
+* bump zod in /daemon in the automatic-patches group ([#38](https://github.com/alexandre-schaffner/Bridgetown/issues/38)) ([ba3e52e](https://github.com/alexandre-schaffner/Bridgetown/commit/ba3e52e57d7604d534c29f47e80544cce6264baf))
+
 ## [1.5.0](https://github.com/alexandre-schaffner/Bridgetown/compare/v1.4.0...v1.5.0) (2026-10-13)
 
 
