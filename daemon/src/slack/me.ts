@@ -2,6 +2,7 @@ import { Cache, Context, Duration, Effect, Exit, Layer, Ref } from "effect"
 import { errorMessage } from "../domain/errors.ts"
 import { Hub } from "../hub.ts"
 import { type SlackError, type SlackIdentity, SlackClient } from "./client.ts"
+import { mentionedUsers } from "./mrkdwn.ts"
 
 export interface UserGroup {
   readonly id: string
@@ -18,12 +19,14 @@ export interface SlackMeShape {
   readonly groups: Effect.Effect<ReadonlyArray<UserGroup>>
   /** A user's display name, or their id when Slack cannot say (asked again next time). */
   readonly nameOf: (userId: string) => Effect.Effect<string>
+  readonly namesIn: (texts: ReadonlyArray<string>) => Effect.Effect<ReadonlyMap<string, string>>
 }
 
 export class SlackMe extends Context.Service<SlackMe, SlackMeShape>()("SlackMe") {}
 
 const GROUPS_TTL = Duration.hours(1)
 const NAMES_CAPACITY = 2_000
+const NAMES_CONCURRENCY = 8
 
 /** Successes are kept for good, failures not at all: the next call asks Slack again. */
 const successesOnly = <A, E>(exit: Exit.Exit<A, E>): Duration.Duration => (Exit.isSuccess(exit) ? Duration.infinity : Duration.zero)
@@ -63,6 +66,15 @@ export const SlackMeLive = Layer.effect(SlackMe)(
         return (yield* Ref.get(known)) === undefined ? [] : yield* groupsOfMe.pipe(Effect.orElseSucceed((): ReadonlyArray<UserGroup> => []))
       }),
       nameOf: (userId) => Cache.get(names, userId).pipe(Effect.orElseSucceed(() => userId)),
+      namesIn: (texts) =>
+        Effect.forEach(
+          [...new Set(texts.flatMap(mentionedUsers))],
+          (userId) => Cache.get(names, userId).pipe(
+            Effect.map((name): ReadonlyArray<readonly [string, string]> => [[userId, name]]),
+            Effect.orElseSucceed(() => []),
+          ),
+          { concurrency: NAMES_CONCURRENCY },
+        ).pipe(Effect.map((found) => new Map(found.flat()))),
     }
   }),
 )

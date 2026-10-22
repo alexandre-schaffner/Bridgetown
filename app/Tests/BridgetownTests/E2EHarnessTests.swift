@@ -3,6 +3,14 @@ import Testing
 @testable import Bridgetown
 
 @MainActor @Suite struct E2EHarnessTests {
+    @Test func normalLaunchDoesNotCreateAHarness() {
+        #expect(E2EHarness(arguments: ["Bridgetown"]) == nil)
+    }
+
+    @Test func islandDemoCanBeReleasedWithoutStarting() {
+        #expect(E2EHarness(arguments: ["Bridgetown", "--island-demo"]) != nil)
+    }
+
     /// Runs in two worktrees at once must not share the mock's root or the defaults that
     /// hold the telemetry tab; runs in one checkout keep both, so its shots compare.
     @Test func eachCheckoutRunsApart() {

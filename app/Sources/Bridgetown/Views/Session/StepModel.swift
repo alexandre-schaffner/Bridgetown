@@ -1,4 +1,5 @@
 import SwiftUI
+import ThinkingOrbs
 
 // How who has a session's next move (the daemon's `holder`), its step states and its tone
 // draw its dot and each of its six steps. Kept apart from the views so every state can be
@@ -42,6 +43,33 @@ extension Session {
         case let holder? where holder.isMoving: .moving
         case .you?, nil: .still
         case _?: .waiting
+        }
+    }
+}
+
+extension Session {
+    var orbState: OrbState? {
+        guard isActive else { return nil }
+        return switch holder {
+        case .agent?: (focusedStepKey ?? .unknown).orbState
+        case .critic?: .solving
+        case .ci?: .working
+        case .deploy?: .connecting
+        case .you?, .reviewers?, .queue?, .unknown?, nil: .breathing
+        }
+    }
+}
+
+extension Step.Key {
+    var orbState: OrbState {
+        switch self {
+        case .diagnose: .searching
+        case .fix: .composing
+        case .pr: .weaving
+        case .critique: .solving
+        case .ci: .working
+        case .deploy: .connecting
+        case .unknown: .breathing
         }
     }
 }
@@ -98,6 +126,7 @@ extension Session {
 
     /// The counter names the step in play, or the last outcome, never a count of successes.
     var focusedStepIndex: Int? { steps.indices.first { stepKind(at: $0).isMarked } }
+    var focusedStepKey: Step.Key? { focusedStepIndex.map { steps[$0].key } }
 
     var focusedStepDescription: String {
         guard let index = focusedStepIndex else { return stepsDescription }

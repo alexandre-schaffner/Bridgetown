@@ -10,7 +10,7 @@ import type { FetchedBoard } from "../grafana/board.ts"
 import { Hub, type Status as HubStatus } from "../hub.ts"
 import { revvLink } from "../ship/pr.ts"
 import { SlackMe } from "../slack/me.ts"
-import { fromMrkdwn, mentionedUsers } from "../slack/mrkdwn.ts"
+import { fromMrkdwn } from "../slack/mrkdwn.ts"
 import { Store } from "../store/store.ts"
 import { type Reading, readingOnBoard } from "../watch/detect.ts"
 import { byConcern, errorsLink, levelOf, type LogPattern, patternLink, shownUsual, suspicious } from "../watch/logs.ts"
@@ -172,9 +172,8 @@ export const alertDetail = (id: string) =>
     const session = alert.sessionId === null ? undefined : yield* store.getSession(alert.sessionId)
     const actions = (yield* store.listActions()).filter((a) => a.alertId === id)
     const sessions = yield* byId(session === undefined ? [] : [session], actions.map((a) => a.sessionId), store.getSession)
-    const me = yield* SlackMe
-    const names = yield* Effect.forEach(mentionedUsers(alert.raw), (user) => me.nameOf(user).pipe(Effect.map((name) => [user, name] as const)))
-    return alertDetailView(alert, session, actions, sessions, yield* (yield* Actions).inFlight, new Map(names))
+    const names = yield* (yield* SlackMe).namesIn([alert.raw])
+    return alertDetailView(alert, session, actions, sessions, yield* (yield* Actions).inFlight, names)
   })
 
 /** A reading older than this is from a watcher that stopped (watching turned off): the board says nothing then. */

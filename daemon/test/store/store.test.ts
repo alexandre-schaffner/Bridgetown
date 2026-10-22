@@ -122,3 +122,19 @@ describe("store pruning", () => {
     expect(pragma(old, "auto_vacuum")).toBe(0)
   })
 })
+
+describe("store actions", () => {
+  test("retitling a card changes only its title, and never brings back one that is gone", async () => {
+    const card = { id: "act_kept", kind: "escalate", title: "<@U3> asks", detail: "d", primaryLabel: "Open", options: [], sessionId: null, alertId: null, fingerprint: null, retry: false, url: null, createdAt: "2026-10-01T00:00:00.000Z" } as const
+    const actions = await world.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store
+        yield* store.putAction(card)
+        yield* store.retitleAction("act_kept", "@Hugo asks")
+        yield* store.retitleAction("act_dismissed", "@Hugo asks")
+        return (yield* store.listActions()).filter((a) => a.id.startsWith("act_"))
+      }),
+    )
+    expect(actions).toEqual([{ ...card, title: "@Hugo asks" }])
+  })
+})

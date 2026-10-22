@@ -1,4 +1,5 @@
 import Testing
+import ThinkingOrbs
 @testable import Bridgetown
 
 /// How each step stands (`Session.stepKind`), for the states the daemon sends.
@@ -84,5 +85,20 @@ import Testing
         #expect(s.holder?.isMoving == false)
         #expect(s.stepKind(at: 3) == .held)
         #expect(s.stepTint(at: 3) == Ink.neutral)
+    }
+
+    @Test func theHeadlineOrbSaysWhatIsGoingOn() throws {
+        let at: (Int) -> [Step.State] = { current in (0..<6).map { $0 < current ? .done : $0 == current ? .current : .pending } }
+        #expect(try session(.preparing, .live, .agent, at(0)).orbState == .searching)
+        #expect(try session(.running, .live, .agent, at(0)).orbState == .searching)
+        #expect(try session(.running, .live, .agent, at(1)).orbState == .composing)
+        #expect(try session(.running, .live, .agent, at(2)).orbState == .weaving)
+        #expect(try session(.critiquing, .live, .critic, at(3)).orbState == .solving)
+        #expect(try session(.ci, .live, .ci, at(4)).orbState == .working)
+        #expect(try session(.deploying, .live, .deploy, at(5)).orbState == .connecting)
+        #expect(try session(.waiting, .waiting, .you, at(1)).orbState == .breathing)
+        #expect(try session(.awaiting_merge, .live, .reviewers, at(3)).orbState == .breathing)
+        #expect(try session(.queued, .neutral, .queue, at(0)).orbState == .breathing)
+        #expect(try session(.resolved, .success, nil, [.done, .done, .done, .done, .done, .done]).orbState == nil)
     }
 }

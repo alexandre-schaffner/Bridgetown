@@ -34,10 +34,24 @@ extension StatusLine where Mark == LiveDot {
     }
 }
 
-extension StatusLine where Mark == SessionDot {
-    /// A session's headline beside the dot its row has on the Agents board.
+extension StatusLine where Mark == SessionStatusMark {
     init(session: Session, size: CGFloat = 12, lineLimit: Int = 1) {
-        self.init(headline: session.headline, tone: session.tone, size: size, lineLimit: lineLimit, mark: SessionDot(session: session, size: 6))
+        self.init(headline: session.headline, tone: session.tone, size: size, lineLimit: lineLimit, mark: SessionStatusMark(session: session))
+    }
+}
+
+struct SessionStatusMark: View {
+    let session: Session
+
+    var body: some View {
+        Group {
+            if let state = session.orbState {
+                AgentOrb(state: state, color: session.tone.color, speed: session.dot == .moving ? 1 : 0.5)
+            } else {
+                SessionDot(session: session, size: 6)
+            }
+        }
+        .frame(width: AgentOrb.side, height: AgentOrb.side)
     }
 }
 

@@ -7,10 +7,15 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "Bridgetown",
-            dependencies: ["Termination"],
+            dependencies: ["Termination", "ThinkingOrbs"],
             path: "Sources/Bridgetown"
         ),
         .target(name: "Termination", path: "Sources/Termination"),
+        .target(
+            name: "ThinkingOrbs",
+            path: "Sources/ThinkingOrbs",
+            exclude: ["LICENSE", "VENDORED.md"]
+        ),
         // A bare app that quits as Bridgetown does, which AppTerminationTests runs.
         .executableTarget(
             name: "TerminationHarness",
@@ -21,7 +26,7 @@ let package = Package(
         // XCTest needs a full Xcode. Run with `make test-app` or `swift test`.
         .testTarget(
             name: "BridgetownTests",
-            dependencies: ["Bridgetown"],
+            dependencies: ["Bridgetown", "ThinkingOrbs"],
             path: "Tests/BridgetownTests",
             resources: [.copy("Fixtures")]
         ),

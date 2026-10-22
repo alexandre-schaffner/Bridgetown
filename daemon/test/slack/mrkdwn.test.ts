@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { recommendation } from "../../src/slack/messages.ts"
-import { fromMrkdwn, isPerson, mentionedUsers, toMrkdwn, toThreadReplies } from "../../src/slack/mrkdwn.ts"
+import { clean, fromMrkdwn, isPerson, mentionedUsers, nameMentions, plain, toMrkdwn, toThreadReplies } from "../../src/slack/mrkdwn.ts"
 
 describe("toMrkdwn: agent Markdown as Slack mrkdwn", () => {
   test("emphasis and links", () => {
@@ -69,6 +69,21 @@ describe("fromMrkdwn: a Slack message as Markdown, for the app's alert detail", 
     expect(fromMrkdwn(":rotating_light: *TX Executor* :+1::skin-tone-3:")).toBe("🚨 **TX Executor** 👍")
     expect(fromMrkdwn(":merkl-logo: at 10:42:07")).toBe(":merkl-logo: at 10:42:07")
     expect(fromMrkdwn("`:fire:`")).toBe("`:fire:`")
+  })
+})
+
+describe("plain and nameMentions: people by name", () => {
+  const names = new Map([["U3", "Hugo"]])
+  test("a mention is its label or its name; one neither names stays as written, for whoever reads it next", () => {
+    expect(plain("<@U3> and <@U404|@Alice> ask <@U7>", names)).toBe("@Hugo and @Alice ask <@U7>")
+    expect(plain("<@U3> ask <@U7>")).toBe("<@U3> ask <@U7>")
+    expect(clean("*<@U3>* ask <@U7>", names)).toBe("@Hugo ask <@U7>")
+  })
+  test("what an unnamed mention becomes is the caller's to say, and nothing else in the text changes", () => {
+    expect(nameMentions("<@U3> &amp; <@U7> <https://x|y>", names, () => "@someone")).toBe("@Hugo &amp; @someone <https://x|y>")
+  })
+  test("a thread as Jev and agents read it keeps who was pinged", () => {
+    expect(toThreadReplies([{ ts: "1", text: "<@U3> can you check <@U7>'s PR?", user: "U2" }], "UME")[0]?.text).toBe("<@U3> can you check <@U7>'s PR?")
   })
 })
 

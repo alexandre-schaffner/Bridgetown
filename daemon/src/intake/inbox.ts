@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Ref } from "effect"
 import { ActionQueue } from "../actions/queue.ts"
 import { type ParsedAlert, threadTsOf } from "../domain/alert.ts"
 import type { AdapterError } from "../domain/errors.ts"
@@ -12,7 +12,7 @@ import { SessionRunner } from "../sessions/runner.ts"
 import { type SearchMatch, SlackClient } from "../slack/client.ts"
 import { type InboxVia, inboxQueries, parseInbox } from "../slack/inbox-parse.ts"
 import { SlackMe } from "../slack/me.ts"
-import { toThreadReplies } from "../slack/mrkdwn.ts"
+import { flattenMessage, mentionedUsers, nameMentions, toThreadReplies } from "../slack/mrkdwn.ts"
 import { SlackThread } from "../slack/thread.ts"
 import { Store } from "../store/store.ts"
 import { decideInbox } from "../triage/policy.ts"
@@ -29,6 +29,7 @@ export class Inbox extends Context.Service<Inbox, InboxShape>()("Inbox") {}
 
 const SEARCH_COUNT = 20
 const INBOX_HORIZON = "inbox_since"
+const MENTION_BACKFILL_ROWS = 200
 
 export const InboxLive = Layer.effect(Inbox)(
   Effect.gen(function* () {
@@ -62,7 +63,8 @@ export const InboxLive = Layer.effect(Inbox)(
       const id = `${match.channel.id}:${match.ts}`
       if ((yield* store.getAlert(id)) !== undefined) return
       const fromName = match.user === undefined || match.user === null ? (match.username ?? "Someone") : yield* me.nameOf(match.user)
-      const parsed = parseInbox(match, via, { me: identity.user_id, fromName, alertChannels })
+      const names = yield* me.namesIn([flattenMessage(match)])
+      const parsed = parseInbox(match, via, { me: identity.user_id, fromName, names, alertChannels })
       if (parsed === undefined) return
       const threadTs = threadTsOf(parsed)
       const filing = { permalink: match.permalink ?? null, receivedAt: tsToIso(parsed.ts) }
@@ -89,10 +91,33 @@ export const InboxLive = Layer.effect(Inbox)(
       yield* intake.file(parsed, filing, { _tag: "Judge", triage })
     })
 
+    const nameEarlierMentions = Effect.gen(function* () {
+      const unnamed = (text: string) => mentionedUsers(text).length > 0
+      const alerts = (yield* store.recentAlerts(MENTION_BACKFILL_ROWS)).filter((a) => a.source === "inbox")
+      const inboxIds = new Set(alerts.map((a) => a.id))
+      const stale = alerts.filter((a) => unnamed(a.title) || unnamed(a.summary))
+      const actions = (yield* store.listActions()).filter((a) => a.alertId !== null && inboxIds.has(a.alertId) && unnamed(a.title))
+      const sessions = [...(yield* store.activeSessions()), ...(yield* store.recentSessions(MENTION_BACKFILL_ROWS))]
+        .filter((s) => inboxIds.has(s.alertId) && unnamed(s.title))
+      const titles = [...stale.flatMap((a) => [a.title, a.summary]), ...actions.map((a) => a.title), ...sessions.map((s) => s.title)]
+      if (titles.length === 0) return
+      const names = yield* me.namesIn(titles)
+      const named = (text: string) => nameMentions(text, names, () => "@someone")
+      for (const alert of stale) {
+        yield* store.modifyAlert(alert.id, (current) => current && { ...current, title: named(current.title), summary: named(current.summary) })
+      }
+      for (const action of actions) yield* store.retitleAction(action.id, named(action.title))
+      for (const session of sessions) yield* repo.modify(session.id, (current) => ({ ...current, title: named(current.title) }), { evenIfFinished: true, touch: false })
+    })
+    const earlierNamed = yield* Ref.make(false)
+
     return {
       poll: Effect.gen(function* () {
         const identity = yield* me.known
         if ((yield* hub.status).slack !== "ok" || identity === undefined) return
+        if (!(yield* Ref.getAndSet(earlierNamed, true))) {
+          yield* nameEarlierMentions.pipe(Effect.catch((error) => Effect.logWarning(`Inbox: naming earlier mentions: ${error.message}`)))
+        }
         const settings = yield* hub.settings
         // Turned off: whatever the inbox last ran into no longer stands.
         if (!settings.inbox) return yield* hub.problem("inbox", null)

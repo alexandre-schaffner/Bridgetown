@@ -1,4 +1,5 @@
 import SwiftUI
+import ThinkingOrbs
 
 // Marks for live work: drawn from the clock rather than animated, so nothing they do
 // can drag a row's layout along. They hold still under Reduce Motion, out of sight, and
@@ -77,49 +78,17 @@ struct Pulse: ViewModifier {
     }
 }
 
-// MARK: Stepper marks
+struct AgentOrb: View {
+    static let side: CGFloat = 32
 
-/// A dot with a soft glow. When it breathes (waiting on you), a halo swells from it and
-/// fades, every couple of seconds.
-struct Beacon: View {
+    let state: OrbState
     let color: Color
-    var breathes = false
+    var size: CGFloat = AgentOrb.side
+    var speed: Double = 1
     @Environment(\.marksHoldStill) private var still
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !breathes || still)) { context in
-            let t = breathes && !still ? context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.4) / 2.4 : 1
-            ZStack {
-                Circle().fill(color.opacity(0.45 * (1 - t)))
-                    .scaleEffect(1 + 1.1 * t)
-                Circle().fill(color)
-                    .scaleEffect(0.8)
-                    .shadow(color: color.opacity(0.8), radius: 2)
-            }
-        }
-    }
-}
-
-/// An arc chasing round a faint ring, as Vercel's builds show one, its length breathing as
-/// it turns: work in motion. Drawn from the clock, like `Pulse`, so it can't drag the
-/// row's layout along. Held still, it is still an arc on a ring.
-struct Spinner: View {
-    let color: Color
-    var lineWidth: CGFloat = 1.5
-    @Environment(\.marksHoldStill) private var still
-
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: still)) { context in
-            let time = still ? 0 : context.date.timeIntervalSinceReferenceDate
-            let turn = time.truncatingRemainder(dividingBy: 0.95) / 0.95
-            let length = 0.22 + 0.16 * (0.5 + 0.5 * sin(2 * .pi * time / 1.5))
-            ZStack {
-                Circle().stroke(color.opacity(0.22), lineWidth: lineWidth)
-                Circle().trim(from: 0, to: length)
-                    .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                    .rotationEffect(.degrees(turn * 360 - 90))
-            }
-            .padding(lineWidth / 2)
-        }
+        ThinkingOrb(state: state, size: .px64, theme: .dark, speed: speed, paused: still, displaySize: size, tint: color)
+            .accessibilityHidden(true)
     }
 }

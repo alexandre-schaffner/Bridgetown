@@ -23,6 +23,8 @@ const Items = Schema.Array(
 const env = readEnv()
 const jev = makeJev(env.typesafeKey, env.jevModel)
 const pct = (n: number) => percent(n).padStart(4)
+const ME = "U0ATSF15M4L"
+const MY_NAME = "Alexandre Schaffner"
 
 const program = Effect.gen(function* () {
   const items = Schema.decodeUnknownSync(Items)(yield* Effect.promise(() => Bun.file(process.argv[2] ?? "").json()))
@@ -35,10 +37,10 @@ const program = Effect.gen(function* () {
         channel: { id: `C${index}`, name: item.where.replace("#", ""), is_im: item.where === "DM" },
       },
       item.via,
-      { me: "U0ATSF15M4L", fromName: item.from, alertChannels: new Set() },
+      { me: ME, fromName: item.from, names: new Map([[ME, MY_NAME]]), alertChannels: new Set() },
     )
     if (parsed === undefined) continue
-    const verdict = yield* jev.judgeInbox({ item: parsed, thread: item.thread ?? [], myName: "Alexandre Schaffner" })
+    const verdict = yield* jev.judgeInbox({ item: parsed, thread: item.thread ?? [], myName: MY_NAME })
     const decision = decideInbox(verdict, DEFAULT_SETTINGS.thresholds)
     console.log(
       `${decision.decision.padEnd(9)} needs ${pct(verdict.actionable)} · agent ${pct(verdict.agentResolvable)} · done ${pct(verdict.humanOnIt)} · ${verdict.kind} · ${verdict.depth}\n          ${parsed.title}\n`,
